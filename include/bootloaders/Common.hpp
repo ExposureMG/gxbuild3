@@ -8,15 +8,6 @@
 #include <stdint.h>
 #include <vector>
 
-// NOTE: This file is derived from InvoxiPlayGames's xenon-bltool.
-// As its just a set of struct definitions and data types,
-// it should fall under fair use / technical info and not violate the GPL license.
-// If i am wrong then open a github issue or contact me at
-// EMAIL: exposuremg@protonmail.com
-// DISCORD: xenon_kitchen
-
-// Big thanks to invoxiplaygames <3
-
 // RC4/AES key used for decrypting bootloader stages.
 inline constexpr uint8_t key_1bl[0x10] = {0xDD, 0x88, 0xAD, 0x0C, 0x9E, 0xD6, 0x69, 0xE7,
                                           0xB5, 0x67, 0x94, 0xFB, 0x68, 0x56, 0x3E, 0xFA};
@@ -44,19 +35,35 @@ inline constexpr uint8_t rsa_1bl[0x110] = {
     0xF4, 0x0F, 0x63, 0x05, 0x3F, 0x1A, 0xED, 0xED, 0x4B, 0xEE, 0xFD, 0x6D, 0x74, 0xE6, 0xA5, 0x92,
     0xA7, 0x99, 0x81, 0x73, 0x95, 0xD8, 0xC7, 0xA5, 0xA1, 0xC7, 0x7B, 0x09, 0x05, 0x85, 0x41, 0x04};
 
+enum NANDBootloaderMagic : uint16_t {
+    FlashHeader = 0xFF4F,
+    _1BL = 0x0341,
+    CB = 0x4342,
+    CD = 0x4344,
+    CE = 0x4345,
+    CF = 0x4346,
+    CG = 0x4347,
+    SB = 0x5342,
+    SC = 0x5343,
+    SD = 0x5344,
+    SE = 0x5345,
+    SF = 0x5346,
+    SG = 0x5347
+};
+
 #pragma pack(push, 1)
 
-typedef struct _bl_header {
+typedef struct _header {
     uint16_t magic;
     uint16_t version;
-    uint16_t pairing; // 0x8000 = devkit?
-    uint16_t flags;   // 0x0001 = mfg, 0x0800 = cba?
+    uint16_t pairing;
+    uint16_t flags;
     uint32_t entrypoint;
     uint32_t size;
-} bl_header;
+} header;
 
 typedef struct _nand_header {
-    bl_header header;
+    header header;
     uint8_t copyright[0x40];
     uint8_t reserved[0x10];
     uint32_t kv_size;
@@ -70,150 +77,76 @@ typedef struct _nand_header {
     uint32_t smc_boot_offset;
 } nand_header_t;
 
-// used by SC/3BL, XKE, etc
-typedef struct _generic_header {
-    bl_header header;
-    uint8_t key[0x10];
-    EXCRYPT_SIG signature;
-} generic_header;
-
-/*
-typedef struct _bl2_header {
-    bl_header header;
-    uint8_t key[0x10]; // Per Box Digest?
-    uint64_t padding_or_args[4];
-    EXCRYPT_SIG signature;
-    uint8_t globals[0x128]; // "find out whats in here"
-    EXCRYPT_RSAPUB_2048 devkit_pubkey; // RSA Pub Key
-    uint8_t sc_key[0x10]; // nonce_3bl
-    char sc_salt[10]; // salt_3bl
-    char sd_salt[10]; // salt_4bl
-    uint8_t cd_cbb_hash[0x14];  // CB_A has CB_B hash, CB_B has CD hash
-    uint8_t more_globals[0x10]; // more_globals[1] has LDV
-} bl2_header;
-*/
-
-typedef struct _bl2_metadata {
-    std::optional<uint16_t> b_flags;
-    std::optional<uint8_t> lockdown_value;
-    std::optional<std::array<uint8_t, 3>> pairing_data;
-    std::optional<std::array<uint8_t, 4>> console_allow;
-    std::optional<uint64_t> post_output_addr;
-    std::optional<uint64_t> sb_flash_addr;
-    std::optional<uint64_t> soc_mmio_addr;
-} bl2_metadata;
-
-typedef struct _bl2_header {
-    bl_header header;
+typedef struct _cb_perbox {
+    uint8_t pairing_data[3];
+    uint8_t lockdown_value;
     uint8_t per_box_digest[0x10];
-    uint64_t padding_or_args[4];
+    uint8_t reserved[0xC];
+} cb_perbox;
+
+typedef struct _cb_header {
+    header header;
+    cb_perbox perbox;
     EXCRYPT_SIG signature;
-    uint8_t globals[0x128];
-    EXCRYPT_RSAPUB_2048 rsa_pub_key;
+    EXCRYPT_RSAPUB_2048 dev_pub_key;
     uint8_t nonce_3bl[0x10];
     char salt_3bl[10];
     char salt_4bl[10];
-    uint8_t digest[0x14]; // For CB_B or CD
-    uint8_t more_globals[0x10];
-    uint8_t reserved_per_box[0xC];
-} bl2_header;
+    uint8_t next_hash[0x14]; // For CB_B or CD
+} cb_header;
 
-typedef generic_header bl3_header;
-
-/*
-typedef struct _bl4_header {
-    bl_header header;
+typedef struct _sc_header {
+    header header;
     uint8_t key[0x10];
     EXCRYPT_SIG signature;
-    uint8_t idk_yet[0x120]; // unused?
-    char cf_salt[10];
-    uint16_t unused2;
-    uint8_t ce_hash[0x14];
-} bl4_header;
-*/
+} sc_header;
 
-typedef struct _bl4_header {
-    bl_header header;
-    uint8_t rsa_pub_key[0x10];
-    EXCRYPT_SIG signature;   // only valid on devkits
-    uint8_t nonce_6bl[0x10]; // Not listed in bltool?
-    char salt_6bl[10];
-    uint8_t digest_5bl[0x14];
-} bl4_header;
+typedef struct _cd_header {
+    header header;
+    uint8_t rsa_pub_key[0x10]; // 0x110
+    EXCRYPT_SIG signature;     // 0x100 only on devkits
+    uint8_t cg_key[0x10];      // 0x10
+    char cg_salt[10];          // 0xA
+    uint8_t ce_hash[0x14];     // 0x14
+} cd_header;
 
-typedef struct _bl5_header {
-    bl_header header;
+typedef struct _ce_header {
+    header header;
     uint8_t key[0x10];
-    uint64_t target_address;
-    uint32_t uncompressed_size;
-    uint32_t unknown; // think this is unused
-} bl5_header;
+    ulong address;
+    uint size;
+} ce_header;
 
-typedef struct _bl6_header {
-    bl_header header;
-    uint16_t base_ver;
-    uint16_t base_flags; // unsure, 0x8000 for devkit
-    uint16_t target_ver;
-    uint16_t target_flags; // unsure, 0x8000 for devkit
-    uint32_t unknown;      // think this is unused
-    uint32_t cg_size;
+typedef struct _cf_perbox {
+    uint8_t reserved_per_box[0x2B]; // reserved1
+    uint8_t update_slot;            // SysUpdateIdx
+    uint8_t pairing_data[3];        // PairingData
+    uint8_t lockdown_value;         // LockdownValue
+    uint8_t per_box_digest[0x10];   // nonce
+} cf_perbox;
+
+typedef struct _cf_header {
+    header header; // bldr
+
+    cf_perbox perbox;
+
+    uint16_t source_version;                // base_ver
+    uint16_t source_qfe;                    // base_qfe
+    uint16_t target_version;                // target_ver
+    uint16_t target_qfe;                    // target_qfe
+    uint32_t reserved;                      // reserved0
+    uint32_t cg_size;                       // cg_size
+    uint8_t cg_key[0x10];                   // CgKey
+    uint8_t cg_hash[0x14];                  // CgHash
+    uint16_t cg_blocks_used;                // CgBlockCount
+    std::vector<uint16_t> cg_block_numbers; // CgBlocks
+} cf_header;
+
+typedef struct _cg_header {
+    header header;
     uint8_t key[0x10];
-    uint16_t cg_block_count;
-    uint16_t cg_blocks[223];
-    uint8_t reserved1[0x2B];
-    uint8_t update_slot;
-    uint8_t pairing_data[3];
-    uint8_t lockdown_value;
-    uint8_t mac[0x10];
-
-    EXCRYPT_SIG signature;
-    uint8_t cg_key[0x10];
-    uint8_t cg_hash[0x14];
-} bl6_header;
-
-struct CfMetadata {
-    // Plain - Offset 0x0 in payload / 0x10 Absolute
-    uint16_t source_version;  // base_ver
-    uint16_t target_version;  // target_ver
-    uint32_t reserved_prefix; // bltool - "Unknown" ?
-    uint32_t cg_size;
-    uint8_t hmac_salt[16];
-};
-
-struct CfMetadataDecrypted {
-    // Decrypted 0x30
-    uint16_t cg_blocks_used;
-    std::vector<uint16_t> cg_block_numbers; // 223 entries
-    EXCRYPT_SIG signature;
-    uint8_t cg_nonce[0x10];  // cg_hmac
-    uint8_t cg_digest[0x14]; // cg_hash
-
-    // PerBoxData
-    uint8_t reserved_per_box[0x2B];
-    uint8_t update_slot;
-    uint8_t pairing_data[3];
-    uint8_t lockdown_value;
-    uint8_t per_box_digest[0x10]; // key?
-};
-
-typedef struct _7bl_header {
-    bl_header header;
-    uint8_t key[0x10];
-    uint32_t original_size;
-    uint8_t original_hash[0x14];
-    uint32_t new_size;
-    uint8_t new_hash[0x14];
-} bl7_header;
-
-#pragma pack(pop)
-
-typedef enum _bl_type {
-    CB = 0x342,
-    SC = 0x343,
-    CD = 0x344,
-    CE = 0x345,
-    CF = 0x346,
-    CG = 0x347,
-    XKE = 0xD4D,
-    KV = 0xE4E
-} bl_type;
+    uint32_t source_size;
+    uint8_t source_hash[0x14];
+    uint32_t target_size;
+    uint8_t target_hash[0x14];
+} cg_header;

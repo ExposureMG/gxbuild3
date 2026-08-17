@@ -91,8 +91,12 @@ namespace gxbuild3::utils {
         void reserve_logical_block(uint32_t block_idx);
         void reserve_logical_blocks(uint32_t start_block_idx, uint32_t count);
         bool is_block_free(uint32_t block_idx) const;
-        std::optional<uint32_t> allocate_logical_block(uint8_t block_type = 0, uint32_t sequence = 0, uint32_t min_block = 0);
-        bool write_logical_block(uint32_t block_idx, const uint8_t* buffer, size_t length, uint8_t block_type = 0, uint32_t sequence = 0, uint16_t fs_size = 0);
+        std::optional<uint32_t> allocate_logical_block(uint8_t block_type = 0,
+                                                       uint32_t sequence = 0,
+                                                       uint32_t min_block = 0);
+        bool write_logical_block(uint32_t block_idx, const uint8_t* buffer, size_t length,
+                                 uint8_t block_type = 0, uint32_t sequence = 0,
+                                 uint16_t fs_size = 0);
         std::optional<std::vector<uint8_t>> read_logical_block(uint32_t block_idx) const;
         const std::vector<bool>& allocated_blocks() const { return m_allocated_blocks; }
 
