@@ -1,6 +1,9 @@
+#pragma once
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #pragma pack(push, 1)
 
@@ -105,4 +108,37 @@ struct big_page {
     spare_bb spare;
 };
 
+typedef struct _nand_header {
+    uint16_t magic;
+    uint16_t version;
+    uint16_t pairing;
+    uint16_t flags;
+    uint32_t entrypoint;
+    uint32_t size;
+    uint8_t copyright[0x40];
+    uint8_t reserved[0x10];
+    uint32_t kv_size;
+    uint32_t cf_offset;
+    uint16_t patch_slots;
+    uint16_t kv_version;
+    uint32_t kv_addr;
+    uint32_t fs_addr;
+    uint32_t smc_config_offset;
+    uint32_t smc_boot_size;
+    uint32_t smc_boot_offset;
+} nand_header;
+
 #pragma pack(pop)
+
+struct MobileBlockPlacement {
+    uint8_t block_type = 0;
+    uint16_t start_block = 0;
+    uint16_t block_count = 0;
+};
+
+struct NandLayout {
+    uint16_t fs_root_block = 0;
+    uint32_t fs_version = 1;
+    uint16_t fs_size = 0;
+    std::vector<MobileBlockPlacement> mobile_blocks;
+};

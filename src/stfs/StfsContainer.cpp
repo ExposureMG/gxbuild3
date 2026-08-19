@@ -1,4 +1,5 @@
 #include "stfs/StfsContainer.hpp"
+#include "utils/Log.hpp"
 
 #include <BlockParser.hpp>
 #include <FileExtractor.hpp>
@@ -164,6 +165,7 @@ namespace Stfs {
 
         const auto file_table = readFileTable(data_, header_size_, *vd);
         entries_ = stfs::parseFileListing(file_table);
+        Log::Debug("Opened STFS container ({} entries, header size 0x{:X})", entries_.size(), header_size_);
     }
 
     std::vector<StfsContainer::EntryView> StfsContainer::buildEntryViews() const {

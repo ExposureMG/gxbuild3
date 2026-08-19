@@ -1,4 +1,5 @@
 #include "patchers/Signature.hpp"
+#include "utils/Log.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -21,7 +22,8 @@ namespace Signature {
                 sigByte.isWildcard = false;
                 try {
                     sigByte.value = static_cast<uint8_t>(std::stoul(token, nullptr, 16));
-                } catch (...) {
+                } catch (const std::exception& e) {
+                    Log::Error("Invalid signature token '{}', treating as wildcard: {}", token, e.what());
                     sigByte.isWildcard = true;
                     sigByte.value = 0x00;
                 }
@@ -75,6 +77,7 @@ namespace Signature {
             }
         }
 
+        Log::Debug("Signature pattern matched and applied {} time(s)", matchesCount);
         return matchesCount;
     }
 

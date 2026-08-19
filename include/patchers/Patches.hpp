@@ -1,3 +1,5 @@
+#include <string>
+
 typedef struct _smc_patch {
     std::string addr;
     std::string value;
