@@ -14,6 +14,7 @@
 using gxbuild3::NAND::BlockMetadata;
 using gxbuild3::NAND::Driver;
 using gxbuild3::NAND::FlashImage;
+using gxbuild3::NAND::FlashFileSystem;
 using gxbuild3::NAND::Smc;
 using gxbuild3::NAND::SmcConfig;
 
@@ -131,6 +132,74 @@ bool test_flash_image_reassembles_latest_mobile_data() {
                  "FlashImage must concatenate all blocks from the latest mobile data version");
 }
 
+bool test_flash_image_places_filesystem_root_consistently() {
+    FlashImage image{};
+    image.flash_driver = Driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
+
+    FlashFileSystem filesystem{};
+    if (!check(filesystem.format(image.flash_driver.block_count()),
+               "FlashFS must format before placement")) {
+        return false;
+    }
+    const std::vector<uint8_t> file_data{0x10, 0x20, 0x30};
+    if (!check(filesystem.add_file("test.bin", file_data),
+               "FlashFS must accept a test file")) {
+        return false;
+    }
+    image.filesystem = std::move(filesystem);
+
+    if (!check(image.write_to_driver(), "FlashImage must write a filesystem image")) {
+        return false;
+    }
+
+    const auto root_block = image.filesystem->root_block();
+    if (!check(image.flash_driver.layout().fs_root_block == root_block,
+               "FlashImage layout must identify the block containing the filesystem root")) {
+        return false;
+    }
+    if (!check(root_block != 0x3E0,
+               "FlashImage must relocate the default filesystem root away from file allocations")) {
+        return false;
+    }
+
+    auto parsed = FlashImage::read(image.flash_driver.serialize());
+    if (!check(parsed.has_value() && parsed->parse(),
+               "FlashImage must parse the filesystem it just wrote")) {
+        return false;
+    }
+    return check(parsed->filesystem.has_value(),
+                 "FlashImage must find the filesystem root at the recorded block") &&
+           check(parsed->filesystem->get_file("test.bin") == file_data,
+                 "FlashImage must preserve files after root relocation");
+}
+
+bool test_flash_image_accepts_legacy_filesystem_root_type() {
+    Driver source(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
+    FlashFileSystem filesystem{};
+    if (!check(filesystem.format(source.block_count(), 0x80),
+               "FlashFS must format at a test root block")) {
+        return false;
+    }
+    filesystem.set_driver(&source);
+    if (!check(filesystem.save(), "FlashFS must serialize its test root")) {
+        return false;
+    }
+
+    BlockMetadata metadata{};
+    metadata.logical_block_id = 0x80;
+    metadata.sequence = 3;
+    metadata.block_type = 0x2C;
+    source.write_block_metadata(0x80, metadata);
+
+    auto image = FlashImage::read(source.serialize());
+    if (!check(image.has_value() && image->parse(),
+               "FlashImage must parse a NAND image with a legacy filesystem root")) {
+        return false;
+    }
+    return check(image->filesystem.has_value(),
+                 "FlashImage must recognize filesystem block type 0x2C");
+}
+
 bool test_writes_reject_out_of_range_data() {
     Driver driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
     const size_t image_size = driver.block_count() * driver.block_size_clean();
@@ -162,6 +231,8 @@ int main() {
     passed = test_block_type_masks_ecc_bits() && passed;
     passed = test_flash_image_reads_cross_page_config() && passed;
     passed = test_flash_image_reassembles_latest_mobile_data() && passed;
+    passed = test_flash_image_places_filesystem_root_consistently() && passed;
+    passed = test_flash_image_accepts_legacy_filesystem_root_type() && passed;
     passed = test_writes_reject_out_of_range_data() && passed;
     passed = test_flash_image_rejects_oversized_smc() && passed;
     return passed ? 0 : 1;
