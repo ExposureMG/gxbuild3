@@ -7,6 +7,7 @@
 #include <fstream>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -17,6 +18,8 @@ namespace fs = std::filesystem;
 
 namespace gxbuild3::utils {
 
+    std::string bytes_to_hex(std::span<const uint8_t> bytes);
+    std::string bytes_to_hex(const uint8_t* data, size_t size);
     std::vector<uint8_t> hex_string_to_bytes(const std::string& hex_string);
 
     std::optional<std::vector<uint8_t>> read_file(const fs::path& path);

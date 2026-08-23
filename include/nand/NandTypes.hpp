@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <optional>
 
 #pragma pack(push, 1)
 
@@ -134,10 +135,12 @@ struct MobileBlockPlacement {
     uint8_t block_type = 0;
     uint16_t start_block = 0;
     uint16_t block_count = 0;
+    uint32_t sequence = 1;
+    uint32_t data_size = 0;
 };
 
 struct NandLayout {
-    uint16_t fs_root_block = 0;
+    std::optional<uint16_t> fs_root_block;
     uint32_t fs_version = 1;
     uint16_t fs_size = 0;
     std::vector<MobileBlockPlacement> mobile_blocks;

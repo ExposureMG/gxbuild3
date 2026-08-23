@@ -114,7 +114,14 @@ void BootloaderCb::decrypt_v2(const cb_header& cb_a_hdr, const uint8_t cb_a_key[
     if (data.size() < payload_len)
         data.resize(payload_len, 0x00);
 
-    std::memcpy(cb_a_hdr_copy, &cb_a_hdr, 16);
+    generic_header be_hdr = cb_a_hdr.header;
+    be_hdr.magic = bswap16(be_hdr.magic);
+    be_hdr.version = bswap16(be_hdr.version);
+    be_hdr.flags = bswap16(be_hdr.flags);
+    be_hdr.size = bswap32(be_hdr.size);
+    be_hdr.entrypoint = bswap32(be_hdr.entrypoint);
+
+    std::memcpy(cb_a_hdr_copy, &be_hdr, 16);
     cb_a_hdr_copy[6] = 0;
     cb_a_hdr_copy[7] = 0;
 

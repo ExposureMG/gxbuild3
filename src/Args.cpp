@@ -301,8 +301,26 @@ bool OptionsManager::parse(std::string_view raw_args) {
                     all_ok = false;
                 }
             } else {
-                if (!set(token, "true")) {
-                    all_ok = false;
+                if (!token.empty()) {
+                    size_t eq_pos = token.find('=');
+                    if (eq_pos != std::string_view::npos) {
+                        std::string_view k = token.substr(0, eq_pos);
+                        std::string_view v = token.substr(eq_pos + 1);
+                        if (!set(k, v)) {
+                            all_ok = false;
+                        }
+                    } else if (is_bool_option(token)) {
+                        // Bare flag with no "=value" — implicit "true", valid only
+                        // for boolean-typed options.
+                        if (!set(token, "true")) {
+                            all_ok = false;
+                        }
+                    } else {
+                        // A string-valued option given with no value is a missing
+                        // argument, not an implicit "true" — don't silently store
+                        // the literal string "true" into it.
+                        all_ok = false;
+                    }
                 }
             }
         }

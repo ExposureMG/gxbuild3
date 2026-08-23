@@ -11,6 +11,8 @@
 #include <filesystem>
 #include <span>
 #include <string>
+#include <stdexcept>
+#include <unordered_map>
 #include <vector>
 
 namespace gxbuild3::utils {
@@ -50,7 +52,140 @@ namespace gxbuild3::utils {
             return std::nullopt;
         }
 
+        struct StfsAssets {
+            std::filesystem::path stfs_path;
+            std::unordered_map<std::string, std::vector<uint8_t>> files;
+        };
+
+        std::optional<StfsAssets> load_stfs_from_dir(const std::filesystem::path& dir) {
+            auto p = find_stfs_file(dir);
+            if (!p)
+                return std::nullopt;
+
+            auto stfs_data = read_file(*p);
+            if (!stfs_data)
+                return std::nullopt;
+
+            std::span<const std::byte> span(
+                reinterpret_cast<const std::byte*>(stfs_data->data()),
+                stfs_data->size()
+            );
+
+            StfsAssets assets;
+            assets.stfs_path = *p;
+
+            try {
+                const Stfs::StfsContainer container(span);
+                auto extracted = container.extractToMemory();
+
+                auto xbu_it = extracted.find("xboxupd.bin");
+                if (xbu_it != extracted.end()) {
+                    std::span<const std::byte> xbu_span(xbu_it->second.data(), xbu_it->second.size());
+                    try {
+                        auto parts = bootloaders::split_xboxupd_raw(xbu_span);
+                        if (!parts.cf_raw.empty()) {
+                            for (const char* key : {"cf", "6bl", "cf_split"})
+                                assets.files.emplace(key, parts.cf_raw);
+                        }
+                        if (!parts.cg_raw.empty()) {
+                            for (const char* key : {"cg", "7bl", "cg_split"})
+                                assets.files.emplace(key, parts.cg_raw);
+                        }
+                        Log::Debug("Split xboxupd.bin from STFS '{}' into CF ({} bytes) and CG ({} bytes)",
+                                   p->string(), parts.cf_raw.size(), parts.cg_raw.size());
+                    } catch (const std::exception& e) {
+                        Log::Warn("Failed to split xboxupd.bin from STFS '{}': {}", p->string(), e.what());
+                    }
+                }
+
+                for (auto& [k, v] : extracted) {
+                    std::vector<uint8_t> out;
+                    out.reserve(v.size());
+                    for (auto b : v)
+                        out.push_back(std::to_integer<uint8_t>(b));
+                    assets.files.emplace(k, std::move(out));
+                }
+
+                Log::Info("Loaded {} files from STFS '{}'", assets.files.size(), p->string());
+            } catch (const std::exception& e) {
+                Log::Warn("Failed to extract STFS '{}': {}", p->string(), e.what());
+                return std::nullopt;
+            }
+
+            return assets;
+        }
+
     } // namespace
+
+    std::unordered_map<std::string, std::filesystem::path> FindFiles(
+        const std::vector<std::string>& filenames,
+        const std::vector<std::filesystem::path>& search_paths
+    ) {
+        std::unordered_map<std::string, std::filesystem::path> result;
+        std::unordered_map<std::string, std::string> key_to_original;
+
+        for (const auto& name : filenames) {
+            std::string key = normalize_file_key(name);
+            key_to_original[key] = name;
+        }
+
+        auto remaining = [&] {
+            std::vector<std::string> keys;
+            for (const auto& [k, _] : key_to_original)
+                if (!result.count(k))
+                    keys.push_back(k);
+            return keys;
+        };
+
+        for (const auto& search_path : search_paths) {
+            if (!std::filesystem::exists(search_path) || !std::filesystem::is_directory(search_path))
+                continue;
+
+            auto pending = remaining();
+            if (pending.empty())
+                break;
+
+            for (const auto& key : pending) {
+                const auto candidate = search_path / std::filesystem::path(key_to_original.at(key));
+                if (std::filesystem::exists(candidate) && std::filesystem::is_regular_file(candidate)) {
+                    Log::Debug("FindFiles: found '{}' as loose file at '{}'", key_to_original.at(key), candidate.string());
+                    result[key] = candidate;
+                }
+            }
+
+            pending = remaining();
+            if (pending.empty())
+                break;
+
+            if (auto stfs = load_stfs_from_dir(search_path)) {
+                for (const auto& key : pending) {
+                    auto it = stfs->files.find(key);
+                    if (it == stfs->files.end()) {
+                        const std::string stem = std::filesystem::path(key).stem().string();
+                        it = stfs->files.find(stem);
+                    }
+                    if (it != stfs->files.end()) {
+                        const auto tmp_path = search_path / ("__stfs_extracted__" + key);
+                        Log::Debug("FindFiles: found '{}' inside STFS '{}' ({} bytes)",
+                                   key_to_original.at(key), stfs->stfs_path.string(), it->second.size());
+                        result[key] = stfs->stfs_path;
+                    }
+                }
+            }
+        }
+
+        auto pending = remaining();
+        if (!pending.empty()) {
+            std::string missing;
+            for (const auto& k : pending) {
+                if (!missing.empty()) missing += ", ";
+                missing += key_to_original.at(k);
+            }
+            throw std::runtime_error("FindFiles: could not locate required file(s): " + missing);
+        }
+
+        return result;
+    }
 
     std::optional<IniFilesResult> ReadIniFiles(
         std::string_view version,

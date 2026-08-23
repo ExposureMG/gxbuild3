@@ -71,7 +71,7 @@ namespace gxbuild3::NAND {
         void write_page_spare(size_t page, std::span<const uint8_t> spare);
 
         std::vector<uint8_t> read_block(size_t block_idx) const;
-        void write_block(size_t block_idx, std::span<const uint8_t> data);
+        bool write_block(size_t block_idx, std::span<const uint8_t> data);
 
         std::span<const uint8_t> read_block_raw(size_t block_idx) const;
         std::span<uint8_t> read_block_raw(size_t block_idx);
@@ -90,7 +90,7 @@ namespace gxbuild3::NAND {
         std::span<const uint8_t> read_offset(size_t offset, size_t length = 1) const;
         std::span<uint8_t> read_offset(size_t offset, size_t length = 1);
         std::vector<uint8_t> read_clean(size_t offset, size_t length) const;
-        void write_offset(size_t offset, std::span<const uint8_t> data);
+        bool write_offset(size_t offset, std::span<const uint8_t> data);
 
         std::vector<uint8_t>& serialize();
         const std::vector<uint8_t>& serialize() const;
@@ -102,6 +102,7 @@ namespace gxbuild3::NAND {
         ImageSize m_image_size;
         size_t m_page_size;
         NandLayout m_layout;
+        mutable std::vector<uint8_t> m_offset_scratch;
     };
 
 } // namespace gxbuild3::NAND

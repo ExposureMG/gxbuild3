@@ -7,6 +7,24 @@
 
 namespace gxbuild3::utils {
 
+std::string bytes_to_hex(std::span<const uint8_t> bytes) {
+    static constexpr char hex_chars[] = "0123456789ABCDEF";
+    std::string hex;
+    hex.reserve(bytes.size() * 2);
+    for (uint8_t b : bytes) {
+        hex.push_back(hex_chars[(b >> 4) & 0x0F]);
+        hex.push_back(hex_chars[b & 0x0F]);
+    }
+    return hex;
+}
+
+std::string bytes_to_hex(const uint8_t* data, size_t size) {
+    if (!data || size == 0) {
+        return "";
+    }
+    return bytes_to_hex(std::span<const uint8_t>(data, size));
+}
+
 std::vector<uint8_t> hex_string_to_bytes(const std::string& hex_string) {
     std::vector<uint8_t> bytes;
 

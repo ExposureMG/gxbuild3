@@ -76,13 +76,13 @@ namespace gxbuild3::NAND {
     std::vector<uint16_t> FlashFileSystem::get_chain(uint16_t start_block) const {
         std::vector<uint16_t> chain;
         std::unordered_set<uint16_t> visited;
-        uint16_t current = start_block;
+        uint16_t current = start_block & 0x7FFF;
 
-        while (current < BlockMapStatus::BadBlock && current < m_blockmap.size() &&
+        while (current < (BlockMapStatus::Reserved & 0x7FFF) && current < m_blockmap.size() &&
                visited.insert(current).second) {
             chain.push_back(current);
-            uint16_t next = m_blockmap[current];
-            if (next >= BlockMapStatus::BadBlock) {
+            uint16_t next = m_blockmap[current] & 0x7FFF;
+            if (next >= (BlockMapStatus::Reserved & 0x7FFF)) {
                 break;
             }
             current = next;
@@ -300,7 +300,9 @@ namespace gxbuild3::NAND {
         }
 
         auto root_data = serialize_root_block();
-        m_driver->write_block(m_root_block, root_data);
+        if (!m_driver->write_block(m_root_block, root_data)) {
+            return false;
+        }
 
         BlockMetadata root_meta{};
         root_meta.logical_block_id = m_root_block;
@@ -332,7 +334,9 @@ namespace gxbuild3::NAND {
                 size_t chunk_len =
                     std::min<size_t>(file_bytes.size() - bytes_written, kCleanBlockSize);
                 std::span<const uint8_t> chunk(file_bytes.data() + bytes_written, chunk_len);
-                m_driver->write_block(blk, chunk);
+                if (!m_driver->write_block(blk, chunk)) {
+                    return false;
+                }
 
                 // Metadata already written by allocate_block(); update page_count only
                 BlockMetadata file_meta{};

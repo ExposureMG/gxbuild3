@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 project(GxBuild3 LANGUAGES CXX)
 
+include(CTest)
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
@@ -88,12 +90,29 @@ target_link_libraries(gxbuild3 PRIVATE
     spdlog::spdlog
 )
 
+if(BUILD_TESTING)
+    add_executable(gxbuild3_flashdriver_tests tests/FlashDriverTests.cpp)
+
+    target_compile_features(gxbuild3_flashdriver_tests PRIVATE cxx_std_23)
+    set_target_properties(gxbuild3_flashdriver_tests PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+
+    target_link_libraries(gxbuild3_flashdriver_tests PRIVATE gxbuild3_lib)
+    add_test(NAME gxbuild3_flashdriver_tests COMMAND gxbuild3_flashdriver_tests)
+endif()
+
 if(MSVC)
     target_compile_options(gxbuild3_lib PRIVATE /W4 /WX /permissive- /utf-8)
     target_compile_options(gxbuild3 PRIVATE /W4 /WX /permissive- /utf-8)
 else()
     target_compile_options(gxbuild3_lib PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(gxbuild3 PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    if(BUILD_TESTING)
+        target_compile_options(gxbuild3_flashdriver_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
 endif()
 
 include(GNUInstallDirs)

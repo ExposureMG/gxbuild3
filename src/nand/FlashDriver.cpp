@@ -35,6 +35,29 @@ namespace gxbuild3::NAND {
         }
 
         m_nand_image.assign(initial_size, 0);
+
+        if (m_page_size == 528) {
+            std::vector<uint8_t> spare(16, 0);
+            spare[m_driver_mode == DriverMode::Big ? 0 : 5] = 0xFF;
+            for (size_t page = 0; page < m_nand_image.size() / m_page_size; ++page) {
+                write_page_spare(page, spare);
+            }
+
+            const size_t ppb = pages_per_block();
+            for (size_t block = 0; block < block_count(); ++block) {
+                std::fill(spare.begin(), spare.end(), 0);
+                spare[m_driver_mode == DriverMode::Big ? 0 : 5] = 0xFF;
+                const uint16_t block_id = static_cast<uint16_t>(block);
+                if (m_driver_mode == DriverMode::Big || m_driver_mode == DriverMode::NewSmall) {
+                    spare[1] = static_cast<uint8_t>(block_id & 0xFF);
+                    spare[2] = static_cast<uint8_t>((block_id >> 8) & 0x0F);
+                } else {
+                    spare[0] = static_cast<uint8_t>(block_id & 0xFF);
+                    spare[1] = static_cast<uint8_t>((block_id >> 8) & 0x0F);
+                }
+                write_page_spare(block * ppb, spare);
+            }
+        }
     }
 
     Driver::Driver(std::vector<uint8_t> image)
@@ -278,21 +301,23 @@ namespace gxbuild3::NAND {
         return read_data(block_idx * ppb, ppb);
     }
 
-    void Driver::write_block(size_t block_idx, std::span<const uint8_t> data) {
+    bool Driver::write_block(size_t block_idx, std::span<const uint8_t> data) {
+        if (block_idx >= block_count() || data.size() > block_size_clean()) {
+            return false;
+        }
+
         if (m_driver_mode == DriverMode::Emmc) {
             size_t offset = block_idx * 0x4000;
-            if (offset >= m_nand_image.size()) {
-                return;
-            }
-            size_t write_len = std::min<size_t>(data.size(), std::min<size_t>(0x4000, m_nand_image.size() - offset));
+            size_t write_len = data.size();
             std::copy_n(data.data(), write_len, m_nand_image.data() + offset);
             if (write_len < 0x4000 && offset + 0x4000 <= m_nand_image.size()) {
                 std::fill_n(m_nand_image.data() + offset + write_len, 0x4000 - write_len, 0);
             }
-            return;
+            return true;
         }
         size_t ppb = pages_per_block();
         write_data(block_idx * ppb, data);
+        return true;
     }
 
     std::span<const uint8_t> Driver::read_block_raw(size_t block_idx) const {
@@ -338,10 +363,9 @@ namespace gxbuild3::NAND {
             }
 
             meta.logical_block_id = static_cast<uint16_t>(((spare[2] & 0x0F) << 8) | spare[1]);
-            meta.sequence = static_cast<uint32_t>(spare[5] | (spare[3] << 8) | (spare[4] << 16) |
-                                                  (spare[6] << 24));
+            meta.sequence = static_cast<uint32_t>(spare[5] | (spare[4] << 8) | (spare[3] << 16));
             meta.fs_size = static_cast<uint16_t>(spare[7] | (spare[8] << 8));
-            meta.block_type = spare[0xC];
+            meta.block_type = spare[0xC] & 0x3F;
             meta.page_count = spare[0x9];
         } else if (m_driver_mode == DriverMode::NewSmall) {
             // PSB/NewSmall layout (spare type 1):
@@ -360,7 +384,7 @@ namespace gxbuild3::NAND {
             meta.sequence = static_cast<uint32_t>(spare[0] | (spare[3] << 8) | (spare[4] << 16) |
                                                   (spare[6] << 24));
             meta.fs_size = static_cast<uint16_t>(spare[7] | (spare[8] << 8));
-            meta.block_type = spare[0xC];
+            meta.block_type = spare[0xC] & 0x3F;
             meta.page_count = spare[0x9];
         } else {
             // XSB/Small layout (spare type 0):
@@ -379,7 +403,7 @@ namespace gxbuild3::NAND {
             meta.sequence = static_cast<uint32_t>(spare[2] | (spare[3] << 8) | (spare[4] << 16) |
                                                   (spare[6] << 24));
             meta.fs_size = static_cast<uint16_t>(spare[7] | (spare[8] << 8));
-            meta.block_type = spare[0xC];
+            meta.block_type = spare[0xC] & 0x3F;
             meta.page_count = spare[0x9];
         }
 
@@ -468,11 +492,10 @@ namespace gxbuild3::NAND {
                 spare_data[2] = static_cast<uint8_t>((spare_data[2] & 0xF0) |
                                                      ((meta.logical_block_id >> 8) & 0x0F));
                 spare_data[5] = static_cast<uint8_t>(meta.sequence & 0xFF);
-                spare_data[3] = static_cast<uint8_t>((meta.sequence >> 8) & 0xFF);
-                spare_data[4] = static_cast<uint8_t>((meta.sequence >> 16) & 0xFF);
-                spare_data[6] = static_cast<uint8_t>((meta.sequence >> 24) & 0xFF);
+                spare_data[4] = static_cast<uint8_t>((meta.sequence >> 8) & 0xFF);
+                spare_data[3] = static_cast<uint8_t>((meta.sequence >> 16) & 0xFF);
                 spare_data[9] = meta.page_count;
-                spare_data[0xC] = meta.block_type;
+                spare_data[0xC] = meta.block_type & 0x3F;
             } else if (m_driver_mode == DriverMode::NewSmall) {
                 // PSB/NewSmall layout (spare type 1):
                 //   block_id: low byte at spare[1], high nibble at spare[2]
@@ -492,7 +515,7 @@ namespace gxbuild3::NAND {
                 spare_data[4] = static_cast<uint8_t>((meta.sequence >> 16) & 0xFF);
                 spare_data[6] = static_cast<uint8_t>((meta.sequence >> 24) & 0xFF);
                 spare_data[9] = meta.page_count;
-                spare_data[0xC] = meta.block_type;
+                spare_data[0xC] = meta.block_type & 0x3F;
             } else {
                 // XSB/Small layout (spare type 0):
                 //   block_id: low byte at spare[0], high nibble at spare[1]
@@ -512,7 +535,7 @@ namespace gxbuild3::NAND {
                 spare_data[4] = static_cast<uint8_t>((meta.sequence >> 16) & 0xFF);
                 spare_data[6] = static_cast<uint8_t>((meta.sequence >> 24) & 0xFF);
                 spare_data[9] = meta.page_count;
-                spare_data[0xC] = meta.block_type;
+                spare_data[0xC] = meta.block_type & 0x3F;
             }
 
             if (meta.fs_size != 0) {
@@ -619,11 +642,27 @@ namespace gxbuild3::NAND {
 
         size_t offintopage = offset % 512;
         size_t pageinimage = offset / 512;
-        size_t raw_pos = pageinimage * m_page_size + offintopage;
-        if (raw_pos + length > m_nand_image.size()) {
+
+        // Fast path: the whole range sits inside one page's clean 512 bytes,
+        // so it maps to a single contiguous raw run with no spare bytes
+        // inside it — safe to return a span straight into m_nand_image.
+        if (offintopage + length <= 512) {
+            size_t raw_pos = pageinimage * m_page_size + offintopage;
+            if (raw_pos + length > m_nand_image.size()) {
+                return {};
+            }
+            return {m_nand_image.data() + raw_pos, length};
+        }
+
+        // Slow path: the range crosses one or more 16-byte spare gaps, so it
+        // has no contiguous representation in m_nand_image. De-interleave it
+        // into the scratch buffer (same logic as read_clean) and return a
+        // span into that. Valid until the next call that repopulates it.
+        m_offset_scratch = read_clean(offset, length);
+        if (m_offset_scratch.size() != length) {
             return {};
         }
-        return {m_nand_image.data() + raw_pos, length};
+        return {m_offset_scratch.data(), m_offset_scratch.size()};
     }
 
     std::span<uint8_t> Driver::read_offset(size_t offset, size_t length) {
@@ -636,6 +675,16 @@ namespace gxbuild3::NAND {
 
         size_t offintopage = offset % 512;
         size_t pageinimage = offset / 512;
+
+        // A mutable span must alias the real backing storage so writes
+        // through it land in m_nand_image — only possible when the whole
+        // range fits inside one page's clean region. Ranges spanning spare
+        // gaps have no contiguous mutable representation; use write_offset()
+        // for those instead.
+        if (offintopage + length > 512) {
+            return {};
+        }
+
         size_t raw_pos = pageinimage * m_page_size + offintopage;
         if (raw_pos + length > m_nand_image.size()) {
             return {};
@@ -643,16 +692,19 @@ namespace gxbuild3::NAND {
         return {m_nand_image.data() + raw_pos, length};
     }
 
-    void Driver::write_offset(size_t offset, std::span<const uint8_t> data) {
+    bool Driver::write_offset(size_t offset, std::span<const uint8_t> data) {
         if (data.empty()) {
-            return;
+            return true;
         }
+
+        const size_t clean_size = block_count() * block_size_clean();
+        if (offset > clean_size || data.size() > clean_size - offset) {
+            return false;
+        }
+
         if (m_driver_mode == DriverMode::Emmc || m_page_size == 512) {
-            if (offset + data.size() > m_nand_image.size()) {
-                return;
-            }
             std::copy(data.begin(), data.end(), m_nand_image.begin() + offset);
-            return;
+            return true;
         }
 
         size_t offintopage = offset % 512;
@@ -665,15 +717,12 @@ namespace gxbuild3::NAND {
             size_t copyfrom_idx = (currpage * 512) - (currpage > 0 ? (offset % 512) : 0);
             size_t copyto_idx = (pageinimage + currpage) * m_page_size + offintopage;
 
-            if (copyto_idx + write_len > m_nand_image.size()) {
-                break;
-            }
-
             std::memcpy(m_nand_image.data() + copyto_idx, data.data() + copyfrom_idx, write_len);
             offintopage = 0;
             towrite -= write_len;
             currpage++;
         }
+        return true;
     }
 
     namespace {
@@ -725,7 +774,7 @@ namespace gxbuild3::NAND {
                 meta.logical_block_id = static_cast<uint16_t>(blk);
                 meta.is_bad = false;
 
-                if (m_layout.fs_root_block != 0 && blk == m_layout.fs_root_block) {
+                if (m_layout.fs_root_block && blk == *m_layout.fs_root_block) {
                     meta.block_type = 0x30;
                     meta.sequence = m_layout.fs_version;
                     meta.fs_size = m_layout.fs_size;
@@ -735,7 +784,19 @@ namespace gxbuild3::NAND {
                     for (const auto& mob : m_layout.mobile_blocks) {
                         if (blk >= mob.start_block && blk < mob.start_block + mob.block_count) {
                             meta.block_type = mob.block_type;
-                            meta.sequence = 1;
+                            meta.sequence = mob.sequence;
+                            const size_t block_offset = blk - mob.start_block;
+                            const size_t data_offset = block_offset * block_size_clean();
+                            if (data_offset < mob.data_size) {
+                                const size_t chunk_len =
+                                    std::min(block_size_clean(), mob.data_size - data_offset);
+                                const size_t page_count = (chunk_len + 511) / 512;
+                                meta.page_count =
+                                    page_count >= pages_per_block() ? 0 : static_cast<uint8_t>(page_count);
+                                if (block_offset == 0 && mob.data_size <= 0xFFFF) {
+                                    meta.fs_size = static_cast<uint16_t>(mob.data_size);
+                                }
+                            }
                             write_block_metadata(blk, meta);
                             is_mobile = true;
                             break;

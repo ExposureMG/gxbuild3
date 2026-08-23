@@ -34,19 +34,21 @@ bool crypt_single_bl(std::span<uint8_t> data, HmacType hmac_type, uint8_t cur_ke
         return false;
     }
 
+    const size_t nonce_offset = (crypt_start >= 0x20) ? (crypt_start - 0x10) : 0x10;
+
     switch (hmac_type) {
         case HmacType::Default:
-            hmac_sha1_16(cur_key, data.data() + 16, 16, nullptr, 0, nullptr, 0, cur_key);
+            hmac_sha1_16(cur_key, data.data() + nonce_offset, 16, nullptr, 0, nullptr, 0, cur_key);
             break;
         case HmacType::Hmac1920:
-            hmac_sha1_16(cur_key, data.data() + 16, 16, nullptr, 0, nullptr, 0, cur_key);
+            hmac_sha1_16(cur_key, data.data() + nonce_offset, 16, nullptr, 0, nullptr, 0, cur_key);
             hmac_sha1_16(cpu_key, cur_key, 16, nullptr, 0, nullptr, 0, cur_key);
             break;
         case HmacType::Split:
-            hmac_sha1_16(cur_key, data.data() + 16, 16, cpu_key, 16, nullptr, 0, cur_key);
+            hmac_sha1_16(cur_key, data.data() + nonce_offset, 16, cpu_key, 16, nullptr, 0, cur_key);
             break;
         case HmacType::Split15574:
-            hmac_sha1_16(cur_key, data.data() + 16, 16, cpu_key, 16, cba_hdr, 16, cur_key);
+            hmac_sha1_16(cur_key, data.data() + nonce_offset, 16, cpu_key, 16, cba_hdr, 16, cur_key);
             break;
     }
 

@@ -17,6 +17,7 @@
 #include <array>
 #include <cstring>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace gxbuild3::NAND {
@@ -35,6 +36,33 @@ namespace {
 
     inline constexpr uint32_t align_16(uint32_t value) noexcept {
         return (value + 0x0FU) & ~0x0FU;
+    }
+
+    std::optional<size_t> smc_config_offset(const Driver& driver) {
+        const size_t total_blocks = driver.block_count();
+        if (total_blocks < 4 || driver.block_size_clean() == 0) {
+            return std::nullopt;
+        }
+
+        size_t reserve_block = 0;
+        switch (driver.driver_mode()) {
+            case Driver::DriverMode::Big:
+                reserve_block = 0x1E0;
+                break;
+            case Driver::DriverMode::Emmc:
+                reserve_block = 0xC00;
+                break;
+            case Driver::DriverMode::Small:
+            case Driver::DriverMode::NewSmall:
+                reserve_block = 0x3E0;
+                break;
+        }
+
+        reserve_block = std::min(reserve_block, total_blocks);
+        if (reserve_block < 4) {
+            return std::nullopt;
+        }
+        return (reserve_block - 4) * driver.block_size_clean();
     }
 
 } // namespace
@@ -61,7 +89,7 @@ bool FlashImage::parse() {
         return false;
     }
 
-    auto header_span = flash_driver.read_offset(0, sizeof(nand_header));
+    auto header_span = std::as_const(flash_driver).read_offset(0, sizeof(nand_header));
     if (header_span.size() < sizeof(nand_header)) {
         Log::Error("Failed to read NAND header");
         return false;
@@ -109,13 +137,13 @@ bool FlashImage::parse() {
 
     size_t cursor = kEntryOffset;
     while (cursor + sizeof(generic_header) <= image_bytes.size()) {
-        auto bldr_hdr_span = flash_driver.read_offset(cursor, sizeof(generic_header));
-        if (bldr_hdr_span.size() < sizeof(generic_header)) {
+        auto bldr_hdr_bytes = flash_driver.read_clean(cursor, sizeof(generic_header));
+        if (bldr_hdr_bytes.size() < sizeof(generic_header)) {
             break;
         }
 
         generic_header bldr_hdr{};
-        std::memcpy(&bldr_hdr, bldr_hdr_span.data(), sizeof(generic_header));
+        std::memcpy(&bldr_hdr, bldr_hdr_bytes.data(), sizeof(generic_header));
 
         uint16_t magic = bswap16(bldr_hdr.magic);
         uint16_t version = bswap16(bldr_hdr.version);
@@ -161,13 +189,13 @@ bool FlashImage::parse() {
         if (base_offset + sizeof(generic_header) > image_bytes.size()) {
             return;
         }
-        auto slot_hdr_span = flash_driver.read_offset(base_offset, sizeof(generic_header));
-        if (slot_hdr_span.size() < sizeof(generic_header)) {
+        auto slot_hdr_bytes = flash_driver.read_clean(base_offset, sizeof(generic_header));
+        if (slot_hdr_bytes.size() < sizeof(generic_header)) {
             return;
         }
 
         generic_header slot_hdr{};
-        std::memcpy(&slot_hdr, slot_hdr_span.data(), sizeof(generic_header));
+        std::memcpy(&slot_hdr, slot_hdr_bytes.data(), sizeof(generic_header));
         if (bswap16(slot_hdr.magic) == 0x4346) {
             uint32_t cf_size = bswap32(slot_hdr.size);
             if (cf_size > 0 && base_offset + cf_size <= image_bytes.size()) {
@@ -176,10 +204,10 @@ bool FlashImage::parse() {
 
                 size_t cg_offset = base_offset + align_16(cf_size);
                 if (cg_offset + sizeof(generic_header) <= image_bytes.size()) {
-                    auto cg_hdr_span = flash_driver.read_offset(cg_offset, sizeof(generic_header));
-                    if (cg_hdr_span.size() == sizeof(generic_header)) {
+                    auto cg_hdr_bytes = flash_driver.read_clean(cg_offset, sizeof(generic_header));
+                    if (cg_hdr_bytes.size() == sizeof(generic_header)) {
                         generic_header cg_hdr{};
-                        std::memcpy(&cg_hdr, cg_hdr_span.data(), sizeof(generic_header));
+                        std::memcpy(&cg_hdr, cg_hdr_bytes.data(), sizeof(generic_header));
                         if (bswap16(cg_hdr.magic) == 0x4347) {
                             uint32_t cg_size = bswap32(cg_hdr.size);
                             if (cg_size > 0 && cg_offset + cg_size <= image_bytes.size()) {
@@ -199,9 +227,8 @@ bool FlashImage::parse() {
     const size_t total_blocks = flash_driver.block_count();
     const size_t block_size = flash_driver.block_size_clean();
 
-    if (total_blocks >= 4 && block_size > 0) {
-        const size_t smc_cfg_offset = (total_blocks - 4) * block_size;
-        auto cfg_bytes = flash_driver.read_offset(smc_cfg_offset, 0x10000);
+    if (auto cfg_offset = smc_config_offset(flash_driver)) {
+        auto cfg_bytes = std::as_const(flash_driver).read_offset(*cfg_offset, 0x10000);
         if (!cfg_bytes.empty()) {
             smc_config = SmcConfig::parse(cfg_bytes, 0);
         }
@@ -210,7 +237,7 @@ bool FlashImage::parse() {
     if (flash_driver.driver_mode() == Driver::DriverMode::Emmc) {
         if (total_blocks >= 6) {
             const size_t cc_offset = (total_blocks - 6) * 0x4000;
-            auto cc_bytes = flash_driver.read_offset(cc_offset, 0x200);
+            auto cc_bytes = std::as_const(flash_driver).read_offset(cc_offset, 0x200);
             if (!cc_bytes.empty()) {
                 corona_config = CoronaConfig::parse(cc_bytes);
             }
@@ -221,7 +248,7 @@ bool FlashImage::parse() {
             if (corona_config->data.wMobile1Length > 0) {
                 size_t m1_offset = static_cast<size_t>(corona_config->data.wMobile1BlockIdx) * 0x4000;
                 size_t m1_len = static_cast<size_t>(corona_config->data.wMobile1Length) * 0x4000;
-                auto m1_span = flash_driver.read_offset(m1_offset, m1_len);
+                auto m1_span = std::as_const(flash_driver).read_offset(m1_offset, m1_len);
                 if (!m1_span.empty()) {
                     mob.x31 = std::vector<uint8_t>(m1_span.begin(), m1_span.end());
                 }
@@ -229,7 +256,7 @@ bool FlashImage::parse() {
             if (corona_config->data.wMobile2Length > 0) {
                 size_t m2_offset = static_cast<size_t>(corona_config->data.wMobile2BlockIdx) * 0x4000;
                 size_t m2_len = static_cast<size_t>(corona_config->data.wMobile2Length) * 0x4000;
-                auto m2_span = flash_driver.read_offset(m2_offset, m2_len);
+                auto m2_span = std::as_const(flash_driver).read_offset(m2_offset, m2_len);
                 if (!m2_span.empty()) {
                     mob.x32 = std::vector<uint8_t>(m2_span.begin(), m2_span.end());
                 }
@@ -244,16 +271,64 @@ bool FlashImage::parse() {
             }
         }
     } else {
-        MobileData mob{};
+        struct MobileCandidate {
+            uint32_t sequence = 0;
+            std::vector<std::pair<size_t, BlockMetadata>> blocks;
+        };
+
+        std::array<std::vector<MobileCandidate>, 9> candidates;
         for (size_t blk = 0; blk < total_blocks; ++blk) {
             auto meta = flash_driver.interpret_block(blk);
-            if (is_mobile_block_type(meta.block_type)) {
-                auto* slot = mob.get_slot(meta.block_type);
-                if (slot && !(*slot)) {
-                    auto blk_data = flash_driver.read_block(blk);
-                    if (!blk_data.empty()) {
-                        *slot = std::move(blk_data);
-                    }
+            if (!is_mobile_block_type(meta.block_type) || meta.is_bad) {
+                continue;
+            }
+
+            auto& type_candidates = candidates[meta.block_type - 0x31];
+            if (type_candidates.empty() || type_candidates.back().sequence != meta.sequence ||
+                type_candidates.back().blocks.back().first + 1 != blk) {
+                type_candidates.push_back(MobileCandidate{meta.sequence, {}});
+            }
+            type_candidates.back().blocks.emplace_back(blk, meta);
+        }
+
+        MobileData mob{};
+        for (size_t type_idx = 0; type_idx < candidates.size(); ++type_idx) {
+            auto& type_candidates = candidates[type_idx];
+            if (type_candidates.empty()) {
+                continue;
+            }
+
+            const auto& latest = *std::max_element(
+                type_candidates.begin(), type_candidates.end(),
+                [](const MobileCandidate& lhs, const MobileCandidate& rhs) {
+                    return lhs.sequence < rhs.sequence;
+                });
+
+            std::vector<uint8_t> data;
+            for (size_t block_pos = 0; block_pos < latest.blocks.size(); ++block_pos) {
+                const auto [block_idx, meta] = latest.blocks[block_pos];
+                auto block_data = flash_driver.read_block(block_idx);
+                if (block_data.empty()) {
+                    data.clear();
+                    break;
+                }
+                data.insert(data.end(), block_data.begin(), block_data.end());
+                if (block_pos + 1 == latest.blocks.size() && meta.page_count > 0 &&
+                    meta.page_count < flash_driver.pages_per_block()) {
+                    const size_t valid_size =
+                        (latest.blocks.size() - 1) * block_size + meta.page_count * 512;
+                    data.resize(std::min(valid_size, data.size()));
+                }
+            }
+
+            if (!data.empty()) {
+                const auto& first_meta = latest.blocks.front().second;
+                if (first_meta.fs_size > 0 && first_meta.fs_size < data.size()) {
+                    data.resize(first_meta.fs_size);
+                }
+                auto* slot = mob.get_slot(static_cast<uint8_t>(type_idx + 0x31));
+                if (slot) {
+                    *slot = std::move(data);
                 }
             }
         }
@@ -281,15 +356,15 @@ bool FlashImage::parse() {
         }
     }
 
-    if (kJTAGRebooterOffset + sizeof(generic_header) <= image_bytes.size()) {
-        auto reb_span = flash_driver.read_offset(kJTAGRebooterOffset, 0x1000);
+    if (kJTAGRebooterOffset + 0x1000 <= image_bytes.size()) {
+        auto reb_span = std::as_const(flash_driver).read_offset(kJTAGRebooterOffset, 0x1000);
         if (!reb_span.empty() && std::any_of(reb_span.begin(), reb_span.end(), [](uint8_t b) { return b != 0x00 && b != 0xFF; })) {
             payloads.rebooter = std::vector<uint8_t>(reb_span.begin(), reb_span.end());
         }
     }
 
     if (kJTAGvFusesOffset + 0x60 <= image_bytes.size()) {
-        auto fuse_span = flash_driver.read_offset(kJTAGvFusesOffset, 0x60);
+        auto fuse_span = std::as_const(flash_driver).read_offset(kJTAGvFusesOffset, 0x60);
         if (!fuse_span.empty() && std::any_of(fuse_span.begin(), fuse_span.end(), [](uint8_t b) { return b != 0x00 && b != 0xFF; })) {
             payloads.fuses = std::vector<uint8_t>(fuse_span.begin(), fuse_span.end());
         }
@@ -297,14 +372,14 @@ bool FlashImage::parse() {
 
     constexpr uint32_t kJtagXellOffset = kJTAGvFusesOffset + 0x60;
     if (kJtagXellOffset + 0x40000 <= image_bytes.size()) {
-        auto xell_span = flash_driver.read_offset(kJtagXellOffset, 0x40000);
+        auto xell_span = std::as_const(flash_driver).read_offset(kJtagXellOffset, 0x40000);
         if (xell_span.size() == 0x40000) {
             payloads.xell = XeLL::parse(xell_span);
         }
     }
 
     if (!payloads.xell && patch_base + 0x40000 <= image_bytes.size()) {
-        auto xell_span = flash_driver.read_offset(patch_base, 0x40000);
+        auto xell_span = std::as_const(flash_driver).read_offset(patch_base, 0x40000);
         if (xell_span.size() == 0x40000) {
             payloads.xell = XeLL::parse(xell_span);
         }
@@ -328,8 +403,12 @@ bool FlashImage::write_to_driver() const {
     const size_t block_size = driver.block_size_clean();
 
     const size_t smc_len = smc ? smc->data.size() : 0x3000;
+    if (smc_len > kKeyvaultOffset - sizeof(nand_header)) {
+        Log::Error("SMC payload (0x{:X} bytes) does not fit before the keyvault", smc_len);
+        return false;
+    }
     const uint32_t smc_offset = kKeyvaultOffset - static_cast<uint32_t>(smc_len);
-    const size_t smc_cfg_offset = (total_blocks >= 4) ? (total_blocks - 4) * block_size : 0;
+    const auto smc_cfg_offset = smc_config_offset(driver);
 
     nand_header raw{};
     raw.magic = bswap16(header.magic ? header.magic : 0xFF4F);
@@ -346,76 +425,128 @@ bool FlashImage::write_to_driver() const {
     raw.kv_version = bswap16(header.kv_version ? header.kv_version : 0x0712);
     raw.kv_addr = bswap32(header.kv_addr ? header.kv_addr : kKeyvaultOffset);
     raw.fs_addr = bswap32(header.fs_addr ? header.fs_addr : fs_base);
-    raw.smc_config_offset = bswap32(header.smc_config_offset ? header.smc_config_offset : static_cast<uint32_t>(smc_cfg_offset));
+    raw.smc_config_offset = bswap32(
+        header.smc_config_offset ? header.smc_config_offset : static_cast<uint32_t>(smc_cfg_offset.value_or(0)));
     raw.smc_boot_size = bswap32(static_cast<uint32_t>(smc_len));
     raw.smc_boot_offset = bswap32(smc_offset);
 
-    driver.write_offset(0, std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&raw), sizeof(raw)));
+    if (!driver.write_offset(0, std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&raw), sizeof(raw)))) {
+        return false;
+    }
 
     if (smc) {
-        driver.write_offset(smc_offset, smc->data);
+        if (!driver.write_offset(smc_offset, smc->data)) {
+            return false;
+        }
     }
 
     if (keyvault) {
         auto kv_data = keyvault->serialize();
-        driver.write_offset(kKeyvaultOffset, kv_data);
+        if (!driver.write_offset(kKeyvaultOffset, kv_data)) {
+            return false;
+        }
     }
 
     size_t cursor = kEntryOffset;
     if (!cb_section.cb_or_A.data.empty()) {
         auto cb_a = cb_section.cb_or_A.serialize();
-        driver.write_offset(cursor, cb_a);
+        if (!driver.write_offset(cursor, cb_a)) {
+            return false;
+        }
         cursor += align_16(static_cast<uint32_t>(cb_a.size()));
     }
     if (cb_section.cb_x) {
         auto cb_x = cb_section.cb_x->serialize();
-        driver.write_offset(cursor, cb_x);
+        if (!driver.write_offset(cursor, cb_x)) {
+            return false;
+        }
         cursor += align_16(static_cast<uint32_t>(cb_x.size()));
     }
     if (cb_section.cb_B) {
         auto cb_b = cb_section.cb_B->serialize();
-        driver.write_offset(cursor, cb_b);
+        if (!driver.write_offset(cursor, cb_b)) {
+            return false;
+        }
         cursor += align_16(static_cast<uint32_t>(cb_b.size()));
     }
     if (cb_section.sc) {
         auto sc = cb_section.sc->serialize();
-        driver.write_offset(cursor, sc);
+        if (!driver.write_offset(cursor, sc)) {
+            return false;
+        }
         cursor += align_16(static_cast<uint32_t>(sc.size()));
     }
     if (!kernel_section.cd.data.empty()) {
         auto cd = kernel_section.cd.serialize();
-        driver.write_offset(cursor, cd);
+        if (!driver.write_offset(cursor, cd)) {
+            return false;
+        }
         cursor += align_16(static_cast<uint32_t>(cd.size()));
     }
     if (kernel_section.ce) {
         auto ce = kernel_section.ce->serialize();
-        driver.write_offset(cursor, ce);
+        if (!driver.write_offset(cursor, ce)) {
+            return false;
+        }
         cursor += align_16(static_cast<uint32_t>(ce.size()));
     }
 
-    auto write_patchslot = [&](uint32_t base_offset, const SystemUpdate& slot) {
+    size_t highest_used_offset = cursor;
+
+    auto write_patchslot = [&](uint32_t base_offset, const SystemUpdate& slot,
+                               size_t& end_offset) -> bool {
+        end_offset = base_offset;
         if (slot.cf) {
             auto cf_bytes = slot.cf->serialize();
-            driver.write_offset(base_offset, cf_bytes);
+            if (!driver.write_offset(base_offset, cf_bytes)) {
+                return false;
+            }
+            end_offset = base_offset + align_16(static_cast<uint32_t>(cf_bytes.size()));
             if (slot.cg) {
                 auto cg_bytes = slot.cg->serialize();
-                driver.write_offset(base_offset + align_16(static_cast<uint32_t>(cf_bytes.size())), cg_bytes);
+                if (!driver.write_offset(end_offset, cg_bytes)) {
+                    return false;
+                }
+                end_offset += align_16(static_cast<uint32_t>(cg_bytes.size()));
             }
+            highest_used_offset = std::max(highest_used_offset, end_offset);
         }
+        return true;
     };
 
     const uint32_t slot_stride = is_big_or_emmc ? 0x20000 : 0x10000;
-    write_patchslot(patch_base, system_update_0);
-    write_patchslot(patch_base + slot_stride, system_update_1);
+    size_t slot0_end = patch_base;
+    if (!write_patchslot(patch_base, system_update_0, slot0_end)) {
+        return false;
+    }
+    if (patch_base + slot_stride >= slot0_end) {
+        size_t slot1_end = patch_base + slot_stride;
+        if (!write_patchslot(patch_base + slot_stride, system_update_1, slot1_end)) {
+            return false;
+        }
+    } else {
+        // CG0 was too large and overflowed into the second slot. Skip CF1/CG1 and update header.
+        raw.patch_slots = bswap16(1);
+        if (!driver.write_offset(0, std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&raw), sizeof(raw)))) {
+            return false;
+        }
+    }
 
-    if (smc_config && total_blocks >= 4) {
-        auto cfg_bytes = smc_config->serialize(0x10000, static_cast<uint32_t>(smc_cfg_offset));
-        driver.write_offset(smc_cfg_offset, cfg_bytes);
+    if (smc_config) {
+        if (!smc_cfg_offset) {
+            return false;
+        }
+        auto cfg_bytes = smc_config->serialize(0x10000);
+        if (!driver.write_offset(*smc_cfg_offset, cfg_bytes)) {
+            return false;
+        }
     }
 
     NandLayout layout{};
     const size_t fs_blk_size = (driver.driver_mode() == Driver::DriverMode::Emmc) ? 0x4000 : block_size;
-    size_t current_blk = fs_base / fs_blk_size;
+
+    size_t min_blk = (highest_used_offset + fs_blk_size - 1) / fs_blk_size;
+    size_t current_blk = std::max<size_t>(fs_base / fs_blk_size, min_blk);
 
     if (mobile_data) {
         for (uint8_t bt = 0x31; bt <= 0x39; ++bt) {
@@ -423,12 +554,22 @@ bool FlashImage::write_to_driver() const {
             if (slot && *slot && !(*slot)->empty()) {
                 const auto& mdata = **slot;
                 size_t blks_needed = (mdata.size() + fs_blk_size - 1) / fs_blk_size;
+                if (blks_needed == 0 || blks_needed > total_blocks ||
+                    current_blk > total_blocks - blks_needed) {
+                    Log::Error("Mobile data type 0x{:02X} does not fit in NAND", bt);
+                    return false;
+                }
                 for (size_t b = 0; b < blks_needed; ++b) {
                     size_t chunk_off = b * fs_blk_size;
                     size_t chunk_len = std::min(fs_blk_size, mdata.size() - chunk_off);
-                    driver.write_block(current_blk + b, std::span<const uint8_t>(mdata.data() + chunk_off, chunk_len));
+                    if (!driver.write_block(current_blk + b,
+                                            std::span<const uint8_t>(mdata.data() + chunk_off, chunk_len))) {
+                        return false;
+                    }
                 }
-                layout.mobile_blocks.push_back({bt, static_cast<uint16_t>(current_blk), static_cast<uint16_t>(blks_needed)});
+                layout.mobile_blocks.push_back({bt, static_cast<uint16_t>(current_blk),
+                                                static_cast<uint16_t>(blks_needed), 1,
+                                                static_cast<uint32_t>(mdata.size())});
                 current_blk += blks_needed;
             }
         }
@@ -449,7 +590,7 @@ bool FlashImage::write_to_driver() const {
     if (driver.driver_mode() == Driver::DriverMode::Emmc) {
         CoronaConfig cc = corona_config.value_or(CoronaConfig{});
         cc.data.dwFSVersion = layout.fs_version;
-        cc.data.wFSBlockIdx = layout.fs_root_block;
+        cc.data.wFSBlockIdx = layout.fs_root_block.value_or(0);
         for (const auto& mob : layout.mobile_blocks) {
             if (mob.block_type == 0x31) {
                 cc.data.wMobile1BlockIdx = mob.start_block;
@@ -462,25 +603,35 @@ bool FlashImage::write_to_driver() const {
 
         if (total_blocks >= 6) {
             auto cc_bytes = cc.serialize();
-            driver.write_offset((total_blocks - 6) * 0x4000, cc_bytes);
-            driver.write_offset((total_blocks - 5) * 0x4000, cc_bytes);
+            if (!driver.write_offset((total_blocks - 6) * 0x4000, cc_bytes) ||
+                !driver.write_offset((total_blocks - 5) * 0x4000, cc_bytes)) {
+                return false;
+            }
         }
     } else {
         driver.set_layout(layout);
     }
 
     if (payloads.rebooter) {
-        driver.write_offset(kJTAGRebooterOffset, *payloads.rebooter);
+        if (!driver.write_offset(kJTAGRebooterOffset, *payloads.rebooter)) {
+            return false;
+        }
     }
     if (payloads.fuses) {
-        driver.write_offset(kJTAGvFusesOffset, *payloads.fuses);
+        if (!driver.write_offset(kJTAGvFusesOffset, *payloads.fuses)) {
+            return false;
+        }
     }
     if (payloads.xell) {
         const auto& xell_bytes = payloads.xell->data;
         if (payloads.rebooter) {
-            driver.write_offset(kJTAGvFusesOffset + 0x60, xell_bytes);
+            if (!driver.write_offset(kJTAGvFusesOffset + 0x60, xell_bytes)) {
+                return false;
+            }
         } else {
-            driver.write_offset(patch_base, xell_bytes);
+            if (!driver.write_offset(patch_base, xell_bytes)) {
+                return false;
+            }
         }
     }
 
@@ -506,7 +657,7 @@ bool FlashImage::decrypt_all(std::span<const uint8_t> cpu_key) {
                 Log::Error("Cannot decrypt CB_B: CB_A derived key is missing");
                 return false;
             }
-            if ((cb_section.cb_B->header.header.flags & 0x1000) == 0x1000) {
+            if ((cb_section.cb_or_A.header.header.flags & 0x1000) == 0x1000) {
                 cb_section.cb_B->decrypt_v2(cb_section.cb_or_A.header,
                                              cb_section.cb_or_A.derived_key->data(), cpu_key.data());
             } else {
@@ -571,7 +722,7 @@ bool FlashImage::encrypt_all(std::span<const uint8_t> cpu_key) {
                 Log::Error("Cannot encrypt CB_B: CB_A derived key is missing");
                 return false;
             }
-            if ((cb_section.cb_B->header.header.flags & 0x1000) == 0x1000) {
+            if ((cb_section.cb_or_A.header.header.flags & 0x1000) == 0x1000) {
                 cb_section.cb_B->encrypt_v2(cb_section.cb_or_A.header,
                                              cb_section.cb_or_A.derived_key->data(), cpu_key.data());
             } else {

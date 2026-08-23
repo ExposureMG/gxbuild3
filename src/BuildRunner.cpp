@@ -18,7 +18,7 @@
 #include "nand/objects/XConfig.hpp"
 #include "nand/objects/XeLL.hpp"
 #include "utils/Log.hpp"
-
+#include "utils/Utils.hpp"
 #include <cstring>
 
 using namespace gxbuild3::NAND;
@@ -228,26 +228,31 @@ std::optional<InputMetadata> ExtractMetadata(
 
     auto& cb_a = img.cb_section.cb_or_A;
     if (!cb_a.data.empty()) {
-        if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
-            auto& cb_b = *img.cb_section.cb_B;
-
-            if (cb_b.perbox.has_value()) {
-                cb_ldv = cb_b.perbox->lockdown_value;
-                std::memcpy(pairing_data, cb_b.perbox->pairing_data, 3);
-            } else if (cb_a.perbox.has_value()) {
-                cb_ldv = cb_a.perbox->lockdown_value;
-                std::memcpy(pairing_data, cb_a.perbox->pairing_data, 3);
-            }
-        } else {
-            if (cb_a.perbox.has_value()) {
-                cb_ldv = cb_a.perbox->lockdown_value;
-                std::memcpy(pairing_data, cb_a.perbox->pairing_data, 3);
-            }
+        if (cb_a.perbox.has_value()) {
+            cb_ldv = cb_a.perbox->lockdown_value;
+            std::memcpy(pairing_data, cb_a.perbox->pairing_data, 3);
         }
 
         console_type = cb_a.header.console_seq_allow.console_type;
         console_sequence = cb_a.header.console_seq_allow.console_sequence;
         console_sequence_allow = cb_a.header.console_seq_allow.console_sequence_allow;
+    }
+
+    // CB_B, when present, overrides CB_A's LDV/pairing data — independent of
+    // whether CB_A itself parsed, matching ExtractAll()/ExtractAllInfo().
+    if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
+        auto& cb_b = *img.cb_section.cb_B;
+        if (cb_b.perbox.has_value()) {
+            cb_ldv = cb_b.perbox->lockdown_value;
+            // Some CB_B images carry a corrected LDV byte at a fixed offset
+            // that supersedes the perbox value — same check ExtractAllInfo()
+            // and ExtractAll() already apply.
+            if (cb_b.data.size() > 0x3B1 - sizeof(generic_header) &&
+                cb_b.data[0x3B1 - sizeof(generic_header)] <= 16) {
+                cb_ldv = cb_b.data[0x3B1 - sizeof(generic_header)];
+            }
+            std::memcpy(pairing_data, cb_b.perbox->pairing_data, 3);
+        }
     }
 
     meta.cb_ldv = cb_ldv;
@@ -279,6 +284,422 @@ std::optional<InputMetadata> ExtractMetadata(
     const std::vector<uint8_t>& cpu_key
 ) {
     return ExtractMetadata(
+        std::span<const uint8_t>(nand_image),
+        std::span<const uint8_t>(cpu_key)
+    );
+}
+
+std::optional<AllNandInfo> ExtractAllInfo(
+    std::span<const uint8_t> nand_image,
+    std::span<const uint8_t> cpu_key
+) {
+    if (cpu_key.size() != 16) {
+        Log::Error("Cannot extract NAND info: CPU key must be 16 bytes (got {})", cpu_key.size());
+        return std::nullopt;
+    }
+    if (nand_image.empty()) {
+        Log::Error("Cannot extract NAND info: NAND image is empty");
+        return std::nullopt;
+    }
+
+    auto img_opt = FlashImage::read(std::vector<uint8_t>(nand_image.begin(), nand_image.end()));
+    if (!img_opt || !img_opt->parse()) {
+        Log::Error("Failed to parse donor NAND image structure");
+        return std::nullopt;
+    }
+
+    auto& img = *img_opt;
+
+    if (!img.decrypt_all(cpu_key)) {
+        Log::Error("Failed to decrypt donor NAND image components with provided CPU key");
+        return std::nullopt;
+    }
+
+    AllNandInfo info{};
+    info.cpu_key = std::vector<uint8_t>(cpu_key.begin(), cpu_key.end());
+
+    info.header_magic = img.header.magic;
+    info.header_version = img.header.version;
+    info.header_flags = img.header.flags;
+    info.header_size = img.header.size;
+    info.copyright = std::string(reinterpret_cast<const char*>(img.header.copyright),
+                                 strnlen(reinterpret_cast<const char*>(img.header.copyright), sizeof(img.header.copyright)));
+
+    if (!img.cb_section.cb_or_A.data.empty()) {
+        BootloaderEntryInfo entry{};
+        entry.name = "CB_A";
+        entry.version = img.cb_section.cb_or_A.header.header.version;
+        entry.size = img.cb_section.cb_or_A.header.header.size;
+        entry.flags = img.cb_section.cb_or_A.header.header.flags;
+        entry.entrypoint = img.cb_section.cb_or_A.header.header.entrypoint;
+        entry.present = true;
+        entry.decrypted = img.cb_section.cb_or_A.is_decrypted();
+        if (img.cb_section.cb_or_A.perbox.has_value()) {
+            entry.ldv = img.cb_section.cb_or_A.perbox->lockdown_value;
+            std::array<uint8_t, 3> pd{};
+            std::memcpy(pd.data(), img.cb_section.cb_or_A.perbox->pairing_data, 3);
+            entry.pairing_data = pd;
+            info.bootloaders.cb_ldv = img.cb_section.cb_or_A.perbox->lockdown_value;
+            info.bootloaders.cb_pairing_data = pd;
+        }
+        info.bootloaders.cb_a = entry;
+    }
+
+    if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
+        BootloaderEntryInfo entry{};
+        entry.name = "CB_B";
+        entry.version = img.cb_section.cb_B->header.header.version;
+        entry.size = img.cb_section.cb_B->header.header.size;
+        entry.flags = img.cb_section.cb_B->header.header.flags;
+        entry.entrypoint = img.cb_section.cb_B->header.header.entrypoint;
+        entry.present = true;
+        entry.decrypted = img.cb_section.cb_B->is_decrypted();
+        if (img.cb_section.cb_B->perbox.has_value()) {
+            uint8_t ldv = img.cb_section.cb_B->perbox->lockdown_value;
+            if (img.cb_section.cb_B->data.size() > 0x3B1 - sizeof(generic_header) &&
+                img.cb_section.cb_B->data[0x3B1 - sizeof(generic_header)] <= 16) {
+                ldv = img.cb_section.cb_B->data[0x3B1 - sizeof(generic_header)];
+            }
+            entry.ldv = ldv;
+            std::array<uint8_t, 3> pd{};
+            std::memcpy(pd.data(), img.cb_section.cb_B->perbox->pairing_data, 3);
+            entry.pairing_data = pd;
+            info.bootloaders.cb_ldv = ldv;
+            info.bootloaders.cb_pairing_data = pd;
+        }
+        info.bootloaders.cb_b = entry;
+    }
+
+    if (img.cb_section.cb_x.has_value() && !img.cb_section.cb_x->data.empty()) {
+        BootloaderEntryInfo entry{};
+        entry.name = "CB_X";
+        entry.version = img.cb_section.cb_x->header.header.version;
+        entry.size = img.cb_section.cb_x->header.header.size;
+        entry.flags = img.cb_section.cb_x->header.header.flags;
+        entry.entrypoint = img.cb_section.cb_x->header.header.entrypoint;
+        entry.present = true;
+        entry.decrypted = img.cb_section.cb_x->is_decrypted();
+        info.bootloaders.cb_x = entry;
+    }
+
+    if (img.cb_section.sc.has_value() && !img.cb_section.sc->data.empty()) {
+        BootloaderEntryInfo entry{};
+        entry.name = "SC";
+        entry.version = img.cb_section.sc->header.header.version;
+        entry.size = img.cb_section.sc->header.header.size;
+        entry.flags = img.cb_section.sc->header.header.flags;
+        entry.entrypoint = img.cb_section.sc->header.header.entrypoint;
+        entry.present = true;
+        entry.decrypted = true;
+        info.bootloaders.sc = entry;
+    }
+
+    if (!img.kernel_section.cd.data.empty()) {
+        BootloaderEntryInfo entry{};
+        entry.name = "CD";
+        entry.version = img.kernel_section.cd.header.header.version;
+        entry.size = img.kernel_section.cd.header.header.size;
+        entry.flags = img.kernel_section.cd.header.header.flags;
+        entry.entrypoint = img.kernel_section.cd.header.header.entrypoint;
+        entry.present = true;
+        entry.decrypted = img.kernel_section.cd.is_decrypted();
+        info.bootloaders.cd = entry;
+    }
+
+    if (img.kernel_section.ce.has_value() && !img.kernel_section.ce->data.empty()) {
+        BootloaderEntryInfo entry{};
+        entry.name = "CE";
+        entry.version = img.kernel_section.ce->header.header.version;
+        entry.size = img.kernel_section.ce->header.header.size;
+        entry.flags = img.kernel_section.ce->header.header.flags;
+        entry.entrypoint = img.kernel_section.ce->header.header.entrypoint;
+        entry.present = true;
+        entry.decrypted = img.kernel_section.ce->is_decrypted();
+        info.bootloaders.ce = entry;
+    }
+
+    if (img.system_update_0.cf.has_value() && !img.system_update_0.cf->data.empty()) {
+        BootloaderEntryInfo entry{};
+        entry.name = "CF_0";
+        entry.version = img.system_update_0.cf->header.header.version;
+        entry.size = img.system_update_0.cf->header.header.size;
+        entry.flags = img.system_update_0.cf->header.header.flags;
+        entry.entrypoint = img.system_update_0.cf->header.header.entrypoint;
+        entry.present = true;
+        entry.decrypted = img.system_update_0.cf->is_decrypted();
+        if (img.system_update_0.cf->perbox.has_value()) {
+            entry.ldv = img.system_update_0.cf->perbox->lockdown_value;
+            std::array<uint8_t, 3> pd{};
+            std::memcpy(pd.data(), img.system_update_0.cf->perbox->pairing_data, 3);
+            entry.pairing_data = pd;
+            info.bootloaders.cf0_ldv = img.system_update_0.cf->perbox->lockdown_value;
+            info.bootloaders.cf0_pairing_data = pd;
+        }
+        info.bootloaders.cf_0 = entry;
+    }
+
+    if (img.system_update_0.cg.has_value() && !img.system_update_0.cg->data.empty()) {
+        BootloaderEntryInfo entry{};
+        entry.name = "CG_0";
+        entry.version = img.system_update_0.cg->header.header.version;
+        entry.size = img.system_update_0.cg->header.header.size;
+        entry.flags = img.system_update_0.cg->header.header.flags;
+        entry.entrypoint = img.system_update_0.cg->header.header.entrypoint;
+        entry.present = true;
+        entry.decrypted = img.system_update_0.cg->is_decrypted();
+        info.bootloaders.cg_0 = entry;
+    }
+
+    if (img.system_update_1.cf.has_value() && !img.system_update_1.cf->data.empty()) {
+        BootloaderEntryInfo entry{};
+        entry.name = "CF_1";
+        entry.version = img.system_update_1.cf->header.header.version;
+        entry.size = img.system_update_1.cf->header.header.size;
+        entry.flags = img.system_update_1.cf->header.header.flags;
+        entry.entrypoint = img.system_update_1.cf->header.header.entrypoint;
+        entry.present = true;
+        entry.decrypted = img.system_update_1.cf->is_decrypted();
+        if (img.system_update_1.cf->perbox.has_value()) {
+            entry.ldv = img.system_update_1.cf->perbox->lockdown_value;
+            std::array<uint8_t, 3> pd{};
+            std::memcpy(pd.data(), img.system_update_1.cf->perbox->pairing_data, 3);
+            entry.pairing_data = pd;
+            info.bootloaders.cf1_ldv = img.system_update_1.cf->perbox->lockdown_value;
+            info.bootloaders.cf1_pairing_data = pd;
+        }
+        info.bootloaders.cf_1 = entry;
+    }
+
+    if (img.system_update_1.cg.has_value() && !img.system_update_1.cg->data.empty()) {
+        BootloaderEntryInfo entry{};
+        entry.name = "CG_1";
+        entry.version = img.system_update_1.cg->header.header.version;
+        entry.size = img.system_update_1.cg->header.header.size;
+        entry.flags = img.system_update_1.cg->header.header.flags;
+        entry.entrypoint = img.system_update_1.cg->header.header.entrypoint;
+        entry.present = true;
+        entry.decrypted = img.system_update_1.cg->is_decrypted();
+        info.bootloaders.cg_1 = entry;
+    }
+
+    if (img.smc.has_value()) {
+        info.smc.present = true;
+        info.smc.version = img.smc->version;
+        info.smc.motherboard_name = std::string(smc_motherboard_name(img.smc->motherboard));
+        info.smc.type_name = std::string(smc_type_name(img.smc->variant));
+        info.smc.size = static_cast<uint32_t>(img.smc->data.size());
+        info.smc.decrypted = !img.smc->encrypted;
+    }
+
+    if (img.filesystem.has_value()) {
+        info.flashfs.present = true;
+        auto file_list = img.filesystem->list_files();
+        for (const auto& filename : file_list) {
+            auto stat_opt = img.filesystem->stat(filename);
+            if (stat_opt.has_value()) {
+                FlashFsFileInfo file_info{};
+                file_info.filename = filename;
+                file_info.block_number = stat_opt->block_number;
+                file_info.length = stat_opt->length;
+                file_info.timestamp = stat_opt->timestamp;
+                info.flashfs.files.push_back(file_info);
+            }
+        }
+    }
+
+    if (img.keyvault.has_value()) {
+        auto& kv = *img.keyvault;
+        info.keyvault.present = true;
+        info.keyvault.decrypted = !kv.encrypted;
+        info.raw_keyvault = kv.serialize();
+
+        info.keyvault.serial_number = std::string(kv.data.sz14ConsoleSerialNumber,
+                                                  strnlen(kv.data.sz14ConsoleSerialNumber, sizeof(kv.data.sz14ConsoleSerialNumber)));
+        info.keyvault.dvd_key = Utils::bytes_to_hex(kv.data.b1ADvdKey);
+        info.keyvault.console_id_raw = Utils::bytes_to_hex(kv.data.b36ConsoleCertificate.ConsoleId);
+
+        uint64_t cid_val = (static_cast<uint64_t>(kv.data.b36ConsoleCertificate.ConsoleId[0]) << 28) |
+                           (static_cast<uint64_t>(kv.data.b36ConsoleCertificate.ConsoleId[1]) << 20) |
+                           (static_cast<uint64_t>(kv.data.b36ConsoleCertificate.ConsoleId[2]) << 12) |
+                           (static_cast<uint64_t>(kv.data.b36ConsoleCertificate.ConsoleId[3]) << 4) |
+                           (static_cast<uint64_t>(kv.data.b36ConsoleCertificate.ConsoleId[4]) >> 4);
+        uint8_t last_digit = kv.data.b36ConsoleCertificate.ConsoleId[4] & 0x0F;
+        char cid_buf[32];
+        std::snprintf(cid_buf, sizeof(cid_buf), "%011llu%u", static_cast<unsigned long long>(cid_val), last_digit);
+        info.keyvault.console_id_friendly = cid_buf;
+
+        if (kv.raw_data.size() >= 0xCAD) {
+            info.keyvault.osig = std::string(reinterpret_cast<const char*>(kv.raw_data.data() + 0xC92),
+                                             strnlen(reinterpret_cast<const char*>(kv.raw_data.data() + 0xC92), 28));
+        }
+        info.keyvault.mfr_date = std::string(kv.data.b36ConsoleCertificate.ManufacturingDate,
+                                             strnlen(kv.data.b36ConsoleCertificate.ManufacturingDate, sizeof(kv.data.b36ConsoleCertificate.ManufacturingDate)));
+
+        info.keyvault.region_raw = bswap16(kv.data.w16GameRegion);
+        switch (info.keyvault.region_raw) {
+            case 0x00FF: info.keyvault.region_name = "NTSC/US"; break;
+            case 0x01FE: info.keyvault.region_name = "NTSC/JAP"; break;
+            case 0x01FF: info.keyvault.region_name = "NTSC/JAP"; break;
+            case 0x02FE: info.keyvault.region_name = "PAL/EU"; break;
+            case 0x02FF: info.keyvault.region_name = "PAL/AUS"; break;
+            case 0x01FC: info.keyvault.region_name = "NTSC/KOR"; break;
+            case 0x01FA: info.keyvault.region_name = "NTSC/HK"; break;
+            case 0x0101: info.keyvault.region_name = "NTSC/CHINA"; break;
+            case 0xFFFF: info.keyvault.region_name = "Devkit"; break;
+            default: info.keyvault.region_name = "Unknown"; break;
+        }
+
+        bool is_type1 = true;
+        for (size_t i = 0; i < 8; ++i) {
+            uint8_t b = kv.data.b39SpecialKeyVaultSignature[sizeof(kv.data.b39SpecialKeyVaultSignature) - 8 + i];
+            if (b != 0x00 && b != 0xFF) {
+                is_type1 = false;
+                break;
+            }
+        }
+        info.keyvault.kv_type = is_type1 ? 1 : 2;
+        info.keyvault.fcrt_required = ((kv.data.w4OddFeatures & 0x0120) != 0);
+    }
+
+    return info;
+}
+
+std::optional<AllNandInfo> ExtractAllInfo(
+    const std::vector<uint8_t>& nand_image,
+    const std::vector<uint8_t>& cpu_key
+) {
+    return ExtractAllInfo(
+        std::span<const uint8_t>(nand_image),
+        std::span<const uint8_t>(cpu_key)
+    );
+}
+
+std::optional<Input> ExtractAll(
+    std::span<const uint8_t> nand_image,
+    std::span<const uint8_t> cpu_key
+) {
+    if (cpu_key.size() != 16) {
+        Log::Error("Cannot extract NAND: CPU key must be 16 bytes (got {})", cpu_key.size());
+        return std::nullopt;
+    }
+    if (nand_image.empty()) {
+        Log::Error("Cannot extract NAND: NAND image is empty");
+        return std::nullopt;
+    }
+
+    auto img_opt = FlashImage::read(std::vector<uint8_t>(nand_image.begin(), nand_image.end()));
+    if (!img_opt || !img_opt->parse()) {
+        Log::Error("Failed to parse donor NAND image structure");
+        return std::nullopt;
+    }
+
+    auto& img = *img_opt;
+
+    if (!img.decrypt_all(cpu_key)) {
+        Log::Error("Failed to decrypt donor NAND image components with provided CPU key");
+        return std::nullopt;
+    }
+
+    Input out{};
+    out.metadata.cpu_key = std::vector<uint8_t>(cpu_key.begin(), cpu_key.end());
+
+    uint8_t cb_ldv = 0;
+    uint8_t pairing_data[3] = {0};
+    uint8_t console_type = 0;
+    uint8_t console_sequence = 0;
+    uint16_t console_sequence_allow = 0;
+
+    if (!img.cb_section.cb_or_A.data.empty()) {
+        out.bootloaders.cb_or_a = img.cb_section.cb_or_A.serialize();
+        console_type = img.cb_section.cb_or_A.header.console_seq_allow.console_type;
+        console_sequence = img.cb_section.cb_or_A.header.console_seq_allow.console_sequence;
+        console_sequence_allow = img.cb_section.cb_or_A.header.console_seq_allow.console_sequence_allow;
+        if (img.cb_section.cb_or_A.perbox.has_value()) {
+            cb_ldv = img.cb_section.cb_or_A.perbox->lockdown_value;
+            std::memcpy(pairing_data, img.cb_section.cb_or_A.perbox->pairing_data, 3);
+        }
+    }
+
+    if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
+        out.bootloaders.cb_b = img.cb_section.cb_B->serialize();
+        if (img.cb_section.cb_B->perbox.has_value()) {
+            cb_ldv = img.cb_section.cb_B->perbox->lockdown_value;
+            if (img.cb_section.cb_B->data.size() > 0x3B1 - sizeof(generic_header) &&
+                img.cb_section.cb_B->data[0x3B1 - sizeof(generic_header)] <= 16) {
+                cb_ldv = img.cb_section.cb_B->data[0x3B1 - sizeof(generic_header)];
+            }
+            std::memcpy(pairing_data, img.cb_section.cb_B->perbox->pairing_data, 3);
+        }
+    }
+
+    if (img.cb_section.cb_x.has_value() && !img.cb_section.cb_x->data.empty()) {
+        out.bootloaders.cb_x = img.cb_section.cb_x->serialize();
+    }
+
+    if (!img.kernel_section.cd.data.empty()) {
+        out.bootloaders.cd = img.kernel_section.cd.serialize();
+    }
+
+    if (img.kernel_section.ce.has_value() && !img.kernel_section.ce->data.empty()) {
+        out.bootloaders.ce = img.kernel_section.ce->serialize();
+    }
+
+    if (img.system_update_0.cf.has_value() && !img.system_update_0.cf->data.empty()) {
+        out.bootloaders.cf0 = img.system_update_0.cf->serialize();
+        if (img.system_update_0.cf->perbox.has_value()) {
+            out.metadata.cf_ldv = img.system_update_0.cf->perbox->lockdown_value;
+        }
+    }
+
+    if (img.system_update_0.cg.has_value() && !img.system_update_0.cg->data.empty()) {
+        out.bootloaders.cg0 = img.system_update_0.cg->serialize();
+    }
+
+    if (img.system_update_1.cf.has_value() && !img.system_update_1.cf->data.empty()) {
+        out.bootloaders.cf1 = img.system_update_1.cf->serialize();
+        if (!out.metadata.cf_ldv.has_value() && img.system_update_1.cf->perbox.has_value()) {
+            out.metadata.cf_ldv = img.system_update_1.cf->perbox->lockdown_value;
+        }
+    }
+
+    if (img.system_update_1.cg.has_value() && !img.system_update_1.cg->data.empty()) {
+        out.bootloaders.cg1 = img.system_update_1.cg->serialize();
+    }
+
+    out.metadata.cb_ldv = cb_ldv;
+    std::memcpy(out.metadata.pairing_data, pairing_data, 3);
+    out.metadata.console_type = console_type;
+    out.metadata.console_sequence = console_sequence;
+    out.metadata.console_sequence_allow = console_sequence_allow;
+
+    if (img.smc.has_value()) {
+        out.metadata.smc = img.smc->data;
+    }
+
+    if (img.keyvault.has_value()) {
+        out.metadata.keyvault = img.keyvault->serialize();
+    }
+
+    if (img.filesystem.has_value()) {
+        std::vector<std::pair<std::string, std::vector<uint8_t>>> files;
+        auto file_list = img.filesystem->list_files();
+        for (const auto& filename : file_list) {
+            auto file_data = img.filesystem->get_file(filename);
+            if (file_data.has_value()) {
+                files.emplace_back(filename, std::move(*file_data));
+            }
+        }
+        out.flashfs_sec = std::move(files);
+    }
+
+    return out;
+}
+
+std::optional<Input> ExtractAll(
+    const std::vector<uint8_t>& nand_image,
+    const std::vector<uint8_t>& cpu_key
+) {
+    return ExtractAll(
         std::span<const uint8_t>(nand_image),
         std::span<const uint8_t>(cpu_key)
     );

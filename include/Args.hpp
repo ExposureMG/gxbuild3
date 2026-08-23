@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstdint>
 #include <filesystem>
 #include <map>
 #include <optional>
@@ -88,12 +90,97 @@ struct InputMetadata {
     std::vector<uint8_t> cpu_key;
     std::optional<std::vector<uint8_t>> nand_image;
     std::optional<std::vector<uint8_t>> keyvault;
+    std::optional<std::vector<uint8_t>> smc;
     uint8_t cb_ldv;
     std::optional<uint8_t> cf_ldv;
     uint8_t pairing_data[3];
     uint8_t console_type;
     uint8_t console_sequence;
     uint16_t console_sequence_allow;
+};
+
+struct BootloaderEntryInfo {
+    std::string name;
+    uint16_t version{0};
+    uint32_t size{0};
+    uint16_t flags{0};
+    uint32_t entrypoint{0};
+    bool present{false};
+    bool decrypted{false};
+    std::optional<uint8_t> ldv;
+    std::optional<std::array<uint8_t, 3>> pairing_data;
+};
+
+struct BootloaderChainInfo {
+    std::optional<BootloaderEntryInfo> cb_a;
+    std::optional<BootloaderEntryInfo> cb_b;
+    std::optional<BootloaderEntryInfo> cb_x;
+    std::optional<BootloaderEntryInfo> sc;
+    std::optional<BootloaderEntryInfo> cd;
+    std::optional<BootloaderEntryInfo> ce;
+    std::optional<BootloaderEntryInfo> cf_0;
+    std::optional<BootloaderEntryInfo> cg_0;
+    std::optional<BootloaderEntryInfo> cf_1;
+    std::optional<BootloaderEntryInfo> cg_1;
+
+    uint8_t cb_ldv{0};
+    std::array<uint8_t, 3> cb_pairing_data{};
+    std::optional<uint8_t> cf0_ldv;
+    std::optional<std::array<uint8_t, 3>> cf0_pairing_data;
+    std::optional<uint8_t> cf1_ldv;
+    std::optional<std::array<uint8_t, 3>> cf1_pairing_data;
+};
+
+struct SmcSummaryInfo {
+    std::string version;
+    std::string motherboard_name;
+    std::string type_name;
+    uint32_t size{0};
+    bool present{false};
+    bool decrypted{false};
+};
+
+struct FlashFsFileInfo {
+    std::string filename;
+    uint16_t block_number{0};
+    uint32_t length{0};
+    uint32_t timestamp{0};
+};
+
+struct FlashFsSummaryInfo {
+    std::vector<FlashFsFileInfo> files;
+    bool present{false};
+};
+
+struct KeyvaultSummaryInfo {
+    std::string serial_number;
+    std::string dvd_key;
+    std::string console_id_raw;
+    std::string console_id_friendly;
+    std::string osig;
+    std::string mfr_date;
+    std::string region_name;
+    uint16_t region_raw{0};
+    uint8_t kv_type{0};
+    bool fcrt_required{false};
+    bool present{false};
+    bool decrypted{false};
+};
+
+struct AllNandInfo {
+    uint16_t header_magic{0};
+    uint16_t header_version{0};
+    uint16_t header_flags{0};
+    uint32_t header_size{0};
+    std::string copyright;
+
+    BootloaderChainInfo bootloaders;
+    SmcSummaryInfo smc;
+    FlashFsSummaryInfo flashfs;
+    KeyvaultSummaryInfo keyvault;
+
+    std::vector<uint8_t> cpu_key;
+    std::optional<std::vector<uint8_t>> raw_keyvault;
 };
 
 struct InputBootloaders {
