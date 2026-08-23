@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <limits>
 #include <span>
 #include <utility>
 #include <vector>
@@ -340,7 +341,8 @@ bool FlashImage::parse() {
         uint32_t best_seq = 0;
         for (size_t blk = 0; blk < total_blocks; ++blk) {
             auto meta = flash_driver.interpret_block(blk);
-            if (meta.block_type == 0x30 && !meta.is_bad) {
+            const bool is_filesystem_root = meta.block_type == 0x2C || meta.block_type == 0x30;
+            if (is_filesystem_root && !meta.is_bad && meta.sequence != 0) {
                 if (!best_root || meta.sequence > best_seq) {
                     best_root = blk;
                     best_seq = meta.sequence;
@@ -548,6 +550,33 @@ bool FlashImage::write_to_driver() const {
     size_t min_blk = (highest_used_offset + fs_blk_size - 1) / fs_blk_size;
     size_t current_blk = std::max<size_t>(fs_base / fs_blk_size, min_blk);
 
+    auto find_filesystem_free_run = [&](size_t start_block,
+                                        size_t requested_blocks) -> std::optional<size_t> {
+        if (!filesystem || requested_blocks == 0) {
+            return std::nullopt;
+        }
+        const auto& blockmap = filesystem->blockmap();
+        if (requested_blocks > blockmap.size()) {
+            return std::nullopt;
+        }
+        for (size_t candidate = start_block;
+             candidate <= blockmap.size() - requested_blocks; ++candidate) {
+            bool all_free = true;
+            for (size_t block = candidate; block < candidate + requested_blocks; ++block) {
+                if (blockmap[block] != BlockMapStatus::Free) {
+                    all_free = false;
+                    break;
+                }
+            }
+            if (all_free) {
+                return candidate;
+            }
+        }
+        return std::nullopt;
+    };
+
+    auto* mutable_filesystem = filesystem ? &const_cast<FlashFileSystem&>(*filesystem) : nullptr;
+
     if (mobile_data) {
         for (uint8_t bt = 0x31; bt <= 0x39; ++bt) {
             const auto* slot = mobile_data->get_slot(bt);
@@ -559,6 +588,14 @@ bool FlashImage::write_to_driver() const {
                     Log::Error("Mobile data type 0x{:02X} does not fit in NAND", bt);
                     return false;
                 }
+                if (filesystem) {
+                    auto free_start = find_filesystem_free_run(current_blk, blks_needed);
+                    if (!free_start) {
+                        Log::Error("Mobile data type 0x{:02X} overlaps FlashFS allocations", bt);
+                        return false;
+                    }
+                    current_blk = *free_start;
+                }
                 for (size_t b = 0; b < blks_needed; ++b) {
                     size_t chunk_off = b * fs_blk_size;
                     size_t chunk_len = std::min(fs_blk_size, mdata.size() - chunk_off);
@@ -566,6 +603,11 @@ bool FlashImage::write_to_driver() const {
                                             std::span<const uint8_t>(mdata.data() + chunk_off, chunk_len))) {
                         return false;
                     }
+                }
+                if (mutable_filesystem &&
+                    !mutable_filesystem->reserve_blocks(current_blk, blks_needed)) {
+                    Log::Error("Failed to reserve mobile data type 0x{:02X} in FlashFS", bt);
+                    return false;
                 }
                 layout.mobile_blocks.push_back({bt, static_cast<uint16_t>(current_blk),
                                                 static_cast<uint16_t>(blks_needed), 1,
@@ -576,7 +618,13 @@ bool FlashImage::write_to_driver() const {
     }
 
     if (filesystem) {
-        layout.fs_root_block = static_cast<uint16_t>(current_blk);
+        auto root_start = find_filesystem_free_run(current_blk, 1);
+        if (!root_start || *root_start > std::numeric_limits<uint16_t>::max() ||
+            !mutable_filesystem->set_root_block(static_cast<uint16_t>(*root_start))) {
+            Log::Error("Failed to place FlashFS root block after payload allocations");
+            return false;
+        }
+        layout.fs_root_block = static_cast<uint16_t>(*root_start);
         layout.fs_version = filesystem->version();
         layout.fs_size = static_cast<uint16_t>(filesystem->blockmap().size());
         auto& fs = const_cast<FlashFileSystem&>(*filesystem);

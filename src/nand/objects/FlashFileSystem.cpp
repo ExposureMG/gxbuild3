@@ -73,6 +73,44 @@ namespace gxbuild3::NAND {
         return true;
     }
 
+    bool FlashFileSystem::set_root_block(uint16_t root_block) {
+        if (root_block >= m_blockmap.size()) {
+            return false;
+        }
+        if (root_block == m_root_block) {
+            return true;
+        }
+        if (m_blockmap[root_block] != BlockMapStatus::Free) {
+            return false;
+        }
+
+        if (m_root_block < m_blockmap.size() &&
+            m_blockmap[m_root_block] == BlockMapStatus::EndOfChain) {
+            m_blockmap[m_root_block] = BlockMapStatus::Free;
+        }
+        m_root_block = root_block;
+        m_blockmap[m_root_block] = BlockMapStatus::EndOfChain;
+        return true;
+    }
+
+    bool FlashFileSystem::reserve_blocks(size_t start_block, size_t block_count) {
+        if (block_count == 0 || start_block >= m_blockmap.size() ||
+            block_count > m_blockmap.size() - start_block) {
+            return false;
+        }
+
+        for (size_t block = start_block; block < start_block + block_count; ++block) {
+            if (m_blockmap[block] != BlockMapStatus::Free &&
+                m_blockmap[block] != BlockMapStatus::Reserved) {
+                return false;
+            }
+        }
+        for (size_t block = start_block; block < start_block + block_count; ++block) {
+            m_blockmap[block] = BlockMapStatus::Reserved;
+        }
+        return true;
+    }
+
     std::vector<uint16_t> FlashFileSystem::get_chain(uint16_t start_block) const {
         std::vector<uint16_t> chain;
         std::unordered_set<uint16_t> visited;

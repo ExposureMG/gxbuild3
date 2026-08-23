@@ -48,6 +48,8 @@ namespace gxbuild3::NAND {
                     uint32_t reserved_boundary = 0x50);
         bool load(Driver& driver, uint16_t root_block = 0x3E0);
         bool save();
+        bool set_root_block(uint16_t root_block);
+        bool reserve_blocks(size_t start_block, size_t block_count);
 
         bool add_file(std::string_view filename, std::span<const uint8_t> data,
                       uint32_t timestamp = 0);
