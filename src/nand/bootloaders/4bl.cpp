@@ -29,7 +29,7 @@ BootloaderCd BootloaderCd::parse(const std::vector<uint8_t>& bytes) {
     return cd;
 }
 
-void BootloaderCd::decrypt(const uint8_t cb_b_key[16]) {
+void BootloaderCd::decrypt(const uint8_t parent_key[16], const uint8_t cpu_key[16]) {
     if (decrypted)
         return;
     uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
@@ -43,15 +43,16 @@ void BootloaderCd::decrypt(const uint8_t cb_b_key[16]) {
     }
 
     uint8_t cur_key[16];
-    std::memcpy(cur_key, cb_b_key, 16);
+    std::memcpy(cur_key, parent_key, 16);
 
     std::vector<uint8_t> buffer(sizeof(cd_header) + data.size());
     cd_header temp_hdr = header;
     std::memcpy(buffer.data(), &temp_hdr, sizeof(cd_header));
     std::memcpy(buffer.data() + sizeof(cd_header), data.data(), data.size());
 
-    gxbuild3::bootloaders::crypt_single_bl(buffer, gxbuild3::bootloaders::HmacType::Default,
-                                           cur_key, nullptr, nullptr, 0x20);
+    const auto hmac_type = cpu_key ? gxbuild3::bootloaders::HmacType::Hmac1920
+                                   : gxbuild3::bootloaders::HmacType::Default;
+    gxbuild3::bootloaders::crypt_single_bl(buffer, hmac_type, cur_key, cpu_key, nullptr, 0x20);
 
     std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
                 sizeof(cd_header) - 0x20);
@@ -60,7 +61,7 @@ void BootloaderCd::decrypt(const uint8_t cb_b_key[16]) {
     decrypted = true;
 }
 
-void BootloaderCd::encrypt(const uint8_t cb_b_key[16]) {
+void BootloaderCd::encrypt(const uint8_t parent_key[16], const uint8_t cpu_key[16]) {
     if (!decrypted)
         return;
     uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
@@ -81,15 +82,16 @@ void BootloaderCd::encrypt(const uint8_t cb_b_key[16]) {
     }
 
     uint8_t cur_key[16];
-    std::memcpy(cur_key, cb_b_key, 16);
+    std::memcpy(cur_key, parent_key, 16);
 
     std::vector<uint8_t> buffer(sizeof(cd_header) + data.size());
     cd_header temp_hdr = header;
     std::memcpy(buffer.data(), &temp_hdr, sizeof(cd_header));
     std::memcpy(buffer.data() + sizeof(cd_header), data.data(), data.size());
 
-    gxbuild3::bootloaders::crypt_single_bl(buffer, gxbuild3::bootloaders::HmacType::Default,
-                                           cur_key, nullptr, nullptr, 0x20);
+    const auto hmac_type = cpu_key ? gxbuild3::bootloaders::HmacType::Hmac1920
+                                   : gxbuild3::bootloaders::HmacType::Default;
+    gxbuild3::bootloaders::crypt_single_bl(buffer, hmac_type, cur_key, cpu_key, nullptr, 0x20);
 
     std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
                 sizeof(cd_header) - 0x20);
@@ -99,7 +101,7 @@ void BootloaderCd::encrypt(const uint8_t cb_b_key[16]) {
 }
 
 bool BootloaderCd::is_decrypted() const {
-    return decrypted || (header.cg_key[0] == 0x00 && header.ce_hash[0] != 0x00);
+    return decrypted || (header.nonce_6bl[0] == 0x00 && header.ce_hash[0] != 0x00);
 }
 
 std::vector<uint8_t> BootloaderCd::serialize() const {

@@ -717,7 +717,15 @@ bool FlashImage::decrypt_all(std::span<const uint8_t> cpu_key) {
             if (cb_section.cb_B.has_value() && cb_section.cb_B->derived_key.has_value()) {
                 kernel_section.cd.decrypt(cb_section.cb_B->derived_key->data());
             } else if (cb_section.cb_or_A.derived_key.has_value()) {
-                kernel_section.cd.decrypt(cb_section.cb_or_A.derived_key->data());
+                const uint8_t* cd_cpu_key = nullptr;
+                if (cb_section.cb_or_A.requires_cpu_key_for_cd()) {
+                    if (cpu_key.size() < 16) {
+                        Log::Error("Cannot decrypt CD: single-CB chain requires a CPU key");
+                        return false;
+                    }
+                    cd_cpu_key = cpu_key.data();
+                }
+                kernel_section.cd.decrypt(cb_section.cb_or_A.derived_key->data(), cd_cpu_key);
             } else {
                 Log::Error("Cannot decrypt CD: parent derived key is missing");
                 return false;
@@ -760,6 +768,15 @@ bool FlashImage::decrypt_all(std::span<const uint8_t> cpu_key) {
 
 bool FlashImage::encrypt_all(std::span<const uint8_t> cpu_key) {
     try {
+        const bool cd_requires_cpu_key =
+            !cb_section.cb_B.has_value() && cb_section.cb_or_A.requires_cpu_key_for_cd();
+
+        if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted() &&
+            cd_requires_cpu_key && cpu_key.size() < 16) {
+            Log::Error("Cannot encrypt CD: single-CB chain requires a CPU key");
+            return false;
+        }
+
         if (!cb_section.cb_or_A.data.empty() && cb_section.cb_or_A.is_decrypted()) {
             cb_section.cb_or_A.encrypt(key_1bl);
         }
@@ -779,10 +796,15 @@ bool FlashImage::encrypt_all(std::span<const uint8_t> cpu_key) {
         }
 
         if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted()) {
-            if (cb_section.cb_B.has_value() && cb_section.cb_B->derived_key.has_value()) {
+            if (cb_section.cb_B.has_value()) {
+                if (!cb_section.cb_B->derived_key.has_value()) {
+                    Log::Error("Cannot encrypt CD: CB_B derived key is missing");
+                    return false;
+                }
                 kernel_section.cd.encrypt(cb_section.cb_B->derived_key->data());
             } else if (cb_section.cb_or_A.derived_key.has_value()) {
-                kernel_section.cd.encrypt(cb_section.cb_or_A.derived_key->data());
+                kernel_section.cd.encrypt(cb_section.cb_or_A.derived_key->data(),
+                                          cd_requires_cpu_key ? cpu_key.data() : nullptr);
             } else {
                 Log::Error("Cannot encrypt CD: parent derived key is missing");
                 return false;

@@ -64,14 +64,9 @@ vcpkg_installed/
 # debug information files
 *.dwo
 
-# test output & cache
-Testing/
 .cache/
-
-testdata
-gxbuild3_code_review.md
-parser.rs
 
 logs
 gxbuild3
 _*.md
+*_.md

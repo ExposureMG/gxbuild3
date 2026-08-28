@@ -17,9 +17,9 @@ namespace {
                                      0xB5, 0x67, 0x94, 0xFB, 0x68, 0x56, 0x3E, 0xFA};
     constexpr uint8_t kSbKey[16] = {0};
 
-    void hmac_sha1_16(const uint8_t key[16], const uint8_t* d1, size_t l1,
-                      const uint8_t* d2, size_t l2,
-                      const uint8_t* d3, size_t l3,
+    void hmac_sha1_16(const uint8_t key[16], const uint8_t* d1, uint32_t l1,
+                      const uint8_t* d2, uint32_t l2,
+                      const uint8_t* d3, uint32_t l3,
                       uint8_t out[16]) {
         uint8_t digest[20];
         ExCryptHmacSha(key, 16, d1, l1, d2, l2, d3, l3, digest, 20);

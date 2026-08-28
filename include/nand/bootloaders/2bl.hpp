@@ -34,6 +34,7 @@ class BootloaderCb {
 
     bool is_decrypted() const;
     bool verify_decrypted() const;
+    bool requires_cpu_key_for_cd() const;
     void populate_metadata();
     bool parse_perbox();
     bool serialize_perbox();

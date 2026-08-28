@@ -6,6 +6,7 @@
 #include "nand/bootloaders/BootloaderPacker.hpp"
 #include "nand/bootloaders/Common.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
@@ -45,6 +46,24 @@ bool BootloaderCb::verify_decrypted() const {
 
 bool BootloaderCb::is_decrypted() const {
     return decrypted || verify_decrypted() || (data.size() > 0x240 && data[0x240] == 0x80);
+}
+
+bool BootloaderCb::requires_cpu_key_for_cd() const {
+    if (header.header.version < 1920) {
+        return false;
+    }
+
+    if (perbox.has_value()) {
+        const auto* bytes = reinterpret_cast<const uint8_t*>(&(*perbox));
+        return !std::all_of(bytes, bytes + sizeof(cb_perbox),
+                            [](uint8_t value) { return value == 0; });
+    }
+
+    if (data.size() < 0x30) {
+        return false;
+    }
+    return !std::all_of(data.begin() + 0x10, data.begin() + 0x30,
+                        [](uint8_t value) { return value == 0; });
 }
 
 void BootloaderCb::do_rc4_decrypt(const uint8_t key[16], size_t payload_len) {

@@ -4,6 +4,7 @@
 #include "utils/Utils.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -19,7 +20,8 @@ namespace {
             return false;
         }
         std::string ext = filePath.substr(filePath.length() - 4);
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         if (ext != ".bin" && ext != "rglp") {
             return false;
         }

@@ -45,7 +45,7 @@ namespace gxbuild3::NAND {
 
             const size_t ppb = pages_per_block();
             for (size_t block = 0; block < block_count(); ++block) {
-                std::fill(spare.begin(), spare.end(), 0);
+                std::fill(spare.begin(), spare.end(), uint8_t{0});
                 spare[m_driver_mode == DriverMode::Big ? 0 : 5] = 0xFF;
                 const uint16_t block_id = static_cast<uint16_t>(block);
                 if (m_driver_mode == DriverMode::Big || m_driver_mode == DriverMode::NewSmall) {
@@ -196,7 +196,7 @@ namespace gxbuild3::NAND {
         size_t write_len = std::min<size_t>(data.size(), 512);
         std::copy_n(data.data(), write_len, m_nand_image.data() + offset);
         if (write_len < 512) {
-            std::fill_n(m_nand_image.data() + offset + write_len, 512 - write_len, 0);
+            std::fill_n(m_nand_image.data() + offset + write_len, 512 - write_len, uint8_t{0});
         }
     }
 
@@ -311,7 +311,8 @@ namespace gxbuild3::NAND {
             size_t write_len = data.size();
             std::copy_n(data.data(), write_len, m_nand_image.data() + offset);
             if (write_len < 0x4000 && offset + 0x4000 <= m_nand_image.size()) {
-                std::fill_n(m_nand_image.data() + offset + write_len, 0x4000 - write_len, 0);
+                std::fill_n(m_nand_image.data() + offset + write_len, 0x4000 - write_len,
+                            uint8_t{0});
             }
             return true;
         }

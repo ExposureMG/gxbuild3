@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
-project(GxBuild3 LANGUAGES CXX)
+include(cmake/SelectCompilers.cmake)
+project(GxBuild3 LANGUAGES C CXX)
+gxbuild3_validate_compilers()
 
 include(CTest)
 
@@ -91,6 +93,11 @@ target_link_libraries(gxbuild3 PRIVATE
 )
 
 if(BUILD_TESTING)
+    add_test(NAME gxbuild3_compiler_selection_tests
+        COMMAND ${CMAKE_COMMAND}
+            -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/compiler-selection-tests
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/CompilerSelectionTests.cmake)
+
     add_executable(gxbuild3_flashdriver_tests tests/FlashDriverTests.cpp)
 
     target_compile_features(gxbuild3_flashdriver_tests PRIVATE cxx_std_23)
@@ -104,15 +111,10 @@ if(BUILD_TESTING)
     add_test(NAME gxbuild3_flashdriver_tests COMMAND gxbuild3_flashdriver_tests)
 endif()
 
-if(MSVC)
-    target_compile_options(gxbuild3_lib PRIVATE /W4 /WX /permissive- /utf-8)
-    target_compile_options(gxbuild3 PRIVATE /W4 /WX /permissive- /utf-8)
-else()
-    target_compile_options(gxbuild3_lib PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    target_compile_options(gxbuild3 PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    if(BUILD_TESTING)
-        target_compile_options(gxbuild3_flashdriver_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
+target_compile_options(gxbuild3_lib PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_compile_options(gxbuild3 PRIVATE -Wall -Wextra -Wpedantic -Werror)
+if(BUILD_TESTING)
+    target_compile_options(gxbuild3_flashdriver_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
 include(GNUInstallDirs)

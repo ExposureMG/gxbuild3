@@ -127,8 +127,8 @@ typedef struct _cd_header {
     uint8_t key[0x10];
     EXCRYPT_SIG signature;
     EXCRYPT_RSAPUB_2048 rsa_pub_key;
-    uint8_t cg_key[0x10];
-    char cg_salt[10];
+    uint8_t nonce_6bl[0x10];
+    char salt_6bl[10];
     uint16_t padding;
     uint8_t ce_hash[0x14];
 } cd_header;
