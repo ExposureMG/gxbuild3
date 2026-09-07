@@ -175,6 +175,7 @@ struct AllNandInfo {
     uint16_t header_flags{0};
     uint32_t header_size{0};
     std::string copyright;
+    std::optional<ImageType> block_type;
 
     BootloaderChainInfo bootloaders;
     SmcSummaryInfo smc;

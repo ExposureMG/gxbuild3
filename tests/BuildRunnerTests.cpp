@@ -1162,6 +1162,55 @@ namespace {
                        "extraction retains last mobile slot");
     }
 
+    bool test_extract_some_info_reads_public_nand_metadata_without_cpu_key() {
+        auto input = fresh_input(ImageType::BigBlock);
+
+        BootloaderCe ce{};
+        ce.header.header.magic = NANDBootloaderMagic::CE;
+        ce.header.header.version = 5;
+        ce.header.header.size = static_cast<uint32_t>(sizeof(ce_header) + 0x20);
+        ce.data.assign(0x20, 0xCE);
+        input.bootloaders.ce = ce.serialize();
+
+        const auto [cf0, cg0] = valid_system_update(0x41);
+        input.bootloaders.cf0 = cf0;
+        input.bootloaders.cg0 = cg0;
+
+        const auto built = RunBuild(input);
+        const auto info = built ? ExtractSomeInfo(*built) : std::nullopt;
+        return require(info.has_value(), "public NAND metadata extracts without a CPU key") &&
+               require(info->block_type == ImageType::BigBlock,
+                       "public NAND metadata reports the detected block type") &&
+               require(info->smc.present && !info->smc.version.empty(),
+                       "public NAND metadata reports the SMC version") &&
+               require(!info->smc.type_name.empty(),
+                       "public NAND metadata reports the SMC type") &&
+               require(info->bootloaders.cb_a.has_value() &&
+                           info->bootloaders.cb_a->version == 1,
+                       "public NAND metadata reports the bootloader version") &&
+               require(info->bootloaders.sc.has_value() && info->bootloaders.sc->version == 1,
+                       "public NAND metadata reports the SC version") &&
+               require(info->bootloaders.cd.has_value() && info->bootloaders.cd->version == 1,
+                       "public NAND metadata reports the kernel version") &&
+               require(info->bootloaders.ce.has_value() && info->bootloaders.ce->version == 5,
+                       "public NAND metadata reports the hypervisor version") &&
+               require(info->bootloaders.cf_0.has_value() &&
+                           info->bootloaders.cg_0.has_value(),
+                       "public NAND metadata reports the update versions") &&
+               require(info->cpu_key.empty() && !info->raw_keyvault.has_value() &&
+                           !info->keyvault.present,
+                       "public NAND metadata omits CPU-key-dependent keyvault data");
+    }
+
+    bool test_extract_all_info_reports_the_detected_block_type() {
+        const auto input = fresh_input(ImageType::NewSmallBlock);
+        const auto built = RunBuild(input);
+        const auto info = built ? ExtractAllInfo(*built, input.metadata.cpu_key) : std::nullopt;
+        return require(info.has_value(), "full NAND metadata extracts") &&
+               require(info->block_type == ImageType::NewSmallBlock,
+                       "full NAND metadata reports the detected block type");
+    }
+
     bool test_sc_survives_extraction_and_backing_cleared_layout_override() {
         auto source = fresh_input(ImageType::SmallBlock);
         const auto donor = make_donor(source, {});
@@ -2435,6 +2484,8 @@ int main() {
     passed = test_donor_rejects_a_different_structurally_valid_cpu_key() && passed;
     passed = test_custom_payload_is_rejected_without_an_on_disk_format_contract() && passed;
     passed = test_extract_all_preserves_complete_donor_baseline() && passed;
+    passed = test_extract_some_info_reads_public_nand_metadata_without_cpu_key() && passed;
+    passed = test_extract_all_info_reports_the_detected_block_type() && passed;
     passed = test_sc_survives_extraction_and_backing_cleared_layout_override() && passed;
     passed = test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() && passed;
     passed = test_fresh_layouts_match_requested_image_types() && passed;

@@ -46,6 +46,16 @@ namespace {
         std::unreachable();
     }
 
+    ImageType image_type_from_driver(Driver::DriverMode mode) {
+        switch (mode) {
+            case Driver::DriverMode::Small: return ImageType::SmallBlock;
+            case Driver::DriverMode::NewSmall: return ImageType::NewSmallBlock;
+            case Driver::DriverMode::Big: return ImageType::BigBlock;
+            case Driver::DriverMode::Emmc: return ImageType::Emmc;
+        }
+        std::unreachable();
+    }
+
     BuildResult build_error(BuildErrorCode code, std::string message) {
         return std::unexpected(BuildError{code, std::move(message)});
     }
@@ -669,6 +679,88 @@ BuildResult RunBuild(const Input& input) {
     return output;
 }
 
+std::optional<AllNandInfo> ExtractSomeInfo(std::span<const uint8_t> nand_image) {
+    if (nand_image.empty()) {
+        Log::Error("Cannot extract public NAND info: NAND image is empty");
+        return std::nullopt;
+    }
+
+    auto img_opt = FlashImage::read(std::vector<uint8_t>(nand_image.begin(), nand_image.end()));
+    if (!img_opt || !img_opt->parse()) {
+        Log::Error("Failed to parse NAND image structure for public info extraction");
+        return std::nullopt;
+    }
+
+    const auto& img = *img_opt;
+    AllNandInfo info{};
+    info.header_magic = img.header.magic;
+    info.header_version = img.header.version;
+    info.header_flags = img.header.flags;
+    info.header_size = img.header.size;
+    info.copyright = std::string(
+        reinterpret_cast<const char*>(img.header.copyright),
+        strnlen(reinterpret_cast<const char*>(img.header.copyright), sizeof(img.header.copyright)));
+    info.block_type = image_type_from_driver(img.flash_driver.driver_mode());
+
+    const auto summarize = [](const auto& bootloader, std::string_view name) {
+        BootloaderEntryInfo entry{};
+        entry.name = name;
+        entry.version = bootloader.header.header.version;
+        entry.size = bootloader.header.header.size;
+        entry.flags = bootloader.header.header.flags;
+        entry.entrypoint = bootloader.header.header.entrypoint;
+        entry.present = true;
+        entry.decrypted = bootloader.is_decrypted();
+        return entry;
+    };
+
+    if (!img.cb_section.cb_or_A.data.empty()) {
+        info.bootloaders.cb_a = summarize(img.cb_section.cb_or_A, "CB_A");
+    }
+    if (img.cb_section.cb_x && !img.cb_section.cb_x->data.empty()) {
+        info.bootloaders.cb_x = summarize(*img.cb_section.cb_x, "CB_X");
+    }
+    if (img.cb_section.cb_B && !img.cb_section.cb_B->data.empty()) {
+        info.bootloaders.cb_b = summarize(*img.cb_section.cb_B, "CB_B");
+    }
+    if (img.cb_section.sc && !img.cb_section.sc->data.empty()) {
+        info.bootloaders.sc = summarize(*img.cb_section.sc, "SC");
+    }
+    if (!img.kernel_section.cd.data.empty()) {
+        info.bootloaders.cd = summarize(img.kernel_section.cd, "CD");
+    }
+    if (img.kernel_section.ce && !img.kernel_section.ce->data.empty()) {
+        info.bootloaders.ce = summarize(*img.kernel_section.ce, "CE");
+    }
+    if (img.system_update_0.cf && !img.system_update_0.cf->data.empty()) {
+        info.bootloaders.cf_0 = summarize(*img.system_update_0.cf, "CF_0");
+    }
+    if (img.system_update_0.cg && !img.system_update_0.cg->data.empty()) {
+        info.bootloaders.cg_0 = summarize(*img.system_update_0.cg, "CG_0");
+    }
+    if (img.system_update_1.cf && !img.system_update_1.cf->data.empty()) {
+        info.bootloaders.cf_1 = summarize(*img.system_update_1.cf, "CF_1");
+    }
+    if (img.system_update_1.cg && !img.system_update_1.cg->data.empty()) {
+        info.bootloaders.cg_1 = summarize(*img.system_update_1.cg, "CG_1");
+    }
+
+    if (img.smc) {
+        info.smc.present = true;
+        info.smc.version = img.smc->version;
+        info.smc.motherboard_name = std::string(smc_motherboard_name(img.smc->motherboard));
+        info.smc.type_name = std::string(smc_type_name(img.smc->variant));
+        info.smc.size = static_cast<uint32_t>(img.smc->data.size());
+        info.smc.decrypted = !img.smc->encrypted;
+    }
+
+    return info;
+}
+
+std::optional<AllNandInfo> ExtractSomeInfo(const std::vector<uint8_t>& nand_image) {
+    return ExtractSomeInfo(std::span<const uint8_t>(nand_image));
+}
+
 std::optional<InputMetadata> ExtractMetadata(std::span<const uint8_t> nand_image,
                                              std::span<const uint8_t> cpu_key) {
     if (cpu_key.size() != 16) {
@@ -793,6 +885,7 @@ std::optional<AllNandInfo> ExtractAllInfo(std::span<const uint8_t> nand_image,
 
     AllNandInfo info{};
     info.cpu_key = std::vector<uint8_t>(cpu_key.begin(), cpu_key.end());
+    info.block_type = image_type_from_driver(img.flash_driver.driver_mode());
 
     info.header_magic = img.header.magic;
     info.header_version = img.header.version;
