@@ -3,6 +3,8 @@
 #include "utils/Utils.hpp"
 
 #include <cstdint>
+#include <expected>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -46,9 +48,17 @@ struct ParsedPatchSet {
     std::vector<ParsedPatchSection> sections;
 };
 
+struct PatchError {
+    std::string message;
+};
+
 namespace BinaryParser {
     bool ParsePatchFile(const std::string& filePath, std::vector<XePatchSection>& outSections);
+    bool ParsePatchSet(std::span<const uint8_t> data, BuildType buildType,
+                       ParsedPatchSet& outPatchSet);
     bool ParsePatchSet(const std::string& filePath, BuildType buildType,
                        ParsedPatchSet& outPatchSet);
+    std::expected<ParsedPatchSet, PatchError> ParseAndMergePatchSet(const InputPatches& patches,
+                                                                    BuildType buildType);
     std::vector<uint8_t> SerializePatchSet(const ParsedPatchSet& patchSet);
 } // namespace BinaryParser

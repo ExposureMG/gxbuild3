@@ -15,11 +15,7 @@ BootloaderSc BootloaderSc::parse(const std::vector<uint8_t>& bytes) {
 
     std::memcpy(&sc.header, bytes.data(), sizeof(sc_header));
 
-    sc.header.header.magic = bswap16(sc.header.header.magic);
-    sc.header.header.version = bswap16(sc.header.header.version);
-    sc.header.header.flags = bswap16(sc.header.header.flags);
-    sc.header.header.size = bswap32(sc.header.header.size);
-    sc.header.header.entrypoint = bswap32(sc.header.header.entrypoint);
+    byteswap_generic_header(sc.header.header);
 
     sc.data = std::vector<uint8_t>(bytes.begin() + sizeof(sc_header), bytes.end());
     sc.decrypted = sc.is_decrypted();
@@ -42,6 +38,7 @@ void BootloaderSc::decrypt(const uint8_t cb_key[16]) {
 
     std::vector<uint8_t> buffer(sizeof(sc_header) + data.size());
     sc_header temp_hdr = header;
+    byteswap_generic_header(temp_hdr.header);
     std::memcpy(buffer.data(), &temp_hdr, sizeof(sc_header));
     std::memcpy(buffer.data() + sizeof(sc_header), data.data(), data.size());
 
@@ -78,6 +75,7 @@ void BootloaderSc::encrypt(const uint8_t cb_key[16]) {
 
     std::vector<uint8_t> buffer(sizeof(sc_header) + data.size());
     sc_header temp_hdr = header;
+    byteswap_generic_header(temp_hdr.header);
     std::memcpy(buffer.data(), &temp_hdr, sizeof(sc_header));
     std::memcpy(buffer.data() + sizeof(sc_header), data.data(), data.size());
 
@@ -95,11 +93,7 @@ bool BootloaderSc::is_decrypted() const {
 std::vector<uint8_t> BootloaderSc::serialize() const {
     std::vector<uint8_t> out(sizeof(sc_header));
     sc_header temp_hdr = header;
-    temp_hdr.header.magic = bswap16(temp_hdr.header.magic);
-    temp_hdr.header.version = bswap16(temp_hdr.header.version);
-    temp_hdr.header.flags = bswap16(temp_hdr.header.flags);
-    temp_hdr.header.size = bswap32(temp_hdr.header.size);
-    temp_hdr.header.entrypoint = bswap32(temp_hdr.header.entrypoint);
+    byteswap_generic_header(temp_hdr.header);
 
     std::memcpy(out.data(), &temp_hdr, sizeof(sc_header));
     out.insert(out.end(), data.begin(), data.end());

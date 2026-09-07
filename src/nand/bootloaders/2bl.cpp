@@ -1,28 +1,24 @@
 #include "nand/bootloaders/2bl.hpp"
 
-#include "utils/Log.hpp"
-#include "utils/Utils.hpp"
 #include "excrypt.h"
 #include "nand/bootloaders/BootloaderPacker.hpp"
 #include "nand/bootloaders/Common.hpp"
+#include "utils/Log.hpp"
+#include "utils/Utils.hpp"
 
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
 BootloaderCb BootloaderCb::parse(const std::vector<uint8_t>& bytes) {
-    BootloaderCb cb;
+    BootloaderCb cb{};
 
     if (bytes.size() < sizeof(generic_header))
         throw std::runtime_error("CB data too short");
 
     std::memcpy(&cb.header, bytes.data(), sizeof(generic_header));
 
-    cb.header.header.magic = bswap16(cb.header.header.magic);
-    cb.header.header.version = bswap16(cb.header.header.version);
-    cb.header.header.flags = bswap16(cb.header.header.flags);
-    cb.header.header.size = bswap32(cb.header.header.size);
-    cb.header.header.entrypoint = bswap32(cb.header.header.entrypoint);
+    byteswap_generic_header(cb.header.header);
 
     cb.data = std::vector<uint8_t>(bytes.begin() + sizeof(generic_header), bytes.end());
     cb.decrypted = cb.verify_decrypted();
@@ -81,6 +77,8 @@ void BootloaderCb::decrypt(const uint8_t onebl_key[16]) {
         throw std::runtime_error("CB data too short");
     if (data.size() < payload_len)
         data.resize(payload_len, 0x00);
+    if (decrypted)
+        synchronize_header_numeric_fields_to_data();
 
     ExCryptHmacSha(onebl_key, 16, data.data(), 0x10, nullptr, 0, nullptr, 0, digest, 20);
 
@@ -105,6 +103,8 @@ void BootloaderCb::decrypt_v1(const uint8_t cb_a_key[16], const uint8_t cpu_key[
         throw std::runtime_error("CB data too short");
     if (data.size() < payload_len)
         data.resize(payload_len, 0x00);
+    if (decrypted)
+        synchronize_header_numeric_fields_to_data();
 
     ExCryptHmacSha(cb_a_key, 16, data.data(), 0x10, cpu_key, 16, nullptr, 0, digest, 20);
 
@@ -132,13 +132,11 @@ void BootloaderCb::decrypt_v2(const cb_header& cb_a_hdr, const uint8_t cb_a_key[
         throw std::runtime_error("CB data too short");
     if (data.size() < payload_len)
         data.resize(payload_len, 0x00);
+    if (decrypted)
+        synchronize_header_numeric_fields_to_data();
 
     generic_header be_hdr = cb_a_hdr.header;
-    be_hdr.magic = bswap16(be_hdr.magic);
-    be_hdr.version = bswap16(be_hdr.version);
-    be_hdr.flags = bswap16(be_hdr.flags);
-    be_hdr.size = bswap32(be_hdr.size);
-    be_hdr.entrypoint = bswap32(be_hdr.entrypoint);
+    byteswap_generic_header(be_hdr);
 
     std::memcpy(cb_a_hdr_copy, &be_hdr, 16);
     cb_a_hdr_copy[6] = 0;
@@ -172,6 +170,8 @@ void BootloaderCb::decrypt_mfg(const uint8_t cb_a_key[16]) {
         throw std::runtime_error("CB data too short");
     if (data.size() < payload_len)
         data.resize(payload_len, 0x00);
+    if (decrypted)
+        synchronize_header_numeric_fields_to_data();
 
     std::memcpy(hmac_input, data.data(), 0x10);
     std::memcpy(hmac_input + 0x10, cb_a_key, 0x10);
@@ -194,6 +194,7 @@ void BootloaderCb::populate_metadata() {
 
     std::memcpy(reinterpret_cast<uint8_t*>(&header) + sizeof(generic_header), data.data(),
                 sizeof(cb_header) - sizeof(generic_header));
+    byteswap_cb_header_numeric_fields(header);
     parse_perbox();
 }
 
@@ -215,19 +216,37 @@ bool BootloaderCb::serialize_perbox() {
     return true;
 }
 
+void BootloaderCb::synchronize_header_numeric_fields_to_data() {
+    constexpr size_t console_sequence_allow_offset =
+        offsetof(cb_header, console_seq_allow) +
+        offsetof(ConsoleTypeSeqAllow, console_sequence_allow) - sizeof(generic_header);
+    if (data.size() < console_sequence_allow_offset + sizeof(uint16_t))
+        return;
+
+    const uint16_t wire_value = bswap16(header.console_seq_allow.console_sequence_allow);
+    std::memcpy(data.data() + console_sequence_allow_offset, &wire_value, sizeof(wire_value));
+}
+
 std::vector<uint8_t> BootloaderCb::serialize() const {
     std::vector<uint8_t> out(sizeof(generic_header));
 
     generic_header temp_hdr = header.header;
 
-    temp_hdr.magic = bswap16(temp_hdr.magic);
-    temp_hdr.version = bswap16(temp_hdr.version);
-    temp_hdr.flags = bswap16(temp_hdr.flags);
-    temp_hdr.size = bswap32(temp_hdr.size);
-    temp_hdr.entrypoint = bswap32(temp_hdr.entrypoint);
+    byteswap_generic_header(temp_hdr);
 
     std::memcpy(out.data(), &temp_hdr, sizeof(generic_header));
-    out.insert(out.end(), data.begin(), data.end());
+    auto serialized_data = data;
+    if (decrypted) {
+        constexpr size_t console_sequence_allow_offset =
+            offsetof(cb_header, console_seq_allow) +
+            offsetof(ConsoleTypeSeqAllow, console_sequence_allow) - sizeof(generic_header);
+        if (serialized_data.size() >= console_sequence_allow_offset + sizeof(uint16_t)) {
+            const uint16_t wire_value = bswap16(header.console_seq_allow.console_sequence_allow);
+            std::memcpy(serialized_data.data() + console_sequence_allow_offset, &wire_value,
+                        sizeof(wire_value));
+        }
+    }
+    out.insert(out.end(), serialized_data.begin(), serialized_data.end());
 
     return out;
 }

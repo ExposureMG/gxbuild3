@@ -1,9 +1,9 @@
 #include "nand/bootloaders/5bl.hpp"
 
-#include "utils/Log.hpp"
-#include "utils/Utils.hpp"
 #include "excrypt.h"
 #include "nand/bootloaders/BootloaderPacker.hpp"
+#include "utils/Log.hpp"
+#include "utils/Utils.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -16,11 +16,8 @@ BootloaderCe BootloaderCe::parse(const std::vector<uint8_t>& bytes) {
 
     std::memcpy(&ce.header, bytes.data(), sizeof(ce_header));
 
-    ce.header.header.magic = bswap16(ce.header.header.magic);
-    ce.header.header.version = bswap16(ce.header.header.version);
-    ce.header.header.flags = bswap16(ce.header.header.flags);
-    ce.header.header.size = bswap32(ce.header.header.size);
-    ce.header.header.entrypoint = bswap32(ce.header.header.entrypoint);
+    byteswap_generic_header(ce.header.header);
+    byteswap_ce_header_numeric_fields(ce.header);
 
     ce.data = std::vector<uint8_t>(bytes.begin() + sizeof(ce_header), bytes.end());
     ce.decrypted = ce.is_decrypted();
@@ -47,6 +44,8 @@ void BootloaderCe::decrypt(const uint8_t cd_key[16]) {
 
     std::vector<uint8_t> buffer(sizeof(ce_header) + data.size());
     ce_header temp_hdr = header;
+    byteswap_generic_header(temp_hdr.header);
+    byteswap_ce_header_numeric_fields(temp_hdr);
     std::memcpy(buffer.data(), &temp_hdr, sizeof(ce_header));
     std::memcpy(buffer.data() + sizeof(ce_header), data.data(), data.size());
 
@@ -55,6 +54,7 @@ void BootloaderCe::decrypt(const uint8_t cd_key[16]) {
 
     std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
                 sizeof(ce_header) - 0x20);
+    byteswap_ce_header_numeric_fields(header);
     std::memcpy(data.data(), buffer.data() + sizeof(ce_header), data.size());
 
     decrypted = true;
@@ -85,6 +85,8 @@ void BootloaderCe::encrypt(const uint8_t cd_key[16]) {
 
     std::vector<uint8_t> buffer(sizeof(ce_header) + data.size());
     ce_header temp_hdr = header;
+    byteswap_generic_header(temp_hdr.header);
+    byteswap_ce_header_numeric_fields(temp_hdr);
     std::memcpy(buffer.data(), &temp_hdr, sizeof(ce_header));
     std::memcpy(buffer.data() + sizeof(ce_header), data.data(), data.size());
 
@@ -93,6 +95,7 @@ void BootloaderCe::encrypt(const uint8_t cd_key[16]) {
 
     std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
                 sizeof(ce_header) - 0x20);
+    byteswap_ce_header_numeric_fields(header);
     std::memcpy(data.data(), buffer.data() + sizeof(ce_header), data.size());
 
     decrypted = false;
@@ -105,11 +108,8 @@ bool BootloaderCe::is_decrypted() const {
 std::vector<uint8_t> BootloaderCe::serialize() const {
     std::vector<uint8_t> out(sizeof(ce_header));
     ce_header temp_hdr = header;
-    temp_hdr.header.magic = bswap16(temp_hdr.header.magic);
-    temp_hdr.header.version = bswap16(temp_hdr.header.version);
-    temp_hdr.header.flags = bswap16(temp_hdr.header.flags);
-    temp_hdr.header.size = bswap32(temp_hdr.header.size);
-    temp_hdr.header.entrypoint = bswap32(temp_hdr.header.entrypoint);
+    byteswap_generic_header(temp_hdr.header);
+    byteswap_ce_header_numeric_fields(temp_hdr);
 
     std::memcpy(out.data(), &temp_hdr, sizeof(ce_header));
     out.insert(out.end(), data.begin(), data.end());

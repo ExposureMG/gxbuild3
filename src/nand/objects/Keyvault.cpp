@@ -152,6 +152,14 @@ std::vector<uint8_t> keyvault_decrypt(std::span<const uint8_t> cpu_key,
                    static_cast<uint32_t>(out_data.size() - 0x10), nullptr, 0, nullptr, 0,
                    kv_digest, 20);
 
+    uint8_t difference = 0;
+    for (size_t i = 0; i < 0x10; ++i) {
+        difference |= static_cast<uint8_t>(out_data[i] ^ kv_digest[i]);
+    }
+    if (difference != 0) {
+        throw std::runtime_error("Keyvault authentication failed");
+    }
+
     return out_data;
 }
 

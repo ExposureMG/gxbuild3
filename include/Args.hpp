@@ -89,14 +89,16 @@ inline const std::map<std::string, ImageType> kImageTypeMap = {
 struct InputMetadata {
     std::vector<uint8_t> cpu_key;
     std::optional<std::vector<uint8_t>> nand_image;
+    // Canonical keyvault input: authenticated serialized header bytes 0..15 are retained; the
+    // body is plaintext at the Input boundary. RunBuild encrypts the body for the output NAND.
     std::optional<std::vector<uint8_t>> keyvault;
     std::optional<std::vector<uint8_t>> smc;
-    uint8_t cb_ldv;
+    uint8_t cb_ldv{0};
     std::optional<uint8_t> cf_ldv;
-    uint8_t pairing_data[3];
-    uint8_t console_type;
-    uint8_t console_sequence;
-    uint16_t console_sequence_allow;
+    std::array<uint8_t, 3> pairing_data{};
+    uint8_t console_type{0};
+    uint8_t console_sequence{0};
+    uint16_t console_sequence_allow{0};
 };
 
 struct BootloaderEntryInfo {
@@ -187,6 +189,7 @@ struct InputBootloaders {
     std::vector<uint8_t> cb_or_a;
     std::optional<std::vector<uint8_t>> cb_x;
     std::optional<std::vector<uint8_t>> cb_b;
+    std::optional<std::vector<uint8_t>> sc;
     std::vector<uint8_t> cd;
     std::optional<std::vector<uint8_t>> ce;
     std::optional<std::vector<uint8_t>> cf0;
@@ -203,25 +206,10 @@ struct InputPayloads {
     std::optional<std::vector<uint8_t>> payload;
 };
 
-struct OverrideMetadata {
-    bool xsb_image = false; // old sfc
-    bool psb_image = false; // new sfc
-    bool ksb_image = false; // emmc
-};
-
-struct Input {
-    InputMetadata metadata;
-    InputBootloaders bootloaders;
-    std::optional<InputPayloads> payloads;
-    std::optional<std::vector<std::pair<std::string, std::vector<uint8_t>>>> flashfs_sec;
-    OverrideMetadata overrides;
-};
-
 struct OptionsArgs {
     std::optional<std::string> cbldv;
     std::optional<std::string> pairing_data;
     std::optional<std::string> cfldv;
-    
 
     // JTAG / glitch inputs
     std::optional<std::string> xellbutton;
@@ -264,7 +252,7 @@ struct OptionsArgs {
 };
 
 class OptionsManager {
-public:
+  public:
     OptionsManager() = default;
     explicit OptionsManager(OptionsArgs args);
     explicit OptionsManager(std::string_view raw_args);
@@ -291,6 +279,46 @@ public:
     const OptionsArgs& data() const noexcept { return m_args; }
     OptionsArgs& data() noexcept { return m_args; }
 
-private:
+  private:
     OptionsArgs m_args{};
+};
+
+struct InputMobileData {
+    std::array<std::optional<std::vector<uint8_t>>, 9> slots{};
+
+    std::optional<std::vector<uint8_t>>* slot(uint8_t block_type) noexcept {
+        if (block_type < 0x31 || block_type > 0x39) {
+            return nullptr;
+        }
+        return &slots[block_type - 0x31];
+    }
+
+    const std::optional<std::vector<uint8_t>>* slot(uint8_t block_type) const noexcept {
+        if (block_type < 0x31 || block_type > 0x39) {
+            return nullptr;
+        }
+        return &slots[block_type - 0x31];
+    }
+};
+
+struct InputPatchFile {
+    std::string name;
+    std::vector<uint8_t> data;
+};
+
+struct InputPatches {
+    std::optional<InputPatchFile> automatic;
+    std::vector<InputPatchFile> addons;
+};
+
+struct Input {
+    BuildType build_type{BuildType::Retail};
+    ImageType image_type{ImageType::SmallBlock};
+    OptionsArgs options{};
+    InputMetadata metadata{};
+    InputBootloaders bootloaders{};
+    InputMobileData mobiles{};
+    std::optional<InputPatches> patches;
+    std::optional<InputPayloads> payloads;
+    std::optional<std::vector<std::pair<std::string, std::vector<uint8_t>>>> flashfs_sec;
 };

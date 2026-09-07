@@ -13,8 +13,12 @@
 
 namespace gxbuild3::NAND {
 
+    struct FlashFileSystemTestAccess;
+
     inline constexpr size_t kMaxFilenameLength = 0x16;
     inline constexpr size_t kEntriesPerPage = 16;
+    inline constexpr size_t kRootDirectoryPages = 16;
+    inline constexpr size_t kMaxDirectoryEntries = kRootDirectoryPages * kEntriesPerPage;
     inline constexpr size_t kBlocksPerPage = 256;
     inline constexpr size_t kCleanBlockSize = 0x4000;
 
@@ -23,7 +27,7 @@ namespace gxbuild3::NAND {
         inline constexpr uint16_t EndOfChain = 0x1FFF;
         inline constexpr uint16_t Reserved = 0x1FFB;
         inline constexpr uint16_t BadBlock = 0x1FF0;
-    }
+    } // namespace BlockMapStatus
 
 #pragma pack(push, 1)
     struct FlashFileSystemEntry {
@@ -71,12 +75,17 @@ namespace gxbuild3::NAND {
         void free_chain(uint16_t start_block);
 
       private:
+        friend struct FlashFileSystemTestAccess;
+
         Driver* m_driver = nullptr;
         uint32_t m_version = 1;
         uint16_t m_root_block = 0x3E0;
         std::vector<uint16_t> m_blockmap;
         std::vector<FlashFileSystemEntry> m_entries;
         std::map<std::string, std::vector<uint8_t>> m_file_data;
+
+        [[nodiscard]] static std::optional<size_t> checked_block_count(size_t bytes_needed,
+                                                                       size_t clean_block_size);
 
         [[nodiscard]] FlashFileSystemEntry* find_entry(std::string_view filename);
         [[nodiscard]] const FlashFileSystemEntry* find_entry(std::string_view filename) const;

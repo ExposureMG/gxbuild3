@@ -1,4 +1,5 @@
 #include "nand/FlashDriver.hpp"
+
 #include "utils/Log.hpp"
 #include "utils/Utils.hpp"
 
@@ -163,6 +164,48 @@ namespace gxbuild3::NAND {
 
     size_t Driver::block_size_raw() const {
         return pages_per_block() * m_page_size;
+    }
+
+    size_t Driver::data_block_limit() const {
+        const size_t total_blocks = block_count();
+        size_t smc_reserve_block = 0;
+        switch (m_driver_mode) {
+            case DriverMode::Big:
+                smc_reserve_block = 0x1E0;
+                break;
+            case DriverMode::Emmc:
+                smc_reserve_block = 0xC00;
+                break;
+            case DriverMode::Small:
+            case DriverMode::NewSmall:
+                smc_reserve_block = 0x3E0;
+                break;
+        }
+
+        const size_t smc_config_start = std::min(smc_reserve_block, total_blocks);
+        if (smc_config_start < 4) {
+            return 0;
+        }
+
+        size_t limit = smc_config_start - 4;
+        if (m_driver_mode == DriverMode::Emmc && total_blocks >= 6) {
+            limit = std::min(limit, total_blocks - 6);
+        }
+        return limit;
+    }
+
+    std::optional<BlockRange> Driver::block_range_for_byte_interval(size_t offset,
+                                                                     size_t length) const {
+        const size_t clean_block_size = block_size_clean();
+        const size_t clean_image_size = block_count() * clean_block_size;
+        if (length == 0 || clean_block_size == 0 || offset > clean_image_size ||
+            length > clean_image_size - offset) {
+            return std::nullopt;
+        }
+
+        const size_t start_block = offset / clean_block_size;
+        const size_t end_block = (offset + length - 1) / clean_block_size + 1;
+        return BlockRange{start_block, end_block - start_block};
     }
 
     void Driver::input(std::vector<uint8_t> image) {
@@ -539,10 +582,8 @@ namespace gxbuild3::NAND {
                 spare_data[0xC] = meta.block_type & 0x3F;
             }
 
-            if (meta.fs_size != 0) {
-                spare_data[0x7] = static_cast<uint8_t>(meta.fs_size & 0xFF);
-                spare_data[0x8] = static_cast<uint8_t>((meta.fs_size >> 8) & 0xFF);
-            }
+            spare_data[0x7] = static_cast<uint8_t>(meta.fs_size & 0xFF);
+            spare_data[0x8] = static_cast<uint8_t>((meta.fs_size >> 8) & 0xFF);
 
             write_page_spare(first_page + p, spare_data);
         }
@@ -558,7 +599,8 @@ namespace gxbuild3::NAND {
             if (offset + 0x4000 > m_nand_image.size()) {
                 return false;
             }
-            return std::all_of(m_nand_image.begin() + offset, m_nand_image.begin() + offset + 0x4000,
+            return std::all_of(m_nand_image.begin() + offset,
+                               m_nand_image.begin() + offset + 0x4000,
                                [](uint8_t b) { return b == 0x00 || b == 0xFF; });
         }
 
@@ -792,8 +834,9 @@ namespace gxbuild3::NAND {
                                 const size_t chunk_len =
                                     std::min(block_size_clean(), mob.data_size - data_offset);
                                 const size_t page_count = (chunk_len + 511) / 512;
-                                meta.page_count =
-                                    page_count >= pages_per_block() ? 0 : static_cast<uint8_t>(page_count);
+                                meta.page_count = page_count >= pages_per_block()
+                                                      ? 0
+                                                      : static_cast<uint8_t>(page_count);
                                 if (block_offset == 0 && mob.data_size <= 0xFFFF) {
                                     meta.fs_size = static_cast<uint16_t>(mob.data_size);
                                 }

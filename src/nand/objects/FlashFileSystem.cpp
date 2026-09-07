@@ -1,4 +1,5 @@
 #include "nand/objects/FlashFileSystem.hpp"
+
 #include "utils/Log.hpp"
 #include "utils/Utils.hpp"
 
@@ -17,7 +18,7 @@ namespace gxbuild3::NAND {
         if (block_number == 0 || block_number == 0xFFFF) {
             return false;
         }
-        if (length == 0 || length == 0xFFFFFFFF) {
+        if (length == 0xFFFFFFFF) {
             return false;
         }
         const uint8_t first = static_cast<uint8_t>(filename[0]);
@@ -141,24 +142,42 @@ namespace gxbuild3::NAND {
         return blocks;
     }
 
+    std::optional<size_t> FlashFileSystem::checked_block_count(size_t bytes_needed,
+                                                               size_t clean_block_size) {
+        if (clean_block_size == 0) {
+            return std::nullopt;
+        }
+        if (bytes_needed == 0) {
+            return 1;
+        }
+        return bytes_needed / clean_block_size + (bytes_needed % clean_block_size != 0);
+    }
+
     std::optional<uint16_t> FlashFileSystem::allocate_chain(size_t bytes_needed) {
-        size_t blocks_needed = (bytes_needed + kCleanBlockSize - 1) / kCleanBlockSize;
-        if (blocks_needed == 0) {
-            blocks_needed = 1;
+        const size_t clean_block_size = m_driver ? m_driver->block_size_clean() : kCleanBlockSize;
+        const auto blocks_needed = checked_block_count(bytes_needed, clean_block_size);
+        if (!blocks_needed) {
+            return std::nullopt;
+        }
+        const size_t block_count = *blocks_needed;
+        if (block_count > m_blockmap.size()) {
+            return std::nullopt;
         }
 
         std::vector<uint16_t> allocated;
-        allocated.reserve(blocks_needed);
+        allocated.reserve(block_count);
 
-        for (size_t i = 0; i < m_blockmap.size() && allocated.size() < blocks_needed; ++i) {
-            if ((m_blockmap[i] & 0x7FFF) == BlockMapStatus::Free || m_blockmap[i] == BlockMapStatus::Free) {
+        for (size_t i = 0; i < m_blockmap.size() && allocated.size() < block_count; ++i) {
+            if ((m_blockmap[i] & 0x7FFF) == BlockMapStatus::Free ||
+                m_blockmap[i] == BlockMapStatus::Free) {
                 allocated.push_back(static_cast<uint16_t>(i));
             }
         }
 
-        if (allocated.size() < blocks_needed) {
-            Log::Error("FlashFS out of space: needed {} blocks, only {} free blocks available (out of {} total blocks)",
-                       blocks_needed, allocated.size(), m_blockmap.size());
+        if (allocated.size() < block_count) {
+            Log::Error("FlashFS out of space: needed {} blocks, only {} free blocks available (out "
+                       "of {} total blocks)",
+                       block_count, allocated.size(), m_blockmap.size());
             return std::nullopt;
         }
 
@@ -191,12 +210,18 @@ namespace gxbuild3::NAND {
         }
 
         if (clean_name.empty() || clean_name.size() >= kMaxFilenameLength) {
-            Log::Error("Invalid filename '{}' for FlashFS (length must be 1-{} chars)",
-                       clean_name, kMaxFilenameLength - 1);
+            Log::Error("Invalid filename '{}' for FlashFS (length must be 1-{} chars)", clean_name,
+                       kMaxFilenameLength - 1);
             return false;
         }
 
-        if (exists(clean_name)) {
+        const bool replacing_existing_file = exists(clean_name);
+        if (!replacing_existing_file && m_entries.size() >= kMaxDirectoryEntries) {
+            Log::Error("FlashFS directory is full (maximum {} entries)", kMaxDirectoryEntries);
+            return false;
+        }
+
+        if (replacing_existing_file) {
             delete_file(clean_name);
         }
 
@@ -219,8 +244,7 @@ namespace gxbuild3::NAND {
         return true;
     }
 
-    std::optional<std::vector<uint8_t>> FlashFileSystem::get_file(
-        std::string_view filename) const {
+    std::optional<std::vector<uint8_t>> FlashFileSystem::get_file(std::string_view filename) const {
         std::string_view clean_name = filename;
         auto pos = clean_name.find_last_of("/\\");
         if (pos != std::string_view::npos) {
@@ -303,6 +327,9 @@ namespace gxbuild3::NAND {
     }
 
     std::vector<uint8_t> FlashFileSystem::serialize_root_block() const {
+        if (m_entries.size() > kMaxDirectoryEntries) {
+            return {};
+        }
         std::vector<uint8_t> root_block(kCleanBlockSize, 0);
 
         size_t bm_written = 0;
@@ -316,7 +343,8 @@ namespace gxbuild3::NAND {
         }
 
         size_t entry_written = 0;
-        for (size_t page = 1; page < 32 && entry_written < m_entries.size(); page += 2) {
+        for (size_t page = 1; page < kRootDirectoryPages * 2 && entry_written < m_entries.size();
+             page += 2) {
             uint8_t* page_ptr = root_block.data() + (page * 512);
             for (size_t slot = 0; slot < kEntriesPerPage && entry_written < m_entries.size();
                  ++slot) {
@@ -336,8 +364,16 @@ namespace gxbuild3::NAND {
         if (!m_driver) {
             return false;
         }
+        if (m_entries.size() > kMaxDirectoryEntries) {
+            Log::Error("FlashFS directory exceeds its {}-entry serialization capacity",
+                       kMaxDirectoryEntries);
+            return false;
+        }
 
         auto root_data = serialize_root_block();
+        if (root_data.size() != kCleanBlockSize) {
+            return false;
+        }
         if (!m_driver->write_block(m_root_block, root_data)) {
             return false;
         }
@@ -363,6 +399,7 @@ namespace gxbuild3::NAND {
             const auto& file_bytes = it->second;
             auto chain = get_chain(entry.block_number);
             size_t bytes_written = 0;
+            const size_t clean_block_size = m_driver->block_size_clean();
 
             for (uint16_t blk : chain) {
                 if (bytes_written >= file_bytes.size()) {
@@ -370,7 +407,7 @@ namespace gxbuild3::NAND {
                 }
 
                 size_t chunk_len =
-                    std::min<size_t>(file_bytes.size() - bytes_written, kCleanBlockSize);
+                    std::min<size_t>(file_bytes.size() - bytes_written, clean_block_size);
                 std::span<const uint8_t> chunk(file_bytes.data() + bytes_written, chunk_len);
                 if (!m_driver->write_block(blk, chunk)) {
                     return false;
@@ -381,7 +418,10 @@ namespace gxbuild3::NAND {
                 file_meta.logical_block_id = blk;
                 file_meta.sequence = m_version;
                 file_meta.block_type = 0x01;
-                file_meta.page_count = static_cast<uint8_t>((chunk_len + 511) / 512);
+                const size_t page_count = (chunk_len + 511) / 512;
+                file_meta.page_count = page_count >= m_driver->pages_per_block()
+                                           ? 0
+                                           : static_cast<uint8_t>(page_count);
                 file_meta.is_bad = false;
                 m_driver->write_block_metadata(blk, file_meta);
 
@@ -408,8 +448,7 @@ namespace gxbuild3::NAND {
 
         for (size_t page = 0; page < 32 && bm_read < m_blockmap.size(); page += 2) {
             const uint8_t* page_ptr = root_data.data() + (page * 512);
-            for (size_t entry = 0; entry < kBlocksPerPage && bm_read < m_blockmap.size();
-                 ++entry) {
+            for (size_t entry = 0; entry < kBlocksPerPage && bm_read < m_blockmap.size(); ++entry) {
                 uint16_t val = 0;
                 std::memcpy(&val, page_ptr + (entry * sizeof(uint16_t)), sizeof(uint16_t));
                 m_blockmap[bm_read++] = bswap16(val);
@@ -445,7 +484,8 @@ namespace gxbuild3::NAND {
                     break;
                 }
                 auto blk_data = driver.read_block(blk);
-                size_t to_copy = std::min<size_t>(entry.length - file_bytes.size(), blk_data.size());
+                size_t to_copy =
+                    std::min<size_t>(entry.length - file_bytes.size(), blk_data.size());
                 file_bytes.insert(file_bytes.end(), blk_data.begin(), blk_data.begin() + to_copy);
             }
 

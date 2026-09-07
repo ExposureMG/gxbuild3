@@ -42,4 +42,5 @@ class BootloaderCb {
 
   private:
     void do_rc4_decrypt(const uint8_t key[16], size_t payload_len);
+    void synchronize_header_numeric_fields_to_data();
 };

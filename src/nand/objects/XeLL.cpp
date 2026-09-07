@@ -1,4 +1,5 @@
 #include "nand/objects/XeLL.hpp"
+
 #include "utils/Log.hpp"
 
 #include <algorithm>
@@ -49,7 +50,7 @@ namespace gxbuild3::NAND {
                     if (i > 0) {
                         size_t v_end = i;
                         while (v_end > 0 &&
-                                std::isspace(static_cast<unsigned char>(raw[v_end - 1]))) {
+                               std::isspace(static_cast<unsigned char>(raw[v_end - 1]))) {
                             --v_end;
                         }
                         size_t v_start = v_end;
@@ -104,17 +105,15 @@ namespace gxbuild3::NAND {
             return std::nullopt;
         }
 
-        auto it =
-            std::search(bytes.begin(), bytes.end(), std::begin(kElfMagic), std::end(kElfMagic));
-        if (it == bytes.end()) {
+        if (!std::equal(std::begin(kElfMagic), std::end(kElfMagic), bytes.begin())) {
             return std::nullopt;
         }
 
         XeLL xell;
         xell.data.assign(bytes.begin(), bytes.end());
         extract_metadata(bytes, xell.metadata);
-        Log::Debug("Parsed XeLL: version='{}', author='{}', date='{}'",
-                   xell.metadata.version, xell.metadata.author, xell.metadata.date);
+        Log::Debug("Parsed XeLL: version='{}', author='{}', date='{}'", xell.metadata.version,
+                   xell.metadata.author, xell.metadata.date);
         return xell;
     }
 

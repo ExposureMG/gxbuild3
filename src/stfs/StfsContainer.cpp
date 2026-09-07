@@ -1,4 +1,5 @@
 #include "stfs/StfsContainer.hpp"
+
 #include "utils/Log.hpp"
 
 #include <BlockParser.hpp>
@@ -165,7 +166,8 @@ namespace Stfs {
 
         const auto file_table = readFileTable(data_, header_size_, *vd);
         entries_ = stfs::parseFileListing(file_table);
-        Log::Debug("Opened STFS container ({} entries, header size 0x{:X})", entries_.size(), header_size_);
+        Log::Debug("Opened STFS container ({} entries, header size 0x{:X})", entries_.size(),
+                   header_size_);
     }
 
     std::vector<StfsContainer::EntryView> StfsContainer::buildEntryViews() const {
@@ -208,7 +210,8 @@ namespace Stfs {
         }
     }
 
-    ExtractedFiles StfsContainer::extractToMemory() const {
+    ExtractedFiles
+    StfsContainer::extractToMemory(std::span<const std::string> excluded_names) const {
         ExtractedFiles results;
 
         for (const auto& entry : entries_) {
@@ -218,11 +221,27 @@ namespace Stfs {
 
             auto name = stripFlashPrefix(entry.name);
             name = lowerAscii(std::move(name));
+            if (std::find(excluded_names.begin(), excluded_names.end(), name) !=
+                excluded_names.end()) {
+                continue;
+            }
             results.emplace(std::move(name),
                             stfs::extractFile(data_, entry, stfs::Magic::PIRS, header_size_));
         }
 
         return results;
+    }
+
+    bool StfsContainer::containsFileByName(std::string_view name) const {
+        const auto wanted = lowerAscii(std::string{name});
+
+        return std::any_of(entries_.begin(), entries_.end(), [&](const auto& entry) {
+            if (entry.isDirectory()) {
+                return false;
+            }
+            auto entry_name = stripFlashPrefix(entry.name);
+            return lowerAscii(std::move(entry_name)) == wanted;
+        });
     }
 
     std::vector<std::byte> StfsContainer::extractFileByName(std::string_view name) const {

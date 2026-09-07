@@ -17,7 +17,6 @@ endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_subdirectory(extern/argparse)
 add_subdirectory(extern/GxCrypt)
 add_subdirectory(extern/spdlog)
 add_subdirectory(extern/stfs)
@@ -26,6 +25,10 @@ add_subdirectory(extern/stfs)
 set(GXBUILD3_LIB_SOURCES
     src/Args.cpp
     src/BuildRunner.cpp
+    src/cli/BuildCommand.cpp
+    src/cli/BuildInputResolver.cpp
+    src/cli/CommandLine.cpp
+    src/InputValidator.cpp
     src/Library.cpp
     src/ini/IniParser.cpp
     src/nand/FlashDriver.cpp
@@ -82,11 +85,11 @@ set_target_properties(gxbuild3 PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
+    OUTPUT_NAME gxbuild
 )
 
 target_link_libraries(gxbuild3 PRIVATE
     gxbuild3_lib
-    argparse::argparse
     stfs
     GxCrypt
     spdlog::spdlog
@@ -109,6 +112,97 @@ if(BUILD_TESTING)
 
     target_link_libraries(gxbuild3_flashdriver_tests PRIVATE gxbuild3_lib)
     add_test(NAME gxbuild3_flashdriver_tests COMMAND gxbuild3_flashdriver_tests)
+
+    add_executable(gxbuild3_filemanager_tests tests/FileManagerTests.cpp)
+    target_compile_features(gxbuild3_filemanager_tests PRIVATE cxx_std_23)
+    set_target_properties(gxbuild3_filemanager_tests PROPERTIES CXX_EXTENSIONS OFF)
+    target_link_libraries(gxbuild3_filemanager_tests PRIVATE gxbuild3_lib)
+    target_compile_options(gxbuild3_filemanager_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME gxbuild3_filemanager_tests COMMAND gxbuild3_filemanager_tests)
+
+    add_executable(gxbuild3_input_tests tests/InputTests.cpp)
+    target_compile_features(gxbuild3_input_tests PRIVATE cxx_std_23)
+    set_target_properties(gxbuild3_input_tests PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+    target_link_libraries(gxbuild3_input_tests PRIVATE gxbuild3_lib)
+    target_compile_options(gxbuild3_input_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME gxbuild3_input_tests COMMAND gxbuild3_input_tests)
+
+    add_executable(gxbuild3_commandline_tests tests/CommandLineTests.cpp)
+    target_compile_features(gxbuild3_commandline_tests PRIVATE cxx_std_23)
+    set_target_properties(gxbuild3_commandline_tests PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+    target_include_directories(gxbuild3_commandline_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(gxbuild3_commandline_tests PRIVATE gxbuild3_lib)
+    target_compile_options(gxbuild3_commandline_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME gxbuild3_commandline_tests COMMAND gxbuild3_commandline_tests)
+
+    add_executable(gxbuild3_buildrunner_tests tests/BuildRunnerTests.cpp)
+    target_compile_features(gxbuild3_buildrunner_tests PRIVATE cxx_std_23)
+    set_target_properties(gxbuild3_buildrunner_tests PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+    target_link_libraries(gxbuild3_buildrunner_tests PRIVATE gxbuild3_lib)
+    target_compile_options(gxbuild3_buildrunner_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME gxbuild3_buildrunner_tests COMMAND gxbuild3_buildrunner_tests)
+
+    add_executable(gxbuild3_patchset_tests tests/PatchsetTests.cpp)
+    target_compile_features(gxbuild3_patchset_tests PRIVATE cxx_std_23)
+    set_target_properties(gxbuild3_patchset_tests PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+    target_link_libraries(gxbuild3_patchset_tests PRIVATE gxbuild3_lib)
+    target_compile_options(gxbuild3_patchset_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME gxbuild3_patchset_tests COMMAND gxbuild3_patchset_tests)
+
+    add_executable(gxbuild3_resolver_tests tests/BuildInputResolverTests.cpp)
+    target_compile_features(gxbuild3_resolver_tests PRIVATE cxx_std_23)
+    set_target_properties(gxbuild3_resolver_tests PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+    target_link_libraries(gxbuild3_resolver_tests PRIVATE gxbuild3_lib)
+    target_compile_options(gxbuild3_resolver_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME gxbuild3_resolver_tests COMMAND gxbuild3_resolver_tests)
+
+    add_executable(gxbuild3_buildcommand_tests tests/BuildCommandTests.cpp)
+    target_compile_features(gxbuild3_buildcommand_tests PRIVATE cxx_std_23)
+    set_target_properties(gxbuild3_buildcommand_tests PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+    target_link_libraries(gxbuild3_buildcommand_tests PRIVATE gxbuild3_lib)
+    target_compile_options(gxbuild3_buildcommand_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME gxbuild3_buildcommand_tests COMMAND gxbuild3_buildcommand_tests)
+
+    add_executable(gxbuild3_cli_fixture_generator tests/CliFixtureGenerator.cpp)
+    target_compile_features(gxbuild3_cli_fixture_generator PRIVATE cxx_std_23)
+    set_target_properties(gxbuild3_cli_fixture_generator PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+    target_link_libraries(gxbuild3_cli_fixture_generator PRIVATE gxbuild3_lib)
+    target_compile_options(gxbuild3_cli_fixture_generator PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+    add_test(NAME gxbuild3_cli_integration_tests
+        COMMAND ${CMAKE_COMMAND}
+            -DGXBUILD3_EXE=$<TARGET_FILE:gxbuild3>
+            -DGXBUILD3_FIXTURE_GENERATOR=$<TARGET_FILE:gxbuild3_cli_fixture_generator>
+            -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-integration-tests
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/CliIntegrationTests.cmake)
 endif()
 
 target_compile_options(gxbuild3_lib PRIVATE -Wall -Wextra -Wpedantic -Werror)
