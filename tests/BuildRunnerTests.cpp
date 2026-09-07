@@ -1177,6 +1177,36 @@ namespace {
                        "SC survives backing-cleared layout override");
     }
 
+    bool test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() {
+        auto encrypted_source = fresh_input(ImageType::SmallBlock);
+        auto cb_for_key = BootloaderCb::parse(encrypted_source.bootloaders.cb_or_a);
+        cb_for_key.encrypt(key_1bl);
+        auto encrypted_sc = BootloaderSc::parse(*encrypted_source.bootloaders.sc);
+        encrypted_sc.decrypted = true;
+        encrypted_sc.encrypt(cb_for_key.derived_key->data());
+        encrypted_source.bootloaders.sc = encrypted_sc.serialize();
+
+        const auto encrypted_build = RunBuild(encrypted_source);
+        auto encrypted_image = encrypted_build ? FlashImage::read(*encrypted_build) : std::nullopt;
+        const bool encrypted_parsed = encrypted_image && encrypted_image->parse();
+        const bool encrypted_decrypted =
+            encrypted_parsed && encrypted_image->decrypt_all(encrypted_source.metadata.cpu_key);
+
+        auto plaintext_source = fresh_input(ImageType::SmallBlock);
+        const auto expected_plaintext_sc = *plaintext_source.bootloaders.sc;
+        const auto plaintext_build = RunBuild(plaintext_source);
+        const auto plaintext_extracted =
+            plaintext_build ? ExtractAll(*plaintext_build, plaintext_source.metadata.cpu_key)
+                            : std::nullopt;
+
+        return require(encrypted_decrypted && encrypted_image->cb_section.sc.has_value() &&
+                           encrypted_image->cb_section.sc->is_decrypted(),
+                       "decrypt_all decrypts explicitly encrypted SC") &&
+               require(plaintext_extracted &&
+                           plaintext_extracted->bootloaders.sc == expected_plaintext_sc,
+                       "decrypt_all preserves zero-key plaintext SC bytes");
+    }
+
     bool test_fresh_layouts_match_requested_image_types() {
         const std::array<std::pair<ImageType, Driver::DriverMode>, 4> layouts{{
             {ImageType::SmallBlock, Driver::DriverMode::Small},
@@ -2402,6 +2432,7 @@ int main() {
     passed = test_custom_payload_is_rejected_without_an_on_disk_format_contract() && passed;
     passed = test_extract_all_preserves_complete_donor_baseline() && passed;
     passed = test_sc_survives_extraction_and_backing_cleared_layout_override() && passed;
+    passed = test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() && passed;
     passed = test_fresh_layouts_match_requested_image_types() && passed;
     passed = test_bigblock_flashfs_formats_and_roundtrips_an_empty_overlay() && passed;
     passed = test_bigblock_flashfs_roundtrips_a_file_larger_than_16_kib() && passed;

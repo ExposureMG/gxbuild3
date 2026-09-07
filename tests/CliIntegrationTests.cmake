@@ -12,6 +12,12 @@ endif()
 if(NOT EXISTS "${GXBUILD3_FIXTURE_GENERATOR}")
     message(FATAL_ERROR "CLI integration fixture generator does not exist: ${GXBUILD3_FIXTURE_GENERATOR}")
 endif()
+if(NOT DEFINED GXBUILD3_OUTPUT_VERIFIER OR GXBUILD3_OUTPUT_VERIFIER STREQUAL "")
+    message(FATAL_ERROR "GXBUILD3_OUTPUT_VERIFIER must name the CLI output verifier")
+endif()
+if(NOT EXISTS "${GXBUILD3_OUTPUT_VERIFIER}")
+    message(FATAL_ERROR "CLI output verifier does not exist: ${GXBUILD3_OUTPUT_VERIFIER}")
+endif()
 if(NOT DEFINED TEST_ROOT OR TEST_ROOT STREQUAL "")
     message(FATAL_ERROR "TEST_ROOT must name a writable test-fixture directory")
 endif()
@@ -24,6 +30,20 @@ endif()
 function(require_result name actual expected)
     if(NOT "${actual}" STREQUAL "${expected}")
         message(FATAL_ERROR "${name}: expected exit ${expected}, got ${actual}")
+    endif()
+endfunction()
+
+function(verify_output name output_path)
+    execute_process(
+        COMMAND "${GXBUILD3_OUTPUT_VERIFIER}" "${output_path}"
+        RESULT_VARIABLE verifier_result
+        OUTPUT_VARIABLE verifier_output
+        ERROR_VARIABLE verifier_error)
+    if(NOT verifier_result EQUAL 0)
+        message(FATAL_ERROR
+            "${name}: output verifier failed with exit ${verifier_result}\n"
+            "stdout: ${verifier_output}\n"
+            "stderr: ${verifier_error}")
     endif()
 endfunction()
 
@@ -131,6 +151,7 @@ execute_process(
     OUTPUT_VARIABLE default_build_output
     ERROR_VARIABLE default_build_error)
 require_result("default-output real build" "${default_build_result}" "0")
+verify_output("default-output real build" "${default_output}")
 if(NOT EXISTS "${default_output}")
     message(FATAL_ERROR "a successful build must write updflash.bin in its working directory")
 endif()
@@ -147,6 +168,7 @@ execute_process(
     OUTPUT_VARIABLE overwrite_build_output
     ERROR_VARIABLE overwrite_build_error)
 require_result("default-output overwrite build" "${overwrite_build_result}" "0")
+verify_output("default-output overwrite build" "${default_output}")
 file(SIZE "${default_output}" overwritten_output_size)
 if(NOT overwritten_output_size EQUAL 17301504)
     message(FATAL_ERROR "a second build must overwrite the existing default output")
@@ -160,6 +182,7 @@ execute_process(
     OUTPUT_VARIABLE nested_build_output
     ERROR_VARIABLE nested_build_error)
 require_result("nested-output real build" "${nested_build_result}" "0")
+verify_output("nested-output real build" "${nested_output}")
 if(NOT EXISTS "${nested_output}")
     message(FATAL_ERROR "an explicit nested output path must be created")
 endif()

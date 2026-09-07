@@ -1254,6 +1254,23 @@ namespace gxbuild3::NAND {
                 }
             }
 
+            if (cb_section.sc.has_value() && !cb_section.sc->data.empty() &&
+                !cb_section.sc->is_decrypted() &&
+                std::any_of(std::begin(cb_section.sc->header.key),
+                            std::end(cb_section.sc->header.key),
+                            [](uint8_t byte) { return byte != 0; })) {
+                const auto* parent_key = cb_section.cb_B && cb_section.cb_B->derived_key
+                                             ? &*cb_section.cb_B->derived_key
+                                             : cb_section.cb_or_A.derived_key
+                                                   ? &*cb_section.cb_or_A.derived_key
+                                                   : nullptr;
+                if (!parent_key) {
+                    Log::Error("Cannot decrypt SC: parent CB derived key is missing");
+                    return false;
+                }
+                cb_section.sc->decrypt(parent_key->data());
+            }
+
             if (!kernel_section.cd.data.empty() && !kernel_section.cd.is_decrypted()) {
                 if (cb_section.cb_B.has_value() && cb_section.cb_B->derived_key.has_value()) {
                     kernel_section.cd.decrypt(cb_section.cb_B->derived_key->data());
@@ -1287,6 +1304,20 @@ namespace gxbuild3::NAND {
             }
             if (system_update_1.cf.has_value() && !system_update_1.cf->is_decrypted()) {
                 system_update_1.cf->decrypt(key_1bl);
+            }
+            if (system_update_0.cg.has_value() && !system_update_0.cg->is_decrypted()) {
+                if (!system_update_0.cf.has_value() || !system_update_0.cf->is_decrypted()) {
+                    Log::Error("Cannot decrypt CG0: parent CF0 is missing or not decrypted");
+                    return false;
+                }
+                system_update_0.cg->decrypt(system_update_0.cf->header.cg_key);
+            }
+            if (system_update_1.cg.has_value() && !system_update_1.cg->is_decrypted()) {
+                if (!system_update_1.cf.has_value() || !system_update_1.cf->is_decrypted()) {
+                    Log::Error("Cannot decrypt CG1: parent CF1 is missing or not decrypted");
+                    return false;
+                }
+                system_update_1.cg->decrypt(system_update_1.cf->header.cg_key);
             }
 
             if (smc.has_value() && smc->encrypted) {

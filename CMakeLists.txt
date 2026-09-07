@@ -197,10 +197,21 @@ if(BUILD_TESTING)
     target_link_libraries(gxbuild3_cli_fixture_generator PRIVATE gxbuild3_lib)
     target_compile_options(gxbuild3_cli_fixture_generator PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
+    add_executable(gxbuild3_cli_output_verifier tests/CliOutputVerifier.cpp)
+    target_compile_features(gxbuild3_cli_output_verifier PRIVATE cxx_std_23)
+    set_target_properties(gxbuild3_cli_output_verifier PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+    target_link_libraries(gxbuild3_cli_output_verifier PRIVATE gxbuild3_lib)
+    target_compile_options(gxbuild3_cli_output_verifier PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
     add_test(NAME gxbuild3_cli_integration_tests
         COMMAND ${CMAKE_COMMAND}
             -DGXBUILD3_EXE=$<TARGET_FILE:gxbuild3>
             -DGXBUILD3_FIXTURE_GENERATOR=$<TARGET_FILE:gxbuild3_cli_fixture_generator>
+            -DGXBUILD3_OUTPUT_VERIFIER=$<TARGET_FILE:gxbuild3_cli_output_verifier>
             -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-integration-tests
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/CliIntegrationTests.cmake)
 endif()
