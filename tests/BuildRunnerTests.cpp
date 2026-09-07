@@ -1182,6 +1182,7 @@ namespace {
         auto cb_for_key = BootloaderCb::parse(encrypted_source.bootloaders.cb_or_a);
         cb_for_key.encrypt(key_1bl);
         auto encrypted_sc = BootloaderSc::parse(*encrypted_source.bootloaders.sc);
+        const auto expected_encrypted_sc_data = encrypted_sc.data;
         encrypted_sc.decrypted = true;
         encrypted_sc.encrypt(cb_for_key.derived_key->data());
         encrypted_source.bootloaders.sc = encrypted_sc.serialize();
@@ -1202,6 +1203,8 @@ namespace {
         return require(encrypted_decrypted && encrypted_image->cb_section.sc.has_value() &&
                            encrypted_image->cb_section.sc->is_decrypted(),
                        "decrypt_all decrypts explicitly encrypted SC") &&
+               require(encrypted_image->cb_section.sc->data == expected_encrypted_sc_data,
+                       "decrypt_all restores the exact encrypted SC plaintext") &&
                require(plaintext_extracted &&
                            plaintext_extracted->bootloaders.sc == expected_plaintext_sc,
                        "decrypt_all preserves zero-key plaintext SC bytes");

@@ -1,5 +1,6 @@
 #include "nand/FlashImage.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -60,6 +61,52 @@ namespace {
                        std::string(name) + " has the wrong version");
     }
 
+    template <typename Bootloader>
+    bool verify_literal_payload(std::string_view name, const Bootloader* stage,
+                                size_t expected_size, uint8_t expected_byte) {
+        if (stage == nullptr) {
+            return false;
+        }
+        return require(stage->data.size() == expected_size,
+                       std::string(name) + " has the wrong plaintext payload size") &&
+               require(std::all_of(stage->data.begin(), stage->data.end(),
+                                   [expected_byte](uint8_t byte) {
+                                       return byte == expected_byte;
+                                   }),
+                       std::string(name) + " has the wrong plaintext payload bytes");
+    }
+
+    bool verify_cf_plaintext(std::string_view name, const BootloaderCf* stage,
+                             uint8_t expected_cg_key_byte, uint8_t expected_marker) {
+        if (stage == nullptr) {
+            return false;
+        }
+        return require(std::all_of(std::begin(stage->header.cg_key),
+                                   std::end(stage->header.cg_key),
+                                   [expected_cg_key_byte](uint8_t byte) {
+                                       return byte == expected_cg_key_byte;
+                                   }),
+                       std::string(name) + " has the wrong CG key") &&
+               require(stage->data.size() == 0x200,
+                       std::string(name) + " has the wrong plaintext payload size") &&
+               require(stage->data[0] == 0x00 && stage->data[1] == 0x00 &&
+                           stage->data[2] == expected_marker &&
+                           std::all_of(stage->data.begin() + 3,
+                                       stage->data.begin() + 0x1C0,
+                                       [](uint8_t byte) { return byte == 0x00; }),
+                       std::string(name) + " has the wrong plaintext payload prefix");
+    }
+
+    bool verify_cg_plaintext(std::string_view name, const BootloaderCg* stage,
+                             uint8_t expected_marker) {
+        if (stage == nullptr) {
+            return false;
+        }
+        return require(stage->header.source_size == 0x1000,
+                       std::string(name) + " has the wrong plaintext source size") &&
+               verify_literal_payload(name, stage, 0x40, expected_marker);
+    }
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -98,6 +145,30 @@ int main(int argc, char* argv[]) {
                          NANDBootloaderMagic::CF, 7) && valid;
     valid = verify_stage("CG1", image->system_update_1.cg ? &*image->system_update_1.cg : nullptr,
                          NANDBootloaderMagic::CG, 8) && valid;
+
+    valid = verify_literal_payload("CB", &image->cb_section.cb_or_A, 0x380, 0x00) && valid;
+    valid = verify_literal_payload("SC", image->cb_section.sc ? &*image->cb_section.sc : nullptr,
+                                   0x20, 0x53) && valid;
+    valid = verify_literal_payload("CD", &image->kernel_section.cd, 0x20, 0x42) && valid;
+    valid = verify_literal_payload("CE", image->kernel_section.ce ? &*image->kernel_section.ce
+                                                                  : nullptr,
+                                   0x20, 0x45) && valid;
+    valid = verify_cf_plaintext("CF0", image->system_update_0.cf
+                                           ? &*image->system_update_0.cf
+                                           : nullptr,
+                                0x50, 0x50) && valid;
+    valid = verify_cg_plaintext("CG0", image->system_update_0.cg
+                                           ? &*image->system_update_0.cg
+                                           : nullptr,
+                                0x60) && valid;
+    valid = verify_cf_plaintext("CF1", image->system_update_1.cf
+                                           ? &*image->system_update_1.cf
+                                           : nullptr,
+                                0x70, 0x70) && valid;
+    valid = verify_cg_plaintext("CG1", image->system_update_1.cg
+                                           ? &*image->system_update_1.cg
+                                           : nullptr,
+                                0x80) && valid;
 
     valid = require(image->filesystem.has_value(), "FlashFS is absent") && valid;
     if (image->filesystem) {
