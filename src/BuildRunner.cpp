@@ -576,6 +576,7 @@ BuildResult RunBuild(const Input& input) {
     if (input.flashfs_sec) {
         Log::Info("Populating Flash File System ({} files)", input.flashfs_sec->size());
         FlashFileSystem fs{};
+        fs.set_driver(&flash_image.flash_driver);
         const size_t total_blocks = flash_image.flash_driver.block_count();
         const size_t data_limit = flash_image.flash_driver.data_block_limit();
         if (data_limit == 0 || data_limit > std::numeric_limits<uint16_t>::max()) {

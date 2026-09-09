@@ -74,6 +74,10 @@ namespace gxbuild3::cli {
             if (!exists) {
                 return OptionsArgs{};
             }
+            if (!std::filesystem::is_regular_file(options_path, status_error)) {
+                return std::unexpected(error(ResolutionErrorCode::OptionsReadFailed,
+                                             "Could not read options.ini", options_path));
+            }
 
             std::ifstream input(options_path, std::ios::binary);
             if (!input) {
@@ -646,9 +650,11 @@ namespace gxbuild3::cli {
                     return std::unexpected(found.error());
                 }
                 if (!*found) {
-                    return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
-                                                 "Required INI bootloader was not found", ini_path,
-                                                 entry.key));
+                    return std::unexpected(error(
+                        ResolutionErrorCode::AssetNotFound,
+                        "Required INI bootloader '" + entry.key + "' from '" + ini_path.string() +
+                            "' was not found",
+                        ini_path, entry.key));
                 }
             }
             for (const auto section_name : {"security", "flashfs"}) {
@@ -666,10 +672,11 @@ namespace gxbuild3::cli {
                         return std::unexpected(found.error());
                     }
                     if (!*found && !donor_flashfs_names.contains(key)) {
-                        return std::unexpected(
-                            error(ResolutionErrorCode::AssetNotFound,
-                                  "Required INI payload was not found in the donor or source roots",
-                                  ini_path, entry.key));
+                        return std::unexpected(error(
+                            ResolutionErrorCode::AssetNotFound,
+                            "Required INI payload '" + entry.key + "' from '" + ini_path.string() +
+                                "' was not found in the donor or source roots",
+                            ini_path, entry.key));
                     }
                 }
             }

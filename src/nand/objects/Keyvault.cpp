@@ -128,7 +128,7 @@ void ExCryptRandom(uint8_t* dest, size_t size) {
 namespace gxbuild3::NAND {
 
 std::vector<uint8_t> keyvault_decrypt(std::span<const uint8_t> cpu_key,
-                                      std::span<const uint8_t> data, uint16_t) {
+                                      std::span<const uint8_t> data, uint16_t kv_version) {
     if (!cpukey_valid(cpu_key)) {
         throw std::runtime_error("Invalid CPU key");
     }
@@ -147,9 +147,12 @@ std::vector<uint8_t> keyvault_decrypt(std::span<const uint8_t> cpu_key,
                    static_cast<uint32_t>(out_data.size() - 0x10));
     }
 
+    const uint8_t version_be[2] = {
+        static_cast<uint8_t>(kv_version >> 8), static_cast<uint8_t>(kv_version)
+    };
     uint8_t kv_digest[20];
     ExCryptHmacSha(cpu_key.data(), static_cast<uint32_t>(cpu_key.size()), out_data.data() + 0x10,
-                   static_cast<uint32_t>(out_data.size() - 0x10), nullptr, 0, nullptr, 0,
+                   static_cast<uint32_t>(out_data.size() - 0x10), version_be, sizeof(version_be), nullptr, 0,
                    kv_digest, 20);
 
     uint8_t difference = 0;
@@ -164,7 +167,7 @@ std::vector<uint8_t> keyvault_decrypt(std::span<const uint8_t> cpu_key,
 }
 
 std::vector<uint8_t> keyvault_encrypt(std::span<const uint8_t> cpu_key,
-                                      std::span<const uint8_t> data, uint16_t) {
+                                      std::span<const uint8_t> data, uint16_t kv_version) {
     if (!cpukey_valid(cpu_key)) {
         throw std::runtime_error("Invalid CPU key");
     }
@@ -174,9 +177,12 @@ std::vector<uint8_t> keyvault_encrypt(std::span<const uint8_t> cpu_key,
 
     std::vector<uint8_t> out_data(data.begin(), data.end());
 
+    const uint8_t version_be[2] = {
+        static_cast<uint8_t>(kv_version >> 8), static_cast<uint8_t>(kv_version)
+    };
     uint8_t kv_digest[20];
     ExCryptHmacSha(cpu_key.data(), static_cast<uint32_t>(cpu_key.size()), out_data.data() + 0x10,
-                   static_cast<uint32_t>(out_data.size() - 0x10), nullptr, 0, nullptr, 0,
+                   static_cast<uint32_t>(out_data.size() - 0x10), version_be, sizeof(version_be), nullptr, 0,
                    kv_digest, 20);
 
     std::memcpy(out_data.data(), kv_digest, 0x10);

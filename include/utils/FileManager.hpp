@@ -13,11 +13,18 @@
 
 namespace gxbuild3::utils {
 
+    struct InMemoryStfsPackage {
+        std::string name;
+        std::vector<uint8_t> data;
+    };
+
     struct ScanOptions {
         // Do not discover or open system-update STFS packages.
         bool nosu = false;
         // Exclude security contents from STFS extraction, but still use loose files.
         bool nosusecurity = false;
+        // In-memory STFS packages (queried without requiring a filesystem path).
+        std::vector<InMemoryStfsPackage> in_memory_stfs;
     };
 
     enum class AssetSource {
@@ -92,6 +99,9 @@ namespace gxbuild3::utils {
                                           const std::vector<std::filesystem::path>& search_paths,
                                           ScanOptions options = {},
                                           AssetKind kind = AssetKind::Regular);
+
+    // Clears cached STFS containers, directory listings, and derived bootloader parts.
+    void ClearStfsCache();
 
 } // namespace gxbuild3::utils
 

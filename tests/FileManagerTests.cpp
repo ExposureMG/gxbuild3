@@ -37,8 +37,8 @@ namespace {
     }
 
     // One file-table block and one data block per file. No external firmware required.
-    void write_stfs(const fs::path& path, const std::vector<std::pair<std::string, Bytes>>& files,
-                    std::string_view corrupt_file = {}) {
+    Bytes make_stfs_bytes(const std::vector<std::pair<std::string, Bytes>>& files,
+                          std::string_view corrupt_file = {}) {
         require(files.size() < 64, "fixture fits in one file table");
         Bytes package(0xC000 + files.size() * 0x1000, 0);
         std::copy_n("PIRS", 4, package.begin());
@@ -64,7 +64,12 @@ namespace {
             if (name == corrupt_file)
                 package[0xA000 + (i + 1) * 0x18 + 0x14] = 0; // invalid block chain
         }
-        write_file(path, package);
+        return package;
+    }
+
+    void write_stfs(const fs::path& path, const std::vector<std::pair<std::string, Bytes>>& files,
+                    std::string_view corrupt_file = {}) {
+        write_file(path, make_stfs_bytes(files, corrupt_file));
     }
 
     struct Fixture {
@@ -573,6 +578,153 @@ namespace {
                 "symlink escape cannot fall through to a same-basename STFS entry");
     }
 
+    void test_stfs_caching_and_cache_clearing() {
+        Fixture f;
+        Bytes xboxupd(0x40, 0);
+        xboxupd[0] = 0x43;
+        xboxupd[1] = 0x46;
+        xboxupd[0x20] = 0x43;
+        xboxupd[0x21] = 0x47;
+        be32(xboxupd, 0x0C, 0x20);
+        be32(xboxupd, 0x1C, 0x20);
+        const Bytes cf(xboxupd.begin(), xboxupd.begin() + 0x20);
+        const Bytes cg(xboxupd.begin() + 0x20, xboxupd.end());
+
+        write_stfs(f.root / "mydata/su_test",
+                   {{"$flash_dash.xex", {0x10}}, {"xboxupd.bin", xboxupd}});
+
+        const std::vector<fs::path> roots{f.root / "mydata"};
+
+        // First lookups populate cache
+        const auto resolved_file1 = FileManager::FindFileDataDetailed("dash.xex", roots);
+        require(resolved_file1 && *resolved_file1 && (*resolved_file1)->data == Bytes{0x10},
+                "first lookup retrieves file and caches package");
+
+        const auto resolved_cf1 = FileManager::FindFileDataDetailed(
+            "cf_1.bin", roots, {}, FileManager::AssetKind::Bootloader);
+        require(resolved_cf1 && *resolved_cf1 && (*resolved_cf1)->data == cf,
+                "first bootloader lookup derives CF and caches split parts");
+
+        const auto resolved_cg1 = FileManager::FindFileDataDetailed(
+            "cg_1.bin", roots, {}, FileManager::AssetKind::Bootloader);
+        require(resolved_cg1 && *resolved_cg1 && (*resolved_cg1)->data == cg,
+                "second bootloader lookup reuses cached split parts");
+
+        // Subsequent lookups hit cache
+        const auto resolved_file2 = FileManager::FindFileDataDetailed("dash.xex", roots);
+        require(resolved_file2 && *resolved_file2 && (*resolved_file2)->data == Bytes{0x10},
+                "cached lookup returns identical data");
+
+        // Clear cache and verify re-reading works
+        FileManager::ClearStfsCache();
+        const auto resolved_after_clear = FileManager::FindFileDataDetailed("dash.xex", roots);
+        require(resolved_after_clear && *resolved_after_clear &&
+                    (*resolved_after_clear)->data == Bytes{0x10},
+                "lookup after ClearStfsCache repopulates cache successfully");
+
+        // Overwrite file on disk and verify disk cache auto-invalidates
+        write_stfs(f.root / "mydata/su_test", {{"$flash_dash.xex", {0x99}}});
+        const auto resolved_after_modify = FileManager::FindFileDataDetailed("dash.xex", roots);
+        require(resolved_after_modify && *resolved_after_modify &&
+                    (*resolved_after_modify)->data == Bytes{0x99},
+                "modifying STFS package on disk invalidates cache and returns fresh data");
+    }
+
+    void test_in_memory_stfs_without_path() {
+        const Bytes pkg_data = make_stfs_bytes({{"$flash_dash.xex", {0x42}}});
+        FileManager::ScanOptions options;
+        options.in_memory_stfs.push_back({"embedded_su", pkg_data});
+
+        // Search with empty roots (no paths at all!)
+        const std::vector<fs::path> empty_roots{};
+        const auto detailed = FileManager::FindFileDataDetailed("dash.xex", empty_roots, options);
+        require(detailed.has_value() && *detailed, "in-memory STFS asset found with empty roots");
+        require((*detailed)->requested_name == "dash.xex", "preserves requested name");
+        require((*detailed)->source_path.empty(), "source_path must be empty for in-memory STFS");
+        require((*detailed)->data == Bytes{0x42}, "correct bytes returned from in-memory STFS");
+        require((*detailed)->root_index == 0, "root_index indicates in-memory package index");
+        require((*detailed)->source == FileManager::AssetSource::Stfs,
+                "source identifies as AssetSource::Stfs");
+
+        // Legacy FindFileData also works with in-memory STFS
+        const auto legacy = FileManager::FindFileData("dash.xex", empty_roots, options);
+        require(legacy.has_value() && legacy->data == Bytes{0x42} && legacy->source_path.empty() &&
+                    legacy->source == FileManager::AssetSource::Stfs,
+                "legacy FindFileData accepts in-memory STFS without a path");
+    }
+
+    void test_in_memory_stfs_bootloader_derivation() {
+        Bytes xboxupd(0x40, 0);
+        xboxupd[0] = 0x43;
+        xboxupd[1] = 0x46;
+        xboxupd[0x20] = 0x43;
+        xboxupd[0x21] = 0x47;
+        be32(xboxupd, 0x0C, 0x20);
+        be32(xboxupd, 0x1C, 0x20);
+        const Bytes cf(xboxupd.begin(), xboxupd.begin() + 0x20);
+        const Bytes cg(xboxupd.begin() + 0x20, xboxupd.end());
+
+        const Bytes pkg_data = make_stfs_bytes({{"xboxupd.bin", xboxupd}});
+        FileManager::ScanOptions options;
+        options.in_memory_stfs.push_back({"embedded_update", pkg_data});
+
+        const std::vector<fs::path> empty_roots{};
+        const auto cf_res = FileManager::FindFileDataDetailed(
+            "cf_1.bin", empty_roots, options, FileManager::AssetKind::Bootloader);
+        require(cf_res && *cf_res && (*cf_res)->data == cf,
+                "in-memory STFS derives CF from xboxupd");
+        require((*cf_res)->source_path.empty(), "derived CF source_path is empty");
+        require((*cf_res)->source == FileManager::AssetSource::Xboxupd,
+                "derived CF source is Xboxupd");
+
+        const auto cg_res = FileManager::FindFileDataDetailed(
+            "cg_1.bin", empty_roots, options, FileManager::AssetKind::Bootloader);
+        require(cg_res && *cg_res && (*cg_res)->data == cg,
+                "in-memory STFS derives CG from xboxupd");
+        require((*cg_res)->source_path.empty(), "derived CG source_path is empty");
+    }
+
+    void test_in_memory_stfs_priority_and_flags() {
+        Fixture f;
+        const Bytes mem_data = make_stfs_bytes(
+            {{"$flash_dash.xex", {0x99}}, {"$flash_secdata.bin", {0x77}}});
+        FileManager::ScanOptions options;
+        options.in_memory_stfs.push_back({"embedded_su", mem_data});
+
+        write_file(f.root / "first/dash.xex", {0x11});
+        write_file(f.root / "first/secdata.bin", {0x22});
+        const std::vector<fs::path> roots{f.root / "first"};
+
+        // In-memory package beats disk loose file
+        const auto detailed = FileManager::FindFileDataDetailed("dash.xex", roots, options);
+        require(detailed && *detailed && (*detailed)->data == Bytes{0x99} &&
+                    (*detailed)->source_path.empty(),
+                "in-memory STFS package has priority over disk roots");
+
+        // nosu skips in-memory STFS
+        auto nosu_options = options;
+        nosu_options.nosu = true;
+        const auto nosu_res = FileManager::FindFileDataDetailed("dash.xex", roots, nosu_options);
+        require(nosu_res && *nosu_res && (*nosu_res)->data == Bytes{0x11} &&
+                    (*nosu_res)->source_path == f.root / "first/dash.xex",
+                "nosu skips in-memory STFS package and falls back to disk");
+
+        // nosusecurity skips security files from in-memory STFS
+        auto nosusec_options = options;
+        nosusec_options.nosusecurity = true;
+        const auto sec_res =
+            FileManager::FindFileDataDetailed("secdata.bin", roots, nosusec_options);
+        require(sec_res && *sec_res && (*sec_res)->data == Bytes{0x22} &&
+                    (*sec_res)->source_path == f.root / "first/secdata.bin",
+                "nosusecurity excludes security files from in-memory STFS");
+
+        // ReadIniFiles with in-memory STFS
+        write_text(f.root / "version/_test.ini", "[testbl]\nnone\n[flashfs]\ndash.xex\n");
+        const auto ini_res = FileManager::ReadIniFiles("version", "test", "test", {}, options);
+        require(ini_res && payload(*ini_res, "dash.xex") == Bytes{0x99},
+                "ReadIniFiles resolves payload from in-memory STFS");
+    }
+
 } // namespace
 
 int main() {
@@ -610,6 +762,10 @@ int main() {
         {"INI rejects unconfined paths", test_ini_rejects_unconfined_asset_paths},
         {"INI rejects symlink escapes and keeps nested paths",
          test_ini_rejects_symlink_escape_and_keeps_safe_nested_paths},
+        {"STFS caching and cache clearing", test_stfs_caching_and_cache_clearing},
+        {"in-memory STFS without path", test_in_memory_stfs_without_path},
+        {"in-memory STFS bootloader derivation", test_in_memory_stfs_bootloader_derivation},
+        {"in-memory STFS priority and flags", test_in_memory_stfs_priority_and_flags},
     };
     int failed = 0;
     for (const auto& [name, test] : tests) {

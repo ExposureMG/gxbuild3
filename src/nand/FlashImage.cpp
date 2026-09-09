@@ -692,13 +692,20 @@ namespace gxbuild3::NAND {
         size_t min_blk = (highest_used_offset + fs_blk_size - 1) / fs_blk_size;
         size_t current_blk = std::max<size_t>(fs_base / fs_blk_size, min_blk);
 
+        auto* mutable_filesystem =
+            filesystem ? &const_cast<FlashFileSystem&>(*filesystem) : nullptr;
+        if (mutable_filesystem) {
+            // A donor FlashImage may have been moved since parsing its filesystem.
+            // Rebind before checking allocation geometry, not just before saving.
+            mutable_filesystem->set_driver(&driver);
+        }
+
         auto find_data_free_run = [&](size_t start_block,
                                       size_t requested_blocks) -> std::optional<size_t> {
             if (requested_blocks == 0 || requested_blocks > data_block_limit ||
                 start_block > data_block_limit - requested_blocks) {
                 return std::nullopt;
             }
-            const auto* blockmap = filesystem ? &filesystem->blockmap() : nullptr;
             for (size_t candidate = start_block; candidate <= data_block_limit - requested_blocks;
                  ++candidate) {
                 bool all_free = true;
@@ -707,7 +714,7 @@ namespace gxbuild3::NAND {
                         std::any_of(
                             payload_block_ranges.begin(), payload_block_ranges.end(),
                             [block](const BlockRange& range) { return range.contains(block); }) ||
-                        (blockmap && (*blockmap)[block] != BlockMapStatus::Free)) {
+                        (filesystem && !filesystem->is_block_free(block))) {
                         all_free = false;
                         break;
                     }
@@ -719,8 +726,6 @@ namespace gxbuild3::NAND {
             return std::nullopt;
         };
 
-        auto* mutable_filesystem =
-            filesystem ? &const_cast<FlashFileSystem&>(*filesystem) : nullptr;
 
         // A donor may have a longer mobile allocation than an input overlay. Clear the old
         // mobile metadata before recording the replacement layout so parsing cannot append

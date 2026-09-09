@@ -1318,6 +1318,22 @@ namespace {
                require(extracted == expected, "BigBlock FlashFS file retains its exact contents");
     }
 
+    bool test_big_block_donor_retains_flashfs_without_replacement() {
+        auto input = fresh_input(ImageType::BigBlock);
+        const Bytes expected(0x4003, 0x52);
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"data.bin", expected}};
+        const auto built = RunBuild(input);
+        if (!require(built.has_value(), "big-block filesystem donor builds")) return false;
+
+        input.metadata.nand_image = *built;
+        input.flashfs_sec.reset();
+        const auto rebuilt = RunBuild(input);
+        const auto parsed = rebuilt ? parse_image(*rebuilt) : std::nullopt;
+        return require(parsed && parsed->filesystem &&
+                           parsed->filesystem->get_file("data.bin") == expected,
+                       "moved donor filesystem uses the current driver geometry without an overlay");
+    }
+
     bool test_secure_flashfs_files_roundtrip_through_extract_and_rebuild() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
@@ -2492,6 +2508,7 @@ int main() {
     passed = test_bigblock_flashfs_formats_and_roundtrips_an_empty_overlay() && passed;
     passed = test_bigblock_flashfs_roundtrips_a_file_larger_than_16_kib() && passed;
     passed = test_secure_flashfs_files_roundtrip_through_extract_and_rebuild() && passed;
+    passed = test_big_block_donor_retains_flashfs_without_replacement() && passed;
     passed = test_flashfs_overlay_outranks_a_higher_sequence_donor_root() && passed;
     passed = test_serialized_mobile_overlay_skips_a_bad_donor_block() && passed;
     passed = test_mobile_allocation_rejects_smc_tail_overlap() && passed;
