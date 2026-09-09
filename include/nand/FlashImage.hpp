@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace gxbuild3::NAND {
@@ -73,6 +74,15 @@ struct FlashImage {
 
     bool decrypt_all(std::span<const uint8_t> cpu_key);
     bool encrypt_all(std::span<const uint8_t> cpu_key);
+
+    // Remove serialized bootloader records inherited from a donor before replacing the chain.
+    // This deliberately leaves the donor's non-bootloader payloads intact.
+    bool clear_bootloader_chain();
+
+    [[nodiscard]] std::vector<BlockRange> active_payload_block_ranges() const;
+
+    // Describes a collision between payload writers, if the resolved layout is unsafe.
+    [[nodiscard]] std::optional<std::string> payload_layout_error() const;
 
     bool write_to_driver() const;
     [[nodiscard]] std::vector<uint8_t> write() const;

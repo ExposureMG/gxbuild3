@@ -1,9 +1,9 @@
 #include "nand/bootloaders/7bl.hpp"
 
-#include "utils/Log.hpp"
-#include "utils/Utils.hpp"
 #include "excrypt.h"
 #include "nand/bootloaders/BootloaderPacker.hpp"
+#include "utils/Log.hpp"
+#include "utils/Utils.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -16,11 +16,8 @@ BootloaderCg BootloaderCg::parse(const std::vector<uint8_t>& bytes) {
 
     std::memcpy(&cg.header, bytes.data(), sizeof(cg_header));
 
-    cg.header.header.magic = bswap16(cg.header.header.magic);
-    cg.header.header.version = bswap16(cg.header.header.version);
-    cg.header.header.flags = bswap16(cg.header.header.flags);
-    cg.header.header.size = bswap32(cg.header.header.size);
-    cg.header.header.entrypoint = bswap32(cg.header.header.entrypoint);
+    byteswap_generic_header(cg.header.header);
+    byteswap_cg_header_numeric_fields(cg.header);
 
     cg.data = std::vector<uint8_t>(bytes.begin() + sizeof(cg_header), bytes.end());
     cg.decrypted = cg.is_decrypted();
@@ -45,6 +42,8 @@ void BootloaderCg::decrypt(const uint8_t cg_hmac[16]) {
 
     std::vector<uint8_t> buffer(sizeof(cg_header) + data.size());
     cg_header temp_hdr = header;
+    byteswap_generic_header(temp_hdr.header);
+    byteswap_cg_header_numeric_fields(temp_hdr);
     std::memcpy(buffer.data(), &temp_hdr, sizeof(cg_header));
     std::memcpy(buffer.data() + sizeof(cg_header), data.data(), data.size());
 
@@ -53,6 +52,7 @@ void BootloaderCg::decrypt(const uint8_t cg_hmac[16]) {
 
     std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
                 sizeof(cg_header) - 0x20);
+    byteswap_cg_header_numeric_fields(header);
     std::memcpy(data.data(), buffer.data() + sizeof(cg_header), data.size());
 
     decrypted = true;
@@ -85,6 +85,8 @@ void BootloaderCg::encrypt(const uint8_t cg_hmac[16]) {
 
     std::vector<uint8_t> buffer(sizeof(cg_header) + data.size());
     cg_header temp_hdr = header;
+    byteswap_generic_header(temp_hdr.header);
+    byteswap_cg_header_numeric_fields(temp_hdr);
     std::memcpy(buffer.data(), &temp_hdr, sizeof(cg_header));
     std::memcpy(buffer.data() + sizeof(cg_header), data.data(), data.size());
 
@@ -93,6 +95,7 @@ void BootloaderCg::encrypt(const uint8_t cg_hmac[16]) {
 
     std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
                 sizeof(cg_header) - 0x20);
+    byteswap_cg_header_numeric_fields(header);
     std::memcpy(data.data(), buffer.data() + sizeof(cg_header), data.size());
 
     decrypted = false;
@@ -105,11 +108,8 @@ bool BootloaderCg::is_decrypted() const {
 std::vector<uint8_t> BootloaderCg::serialize() const {
     std::vector<uint8_t> out(sizeof(cg_header));
     cg_header temp_hdr = header;
-    temp_hdr.header.magic = bswap16(temp_hdr.header.magic);
-    temp_hdr.header.version = bswap16(temp_hdr.header.version);
-    temp_hdr.header.flags = bswap16(temp_hdr.header.flags);
-    temp_hdr.header.size = bswap32(temp_hdr.header.size);
-    temp_hdr.header.entrypoint = bswap32(temp_hdr.header.entrypoint);
+    byteswap_generic_header(temp_hdr.header);
+    byteswap_cg_header_numeric_fields(temp_hdr);
 
     std::memcpy(out.data(), &temp_hdr, sizeof(cg_header));
     out.insert(out.end(), data.begin(), data.end());

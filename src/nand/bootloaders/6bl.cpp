@@ -1,9 +1,9 @@
 #include "nand/bootloaders/6bl.hpp"
 
-#include "utils/Log.hpp"
-#include "utils/Utils.hpp"
 #include "excrypt.h"
 #include "nand/bootloaders/BootloaderPacker.hpp"
+#include "utils/Log.hpp"
+#include "utils/Utils.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -16,11 +16,8 @@ BootloaderCf BootloaderCf::parse(const std::vector<uint8_t>& bytes) {
 
     std::memcpy(&cf.header, bytes.data(), sizeof(cf_header));
 
-    cf.header.header.magic = bswap16(cf.header.header.magic);
-    cf.header.header.version = bswap16(cf.header.header.version);
-    cf.header.header.flags = bswap16(cf.header.header.flags);
-    cf.header.header.size = bswap32(cf.header.header.size);
-    cf.header.header.entrypoint = bswap32(cf.header.header.entrypoint);
+    byteswap_generic_header(cf.header.header);
+    byteswap_cf_header_numeric_fields(cf.header);
 
     cf.data = std::vector<uint8_t>(bytes.begin() + sizeof(cf_header), bytes.end());
     cf.decrypted = cf.is_decrypted();
@@ -45,22 +42,9 @@ void BootloaderCf::decrypt(const uint8_t onebl_key[16]) {
     gxbuild3::bootloaders::crypt_single_bl(buffer, gxbuild3::bootloaders::HmacType::Default,
                                            cur_key, nullptr, nullptr, 0x30);
 
-    std::memcpy(&header.header, buffer.data(), sizeof(generic_header));
-    header.header.magic = bswap16(header.header.magic);
-    header.header.version = bswap16(header.header.version);
-    header.header.flags = bswap16(header.header.flags);
-    header.header.size = bswap32(header.header.size);
-    header.header.entrypoint = bswap32(header.header.entrypoint);
-
-    if (buffer.size() >= 0x40) {
-        header.source_version = (buffer[0x20] << 8) | buffer[0x21];
-        header.source_qfe = (buffer[0x22] << 8) | buffer[0x23];
-        header.target_version = (buffer[0x24] << 8) | buffer[0x25];
-        header.target_qfe = (buffer[0x26] << 8) | buffer[0x27];
-        header.reserved = (buffer[0x28] << 24) | (buffer[0x29] << 16) | (buffer[0x2A] << 8) | buffer[0x2B];
-        header.cg_size = (buffer[0x2C] << 24) | (buffer[0x2D] << 16) | (buffer[0x2E] << 8) | buffer[0x2F];
-        std::memcpy(header.cg_key, buffer.data() + 0x30, 16);
-    }
+    std::memcpy(&header, buffer.data(), sizeof(cf_header));
+    byteswap_generic_header(header.header);
+    byteswap_cf_header_numeric_fields(header);
 
     data = std::vector<uint8_t>(buffer.begin() + sizeof(cf_header), buffer.end());
 
@@ -85,11 +69,8 @@ void BootloaderCf::encrypt(const uint8_t onebl_key[16]) {
 
     std::vector<uint8_t> buffer(sizeof(cf_header) + data.size());
     cf_header temp_hdr = header;
-    temp_hdr.header.magic = bswap16(temp_hdr.header.magic);
-    temp_hdr.header.version = bswap16(temp_hdr.header.version);
-    temp_hdr.header.flags = bswap16(temp_hdr.header.flags);
-    temp_hdr.header.size = bswap32(temp_hdr.header.size);
-    temp_hdr.header.entrypoint = bswap32(temp_hdr.header.entrypoint);
+    byteswap_generic_header(temp_hdr.header);
+    byteswap_cf_header_numeric_fields(temp_hdr);
     std::memcpy(buffer.data(), &temp_hdr, sizeof(cf_header));
     std::memcpy(buffer.data() + sizeof(cf_header), data.data(), data.size());
 
@@ -97,6 +78,8 @@ void BootloaderCf::encrypt(const uint8_t onebl_key[16]) {
                                            cur_key, nullptr, nullptr, 0x30);
 
     std::memcpy(&header, buffer.data(), sizeof(cf_header));
+    byteswap_generic_header(header.header);
+    byteswap_cf_header_numeric_fields(header);
     std::memcpy(data.data(), buffer.data() + sizeof(cf_header), data.size());
 
     decrypted = false;
@@ -150,11 +133,8 @@ bool BootloaderCf::serialize_perbox() {
 std::vector<uint8_t> BootloaderCf::serialize() const {
     std::vector<uint8_t> out(sizeof(cf_header));
     cf_header temp_hdr = header;
-    temp_hdr.header.magic = bswap16(temp_hdr.header.magic);
-    temp_hdr.header.version = bswap16(temp_hdr.header.version);
-    temp_hdr.header.flags = bswap16(temp_hdr.header.flags);
-    temp_hdr.header.size = bswap32(temp_hdr.header.size);
-    temp_hdr.header.entrypoint = bswap32(temp_hdr.header.entrypoint);
+    byteswap_generic_header(temp_hdr.header);
+    byteswap_cf_header_numeric_fields(temp_hdr);
 
     std::memcpy(out.data(), &temp_hdr, sizeof(cf_header));
     out.insert(out.end(), data.begin(), data.end());

@@ -27,7 +27,11 @@ namespace Stfs {
 
         void extractAll(const std::filesystem::path& target_dir) const;
 
-        [[nodiscard]] ExtractedFiles extractToMemory() const;
+        // Exclusions use the same lowercase, $flash_-stripped names as the result.
+        // Excluded entries are skipped before their file contents are extracted.
+        [[nodiscard]] ExtractedFiles
+        extractToMemory(std::span<const std::string> excluded_names = {}) const;
+        [[nodiscard]] bool containsFileByName(std::string_view name) const;
         [[nodiscard]] std::vector<std::byte> extractFileByName(std::string_view name) const;
 
       private:

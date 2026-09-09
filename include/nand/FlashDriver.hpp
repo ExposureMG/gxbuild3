@@ -19,6 +19,15 @@ namespace gxbuild3::NAND {
         bool is_bad = false;
     };
 
+    struct BlockRange {
+        size_t start_block = 0;
+        size_t block_count = 0;
+
+        [[nodiscard]] bool contains(size_t block) const noexcept {
+            return block >= start_block && block - start_block < block_count;
+        }
+    };
+
     class Driver {
       public:
         enum DriverMode {
@@ -49,6 +58,9 @@ namespace gxbuild3::NAND {
         size_t block_count() const;
         size_t block_size_clean() const;
         size_t block_size_raw() const;
+        size_t data_block_limit() const;
+        [[nodiscard]] std::optional<BlockRange> block_range_for_byte_interval(
+            size_t offset, size_t length) const;
 
         void set_layout(NandLayout layout);
         const NandLayout& layout() const;

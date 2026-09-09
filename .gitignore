@@ -53,6 +53,7 @@ install_manifest.txt
 compile_commands.json
 
 # Temporary files
+/_temp/
 *.tmp
 *.log
 *.bak
@@ -70,3 +71,5 @@ logs
 gxbuild3
 _*.md
 *_.md
+.superpowers
+docs

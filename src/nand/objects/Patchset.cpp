@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <span>
 
 namespace {
 
@@ -35,7 +36,7 @@ namespace {
         return static_cast<bool>(file) || file.eof();
     }
 
-    bool ReadBe32(const std::vector<uint8_t>& data, size_t offset, uint32_t& outValue) {
+    bool ReadBe32(std::span<const uint8_t> data, size_t offset, uint32_t& outValue) {
         if (offset + sizeof(uint32_t) > data.size()) {
             return false;
         }
@@ -51,7 +52,7 @@ namespace {
         data.insert(data.end(), value_bytes, value_bytes + sizeof(uint32_t));
     }
 
-    bool ParseXePatchSectionBytes(const std::vector<uint8_t>& data, size_t startOffset,
+    bool ParseXePatchSectionBytes(std::span<const uint8_t> data, size_t startOffset,
                                   std::vector<XePatchEntry>& outEntries, size_t& outConsumed) {
         outEntries.clear();
         outConsumed = 0;
@@ -96,7 +97,7 @@ namespace {
         }
     }
 
-    bool SplitRawSections(const std::vector<uint8_t>& data, size_t expectedSectionCount,
+    bool SplitRawSections(std::span<const uint8_t> data, size_t expectedSectionCount,
                           std::vector<std::vector<uint8_t>>& outSections) {
         outSections.clear();
 
@@ -109,8 +110,7 @@ namespace {
             }
 
             if (word == kSectionDelimiter) {
-                outSections.emplace_back(data.begin() + static_cast<std::ptrdiff_t>(sectionStart),
-                                         data.begin() + static_cast<std::ptrdiff_t>(cursor));
+                outSections.emplace_back(data.begin() + sectionStart, data.begin() + cursor);
                 cursor += sizeof(uint32_t);
                 sectionStart = cursor;
                 continue;
@@ -119,8 +119,7 @@ namespace {
             cursor += sizeof(uint32_t);
         }
 
-        outSections.emplace_back(data.begin() + static_cast<std::ptrdiff_t>(sectionStart),
-                                 data.end());
+        outSections.emplace_back(data.begin() + sectionStart, data.end());
         return outSections.size() == expectedSectionCount;
     }
 
@@ -182,28 +181,23 @@ namespace BinaryParser {
         return true;
     }
 
-    bool ParsePatchSet(const std::string& filePath, BuildType buildType,
+    bool ParsePatchSet(std::span<const uint8_t> fileData, BuildType buildType,
                        ParsedPatchSet& outPatchSet) {
-        outPatchSet.sections.clear();
+        outPatchSet = ParsedPatchSet{};
+        ParsedPatchSet parsed;
 
         const auto patchSetKind = ResolvePatchSetKind(buildType);
         if (!patchSetKind) {
-            Log::Error("Unsupported build type for patchset '{}'", filePath);
+            Log::Error("Unsupported build type for patchset bytes");
             return false;
         }
 
-        std::vector<uint8_t> fileData;
-        if (!ReadFileBytes(filePath, fileData)) {
-            Log::Error("Failed to read patchset file '{}'", filePath);
-            return false;
-        }
-
-        outPatchSet.kind = *patchSetKind;
+        parsed.kind = *patchSetKind;
 
         if (*patchSetKind == PatchSetKind::Jtag) {
             std::vector<std::vector<uint8_t>> rawSections;
             if (!SplitRawSections(fileData, 4, rawSections)) {
-                Log::Error("Failed to split JTAG patchset sections in '{}'", filePath);
+                Log::Error("Failed to split JTAG patchset bytes into four sections");
                 return false;
             }
 
@@ -219,10 +213,11 @@ namespace BinaryParser {
                 section.target = targets[i];
                 section.identifier = "jtag_section_" + std::to_string(i + 1);
                 section.raw_data = std::move(rawSections[i]);
-                outPatchSet.sections.push_back(std::move(section));
+                parsed.sections.push_back(std::move(section));
             }
 
-            Log::Debug("Parsed JTAG patchset '{}' (4 sections)", filePath);
+            Log::Debug("Parsed JTAG patchset bytes (4 sections)");
+            outPatchSet = std::move(parsed);
             return true;
         }
 
@@ -236,22 +231,60 @@ namespace BinaryParser {
 
             size_t consumed = 0;
             if (!ParseXePatchSectionBytes(fileData, cursor, section.entries, consumed)) {
-                Log::Error("Failed to parse section {} in Glitch patchset '{}'", i, filePath);
+                Log::Error("Failed to parse section {} in Glitch patchset bytes", i);
                 return false;
             }
             cursor += consumed;
-            outPatchSet.sections.push_back(std::move(section));
+            parsed.sections.push_back(std::move(section));
         }
 
         ParsedPatchSection khvSection;
         khvSection.target = PatchSectionTarget::Khv;
         khvSection.identifier = "khv";
-        khvSection.raw_data.assign(fileData.begin() + static_cast<std::ptrdiff_t>(cursor),
-                                   fileData.end());
-        outPatchSet.sections.push_back(std::move(khvSection));
+        khvSection.raw_data.assign(fileData.begin() + cursor, fileData.end());
+        parsed.sections.push_back(std::move(khvSection));
 
-        Log::Debug("Parsed Glitch patchset '{}' ({} sections)", filePath, outPatchSet.sections.size());
+        Log::Debug("Parsed Glitch patchset bytes ({} sections)", parsed.sections.size());
+        outPatchSet = std::move(parsed);
         return true;
+    }
+
+    bool ParsePatchSet(const std::string& filePath, BuildType buildType,
+                       ParsedPatchSet& outPatchSet) {
+        std::vector<uint8_t> fileData;
+        if (!ReadFileBytes(filePath, fileData)) {
+            Log::Error("Failed to read patchset file '{}'", filePath);
+            return false;
+        }
+        return ParsePatchSet(fileData, buildType, outPatchSet);
+    }
+
+    std::expected<ParsedPatchSet, PatchError> ParseAndMergePatchSet(const InputPatches& patches,
+                                                                    BuildType buildType) {
+        if (!patches.automatic) {
+            return std::unexpected(PatchError{"An automatic patchset is required"});
+        }
+
+        ParsedPatchSet parsed;
+        if (!ParsePatchSet(patches.automatic->data, buildType, parsed)) {
+            return std::unexpected(PatchError{"Failed to parse automatic patchset bytes"});
+        }
+
+        const auto merge_target = parsed.kind == PatchSetKind::Glitch
+                                      ? PatchSectionTarget::Khv
+                                      : PatchSectionTarget::JtagSection4;
+        const auto target = std::find_if(parsed.sections.begin(), parsed.sections.end(),
+                                         [merge_target](const ParsedPatchSection& section) {
+                                             return section.target == merge_target;
+                                         });
+        if (target == parsed.sections.end()) {
+            return std::unexpected(PatchError{"Automatic patchset has no add-on target section"});
+        }
+
+        for (const auto& addon : patches.addons) {
+            target->raw_data.insert(target->raw_data.end(), addon.data.begin(), addon.data.end());
+        }
+        return parsed;
     }
 
     std::vector<uint8_t> SerializePatchSet(const ParsedPatchSet& patchSet) {
@@ -266,6 +299,7 @@ namespace BinaryParser {
                     AppendBe32(out, word);
                 }
             }
+            out.insert(out.end(), section.raw_data.begin(), section.raw_data.end());
 
             if (i + 1 < patchSet.sections.size()) {
                 AppendBe32(out, kSectionDelimiter);

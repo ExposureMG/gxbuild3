@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Endian.hpp"
 #include "excrypt.h"
 #include "exkeys.h"
 
@@ -15,14 +16,12 @@ inline constexpr uint8_t key_1bl[0x10] = {0xDD, 0x88, 0xAD, 0x0C, 0x9E, 0xD6, 0x
                                           0xB5, 0x67, 0x94, 0xFB, 0x68, 0x56, 0x3E, 0xFA};
 
 inline constexpr uint8_t rsa_1bl[0x110] = {
-    0x00, 0x00, 0x00, 0x20,
-    0x00, 0x01, 0x00, 0x01,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x20, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0xE9, 0x8D, 0xB5, 0xDC, 0xAF, 0x38, 0x8E, 0xF1, 0x38, 0x9E, 0x28, 0xCB, 0x4A, 0x11, 0xC8, 0x22,
     0x52, 0xE1, 0x1F, 0x53, 0x45, 0x56, 0x60, 0xA2, 0x52, 0xD4, 0xD1, 0x68, 0x4E, 0xCC, 0x80, 0x99,
     0xD7, 0x5C, 0x40, 0xC5, 0xAF, 0x73, 0x0C, 0xCF, 0x44, 0x06, 0xB0, 0x6D, 0x16, 0x91, 0x08, 0x38,
     0xB3, 0x00, 0x2D, 0xBC, 0xEB, 0x1D, 0x0C, 0x1D, 0xC5, 0xC6, 0x68, 0x0B, 0x80, 0x4C, 0x62, 0x0B,
-    0x7E, 0xE8, 72, 0x0C, 0xCF, 0x1D, 0xB4, 0xBD, 0xEE, 0x4B, 0x11, 0x36, 0xD1, 0xC9, 0x92, 0x1F,
+    0x7E, 0xE8, 72,   0x0C, 0xCF, 0x1D, 0xB4, 0xBD, 0xEE, 0x4B, 0x11, 0x36, 0xD1, 0xC9, 0x92, 0x1F,
     0xE9, 0xAE, 0xC0, 0x51, 0x52, 0x51, 0xF7, 0x23, 0xD6, 0xBC, 0xF4, 0xE9, 0x58, 0x87, 0x40, 0xB1,
     0x02, 0x66, 0x5A, 0x43, 0xEB, 0x67, 0x5F, 0x50, 0x94, 0x32, 0x34, 0x7A, 0xA7, 0x50, 0xD9, 0xB4,
     0x14, 0x4E, 0xB0, 0x02, 0x31, 0x8B, 0xA7, 0x00, 0x9A, 0x12, 0xC8, 0x3B, 0x8F, 0x76, 0xE4, 0x8F,
@@ -61,6 +60,18 @@ typedef struct generic_header {
     uint32_t entrypoint;
     uint32_t size;
 } generic_header;
+
+// Bootloader headers are serialized big-endian, while every Bootloader* instance stores these
+// numeric fields in host order. The conversion is involutive, so this one helper is used at each
+// parse, serialization, and temporary crypt-buffer boundary.
+inline void byteswap_generic_header(generic_header& header) noexcept {
+    header.magic = bswap16(header.magic);
+    header.version = bswap16(header.version);
+    header.pairing = bswap16(header.pairing);
+    header.flags = bswap16(header.flags);
+    header.entrypoint = bswap32(header.entrypoint);
+    header.size = bswap32(header.size);
+}
 
 typedef struct _cb_perbox {
     uint8_t pairing_data[3];
@@ -116,6 +127,11 @@ typedef struct _cb_header {
     uint8_t reserved[0xC];
 } cb_header;
 
+inline void byteswap_cb_header_numeric_fields(cb_header& header) noexcept {
+    header.console_seq_allow.console_sequence_allow =
+        bswap16(header.console_seq_allow.console_sequence_allow);
+}
+
 typedef struct _sc_header {
     generic_header header;
     uint8_t key[0x10];
@@ -133,6 +149,10 @@ typedef struct _cd_header {
     uint8_t ce_hash[0x14];
 } cd_header;
 
+inline void byteswap_cd_header_numeric_fields(cd_header& header) noexcept {
+    header.padding = bswap16(header.padding);
+}
+
 typedef struct _ce_header {
     generic_header header;
     uint8_t key[0x10];
@@ -140,6 +160,12 @@ typedef struct _ce_header {
     uint32_t size;
     uint32_t padding;
 } ce_header;
+
+inline void byteswap_ce_header_numeric_fields(ce_header& header) noexcept {
+    header.address = bswap64(header.address);
+    header.size = bswap32(header.size);
+    header.padding = bswap32(header.padding);
+}
 
 typedef struct _cf_perbox {
     uint8_t reserved_per_box[0x2B];
@@ -160,6 +186,15 @@ typedef struct _cf_header {
     uint8_t cg_key[0x10];
 } cf_header;
 
+inline void byteswap_cf_header_numeric_fields(cf_header& header) noexcept {
+    header.source_version = bswap16(header.source_version);
+    header.source_qfe = bswap16(header.source_qfe);
+    header.target_version = bswap16(header.target_version);
+    header.target_qfe = bswap16(header.target_qfe);
+    header.reserved = bswap32(header.reserved);
+    header.cg_size = bswap32(header.cg_size);
+}
+
 typedef struct _cg_header {
     generic_header header;
     uint8_t key[0x10];
@@ -168,5 +203,10 @@ typedef struct _cg_header {
     uint32_t target_size;
     uint8_t target_hash[0x14];
 } cg_header;
+
+inline void byteswap_cg_header_numeric_fields(cg_header& header) noexcept {
+    header.source_size = bswap32(header.source_size);
+    header.target_size = bswap32(header.target_size);
+}
 
 #pragma pack(pop)
