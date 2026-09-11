@@ -556,7 +556,7 @@ namespace gxbuild3::NAND {
         raw.pairing = bswap16(header.pairing);
         raw.flags = bswap16(header.flags);
         raw.entrypoint = bswap32(header.entrypoint ? header.entrypoint : kEntryOffset);
-        raw.size = bswap32(header.size);
+        raw.size = bswap32(header.size ? header.size : kEntryOffset);
         std::memcpy(raw.copyright, header.copyright, sizeof(raw.copyright));
         std::memcpy(raw.reserved, header.reserved, sizeof(raw.reserved));
         raw.kv_size = bswap32(header.kv_size ? header.kv_size : Keyvault::kSize);

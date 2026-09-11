@@ -77,6 +77,51 @@ none is available. Similarly, `-i` overrides NAND discovery; otherwise gxbuild u
 
 The selected build INI is read with `[<section>bl]`. Assets, including user overrides, are looked
 up through the source roots in order. Automatic patchsets and add-ons are searched only in
+`GXBUILD3_KEYVAULT_DECRYPTED_FILE`, or pass three file paths directly:
+
+```sh
+./build/gxbuild3_keyvault_crypto_tests _temp/cpukey.txt _temp/KV_en.bin _temp/KV_dec.bin
+```
+`GXBUILD3_KEYVAULT_DECRYPTED_FILE`, or pass three file paths directly:
+
+```sh
+./build/gxbuild3_keyvault_crypto_tests _temp/cpukey.txt _temp/KV_en.bin _temp/KV_dec.bin
+```
+
+Direct invocation fails on missing files. Keep all console-specific fixtures out of Git.
+
+## Command-line build UI
+
+`gxbuild` builds by default, so `build` is optional:
+
+```text
+gxbuild [build] -b <build.ini> -s <section> -t <buildtype>[:<blocktype>] -d <source-dir>
+```
+`GXBUILD3_KEYVAULT_DECRYPTED_FILE`, or pass three file paths directly:
+
+```sh
+./build/gxbuild3_keyvault_crypto_tests _temp/cpukey.txt _temp/KV_en.bin _temp/KV_dec.bin
+```
+
+Direct invocation fails on missing files. Keep all console-specific fixtures out of Git.
+
+## Command-line build UI
+
+`gxbuild` builds by default, so `build` is optional:
+
+```text
+gxbuild [build] -b <build.ini> -s <section> -t <buildtype>[:<blocktype>] -d <source-dir>
+```
+
+Direct invocation fails on missing files. Keep all console-specific fixtures out of Git.
+
+## Command-line build UI
+
+`gxbuild` builds by default, so `build` is optional:
+
+```text
+gxbuild [build] -b <build.ini> -s <section> -t <buildtype>[:<blocktype>] -d <source-dir>
+```
 `<source-dir>/bin`. Automatic patch names use
 `patches_<stem>[_<suffix>].bin`, where `-e <suffix>` supplies the optional suffix:
 
@@ -123,6 +168,10 @@ when a requested file cannot be located.
 Both options default to `false`. `nosu` disables STFS discovery entirely.
 `nosusecurity` skips extracting STFS security contents while leaving loose
 security files eligible. Security names are `crl.bin`, `dae.bin`, `odd.bin`,
+
+
+
+
 `extended.bin`, `fcrt.bin`, and `secdata.bin`, plus any names in the INI's
 `[security]` section when using `ReadIniFiles`.
 

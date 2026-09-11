@@ -19,6 +19,8 @@
 #include "nand/objects/XConfig.hpp"
 #include "nand/objects/XeLL.hpp"
 #include "patchers/Patcher.hpp"
+#include "patchers/Patches.hpp"
+#include "patchers/Signature.hpp"
 #include "utils/Log.hpp"
 #include "utils/Utils.hpp"
 
@@ -295,6 +297,29 @@ BuildResult RunBuild(const Input& input) {
         return build_error(BuildErrorCode::InvalidSmc, "Failed to parse input SMC");
     }
     flash_image.smc = *smc;
+
+    // Auto-apply the glitch reboot patch for Glitch/Glitch2 builds
+    // when the SMC is still clean retail.
+    if ((input.build_type == BuildType::Glitch ||
+         input.build_type == BuildType::Glitch2) &&
+        flash_image.smc->variant == SmcType::Retail) {
+
+        flash_image.smc->decrypt();
+
+        const uint32_t hits = Signature::ApplyPatch(
+            flash_image.smc->data.data(),
+            static_cast<uint32_t>(flash_image.smc->data.size()),
+            Glitch.addr,
+            Glitch.value);
+
+        if (hits == 0) {
+            Log::Warn("SMC reboot patch site not found — "
+                      "SMC may not be a supported retail variant");
+        } else {
+            Log::Info("Applied glitch reboot patch to retail SMC");
+            flash_image.smc->variant = SmcType::Glitch;
+        }
+    }
 
     const auto keyvault = Keyvault::parse(*input.metadata.keyvault);
     if (!keyvault) {

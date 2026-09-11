@@ -6,15 +6,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Clang 22+ has an -O3 optimizer hang with C++23 (e.g., FlashFileSystem.cpp).
-# Force -O2 for Clang Release builds as a workaround.
+# Force -O2 for -O3 optimizer bug
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "" FORCE)
 endif()
 
 add_subdirectory(extern/GxCrypt)
 add_subdirectory(extern/spdlog)
-add_subdirectory(extern/stfs)
 
 set(GXBUILD3_LIB_SOURCES
     src/Args.cpp
@@ -45,6 +43,13 @@ set(GXBUILD3_LIB_SOURCES
     src/nand/objects/XeLL.cpp
     src/patchers/Patcher.cpp
     src/patchers/Signature.cpp
+    src/stfs/BlockParser.cpp
+    src/stfs/FileExtractor.cpp
+    src/stfs/FileTableParser.cpp
+    src/stfs/HashVerifier.cpp
+    src/stfs/HeaderParser.cpp
+    src/stfs/MetadataParser.cpp
+    src/stfs/Package.cpp
     src/stfs/StfsContainer.cpp
     src/utils/FileManager.cpp
     src/utils/FusesetGenerator.cpp
@@ -55,10 +60,10 @@ set(GXBUILD3_LIB_SOURCES
 
 add_library(gxbuild3_lib STATIC ${GXBUILD3_LIB_SOURCES})
 target_include_directories(gxbuild3_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(gxbuild3_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/stfs) # TODO: update imports instead
 target_link_libraries(gxbuild3_lib PUBLIC
     GxCrypt
     spdlog::spdlog
-    stfs
 )
 
 add_executable(gxbuild3 src/Main.cpp)
