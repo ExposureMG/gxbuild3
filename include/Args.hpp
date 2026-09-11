@@ -188,6 +188,8 @@ struct AllNandInfo {
 
 struct InputBootloaders {
     std::vector<uint8_t> cb_or_a;
+    // Plaintext CB_X payload, as returned by ExtractAll. Its executable body does
+    // not necessarily have the zero signature region used to recognize retail CBs.
     std::optional<std::vector<uint8_t>> cb_x;
     std::optional<std::vector<uint8_t>> cb_b;
     std::optional<std::vector<uint8_t>> sc;

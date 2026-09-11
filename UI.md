@@ -16,6 +16,14 @@ The required options are:
 | `-d`, `--dir` | Ordered source root or roots |
 
 Build types are `retail`, `jtag`, `glitch`, `glitch2`, `glitch2m`, `glitch3`, and `devkit`.
+For `retail` and `glitch` (glitch1), CB/CB_A, CB_B when present, and CD are encrypted.
+`glitch2` and `glitch2m` retain encrypted CB_A/CB_B but write CD plaintext.
+`glitch3` requires CB_A, CB_X (version 15432), and CB_B: CB_A and CB_X are encrypted,
+while CB_B and CD are plaintext. CB_X uses CB_A's derived key and a zero CPU key;
+the split-HMAC variant follows CB_A's flags. Supply CB_X as a plaintext payload
+(or use the plaintext bytes returned by extraction), plus the matching patched bootloaders
+and RGH3 SMC; selecting a build type does not generate these assets.
+
 `glitch1` and `gg` normalize to `glitch`. Block types are `xsb`, `psb`, `bb`, and `emmc` for
 small-block, new-small-block, big-block, and eMMC images respectively.
 

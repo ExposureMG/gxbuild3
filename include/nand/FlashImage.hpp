@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Args.hpp"
 #include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
 #include "nand/bootloaders/4bl.hpp"
@@ -73,7 +74,8 @@ struct FlashImage {
     bool parse();
 
     bool decrypt_all(std::span<const uint8_t> cpu_key);
-    bool encrypt_all(std::span<const uint8_t> cpu_key);
+    // Hacked chains may deliberately leave stages plaintext for their patched parent.
+    bool encrypt_all(std::span<const uint8_t> cpu_key, BuildType build_type = BuildType::Retail);
 
     // Remove serialized bootloader records inherited from a donor before replacing the chain.
     // This deliberately leaves the donor's non-bootloader payloads intact.

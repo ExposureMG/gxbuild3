@@ -191,10 +191,10 @@ namespace {
         try {
             if (flash_image.cb_section.cb_B.has_value()) {
                 auto& cb_b = *flash_image.cb_section.cb_B;
-                if (!cb_a.is_decrypted()) {
+                if (!cb_a.decrypted) {
                     cb_a.decrypt(key_1bl);
                 }
-                if (!cb_b.is_decrypted()) {
+                if (!cb_b.decrypted) {
                     if (!cb_a.derived_key.has_value()) {
                         return std::unexpected(
                             BuildError{BuildErrorCode::InvalidBootloader,
@@ -211,7 +211,7 @@ namespace {
                     return std::unexpected(applied.error());
                 }
             } else {
-                if (!cb_a.is_decrypted()) {
+                if (!cb_a.decrypted) {
                     cb_a.decrypt(key_1bl);
                 }
                 if (auto applied = apply_cb_metadata(cb_a, metadata, "CB/A"); !applied) {
@@ -335,6 +335,12 @@ BuildResult RunBuild(const Input& input) {
         flash_image.cb_section.cb_or_A = BootloaderCb::parse(input.bootloaders.cb_or_a);
         if (input.bootloaders.cb_x && !input.bootloaders.cb_x->empty()) {
             flash_image.cb_section.cb_x = BootloaderCb::parse(*input.bootloaders.cb_x);
+            if (input.build_type == BuildType::Glitch3) {
+                // Input CB_X is explicitly plaintext. It can contain instructions
+                // in the region the retail-CB parser uses for plaintext detection.
+                flash_image.cb_section.cb_x->decrypted = true;
+                flash_image.cb_section.cb_x->populate_metadata();
+            }
         }
         if (input.bootloaders.cb_b && !input.bootloaders.cb_b->empty()) {
             flash_image.cb_section.cb_B = BootloaderCb::parse(*input.bootloaders.cb_b);
@@ -365,6 +371,14 @@ BuildResult RunBuild(const Input& input) {
     if (flash_image.kernel_section.cd.data.empty()) {
         return build_error(BuildErrorCode::InvalidBootloader,
                            "Required CD bootloader has no payload and cannot be serialized");
+    }
+
+    if (input.build_type == BuildType::Glitch3 &&
+        (!flash_image.cb_section.cb_x || flash_image.cb_section.cb_x->data.empty() ||
+         flash_image.cb_section.cb_x->header.header.version != 15432 ||
+         !flash_image.cb_section.cb_B || flash_image.cb_section.cb_B->data.empty())) {
+        return build_error(BuildErrorCode::InvalidBootloader,
+                           "Glitch3 requires CB_A, CB_X (15432), and CB_B");
     }
 
     std::optional<ParsedPatchSet> parsed_patchset;
@@ -664,7 +678,7 @@ BuildResult RunBuild(const Input& input) {
     }
 
     Log::Debug("Encrypting NAND image components");
-    if (!flash_image.encrypt_all(input.metadata.cpu_key)) {
+    if (!flash_image.encrypt_all(input.metadata.cpu_key, input.build_type)) {
         Log::Error("Failed to encrypt NAND image components");
         return build_error(BuildErrorCode::EncryptionFailure,
                            "Failed to encrypt NAND image components");

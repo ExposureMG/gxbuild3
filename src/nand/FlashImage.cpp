@@ -1239,12 +1239,41 @@ namespace gxbuild3::NAND {
 
     bool FlashImage::decrypt_all(std::span<const uint8_t> cpu_key) {
         try {
-            if (!cb_section.cb_or_A.data.empty() && !cb_section.cb_or_A.is_decrypted()) {
+            // Use the parser's full plaintext check, not is_decrypted()'s legacy
+            // single-byte hint: encrypted CBs can contain that byte by chance.
+            if (!cb_section.cb_or_A.data.empty() && !cb_section.cb_or_A.decrypted) {
                 cb_section.cb_or_A.decrypt(key_1bl);
             }
 
+            if (cb_section.cb_x && !cb_section.cb_x->data.empty() &&
+                !cb_section.cb_x->decrypted) {
+                if (!cb_section.cb_or_A.derived_key) {
+                    Log::Error("Cannot decrypt CB_X: CB_A derived key is missing");
+                    return false;
+                }
+                const std::array<uint8_t, 16> zero_cpu_key{};
+                if ((cb_section.cb_or_A.header.header.flags & 0x1000) != 0) {
+                    cb_section.cb_x->decrypt_v2(cb_section.cb_or_A.header,
+                                               cb_section.cb_or_A.derived_key->data(),
+                                               zero_cpu_key.data());
+                } else {
+                    cb_section.cb_x->decrypt_v1(cb_section.cb_or_A.derived_key->data(),
+                                               zero_cpu_key.data());
+                }
+            }
+
+            // CB_X loads the real CB_B as plaintext. Its key slot is already the
+            // handoff key (as written by RGH2to3), not a nonce to derive again.
+            if (cb_section.cb_x && cb_section.cb_B && cb_section.cb_B->data.size() >= 16) {
+                cb_section.cb_B->decrypted = true;
+                cb_section.cb_B->populate_metadata();
+                std::array<uint8_t, 16> key{};
+                std::copy_n(cb_section.cb_B->data.begin(), key.size(), key.begin());
+                cb_section.cb_B->derived_key = key;
+            }
+
             if (cb_section.cb_B.has_value() && !cb_section.cb_B->data.empty() &&
-                !cb_section.cb_B->is_decrypted()) {
+                !cb_section.cb_B->decrypted) {
                 if (!cb_section.cb_or_A.derived_key.has_value()) {
                     Log::Error("Cannot decrypt CB_B: CB_A derived key is missing");
                     return false;
@@ -1343,8 +1372,21 @@ namespace gxbuild3::NAND {
         return true;
     }
 
-    bool FlashImage::encrypt_all(std::span<const uint8_t> cpu_key) {
+    bool FlashImage::encrypt_all(std::span<const uint8_t> cpu_key, BuildType build_type) {
         try {
+            const bool plaintext_cb_b = build_type == BuildType::Glitch3;
+            const bool plaintext_cd = plaintext_cb_b || build_type == BuildType::Glitch2 ||
+                                      build_type == BuildType::Glitch2m;
+            if (plaintext_cb_b &&
+                (!cb_section.cb_x || cb_section.cb_x->data.empty() || !cb_section.cb_B ||
+                 !cb_section.cb_B->decrypted)) {
+                Log::Error("Glitch3 requires CB_X and a plaintext CB_B");
+                return false;
+            }
+            if (plaintext_cd && !kernel_section.cd.is_decrypted()) {
+                Log::Error("Glitch2/3 requires a plaintext CD input");
+                return false;
+            }
             const bool cd_requires_cpu_key =
                 !cb_section.cb_B.has_value() && cb_section.cb_or_A.requires_cpu_key_for_cd();
 
@@ -1354,12 +1396,35 @@ namespace gxbuild3::NAND {
                 return false;
             }
 
-            if (!cb_section.cb_or_A.data.empty() && cb_section.cb_or_A.is_decrypted()) {
+            if (!cb_section.cb_or_A.data.empty() && cb_section.cb_or_A.decrypted) {
                 cb_section.cb_or_A.encrypt(key_1bl);
             }
 
-            if (cb_section.cb_B.has_value() && !cb_section.cb_B->data.empty() &&
-                cb_section.cb_B->is_decrypted()) {
+            if (plaintext_cb_b && cb_section.cb_x->decrypted) {
+                if (!cb_section.cb_or_A.derived_key) {
+                    Log::Error("Cannot encrypt CB_X: CB_A derived key is missing");
+                    return false;
+                }
+                const std::array<uint8_t, 16> zero_cpu_key{};
+                if ((cb_section.cb_or_A.header.header.flags & 0x1000) != 0) {
+                    cb_section.cb_x->encrypt_v2(cb_section.cb_or_A.header,
+                                               cb_section.cb_or_A.derived_key->data(),
+                                               zero_cpu_key.data());
+                } else {
+                    cb_section.cb_x->encrypt_v1(cb_section.cb_or_A.derived_key->data(),
+                                               zero_cpu_key.data());
+                }
+            }
+
+            if (plaintext_cb_b && cb_section.cb_B->derived_key) {
+                // An encrypted replacement CB_B may have been decrypted for metadata.
+                // Preserve its derived handoff key when emitting it in plaintext.
+                std::copy(cb_section.cb_B->derived_key->begin(), cb_section.cb_B->derived_key->end(),
+                          cb_section.cb_B->data.begin());
+            }
+
+            if (!plaintext_cb_b && cb_section.cb_B.has_value() && !cb_section.cb_B->data.empty() &&
+                cb_section.cb_B->decrypted) {
                 if (!cb_section.cb_or_A.derived_key.has_value()) {
                     Log::Error("Cannot encrypt CB_B: CB_A derived key is missing");
                     return false;
@@ -1374,7 +1439,7 @@ namespace gxbuild3::NAND {
                 }
             }
 
-            if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted()) {
+            if (!plaintext_cd && !kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted()) {
                 if (cb_section.cb_B.has_value()) {
                     if (!cb_section.cb_B->derived_key.has_value()) {
                         Log::Error("Cannot encrypt CD: CB_B derived key is missing");

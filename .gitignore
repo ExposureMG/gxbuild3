@@ -72,4 +72,4 @@ gxbuild3
 _*.md
 *_.md
 .superpowers
-docs
+*.json
