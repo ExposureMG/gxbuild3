@@ -81,17 +81,6 @@ namespace {
         return (value + 0x0F) & ~size_t{0x0F};
     }
 
-    size_t system_update_end(size_t base, const SystemUpdate& update) {
-        if (!update.cf) {
-            return base;
-        }
-        size_t end = base + align_16(update.cf->serialize().size());
-        if (update.cg) {
-            end += align_16(update.cg->serialize().size());
-        }
-        return end;
-    }
-
     std::expected<size_t, PatchError> patched_bootloader_size(size_t current_size,
                                                               const ParsedPatchSection& section,
                                                               std::string_view stage_name) {
@@ -282,6 +271,8 @@ BuildResult RunBuild(const Input& input) {
         flash_image.flash_driver = Driver(image_size, driver_mode);
     }
 
+    flash_image.build_type = input.build_type;
+
     if (flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc) {
         for (uint8_t block_type = 0x33; block_type <= 0x39; ++block_type) {
             const auto* slot = input.mobiles.slot(block_type);
@@ -348,14 +339,13 @@ BuildResult RunBuild(const Input& input) {
             return build_error(BuildErrorCode::SerializationFailure,
                                "Failed to clear donor bootloader records");
         }
+        flash_image.preserve_layout = false;
         flash_image.cb_section.cb_x.reset();
         flash_image.cb_section.cb_B.reset();
         flash_image.cb_section.sc.reset();
         flash_image.kernel_section.ce.reset();
-        flash_image.system_update_0.cf.reset();
-        flash_image.system_update_0.cg.reset();
-        flash_image.system_update_1.cf.reset();
-        flash_image.system_update_1.cg.reset();
+        flash_image.system_update_0 = SystemUpdate{};
+        flash_image.system_update_1 = SystemUpdate{};
 
         flash_image.cb_section.cb_or_A = BootloaderCb::parse(input.bootloaders.cb_or_a);
         if (input.bootloaders.cb_x && !input.bootloaders.cb_x->empty()) {
@@ -548,37 +538,10 @@ BuildResult RunBuild(const Input& input) {
             const bool is_big_or_emmc =
                 flash_image.flash_driver.driver_mode() == Driver::DriverMode::Big ||
                 flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc;
-            const size_t patch_base = is_big_or_emmc ? 0xC0000 : 0x70000;
             const size_t slot_stride = is_big_or_emmc ? 0x20000 : 0x10000;
-            const size_t patch_capacity = slot_stride - 0x10;
-            const size_t patchslot_base =
-                patch_base + (input.payloads && input.payloads->xell ? XeLL::kSize : 0);
-            const size_t patch_floor = patch_base + slot_stride + 0x10;
-            const size_t slot0_end = system_update_end(patchslot_base, flash_image.system_update_0);
-            size_t patchslot_end = slot0_end;
-            if (slot0_end <= patchslot_base + slot_stride) {
-                patchslot_end =
-                    std::max(patchslot_end, system_update_end(patchslot_base + slot_stride,
-                                                              flash_image.system_update_1));
-            }
-            const size_t cursor = std::max(patchslot_base + 2 * slot_stride, patchslot_end);
-            const size_t patch_offset = std::max(align_16(cursor), patch_floor);
-
-            if (patch_size > patch_capacity) {
+            if (patch_size > slot_stride - (parsed_patchset->manufacturing ? 0x60 : 0x10))
                 return build_error(BuildErrorCode::PatchFailure,
                                    "Glitch KHV payload exceeds its patch-slot region");
-            }
-            if (input.payloads && input.payloads->rebooter &&
-                ranges_overlap(patch_offset, patch_size, 0x90000,
-                               input.payloads->rebooter->size())) {
-                return build_error(BuildErrorCode::PatchFailure,
-                                   "Glitch KHV payload overlaps the reserved rebooter region");
-            }
-            if (input.payloads && input.payloads->fuses &&
-                ranges_overlap(patch_offset, patch_size, 0x95000, input.payloads->fuses->size())) {
-                return build_error(BuildErrorCode::PatchFailure,
-                                   "Glitch KHV payload overlaps the reserved virtual-fuse region");
-            }
         }
         flash_image.payloads.patchset = std::move(parsed_patchset);
     }
@@ -587,7 +550,7 @@ BuildResult RunBuild(const Input& input) {
         if (input.payloads->xell && !input.payloads->xell->empty()) {
             auto xell_parsed = XeLL::parse(*input.payloads->xell);
             if (!xell_parsed) {
-                Log::Error("Failed to parse XeLL payload (invalid ELF magic or size)");
+                Log::Error("Failed to parse XeLL payload (invalid executable signature or size)");
                 return build_error(BuildErrorCode::InvalidBootloader,
                                    "Failed to parse XeLL payload");
             }
@@ -632,13 +595,10 @@ BuildResult RunBuild(const Input& input) {
             --initial_root;
         }
 
-        constexpr uint32_t kBigBlockSequenceLimit = 0xFFFFFF;
         const uint32_t previous_version =
             flash_image.filesystem ? flash_image.filesystem->version() : 0;
         const uint32_t version =
-            previous_version >= (flash_image.flash_driver.driver_mode() == Driver::DriverMode::Big
-                                     ? kBigBlockSequenceLimit
-                                     : std::numeric_limits<uint32_t>::max())
+            previous_version == std::numeric_limits<uint32_t>::max()
                 ? 1
                 : previous_version + 1;
         if (!fs.format(total_blocks, static_cast<uint16_t>(initial_root), version)) {
@@ -859,13 +819,8 @@ std::optional<InputMetadata> ExtractMetadata(std::span<const uint8_t> nand_image
         auto& cb_b = *img.cb_section.cb_B;
         if (cb_b.perbox.has_value()) {
             cb_ldv = cb_b.perbox->lockdown_value;
-            // Some CB_B images carry a corrected LDV byte at a fixed offset
-            // that supersedes the perbox value — same check ExtractAllInfo()
-            // and ExtractAll() already apply.
-            if (cb_b.data.size() > 0x3B1 - sizeof(generic_header) &&
-                cb_b.data[0x3B1 - sizeof(generic_header)] <= 16) {
-                cb_ldv = cb_b.data[0x3B1 - sizeof(generic_header)];
-            }
+            // Build metadata must preserve the per-box byte at +0x23. The value at
+            // +0x3B1 is used for display by ExtractAllInfo, not written into per-box data.
             std::memcpy(pairing_data, cb_b.perbox->pairing_data, 3);
         }
     }
@@ -1232,6 +1187,11 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
     }
 
     Input out{};
+    if (img.payloads.patchset && img.build_type) {
+        out.build_type = *img.build_type;
+        out.patches = InputPatches{};
+        out.patches->automatic = InputPatchFile{"extracted", BinaryParser::SerializePatchSet(*img.payloads.patchset)};
+    }
     out.metadata.cpu_key = std::vector<uint8_t>(cpu_key.begin(), cpu_key.end());
     out.metadata.nand_image = std::vector<uint8_t>(nand_image.begin(), nand_image.end());
     switch (img.flash_driver.driver_mode()) {
@@ -1271,10 +1231,6 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
         out.bootloaders.cb_b = img.cb_section.cb_B->serialize();
         if (img.cb_section.cb_B->perbox.has_value()) {
             cb_ldv = img.cb_section.cb_B->perbox->lockdown_value;
-            if (img.cb_section.cb_B->data.size() > 0x3B1 - sizeof(generic_header) &&
-                img.cb_section.cb_B->data[0x3B1 - sizeof(generic_header)] <= 16) {
-                cb_ldv = img.cb_section.cb_B->data[0x3B1 - sizeof(generic_header)];
-            }
             std::memcpy(pairing_data, img.cb_section.cb_B->perbox->pairing_data, 3);
         }
     }

@@ -45,6 +45,7 @@ struct ParsedPatchSection {
 
 struct ParsedPatchSet {
     PatchSetKind kind{PatchSetKind::Glitch};
+    bool manufacturing = false;
     std::vector<ParsedPatchSection> sections;
 };
 

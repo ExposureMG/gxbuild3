@@ -7,6 +7,7 @@
 #include "utils/Utils.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <stdexcept>
 
@@ -157,6 +158,59 @@ void BootloaderCb::decrypt_v2(const cb_header& cb_a_hdr, const uint8_t cb_a_key[
 
     if (decrypted)
         populate_metadata();
+}
+
+void BootloaderCb::encrypt_retail(const uint8_t parent_key[16],
+                                 std::span<const uint8_t> cpu_key,
+                                 std::span<const uint8_t> encrypted_smc,
+                                 const cb_header* cb_a_header) {
+    if (!decrypted || cpu_key.size() != 16 || encrypted_smc.empty() ||
+        encrypted_smc.size() % 4 != 0 || !parse_perbox()) {
+        throw std::runtime_error("Retail CB authentication requires plaintext per-box data, a CPU key, and an aligned encrypted SMC");
+    }
+
+    // Match the existing CB/CB_B encryption derivation, including the v2 CB_A header.
+    uint8_t rc4_key[16];
+    EXCRYPT_HMACSHA_STATE state;
+    ExCryptHmacShaInit(&state, parent_key, 16);
+    ExCryptHmacShaUpdate(&state, data.data(), 16);
+    if (cb_a_header) {
+        ExCryptHmacShaUpdate(&state, cpu_key.data(), 16);
+        if ((cb_a_header->header.flags & 0x1000) != 0) {
+            auto header = cb_a_header->header;
+            header.flags = 0;
+            byteswap_generic_header(header);
+            ExCryptHmacShaUpdate(&state, reinterpret_cast<const uint8_t*>(&header), 16);
+        }
+    }
+    ExCryptHmacShaFinal(&state, rc4_key, 16);
+
+    // The SMC checksum is two wrapping 64-bit accumulators over big-endian words.
+    uint64_t sum = 0, difference = 0;
+    for (size_t offset = 0; offset < encrypted_smc.size(); offset += 4) {
+        const uint32_t word = (uint32_t(encrypted_smc[offset]) << 24) |
+                              (uint32_t(encrypted_smc[offset + 1]) << 16) |
+                              (uint32_t(encrypted_smc[offset + 2]) << 8) |
+                              encrypted_smc[offset + 3];
+        sum = std::rotl(sum + word, 29);
+        difference = std::rotl(difference - word, 31);
+    }
+    uint8_t checksum[16];
+    for (size_t i = 0; i < 8; ++i) {
+        checksum[i] = static_cast<uint8_t>(sum >> (56 - 8 * i));
+        checksum[8 + i] = static_cast<uint8_t>(difference >> (56 - 8 * i));
+    }
+    ExCryptHmacSha(cpu_key.data(), 16, rc4_key, 16, data.data() + 0x10, 16,
+                   checksum, 16, perbox->per_box_digest, 16);
+    if (!serialize_perbox())
+        throw std::runtime_error("Could not serialize retail CB authentication digest");
+
+    if (!cb_a_header)
+        encrypt(parent_key);
+    else if ((cb_a_header->header.flags & 0x1000) != 0)
+        encrypt_v2(*cb_a_header, parent_key, cpu_key.data());
+    else
+        encrypt_v1(parent_key, cpu_key.data());
 }
 
 void BootloaderCb::decrypt_mfg(const uint8_t cb_a_key[16]) {

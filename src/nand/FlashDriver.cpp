@@ -195,7 +195,7 @@ namespace gxbuild3::NAND {
     }
 
     std::optional<BlockRange> Driver::block_range_for_byte_interval(size_t offset,
-                                                                     size_t length) const {
+                                                                    size_t length) const {
         const size_t clean_block_size = block_size_clean();
         const size_t clean_image_size = block_count() * clean_block_size;
         if (length == 0 || clean_block_size == 0 || offset > clean_image_size ||
@@ -384,14 +384,23 @@ namespace gxbuild3::NAND {
     }
 
     BlockMetadata Driver::interpret_block(size_t block_idx) const {
+        return interpret_page_metadata(block_idx * pages_per_block());
+    }
+
+    BlockMetadata Driver::interpret_cluster(size_t cluster_idx) const {
+        auto meta = interpret_page_metadata(cluster_idx * 32);
+        meta.is_bad = is_bad_block(cluster_idx * 32 / pages_per_block());
+        return meta;
+    }
+
+    BlockMetadata Driver::interpret_page_metadata(size_t first_page) const {
         BlockMetadata meta{};
         if (m_driver_mode == DriverMode::Emmc) {
-            meta.logical_block_id = static_cast<uint16_t>(block_idx);
+            meta.logical_block_id = static_cast<uint16_t>(first_page / pages_per_block());
             meta.is_bad = false;
             return meta;
         }
 
-        size_t first_page = block_idx * pages_per_block();
         auto spare = read_page_spare(first_page);
         if (spare.size() < 16) {
             return meta;
@@ -407,7 +416,8 @@ namespace gxbuild3::NAND {
             }
 
             meta.logical_block_id = static_cast<uint16_t>(((spare[2] & 0x0F) << 8) | spare[1]);
-            meta.sequence = static_cast<uint32_t>(spare[5] | (spare[4] << 8) | (spare[3] << 16));
+            meta.sequence = static_cast<uint32_t>(spare[5] | (spare[3] << 8) | (spare[4] << 16) |
+                                                  (uint32_t(spare[6]) << 24));
             meta.fs_size = static_cast<uint16_t>(spare[7] | (spare[8] << 8));
             meta.block_type = spare[0xC] & 0x3F;
             meta.page_count = spare[0x9];
@@ -511,14 +521,20 @@ namespace gxbuild3::NAND {
     }
 
     void Driver::write_block_metadata(size_t block_idx, const BlockMetadata& meta) {
+        write_page_metadata_range(block_idx * pages_per_block(), pages_per_block(), meta);
+    }
+
+    void Driver::write_cluster_metadata(size_t cluster_idx, const BlockMetadata& meta) {
+        write_page_metadata_range(cluster_idx * 32, 32, meta);
+    }
+
+    void Driver::write_page_metadata_range(size_t first_page, size_t page_count,
+                                           const BlockMetadata& meta) {
         if (m_driver_mode == DriverMode::Emmc) {
             return;
         }
 
-        size_t ppb = pages_per_block();
-        size_t first_page = block_idx * ppb;
-
-        for (size_t p = 0; p < ppb; ++p) {
+        for (size_t p = 0; p < page_count; ++p) {
             auto current_spare = read_page_spare(first_page + p);
             std::vector<uint8_t> spare_data(16, 0xFF);
             if (current_spare.size() >= 16) {
@@ -536,8 +552,9 @@ namespace gxbuild3::NAND {
                 spare_data[2] = static_cast<uint8_t>((spare_data[2] & 0xF0) |
                                                      ((meta.logical_block_id >> 8) & 0x0F));
                 spare_data[5] = static_cast<uint8_t>(meta.sequence & 0xFF);
-                spare_data[4] = static_cast<uint8_t>((meta.sequence >> 8) & 0xFF);
-                spare_data[3] = static_cast<uint8_t>((meta.sequence >> 16) & 0xFF);
+                spare_data[3] = static_cast<uint8_t>((meta.sequence >> 8) & 0xFF);
+                spare_data[4] = static_cast<uint8_t>((meta.sequence >> 16) & 0xFF);
+                spare_data[6] = static_cast<uint8_t>((meta.sequence >> 24) & 0xFF);
                 spare_data[9] = meta.page_count;
                 spare_data[0xC] = meta.block_type & 0x3F;
             } else if (m_driver_mode == DriverMode::NewSmall) {
@@ -818,10 +835,13 @@ namespace gxbuild3::NAND {
                 meta.is_bad = false;
 
                 if (m_layout.fs_root_block && blk == *m_layout.fs_root_block) {
-                    meta.block_type = 0x30;
+                    const bool big_block = m_driver_mode == DriverMode::Big;
+                    meta.block_type = big_block ? FlashFsMetadata::kRootTypeBig
+                                                : FlashFsMetadata::kRootTypeSmall;
                     meta.sequence = m_layout.fs_version;
-                    meta.fs_size = m_layout.fs_size;
-                    write_block_metadata(blk, meta);
+                    meta.fs_size = big_block ? FlashFsMetadata::kBigFsSize : m_layout.fs_size;
+                    meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
+                    write_cluster_metadata(blk * block_size_clean() / 0x4000, meta);
                 } else {
                     bool is_mobile = false;
                     for (const auto& mob : m_layout.mobile_blocks) {

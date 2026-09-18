@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 class BootloaderCb {
@@ -31,6 +32,12 @@ class BootloaderCb {
         decrypt_v2(cb_a_hdr, cb_a_key, cpu_key);
     }
     void encrypt_mfg(const uint8_t cb_a_key[16]) { decrypt_mfg(cb_a_key); }
+
+    // Authenticate paired retail CB/CB_B against the final encrypted SMC, then encrypt.
+    // A null CB_A header selects the single-CB (1BL parent) derivation.
+    void encrypt_retail(const uint8_t parent_key[16], std::span<const uint8_t> cpu_key,
+                        std::span<const uint8_t> encrypted_smc,
+                        const cb_header* cb_a_header = nullptr);
 
     bool is_decrypted() const;
     bool verify_decrypted() const;

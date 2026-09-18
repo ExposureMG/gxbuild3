@@ -193,6 +193,7 @@ namespace BinaryParser {
         }
 
         parsed.kind = *patchSetKind;
+        parsed.manufacturing = buildType == BuildType::Glitch2m;
 
         if (*patchSetKind == PatchSetKind::Jtag) {
             std::vector<std::vector<uint8_t>> rawSections;

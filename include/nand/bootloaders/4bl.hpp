@@ -1,6 +1,7 @@
 #pragma once
 #include "nand/bootloaders/Common.hpp"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -9,6 +10,8 @@ class BootloaderCd {
   public:
     cd_header header;
     std::vector<uint8_t> data;
+    // Runtime key handed to CE. header.key retains the on-disk CD nonce.
+    std::optional<std::array<uint8_t, 16>> derived_key;
     bool decrypted = false;
 
     static BootloaderCd parse(const std::vector<uint8_t>& bytes);

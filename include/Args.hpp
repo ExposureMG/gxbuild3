@@ -93,6 +93,7 @@ struct InputMetadata {
     // body is plaintext at the Input boundary. RunBuild encrypts the body for the output NAND.
     std::optional<std::vector<uint8_t>> keyvault;
     std::optional<std::vector<uint8_t>> smc;
+    // Writable CB/CB_B per-box LDV at +0x23, not the display value at +0x3B1.
     uint8_t cb_ldv{0};
     std::optional<uint8_t> cf_ldv;
     std::array<uint8_t, 3> pairing_data{};

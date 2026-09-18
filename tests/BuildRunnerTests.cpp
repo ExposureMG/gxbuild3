@@ -319,12 +319,12 @@ namespace {
 
         const auto built = RunBuild(input);
         const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
-        const auto khv = built ? read_logical(*built, 0x90000, 3) : std::nullopt;
+        const auto khv = built ? read_logical(*built, 0x80010, 3) : std::nullopt;
         return require(extracted.has_value() &&
                            extracted->bootloaders.cb_or_a.size() == original_cb_size,
                        "noblpatch leaves CB size unchanged") &&
                require(khv == Bytes({0xA0, 0xA1, 0xA2}),
-                       "noblpatch still writes merged KHV bytes after both patch slots");
+                       "noblpatch still writes merged KHV at the runtime anchor");
     }
 
     bool test_jtag_patchset_is_serialized_at_fixed_region() {
@@ -406,7 +406,7 @@ namespace {
                        "glitch patch reservation prevents overwriting mobile data");
     }
 
-    bool test_glitch_patch_follows_xell_and_patch_slots() {
+    bool test_glitch_patch_uses_header_overlay_anchor() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Glitch;
         InputPatches patches{};
@@ -418,11 +418,11 @@ namespace {
         input.payloads = std::move(payloads);
 
         const auto built = RunBuild(input);
-        const auto khv = built ? read_logical(*built, 0xD0000, 1) : std::nullopt;
+        const auto khv = built ? read_logical(*built, 0xC0010, 1) : std::nullopt;
         const auto xell_magic = built ? read_logical(*built, 0x70000, 4) : std::nullopt;
         return require(built.has_value(), "glitch patch and XeLL image builds") &&
                require(khv == Bytes({0xA0}),
-                       "glitch KHV follows the XeLL reservation and both patch slots") &&
+                       "glitch KHV starts at header update base plus stride plus 0x10") &&
                require(xell_magic == Bytes({0x7F, 'E', 'L', 'F'}),
                        "glitch patch placement preserves XeLL");
     }
@@ -436,13 +436,13 @@ namespace {
         input.patches = std::move(patches);
 
         const auto built = RunBuild(input);
-        const auto first = built ? read_logical(*built, 0x100000, 1) : std::nullopt;
+        const auto first = built ? read_logical(*built, 0xE0010, 1) : std::nullopt;
         return require(built.has_value(), "big-block glitch accepts payload above small stride") &&
                require(first == Bytes({0xB4}),
-                       "big-block KHV follows two 0x20000-byte patch slots");
+                       "big-block KHV uses the second-slot overlay");
     }
 
-    bool test_glitch_patch_rejects_rebooter_overlap() {
+    bool test_glitch_patch_is_disjoint_from_rebooter_without_xell() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Glitch;
         InputPatches patches{};
@@ -454,8 +454,8 @@ namespace {
         input.payloads = std::move(payloads);
 
         const auto built = RunBuild(input);
-        return require(!built && built.error().code == BuildErrorCode::PatchFailure,
-                       "glitch KHV cannot overwrite the reserved rebooter payload");
+        return require(built.has_value(), "fixed KHV anchor is disjoint from the rebooter") &&
+               require(read_logical(*built, 0x80010, 1) == Bytes{0xA0}, "KHV stays at runtime anchor");
     }
 
     bool test_jtag_xell_without_rebooter_preserves_patches_and_uses_fixed_offset() {
@@ -481,76 +481,33 @@ namespace {
     }
 
     bool test_glitch_xell_shifts_patchslots_on_small_and_big_layouts() {
-        struct Case {
-            ImageType image_type;
-            size_t slot0;
-            size_t slot1;
-            size_t khv;
-        };
-        const std::array cases{
-            Case{ImageType::SmallBlock, 0xB0000, 0xC0000, 0xD0000},
-            Case{ImageType::BigBlock, 0x100000, 0x120000, 0x140000},
-        };
-
-        for (const auto& test_case : cases) {
-            auto input = fresh_input(test_case.image_type);
+        for (auto image_type : {ImageType::SmallBlock, ImageType::BigBlock, ImageType::Emmc}) {
+            auto input = fresh_input(image_type);
             input.build_type = BuildType::Glitch;
             InputPatches patches{};
-            patches.automatic =
-                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xA5})};
-            input.patches = std::move(patches);
-            InputPayloads payloads{};
-            payloads.xell = valid_xell();
-            input.payloads = std::move(payloads);
-            const auto [cf0, cg0] = valid_system_update(0x61);
-            const auto [cf1, cg1] = valid_system_update(0x71);
-            input.bootloaders.cf0 = cf0;
-            input.bootloaders.cg0 = cg0;
-            input.bootloaders.cf1 = cf1;
-            input.bootloaders.cg1 = cg1;
-
-            const auto built = RunBuild(input);
-            const auto slot0_cf =
-                built ? read_logical(*built, test_case.slot0, cf0.size()) : std::nullopt;
-            const auto slot0_cg =
-                built ? read_logical(*built, test_case.slot0 + ((cf0.size() + 0x0F) & ~0x0F),
-                                     cg0.size())
-                      : std::nullopt;
-            const auto slot1_cf =
-                built ? read_logical(*built, test_case.slot1, cf1.size()) : std::nullopt;
-            const auto slot1_cg =
-                built ? read_logical(*built, test_case.slot1 + ((cf1.size() + 0x0F) & ~0x0F),
-                                     cg1.size())
-                      : std::nullopt;
-            const auto khv = built ? read_logical(*built, test_case.khv, 1) : std::nullopt;
-            const auto xell_magic =
-                built
-                    ? read_logical(*built,
-                                   test_case.image_type == ImageType::BigBlock ? 0xC0000 : 0x70000,
-                                   4)
-                    : std::nullopt;
-            std::optional<FlashImage> parsed;
-            if (built) {
-                parsed = FlashImage::read(*built);
-                if (parsed && !parsed->parse()) {
-                    parsed.reset();
-                }
-            }
-            if (!require(built.has_value(), "glitch XeLL and patch slots build") ||
-                !require(slot0_cf.has_value() && slot0_cg == cg0,
-                         "shifted slot zero serializes CF and preserves CG bytes") ||
-                !require(slot1_cf.has_value() && slot1_cg == cg1,
-                         "shifted slot one serializes CF and preserves CG bytes") ||
-                !require(khv == Bytes({0xA5}), "KHV follows both shifted patch slots") ||
-                !require(xell_magic == Bytes({0x7F, 'E', 'L', 'F'}), "XeLL remains intact") ||
-                !require(parsed.has_value() && parsed->system_update_0.cf.has_value() &&
-                             parsed->system_update_0.cg.has_value() &&
-                             parsed->system_update_1.cf.has_value() &&
-                             parsed->system_update_1.cg.has_value() &&
-                             parsed->header.cf_offset == test_case.slot0,
-                         "shifted CF/CG slots parse from the serialized header")) {
-                return false;
-            }
+            patches.automatic = InputPatchFile{"automatic", glitch_patchset(0x20,0,0x30,0,Bytes{0,0,0x10,0,0,0,0,1,0x60,0,0,0,255,255,255,255})};
+            input.patches = patches;
+            input.payloads = InputPayloads{};
+            input.payloads->xell = valid_xell();
+            auto [cf,cg] = valid_system_update(0x61);
+            input.bootloaders.cf0 = cf; input.bootloaders.cg0 = cg;
+            auto built = RunBuild(input);
+            const size_t base = image_type == ImageType::SmallBlock ? 0xB0000 : 0xC0000;
+            const size_t stride = image_type == ImageType::SmallBlock ? 0x10000 : 0x20000;
+            if (!require(built.has_value(), "one update slot and runtime overlay build") ||
+                !require(read_logical(*built,base+stride+0x10,4)==Bytes({0,0,0x10,0}),"KHV matches CD header anchor") ||
+                !require(read_logical(*built,0x70000,0x40000)==input.payloads->xell,"XeLL is geometry independent")) return false;
+            auto extracted=ExtractAll(*built,input.metadata.cpu_key);
+            if(!require(extracted && extracted->patches && extracted->build_type==BuildType::Glitch,
+                        "extraction preserves the runtime patch stream and build type"))return false;
+            auto rebuilt=RunBuild(*extracted);
+            if(!require(rebuilt && read_logical(*rebuilt,base+stride+0x10,4)==Bytes({0,0,0x10,0}) &&
+                        read_logical(*rebuilt,0x70000,0x40000)==input.payloads->xell,
+                        "extract/rebuild preserves XeLL and the KHV anchor"))return false;
+            input.bootloaders.cf1 = cf; input.bootloaders.cg1 = cg;
+            auto conflict = RunBuild(input);
+            if(!require(!conflict && conflict.error().message.find("second update slot") != std::string::npos,
+                        "CF1 cannot occupy the glitch overlay")) return false;
         }
         return true;
     }
@@ -626,7 +583,7 @@ namespace {
                        "donor transition reports the retained XeLL and rebooter collision");
     }
 
-    bool test_fixed_payloads_roundtrip_in_valid_jtag_and_bigblock_glitch_layouts() {
+    bool test_fixed_payloads_roundtrip_in_valid_jtag_layout() {
         struct Case {
             ImageType image_type;
             BuildType build_type;
@@ -636,9 +593,7 @@ namespace {
         const std::array cases{
             Case{ImageType::SmallBlock, BuildType::Jtag,
                  InputPatchFile{"automatic", jtag_patchset(Bytes{0xA3})}, 0x95060},
-            Case{ImageType::BigBlock, BuildType::Glitch,
-                 InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xA4})},
-                 0xC0000},
+
         };
 
         for (const auto& test_case : cases) {
@@ -674,60 +629,18 @@ namespace {
         return true;
     }
 
-    bool test_bigblock_and_emmc_glitch_retain_disjoint_fixed_payloads() {
-        struct Case {
-            ImageType image_type;
-            std::string_view name;
-        };
-        const std::array cases{Case{ImageType::BigBlock, "big-block"},
-                               Case{ImageType::Emmc, "eMMC"}};
-
-        for (const auto& test_case : cases) {
-            auto input = fresh_input(test_case.image_type);
+    bool test_bigblock_and_emmc_glitch_reject_jtag_payload_overlap() {
+        for(auto type : {ImageType::BigBlock, ImageType::Emmc}) {
+            auto input = fresh_input(type);
             input.build_type = BuildType::Glitch;
-            InputPatches patches{};
-            patches.automatic =
-                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xA6})};
-            input.patches = std::move(patches);
-            InputPayloads payloads{};
-            payloads.xell = valid_xell();
-            payloads.xell->at(0x3FFFF) = 0xD7;
-            payloads.rebooter = Bytes(0x1000, 0xD8);
-            payloads.fuses = Bytes(0x60, 0xD9);
-            input.payloads = std::move(payloads);
-
-            const auto built = RunBuild(input);
-            auto parsed = built ? FlashImage::read(*built) : std::nullopt;
-            const bool parsed_ok = parsed && parsed->parse();
-            const auto extracted =
-                built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
-            const auto rebuilt = extracted ? RunBuild(*extracted) : BuildResult{};
-            const auto rebuilt_xell =
-                rebuilt ? read_logical(*rebuilt, 0xC0000, input.payloads->xell->size())
-                        : std::nullopt;
-            const auto rebuilt_rebooter =
-                rebuilt ? read_logical(*rebuilt, 0x90000, input.payloads->rebooter->size())
-                        : std::nullopt;
-            const auto rebuilt_fuses =
-                rebuilt ? read_logical(*rebuilt, 0x95000, input.payloads->fuses->size())
-                        : std::nullopt;
-
-            if (!require(built.has_value() && parsed_ok,
-                         std::string(test_case.name) + " Glitch fixture builds and parses") ||
-                !require(
-                    extracted.has_value() && extracted->payloads &&
-                        extracted->payloads->xell == input.payloads->xell &&
-                        extracted->payloads->rebooter == input.payloads->rebooter &&
-                        extracted->payloads->fuses == input.payloads->fuses,
-                    std::string(test_case.name) +
-                        " Glitch ExtractAll retains patch-base XeLL and disjoint fixed payloads") ||
-                !require(rebuilt_xell == input.payloads->xell &&
-                             rebuilt_rebooter == input.payloads->rebooter &&
-                             rebuilt_fuses == input.payloads->fuses,
-                         std::string(test_case.name) +
-                             " Glitch ExtractAll rebuild preserves every retained payload")) {
-                return false;
-            }
+            input.patches = InputPatches{};
+            input.patches->automatic = InputPatchFile{"automatic",glitch_patchset(0x20,0,0x30,0,Bytes{0xA5})};
+            input.payloads = InputPayloads{};
+            input.payloads->xell = valid_xell();
+            input.payloads->rebooter = Bytes(0x1000,0x71);
+            auto built = RunBuild(input);
+            if(!require(!built && built.error().message.find("XeLL overlaps rebooter")!=std::string::npos,
+                        "glitch XeLL overlaps JTAG payloads on every geometry")) return false;
         }
         return true;
     }
@@ -796,36 +709,20 @@ namespace {
         return true;
     }
 
-    bool test_big_and_emmc_shifted_patch_base_allow_disjoint_jtag_xell_fallback() {
-        const std::array image_types{ImageType::BigBlock, ImageType::Emmc};
-        for (const auto image_type : image_types) {
-            auto input = fresh_input(image_type);
-            input.build_type = BuildType::Glitch;
-            InputPatches patches{};
-            patches.automatic =
-                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xAB})};
-            input.patches = std::move(patches);
-            InputPayloads payloads{};
-            payloads.xell = valid_xell();
-            input.payloads = std::move(payloads);
-
-            const auto built = RunBuild(input);
-            auto image = built ? FlashImage::read(*built) : std::nullopt;
-            const Bytes invalid_patch_base{0, 0, 0, 0};
-            const auto jtag_xell = valid_xell();
-            const bool modified = image && image->parse() &&
-                                  image->flash_driver.write_offset(0xC0000, invalid_patch_base) &&
-                                  image->flash_driver.write_offset(0x95060, jtag_xell);
-            const auto extracted =
-                modified ? ExtractAll(image->flash_driver.serialize(), input.metadata.cpu_key)
-                         : std::nullopt;
-            if (!require(modified,
-                         "big/eMMC shifted patch-base fixture is modified successfully") ||
-                !require(extracted && extracted->payloads && extracted->payloads->xell &&
-                             (*extracted->payloads->xell)[0] == 0x7F,
-                         "a disjoint Big/eMMC JTAG XeLL remains independently recoverable")) {
-                return false;
-            }
+    bool test_big_and_emmc_glitch_do_not_infer_jtag_inside_xell() {
+        for (auto image_type : {ImageType::BigBlock, ImageType::Emmc}) {
+            auto input=fresh_input(image_type); input.build_type=BuildType::Glitch;
+            input.patches=InputPatches{};
+            const Bytes khv{0,0,0x10,0,0,0,0,1,0x60,0,0,0,255,255,255,255};
+            input.patches->automatic=InputPatchFile{"automatic",glitch_patchset(0x20,0,0x30,0,khv)};
+            input.payloads=InputPayloads{}; input.payloads->xell=valid_xell();
+            auto built=RunBuild(input); auto image=built?FlashImage::read(*built):std::nullopt;
+            if(!require(image && image->parse(),"glitch donor with runtime KHV parses"))return false;
+            image->flash_driver.write_offset(0x70000,Bytes{0,0,0,0});
+            image->flash_driver.write_offset(0x95060,valid_xell());
+            auto extracted=ExtractAll(image->flash_driver.serialize(),input.metadata.cpu_key);
+            if(!require(extracted && (!extracted->payloads || !extracted->payloads->xell),
+                        "known glitch image cannot infer JTAG XeLL inside its damaged payload"))return false;
         }
         return true;
     }
@@ -1757,7 +1654,7 @@ namespace {
                        "rebuilt virtual fuses remain serialized-identical");
     }
 
-    bool test_metadata_overrides_reach_final_patched_cb_b_and_all_cf_slots() {
+    bool test_metadata_overrides_reach_final_patched_cb_b_and_cf0() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Glitch2;
         auto cb_a = BootloaderCb::parse(input.bootloaders.cb_or_a);
@@ -1782,11 +1679,9 @@ namespace {
         cb_b.serialize_perbox();
         input.bootloaders.cb_b = cb_b.serialize();
         input.bootloaders.cf0 = decrypted_cf(0x31, {0x32, 0x33, 0x34});
-        input.bootloaders.cf1 = decrypted_cf(0x41, {0x42, 0x43, 0x44});
         const auto update0 = valid_system_update(0x51);
         const auto update1 = valid_system_update(0x61);
         input.bootloaders.cg0 = update0.second;
-        input.bootloaders.cg1 = update1.second;
         input.metadata.cb_ldv = 9;
         input.metadata.cf_ldv = 10;
         input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
@@ -1810,7 +1705,7 @@ namespace {
                        "metadata override output CB per-box metadata parses") &&
                require(image->cb_section.cb_B.has_value() &&
                            image->system_update_0.cf.has_value() &&
-                           image->system_update_1.cf.has_value(),
+                           !image->system_update_1.cf.has_value(),
                        "metadata override output contains all replacement bootloaders") &&
                require(image->cb_section.cb_or_A.perbox->lockdown_value == 0x11 &&
                            std::equal(std::begin(image->cb_section.cb_or_A.perbox->pairing_data),
@@ -1823,12 +1718,8 @@ namespace {
                                       input.metadata.pairing_data.begin()),
                        "patched CB_B receives the winning LDV and all pairing bytes") &&
                require(image->system_update_0.cf->perbox->lockdown_value == 10 &&
-                           image->system_update_1.cf->perbox->lockdown_value == 10 &&
                            std::equal(std::begin(image->system_update_0.cf->perbox->pairing_data),
                                       std::end(image->system_update_0.cf->perbox->pairing_data),
-                                      input.metadata.pairing_data.begin()) &&
-                           std::equal(std::begin(image->system_update_1.cf->perbox->pairing_data),
-                                      std::end(image->system_update_1.cf->perbox->pairing_data),
                                       input.metadata.pairing_data.begin()),
                        "every supplied CF receives the winning LDV and pairing bytes");
     }
@@ -2357,7 +2248,7 @@ namespace {
                        "CG1 without CF1 is rejected structurally");
     }
 
-    bool test_system_update_slot_zero_overflow_rejects_a_supplied_slot_one() {
+    bool test_system_update_slot_zero_spills_and_preserves_slot_one() {
         auto input = fresh_input(ImageType::SmallBlock);
         const auto [cf0, ignored_cg0] = valid_system_update(0x51);
         const auto [cf1, cg1] = valid_system_update(0x61);
@@ -2371,9 +2262,15 @@ namespace {
         input.bootloaders.cf1 = cf1;
         input.bootloaders.cg1 = cg1;
 
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{};
         const auto built = RunBuild(input);
-        return require(!built && built.error().code == BuildErrorCode::InvalidInput,
-                       "slot-zero overflow does not silently discard a supplied slot one");
+        auto image = built ? FlashImage::read(*built) : std::nullopt;
+        return require(image && image->parse() && image->header.patch_slots == 2 &&
+                           !image->system_update_0.cg_spill_blocks.empty() &&
+                           image->system_update_1.cf && image->system_update_1.cg &&
+                           image->system_update_0.cg->serialize() == cg0.serialize() &&
+                           image->system_update_1.cg->serialize() == cg1,
+                       "slot-zero CG spills while both supplied update slots survive");
     }
 
     bool test_replacement_layout_overrides_a_one_slot_donor_header() {
@@ -2474,18 +2371,18 @@ int main() {
     passed = test_patch_regions_reject_overflow() && passed;
     passed = test_runbuild_rejects_retail_and_devkit_addon_patch_data() && passed;
     passed = test_glitch_patch_region_does_not_overwrite_mobile_data() && passed;
-    passed = test_glitch_patch_follows_xell_and_patch_slots() && passed;
+    passed = test_glitch_patch_uses_header_overlay_anchor() && passed;
     passed = test_bigblock_glitch_uses_big_patch_stride() && passed;
-    passed = test_glitch_patch_rejects_rebooter_overlap() && passed;
+    passed = test_glitch_patch_is_disjoint_from_rebooter_without_xell() && passed;
     passed = test_jtag_xell_without_rebooter_preserves_patches_and_uses_fixed_offset() && passed;
     passed = test_glitch_xell_shifts_patchslots_on_small_and_big_layouts() && passed;
     passed = test_small_glitch_xell_rejects_fixed_payload_collisions() && passed;
     passed = test_donor_transition_rejects_retained_glitch_xell_collision() && passed;
-    passed = test_fixed_payloads_roundtrip_in_valid_jtag_and_bigblock_glitch_layouts() && passed;
-    passed = test_bigblock_and_emmc_glitch_retain_disjoint_fixed_payloads() && passed;
+    passed = test_fixed_payloads_roundtrip_in_valid_jtag_layout() && passed;
+    passed = test_bigblock_and_emmc_glitch_reject_jtag_payload_overlap() && passed;
     passed = test_small_glitch_patch_base_xell_owns_overlapping_fixed_payload_offsets() && passed;
     passed = test_patch_base_xell_ownership_never_falls_back_to_an_internal_jtag_elf() && passed;
-    passed = test_big_and_emmc_shifted_patch_base_allow_disjoint_jtag_xell_fallback() && passed;
+    passed = test_big_and_emmc_glitch_do_not_infer_jtag_inside_xell() && passed;
     passed = test_unambiguous_jtag_xell_preserves_fixed_payload_extraction() && passed;
     passed = test_boot_chain_collision_is_rejected_for_unpatched_payload_layouts() && passed;
     passed = test_bootloader_patch_end_is_bounded_by_boot_chain_layout() && passed;
@@ -2523,7 +2420,7 @@ int main() {
     passed = test_emmc_rejects_each_mobile_slot_without_corona_metadata() && passed;
     passed = test_serialized_mobile_overlays_preserve_absent_slots_for_nand_layouts() && passed;
     passed = test_extraction_roundtrips_serialized_bootloaders_and_payloads() && passed;
-    passed = test_metadata_overrides_reach_final_patched_cb_b_and_all_cf_slots() && passed;
+    passed = test_metadata_overrides_reach_final_patched_cb_b_and_cf0() && passed;
     passed = test_metadata_override_requires_writable_cb_perbox() && passed;
     passed = test_present_unwritable_cb_b_remains_metadata_authoritative() && passed;
     passed = test_donor_bootloader_chain_is_replaced_by_input_presence() && passed;
@@ -2539,7 +2436,7 @@ int main() {
     passed = test_cb_console_allow_host_value_encrypts_and_roundtrips_asymmetrically() && passed;
     passed = test_direct_payload_layout_rejects_header_only_required_records() && passed;
     passed = test_required_chain_relationships_reject_before_serialization() && passed;
-    passed = test_system_update_slot_zero_overflow_rejects_a_supplied_slot_one() && passed;
+    passed = test_system_update_slot_zero_spills_and_preserves_slot_one() && passed;
     passed = test_replacement_layout_overrides_a_one_slot_donor_header() && passed;
     passed = test_clear_bootloader_chain_clears_header_only_cb_and_cd_records() && passed;
     return passed ? 0 : 1;

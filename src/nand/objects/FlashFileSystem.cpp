@@ -18,6 +18,10 @@ namespace gxbuild3::NAND {
         return m_driver ? m_driver->block_size_clean() / kCleanBlockSize : 1;
     }
 
+    size_t FlashFileSystem::base_cluster() const {
+        return m_driver && m_driver->driver_mode() == Driver::DriverMode::Big ? 0xAE0 : 0;
+    }
+
     bool FlashFileSystem::is_block_free(size_t physical_block) const {
         const size_t ratio = clusters_per_block();
         if (physical_block >= m_blockmap.size() / ratio) {
@@ -66,7 +70,8 @@ namespace gxbuild3::NAND {
                                  uint32_t reserved_boundary) {
         const size_t ratio = clusters_per_block();
         constexpr size_t map_capacity = kRootDirectoryPages * kBlocksPerPage;
-        if (total_blocks == 0 || root_block >= total_blocks || total_blocks > map_capacity / ratio) {
+        if (total_blocks == 0 || root_block >= total_blocks ||
+            total_blocks > map_capacity / ratio || root_block * ratio < base_cluster()) {
             Log::Error("Invalid parameters for FlashFS format: total_blocks={}, root_block={}",
                        total_blocks, root_block);
             return false;
@@ -74,6 +79,8 @@ namespace gxbuild3::NAND {
 
         m_version = version;
         m_root_block = root_block;
+        m_root_cluster_offset = 0;
+        m_root_reserved_clusters = ratio;
         m_entries.clear();
         m_file_data.clear();
         m_blockmap.assign(total_blocks * ratio, BlockMapStatus::Free);
@@ -81,7 +88,8 @@ namespace gxbuild3::NAND {
         Log::Debug("Formatted Flash File System: total_blocks={}, root_block={}, version={}",
                    total_blocks, root_block, version);
 
-        const size_t bound = std::min(total_blocks, static_cast<size_t>(reserved_boundary)) * ratio;
+        const size_t bound = std::max(
+            base_cluster(), std::min(total_blocks, static_cast<size_t>(reserved_boundary)) * ratio);
         for (size_t i = 0; i < bound; ++i) {
             m_blockmap[i] = BlockMapStatus::Reserved;
         }
@@ -92,7 +100,7 @@ namespace gxbuild3::NAND {
 
     bool FlashFileSystem::set_root_block(uint16_t root_block) {
         const size_t ratio = clusters_per_block();
-        if (root_block >= m_blockmap.size() / ratio) {
+        if (root_block >= m_blockmap.size() / ratio || root_block * ratio < base_cluster()) {
             return false;
         }
         if (root_block == m_root_block) {
@@ -102,8 +110,11 @@ namespace gxbuild3::NAND {
             return false;
         }
 
-        std::fill_n(m_blockmap.begin() + m_root_block * ratio, ratio, BlockMapStatus::Free);
+        std::fill_n(m_blockmap.begin() + m_root_block * ratio + m_root_cluster_offset,
+                    m_root_reserved_clusters, BlockMapStatus::Free);
         m_root_block = root_block;
+        m_root_cluster_offset = 0;
+        m_root_reserved_clusters = ratio;
         std::fill_n(m_blockmap.begin() + m_root_block * ratio, ratio, BlockMapStatus::EndOfChain);
         return true;
     }
@@ -295,8 +306,8 @@ namespace gxbuild3::NAND {
             if (data.size() >= entry->length) {
                 break;
             }
-            auto blk_data = m_driver->read_clean(static_cast<size_t>(blk) * kCleanBlockSize,
-                                                  kCleanBlockSize);
+            auto blk_data =
+                m_driver->read_clean(static_cast<size_t>(blk) * kCleanBlockSize, kCleanBlockSize);
             size_t to_copy = std::min<size_t>(entry->length - data.size(), blk_data.size());
             data.insert(data.end(), blk_data.begin(), blk_data.begin() + to_copy);
         }
@@ -354,12 +365,18 @@ namespace gxbuild3::NAND {
         }
         std::vector<uint8_t> root_block(kCleanBlockSize, 0);
 
-        size_t bm_written = 0;
+        size_t bm_written = base_cluster();
         for (size_t page = 0; page < 32 && bm_written < m_blockmap.size(); page += 2) {
             uint8_t* page_ptr = root_block.data() + (page * 512);
             for (size_t entry = 0; entry < kBlocksPerPage && bm_written < m_blockmap.size();
                  ++entry) {
-                uint16_t val = bswap16(m_blockmap[bm_written++]);
+                uint16_t val = m_blockmap[bm_written++];
+                if ((val & 0x7FFF) < BlockMapStatus::BadBlock) {
+                    if ((val & 0x7FFF) < base_cluster())
+                        return {};
+                    val = static_cast<uint16_t>((val & 0x8000) | ((val & 0x7FFF) - base_cluster()));
+                }
+                val = bswap16(val);
                 std::memcpy(page_ptr + (entry * sizeof(uint16_t)), &val, sizeof(uint16_t));
             }
         }
@@ -371,7 +388,10 @@ namespace gxbuild3::NAND {
             for (size_t slot = 0; slot < kEntriesPerPage && entry_written < m_entries.size();
                  ++slot) {
                 FlashFileSystemEntry raw = m_entries[entry_written++];
-                raw.block_number = bswap16(raw.block_number);
+                if (raw.block_number < base_cluster())
+                    return {};
+                raw.block_number =
+                    bswap16(static_cast<uint16_t>(raw.block_number - base_cluster()));
                 raw.length = bswap32(raw.length);
                 raw.timestamp = bswap32(raw.timestamp);
                 std::memcpy(page_ptr + (slot * sizeof(FlashFileSystemEntry)), &raw,
@@ -396,17 +416,21 @@ namespace gxbuild3::NAND {
         if (root_data.size() != kCleanBlockSize) {
             return false;
         }
-        if (!m_driver->write_block(m_root_block, root_data)) {
+        const size_t root_cluster = m_root_block * clusters_per_block() + m_root_cluster_offset;
+        if (!m_driver->write_offset(root_cluster * kCleanBlockSize, root_data)) {
             return false;
         }
+
+        const bool big_block = m_driver->driver_mode() == Driver::DriverMode::Big;
 
         BlockMetadata root_meta{};
         root_meta.logical_block_id = m_root_block;
         root_meta.sequence = m_version;
-        root_meta.block_type = 0x30;
-        root_meta.page_count = 0;
+        root_meta.block_type =
+            big_block ? FlashFsMetadata::kRootTypeBig : FlashFsMetadata::kRootTypeSmall;
+        root_meta.fs_size = big_block ? FlashFsMetadata::kBigFsSize : 0;
+        root_meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
         root_meta.is_bad = false;
-        m_driver->write_block_metadata(m_root_block, root_meta);
 
         std::map<size_t, size_t> physical_bytes_used;
         for (const auto& entry : m_entries) {
@@ -450,40 +474,61 @@ namespace gxbuild3::NAND {
         for (const auto& [physical_block, bytes_used] : physical_bytes_used) {
             BlockMetadata file_meta{};
             file_meta.logical_block_id = static_cast<uint16_t>(physical_block);
-            file_meta.sequence = m_version;
-            file_meta.block_type = 0x01;
-            const size_t page_count = (bytes_used + 511) / 512;
-            file_meta.page_count = page_count >= m_driver->pages_per_block()
-                                       ? 0 : static_cast<uint8_t>(page_count);
+            file_meta.block_type =
+                big_block ? FlashFsMetadata::kDataTypeBig : FlashFsMetadata::kDataTypeSmall;
+            if (big_block) {
+                // Big-block data blocks carry sequence 0 and the constant reference stamp.
+                file_meta.sequence = 0;
+                file_meta.fs_size = FlashFsMetadata::kBigFsSize;
+                file_meta.page_count = FlashFsMetadata::kBigPageCount;
+            } else {
+                file_meta.sequence = m_version;
+                const size_t page_count = (bytes_used + 511) / 512;
+                file_meta.page_count = page_count >= m_driver->pages_per_block()
+                                           ? 0
+                                           : static_cast<uint8_t>(page_count);
+            }
             file_meta.is_bad = false;
             m_driver->write_block_metadata(physical_block, file_meta);
         }
 
+        m_driver->write_cluster_metadata(root_cluster, root_meta);
         return true;
     }
 
-    bool FlashFileSystem::load(Driver& driver, uint16_t root_block) {
+    bool FlashFileSystem::load(Driver& driver, uint16_t root_block, size_t cluster_in_block) {
         m_driver = &driver;
         m_root_block = root_block;
-        auto root_meta = driver.interpret_block(root_block);
+        if (cluster_in_block >= clusters_per_block())
+            return false;
+        m_root_cluster_offset = cluster_in_block;
+        m_root_reserved_clusters = 1;
+        const size_t root_cluster = root_block * clusters_per_block() + cluster_in_block;
+        auto root_meta = driver.interpret_cluster(root_cluster);
         m_version = root_meta.sequence;
 
-        auto root_data = driver.read_block(root_block);
+        auto root_data = driver.read_clean(root_cluster * kCleanBlockSize, kCleanBlockSize);
         if (root_data.size() < kCleanBlockSize) {
             return false;
         }
 
         const size_t cluster_count = driver.block_count() * clusters_per_block();
         m_blockmap.assign(std::min(cluster_count, kRootDirectoryPages * kBlocksPerPage),
-                          BlockMapStatus::Free);
-        size_t bm_read = 0;
+                          BlockMapStatus::Reserved);
+        size_t bm_read = base_cluster();
 
         for (size_t page = 0; page < 32 && bm_read < m_blockmap.size(); page += 2) {
             const uint8_t* page_ptr = root_data.data() + (page * 512);
             for (size_t entry = 0; entry < kBlocksPerPage && bm_read < m_blockmap.size(); ++entry) {
                 uint16_t val = 0;
                 std::memcpy(&val, page_ptr + (entry * sizeof(uint16_t)), sizeof(uint16_t));
-                m_blockmap[bm_read++] = bswap16(val);
+                val = bswap16(val);
+                if ((val & 0x7FFF) < BlockMapStatus::BadBlock) {
+                    if ((val & 0x7FFF) + base_cluster() >= m_blockmap.size())
+                        return false;
+                    val = static_cast<uint16_t>((val & 0x8000) | ((val & 0x7FFF) + base_cluster()));
+                }
+                m_blockmap[bm_read++] = val;
             }
         }
 
@@ -496,11 +541,19 @@ namespace gxbuild3::NAND {
                 FlashFileSystemEntry raw{};
                 std::memcpy(&raw, page_ptr + (slot * sizeof(FlashFileSystemEntry)),
                             sizeof(FlashFileSystemEntry));
-                raw.block_number = bswap16(raw.block_number);
+                const uint16_t relative_block = bswap16(raw.block_number);
+                if (relative_block == 0xFFFF) {
+                    continue;
+                }
+                const size_t physical_cluster = relative_block + base_cluster();
+                raw.block_number = static_cast<uint16_t>(physical_cluster);
                 raw.length = bswap32(raw.length);
                 raw.timestamp = bswap32(raw.timestamp);
 
                 if (raw.is_valid()) {
+                    if (physical_cluster >= m_blockmap.size()) {
+                        return false;
+                    }
                     m_entries.push_back(raw);
                 }
             }
@@ -515,8 +568,8 @@ namespace gxbuild3::NAND {
                 if (file_bytes.size() >= entry.length) {
                     break;
                 }
-                auto blk_data = driver.read_clean(static_cast<size_t>(blk) * kCleanBlockSize,
-                                                  kCleanBlockSize);
+                auto blk_data =
+                    driver.read_clean(static_cast<size_t>(blk) * kCleanBlockSize, kCleanBlockSize);
                 size_t to_copy =
                     std::min<size_t>(entry.length - file_bytes.size(), blk_data.size());
                 file_bytes.insert(file_bytes.end(), blk_data.begin(), blk_data.begin() + to_copy);

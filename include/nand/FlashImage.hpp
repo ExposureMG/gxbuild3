@@ -42,6 +42,7 @@ struct KernelSection {
 struct SystemUpdate {
     std::optional<BootloaderCf> cf;
     std::optional<BootloaderCg> cg;
+    std::vector<uint16_t> cg_spill_blocks; // Logical 16 KiB clusters from CF + 0x32.
 };
 
 struct Payloads {
@@ -56,6 +57,8 @@ struct Payloads {
 
 struct FlashImage {
     nand_header header;
+    bool preserve_layout = false; // Direct read/write retains header-defined update anchors.
+    std::optional<BuildType> build_type; // Runtime layout; inferred conservatively when reading.
     std::optional<Smc> smc;
     std::optional<Keyvault> keyvault;
     CbSection cb_section;

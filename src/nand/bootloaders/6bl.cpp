@@ -105,6 +105,8 @@ void BootloaderCf::calc_mac(const uint8_t onebl_key[16], const uint8_t cpu_key[1
 
     if (data.size() >= 0x1C0 + sizeof(cf_perbox)) {
         std::memcpy(data.data() + 0x1C0 + 0x30, hmac_digest, 16);
+        if (perbox.has_value())
+            std::memcpy(perbox->per_box_digest, hmac_digest, 16);
     }
 }
 

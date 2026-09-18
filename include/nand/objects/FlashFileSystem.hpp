@@ -52,7 +52,7 @@ namespace gxbuild3::NAND {
         // locations are physical NAND blocks; directory entries/blockmap use 16 KiB clusters.
         bool format(size_t total_blocks, uint16_t root_block = 0x3E0, uint32_t version = 1,
                     uint32_t reserved_boundary = 0x50);
-        bool load(Driver& driver, uint16_t root_block = 0x3E0);
+        bool load(Driver& driver, uint16_t root_block = 0x3E0, size_t cluster_in_block = 0);
         bool save();
         bool set_root_block(uint16_t root_block);
         bool reserve_blocks(size_t start_block, size_t block_count);
@@ -83,11 +83,14 @@ namespace gxbuild3::NAND {
         Driver* m_driver = nullptr;
         uint32_t m_version = 1;
         uint16_t m_root_block = 0x3E0;
+        size_t m_root_cluster_offset = 0;
+        size_t m_root_reserved_clusters = 1;
         std::vector<uint16_t> m_blockmap;
         std::vector<FlashFileSystemEntry> m_entries;
         std::map<std::string, std::vector<uint8_t>> m_file_data;
 
         [[nodiscard]] size_t clusters_per_block() const;
+        [[nodiscard]] size_t base_cluster() const;
 
         [[nodiscard]] static std::optional<size_t> checked_block_count(size_t bytes_needed,
                                                                        size_t clean_block_size);

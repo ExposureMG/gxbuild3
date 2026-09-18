@@ -27,6 +27,33 @@ namespace gxbuild3::utils {
             return key;
         }
 
+        // Basename with the caller's original casing preserved. normalize_file_key
+        // lowercases for case-insensitive lookup keys, but the FlashFS stores entry
+        // names case-sensitively and the dashboard looks up resources (e.g. fonts) by
+        // their exact mixed-case name, so the on-disk name must keep the INI casing.
+        std::string display_basename(std::string_view key) {
+            std::string result{key};
+            std::replace(result.begin(), result.end(), '\\', '/');
+            if (auto pos = result.rfind('/'); pos != std::string::npos)
+                result.erase(0, pos + 1);
+            return result;
+        }
+
+        // Xbox dashboard patch payloads live in the flash filesystem with a numeric
+        // update-slot suffix. Firmware packs ship them unsuffixed ("aac.xexp",
+        // "xenonclatin.xttp") but the dash only loads "<name>.xexp1"; without the
+        // suffix the stale donor copy of "<name>.xexp1" survives and the patched
+        // dashboard is corrupt (POST 79 / "xam.xex corrupted"). Mirrors RGBuild's
+        // FileSystemControl and build360: append '1' when the name ends in "xexp" or
+        // "xttp" and does not already end in a digit. ".xtt" fonts are not suffixed.
+        std::string flashfs_patch_suffix(std::string name) {
+            const std::string_view view{name};
+            const bool trailing_digit = !name.empty() && name.back() >= '0' && name.back() <= '9';
+            if (!trailing_digit && (view.ends_with("xexp") || view.ends_with("xttp")))
+                name += '1';
+            return name;
+        }
+
         std::filesystem::path entry_to_lookup_path(std::string_view name) {
             std::string normalized{name};
             std::replace(normalized.begin(), normalized.end(), '\\', '/');
@@ -1064,10 +1091,12 @@ namespace gxbuild3::utils {
             if (key.empty() || key == "none")
                 return;
             if (auto found = search.find(entry.key)) {
+                std::string stored = flashfs_patch_suffix(display_basename(entry.key));
                 const auto [it, inserted] =
-                    payloads.emplace(key, std::pair{result.flashfs_sec.size(), found->rank});
+                    payloads.emplace(normalize_file_key(stored),
+                                     std::pair{result.flashfs_sec.size(), found->rank});
                 if (inserted) {
-                    result.flashfs_sec.emplace_back(key, std::move(found->data));
+                    result.flashfs_sec.emplace_back(std::move(stored), std::move(found->data));
                 } else if (found->rank < it->second.second) {
                     result.flashfs_sec[it->second.first].second = std::move(found->data);
                     it->second.second = found->rank;

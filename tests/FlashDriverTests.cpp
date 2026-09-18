@@ -63,9 +63,9 @@ namespace {
 
         const auto spare = driver.read_page_spare(2 * driver.pages_per_block());
         return check(spare.size() == 16, "Big Block spare data must be readable") &&
-               check(spare[3] == 0x12 && spare[4] == 0x34 && spare[5] == 0x56,
+               check(spare[3] == 0x34 && spare[4] == 0x12 && spare[5] == 0x56,
                      "Big Block sequence must use spare bytes 3, 4, and 5") &&
-               check(spare[6] == 0, "Big Block spare byte 6 must remain reserved");
+               check(spare[6] == 0, "Big Block sequence high byte must be zero for a 24-bit value");
     }
 
     bool test_block_type_masks_ecc_bits() {

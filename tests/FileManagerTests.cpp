@@ -474,6 +474,43 @@ namespace {
                 "a later-listed loose alias replaces STFS of the same root using source rank");
     }
 
+    void test_flashfs_preserves_filename_case() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nnone\n[flashfs]\nSegoeXbox-Light.xtt\nMixedCase.BIN\n");
+        write_file(f.root / "mydata/SegoeXbox-Light.xtt", {7});
+        write_file(f.root / "mydata/MixedCase.BIN", {8});
+        const auto result = FileManager::ReadIniFiles("version", "test", "test");
+        require(result && result->flashfs_sec.size() == 2,
+                "both mixed-case payloads must be present");
+        require(payload(*result, "SegoeXbox-Light.xtt") == Bytes{7},
+                "FlashFS entry name must preserve the INI-declared mixed casing");
+        require(payload(*result, "MixedCase.BIN") == Bytes{8},
+                "FlashFS entry name must preserve uppercase extension casing");
+    }
+
+    void test_flashfs_appends_patch_slot_suffix() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nnone\n[flashfs]\naac.xexp\nxenonclatin.xttp\nxenonclatin.xtt\n"
+                   "nomni.xexp1\n");
+        write_file(f.root / "mydata/aac.xexp", {1});
+        write_file(f.root / "mydata/xenonclatin.xttp", {2});
+        write_file(f.root / "mydata/xenonclatin.xtt", {4});
+        write_file(f.root / "mydata/nomni.xexp1", {5});
+        const auto result = FileManager::ReadIniFiles("version", "test", "test");
+        require(result && result->flashfs_sec.size() == 4,
+                "each distinct payload must be present exactly once");
+        require(payload(*result, "aac.xexp1") == Bytes{1},
+                "unsuffixed .xexp payload must be stored with the slot-1 suffix");
+        require(payload(*result, "xenonclatin.xttp1") == Bytes{2},
+                "unsuffixed .xttp payload must be stored with the slot-1 suffix");
+        require(payload(*result, "xenonclatin.xtt") == Bytes{4},
+                ".xtt fonts must not be suffixed");
+        require(payload(*result, "nomni.xexp1") == Bytes{5},
+                "already-suffixed .xexp1 payload must not be double-suffixed");
+    }
+
     void test_nested_bootloader_chains() {
         Fixture f;
         write_text(f.root / "version/_test.ini",
@@ -756,6 +793,8 @@ int main() {
         {"split bootloader priority", test_split_bootloader_priority},
         {"missing and invalid sources", test_missing_and_invalid_sources},
         {"duplicate loose wins over STFS", test_duplicate_loose_wins_over_stfs},
+        {"FlashFS preserves filename case", test_flashfs_preserves_filename_case},
+        {"FlashFS appends patch slot suffix", test_flashfs_appends_patch_slot_suffix},
         {"nested bootloader chains", test_nested_bootloader_chains},
         {"numeric bootloader aliases", test_numeric_bootloader_aliases},
         {"INI recognizes SC and 3BL", test_ini_recognizes_sc_and_3bl_bootloaders},

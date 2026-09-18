@@ -17,12 +17,24 @@ The required options are:
 
 Build types are `retail`, `jtag`, `glitch`, `glitch2`, `glitch2m`, `glitch3`, and `devkit`.
 For `retail` and `glitch` (glitch1), CB/CB_A, CB_B when present, and CD are encrypted.
-`glitch2` and `glitch2m` retain encrypted CB_A/CB_B but write CD plaintext.
+`glitch2` and `glitch2m` encrypt CB_A, CB_B, and CD: the xeBuild patches retain CD decryption.
 `glitch3` requires CB_A, CB_X (version 15432), and CB_B: CB_A and CB_X are encrypted,
-while CB_B and CD are plaintext. CB_X uses CB_A's derived key and a zero CPU key;
+while CB_B is plaintext and CD is encrypted using CB_B's handoff key.
+CE uses CD's derived key, not its stored nonce. The plaintext-CD convention of
+separate XeLL-only ECC builders does not apply to these xeBuild dashboard images.
+CB_X uses CB_A's derived key and a zero CPU key;
 the split-HMAC variant follows CB_A's flags. Supply CB_X as a plaintext payload
 (or use the plaintext bytes returned by extraction), plus the matching patched bootloaders
 and RGH3 SMC; selecting a build type does not generate these assets.
+
+Glitch XeLL occupies logical NAND `0x70000`–`0xAFFFF` on every geometry.
+The runtime KHV overlay occupies the second update slot: header `[0x64]` plus
+`[0x70]`, then `0x10` for normal glitch or `0x60` for `glitch2m`.
+Manufacturing virtual fuses occupy the preceding `0x60` bytes at the second-slot
+base. A glitch build cannot supply CF1/CG1 in that same region. Large CG0 images
+use `sysupdate.xexp1` and CF's continuation-cluster list; they require a FlashFS.
+JTAG payload anchors remain `0x90000` (rebooter), `0x91000` (patches), `0x95000`
+(fuses), and `0x95060` (XeLL). All these offsets exclude spare/ECC bytes.
 
 `glitch1` and `gg` normalize to `glitch`. Block types are `xsb`, `psb`, `bb`, and `emmc` for
 small-block, new-small-block, big-block, and eMMC images respectively.
