@@ -96,7 +96,7 @@ void BootloaderCf::calc_mac(const uint8_t onebl_key[16], const uint8_t cpu_key[1
     std::vector<uint8_t> cf_copy(serialized_hdr.begin(), serialized_hdr.begin() + 0x220);
 
     uint8_t rc4_key[20] = {0};
-    ExCryptHmacSha(onebl_key, 16, header.cg_key, 16, nullptr, 0, nullptr, 0, rc4_key, 20);
+    ExCryptHmacSha(onebl_key, 16, header.fixpoint_nonce, 16, nullptr, 0, nullptr, 0, rc4_key, 20);
 
     std::memcpy(cf_copy.data() + 0x20, rc4_key, 16);
 

@@ -67,9 +67,20 @@ vcpkg_installed/
 
 .cache/
 
+# flashimage test artifacts
+/tests/gxBuild-support-files/*.log
+/tests/gxBuild-support-files/17559_*.bin
+/tests/gxBuild-support-files/gxbuild
+
+# AI
+.qoder
+.superpowers
+AGENTS.md
+
+# Other
 logs
 gxbuild3
 _*.md
 *_.md
-.superpowers
 *.json
+extra

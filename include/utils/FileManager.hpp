@@ -71,13 +71,15 @@ namespace gxbuild3::utils {
     // unique by lowercase basename; bootloader chain slots remain independent.
     std::optional<IniFilesResult>
     ReadIniFiles(const std::filesystem::path& ini_path, std::string_view target_section,
-                 const std::vector<std::filesystem::path>& search_paths, ScanOptions options = {});
+                 const std::vector<std::filesystem::path>& search_paths, ScanOptions options = {},
+                 BuildType build_type = BuildType::Retail);
 
     // Convenience wrapper: fw_dir (or mydata), version, then common.
     std::optional<IniFilesResult> ReadIniFiles(std::string_view version, std::string_view type,
                                                std::string_view target_section,
                                                const std::filesystem::path& fw_dir = {},
-                                               ScanOptions options = {});
+                                               ScanOptions options = {},
+                                               BuildType build_type = BuildType::Retail);
 
     // Same priority rules. STFS matches return the package path. Keys are
     // lowercase basenames. Throws if any unique requested file is unavailable.

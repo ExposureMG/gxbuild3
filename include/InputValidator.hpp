@@ -15,6 +15,7 @@ enum class InputErrorCode {
     UnexpectedPatchset,
     UnsupportedMobileData,
     UnsupportedCustomPayload,
+    InvalidPayloadSize,
     InvalidRebooterSize,
     InvalidFusesSize,
 };

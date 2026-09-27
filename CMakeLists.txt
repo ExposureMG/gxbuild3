@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.29)
 project(GxBuild3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -34,6 +34,7 @@ set(GXBUILD3_LIB_SOURCES
     src/nand/bootloaders/BootloaderPacker.cpp
     src/nand/objects/CoronaConfig.cpp
     src/nand/objects/FlashFileSystem.cpp
+    src/nand/objects/Freeboot.cpp
     src/nand/objects/Keyvault.cpp
     src/nand/objects/MobileData.cpp
     src/nand/objects/Patchset.cpp
@@ -61,6 +62,7 @@ set(GXBUILD3_LIB_SOURCES
 add_library(gxbuild3_lib STATIC ${GXBUILD3_LIB_SOURCES})
 target_include_directories(gxbuild3_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(gxbuild3_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/stfs) # TODO: update imports instead
+target_include_directories(gxbuild3_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/freeboot)
 target_link_libraries(gxbuild3_lib PUBLIC
     GxCrypt
     spdlog::spdlog
@@ -119,6 +121,17 @@ if(BUILD_TESTING)
             -DGXBUILD3_OUTPUT_VERIFIER=$<TARGET_FILE:gxbuild3_cli_output_verifier>
             -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-integration-tests
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/CliIntegrationTests.cmake)
+
+    find_program(GXBUILD3_BASH_EXECUTABLE NAMES bash)
+    if(UNIX)
+        add_test(NAME gxbuild3_flashimage_tests
+            COMMAND ${CMAKE_COMMAND}
+                -DGXBUILD3_EXE=$<TARGET_FILE:gxbuild3>
+                -DGXBUILD3_SUPPORT_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files
+                -DGXBUILD3_BASH=${GXBUILD3_BASH_EXECUTABLE}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/FlashImageTests.cmake)
+        set_tests_properties(gxbuild3_flashimage_tests PROPERTIES TIMEOUT 1800 SKIP_RETURN_CODE 77)
+    endif()
 endif()
 
 include(GNUInstallDirs)

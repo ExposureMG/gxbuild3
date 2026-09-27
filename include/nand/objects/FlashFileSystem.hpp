@@ -46,6 +46,10 @@ namespace gxbuild3::NAND {
       public:
         FlashFileSystem() = default;
 
+        // Sentinel root_block for format(): defer root placement so serialize can
+        // allocate the root once, last, from the same free pool as files/mobile data.
+        static constexpr uint16_t kDeferRoot = 0xFFFF;
+
         void set_driver(Driver* driver);
 
         // Attach the driver before formatting. These allocation boundaries and root
@@ -71,6 +75,7 @@ namespace gxbuild3::NAND {
         [[nodiscard]] const std::vector<FlashFileSystemEntry>& entries() const;
         [[nodiscard]] uint32_t version() const;
         [[nodiscard]] uint16_t root_block() const;
+        [[nodiscard]] bool has_root() const noexcept { return m_root_placed; }
 
         [[nodiscard]] std::vector<uint16_t> get_chain(uint16_t start_block) const;
         [[nodiscard]] std::vector<uint16_t> get_all_file_blocks() const;
@@ -83,6 +88,7 @@ namespace gxbuild3::NAND {
         Driver* m_driver = nullptr;
         uint32_t m_version = 1;
         uint16_t m_root_block = 0x3E0;
+        bool m_root_placed = false;
         size_t m_root_cluster_offset = 0;
         size_t m_root_reserved_clusters = 1;
         std::vector<uint16_t> m_blockmap;

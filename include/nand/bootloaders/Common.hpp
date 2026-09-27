@@ -183,8 +183,13 @@ typedef struct _cf_header {
     uint16_t target_qfe;
     uint32_t reserved;
     uint32_t cg_size;
-    uint8_t cg_key[0x10];
+    uint8_t fixpoint_nonce[0x10]; // CF+0x20: self-referential HMAC fixpoint, not the CG key
 } cf_header;
+
+// The CG/7BL RC4 key is HMAC-SHA1 of the 7BL nonce stored in the decrypted CF payload
+// at absolute offset 0x330 (cf_header is 0x30 bytes, so this is payload offset 0x300),
+// never the header fixpoint above. RGBuild/build360/nandtool/J-Runner agree on 0x330.
+inline constexpr size_t kCfCgNonceOffset = 0x330;
 
 inline void byteswap_cf_header_numeric_fields(cf_header& header) noexcept {
     header.source_version = bswap16(header.source_version);

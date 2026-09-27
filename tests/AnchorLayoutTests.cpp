@@ -1,5 +1,6 @@
 #include "nand/FlashImage.hpp"
 #include "nand/bootloaders/Common.hpp"
+#include "nand/objects/Freeboot.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -56,9 +57,10 @@ static bool anchors() {
             ok = check(k.size() == 16 && be32(k, 0) == 0x1000 && be32(k, 4) == 1,
                        "CD finds KHV through header") &&
                  ok;
-            auto xb = d.read_offset(0x70000, 0x40000);
+            const size_t xell_at = mode == Driver::DriverMode::Small ? 0x70000 : 0xC0000;
+            auto xb = d.read_offset(xell_at, 0x40000);
             ok = check(Bytes(xb.begin(), xb.end()) == x.data,
-                       "CD finds raw XeLL at 0x70000 on every geometry") &&
+                       "CD finds raw XeLL at the geometry's patch-slot anchor") &&
                  ok;
             if (type == BuildType::Glitch2m) {
                 auto v = d.read_offset(s, 0x60);
@@ -172,12 +174,94 @@ static bool custom_header_roundtrip() {
                      bytes.size() == 16 && be32(bytes, 0) == 0x1000,
                  "read/write preserves header-derived runtime KHV anchor");
 }
+static bool freeboot_provider() {
+    bool ok = check(freeboot_rebooter().size() == 0xd40, "embedded rebooter is 0xd40 bytes");
+    ok = check(freeboot_payload().size() == 0x200, "embedded payload is 0x200 bytes") && ok;
+    ok = check(freeboot_rebooter()[0] == 0x3c, "embedded rebooter starts with 0x3c") && ok;
+    ok = check(freeboot_payload()[0] == 0x80, "embedded payload starts with 0x80") && ok;
+    return ok;
+}
+static BootloaderCb synthetic_cb(uint8_t fill) {
+    BootloaderCb cb{};
+    cb.header.header.magic = NANDBootloaderMagic::CB;
+    cb.data.resize(0x100, fill);
+    cb.header.header.size = sizeof(generic_header) + cb.data.size();
+    return cb;
+}
+static BootloaderCd synthetic_cd(uint8_t fill) {
+    BootloaderCd cd{};
+    cd.header.header.magic = NANDBootloaderMagic::CD;
+    cd.data.resize(0x100, fill);
+    cd.header.header.size = sizeof(cd_header) + cd.data.size();
+    return cd;
+}
+// The JTAG window is anchored at patchslot_base + 2 * slot_stride so it scales with geometry
+// instead of reusing the small-block absolute offsets.
+static bool jtag_window(Driver::DriverMode mode) {
+    const bool big = mode != Driver::DriverMode::Small;
+    const size_t window = big ? 0x100000 : 0x90000;
+    auto f = fixture(mode, BuildType::Jtag);
+    f.build_type = BuildType::Jtag;
+    XeLL x{};
+    x.data = raw_xell();
+    f.payloads.xell = x;
+    f.payloads.rebooter = Bytes(0xd40, 0xAA);
+    f.payloads.fuses = Bytes(0x60, 0xBB);
+    f.payloads.payload = Bytes(0x200, 0xCC);
+    f.payloads.extra_cb = synthetic_cb(0x11);
+    f.payloads.extra_cd = synthetic_cd(0x22);
+    if (!check(f.payloads.patchset && f.payloads.patchset->kind == PatchSetKind::Jtag,
+               "fixture yields a JTAG patchset"))
+        return false;
+    if (!check(f.write_to_driver(), "anchored jtag image writes"))
+        return false;
+    const auto& d = std::as_const(f.flash_driver);
+    const auto filled = [&](size_t offset, size_t length, uint8_t expected, const char* what) {
+        const auto bytes = d.read_clean(offset, length);
+        return check(
+            bytes.size() == length &&
+                std::all_of(bytes.begin(), bytes.end(), [&](uint8_t b) { return b == expected; }),
+            what);
+    };
+    bool ok = filled(0x200, 0x200, 0xCC, "SMC payload lands at absolute 0x200");
+    ok = filled(window, 0xd40, 0xAA, "rebooter lands at the anchored window base") && ok;
+    ok = filled(window + 0x5000, 0x60, 0xBB, "virtual fuses land at window + 0x5000") && ok;
+    const auto patches = BinaryParser::SerializePatchSet(*f.payloads.patchset);
+    ok = check(d.read_clean(window + 0x1000, patches.size()) == patches,
+               "KHV patchset is pinned at window + 0x1000") &&
+         ok;
+    ok = check(d.read_clean(window + 0x5060, 0x40000) == x.data, "XeLL lands at window + 0x5060") &&
+         ok;
+    const auto extra_cb = f.payloads.extra_cb->serialize();
+    const auto extra_cd = f.payloads.extra_cd->serialize();
+    ok = check(d.read_clean(window + 0x45060, extra_cb.size()) == extra_cb,
+               "extra CB lands immediately after XeLL at window + 0x45060") &&
+         ok;
+    const size_t cd_at = window + 0x45060 + ((extra_cb.size() + 0xF) & ~size_t{0xF});
+    ok = check(d.read_clean(cd_at, extra_cd.size()) == extra_cd,
+               "extra CD follows the 16-byte-aligned extra CB") &&
+         ok;
+    auto parsed = FlashImage::read(f.write());
+    ok = check(parsed && parsed->parse() && parsed->build_type == BuildType::Jtag,
+               "anchored window is recognized as JTAG on read-back") &&
+         ok;
+    ok = check(parsed && parsed->payloads.xell && parsed->payloads.xell->data == x.data,
+               "XeLL is recovered from the anchored window") &&
+         ok;
+    ok = check(parsed && parsed->payloads.fuses == f.payloads.fuses,
+               "virtual fuses are recovered from the anchored window") &&
+         ok;
+    return ok;
+}
 int main() {
     bool ok = check(XeLL::parse(raw_xell()).has_value(), "raw executable XeLL is accepted");
+    ok = freeboot_provider() && ok;
     ok = anchors() && ok;
     ok = spill(BuildType::Retail) && ok;
     ok = spill(BuildType::Glitch2) && ok;
     ok = spill(BuildType::Jtag) && ok;
+    ok = jtag_window(Driver::DriverMode::Small) && ok;
+    ok = jtag_window(Driver::DriverMode::Big) && ok;
     ok = custom_header_roundtrip() && ok;
     return ok ? 0 : 1;
 }

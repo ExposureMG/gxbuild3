@@ -68,25 +68,22 @@ namespace gxbuild3::NAND {
 
     bool FlashFileSystem::format(size_t total_blocks, uint16_t root_block, uint32_t version,
                                  uint32_t reserved_boundary) {
+        const bool defer_root = (root_block == kDeferRoot);
         const size_t ratio = clusters_per_block();
         constexpr size_t map_capacity = kRootDirectoryPages * kBlocksPerPage;
-        if (total_blocks == 0 || root_block >= total_blocks ||
-            total_blocks > map_capacity / ratio || root_block * ratio < base_cluster()) {
+        if (total_blocks == 0 || total_blocks > map_capacity / ratio ||
+            (!defer_root && (root_block >= total_blocks || root_block * ratio < base_cluster()))) {
             Log::Error("Invalid parameters for FlashFS format: total_blocks={}, root_block={}",
                        total_blocks, root_block);
             return false;
         }
 
         m_version = version;
-        m_root_block = root_block;
         m_root_cluster_offset = 0;
         m_root_reserved_clusters = ratio;
         m_entries.clear();
         m_file_data.clear();
         m_blockmap.assign(total_blocks * ratio, BlockMapStatus::Free);
-
-        Log::Debug("Formatted Flash File System: total_blocks={}, root_block={}, version={}",
-                   total_blocks, root_block, version);
 
         const size_t bound = std::max(
             base_cluster(), std::min(total_blocks, static_cast<size_t>(reserved_boundary)) * ratio);
@@ -94,7 +91,20 @@ namespace gxbuild3::NAND {
             m_blockmap[i] = BlockMapStatus::Reserved;
         }
 
-        std::fill_n(m_blockmap.begin() + root_block * ratio, ratio, BlockMapStatus::EndOfChain);
+        if (defer_root) {
+            // Serialize allocates the root once, last, from the same free pool the files
+            // and mobile data draw from, so no block is pre-consumed for it here.
+            m_root_placed = false;
+            Log::Debug("Formatted Flash File System: total_blocks={}, root_block=deferred, "
+                       "version={}",
+                       total_blocks, version);
+        } else {
+            m_root_block = root_block;
+            m_root_placed = true;
+            std::fill_n(m_blockmap.begin() + root_block * ratio, ratio, BlockMapStatus::EndOfChain);
+            Log::Debug("Formatted Flash File System: total_blocks={}, root_block={}, version={}",
+                       total_blocks, root_block, version);
+        }
         return true;
     }
 
@@ -103,19 +113,22 @@ namespace gxbuild3::NAND {
         if (root_block >= m_blockmap.size() / ratio || root_block * ratio < base_cluster()) {
             return false;
         }
-        if (root_block == m_root_block) {
+        if (m_root_placed && root_block == m_root_block) {
             return true;
         }
         if (!is_block_free(root_block)) {
             return false;
         }
 
-        std::fill_n(m_blockmap.begin() + m_root_block * ratio + m_root_cluster_offset,
-                    m_root_reserved_clusters, BlockMapStatus::Free);
+        if (m_root_placed) {
+            std::fill_n(m_blockmap.begin() + m_root_block * ratio + m_root_cluster_offset,
+                        m_root_reserved_clusters, BlockMapStatus::Free);
+        }
         m_root_block = root_block;
         m_root_cluster_offset = 0;
         m_root_reserved_clusters = ratio;
         std::fill_n(m_blockmap.begin() + m_root_block * ratio, ratio, BlockMapStatus::EndOfChain);
+        m_root_placed = true;
         return true;
     }
 
@@ -360,6 +373,9 @@ namespace gxbuild3::NAND {
     }
 
     std::vector<uint8_t> FlashFileSystem::serialize_root_block() const {
+        if (!m_root_placed) {
+            return {};
+        }
         if (m_entries.size() > kMaxDirectoryEntries) {
             return {};
         }
@@ -409,6 +425,10 @@ namespace gxbuild3::NAND {
         if (m_entries.size() > kMaxDirectoryEntries) {
             Log::Error("FlashFS directory exceeds its {}-entry serialization capacity",
                        kMaxDirectoryEntries);
+            return false;
+        }
+        if (!m_root_placed) {
+            Log::Error("FlashFS save attempted before root block allocation");
             return false;
         }
 
@@ -511,6 +531,7 @@ namespace gxbuild3::NAND {
         if (root_data.size() < kCleanBlockSize) {
             return false;
         }
+        m_root_placed = true;
 
         const size_t cluster_count = driver.block_count() * clusters_per_block();
         m_blockmap.assign(std::min(cluster_count, kRootDirectoryPages * kBlocksPerPage),

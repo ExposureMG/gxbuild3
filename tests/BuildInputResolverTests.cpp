@@ -181,7 +181,7 @@ namespace {
         BootloaderCf cf{};
         cf.header.header.magic = NANDBootloaderMagic::CF;
         cf.header.header.version = 1;
-        cf.data.assign(0x200, 0);
+        cf.data.assign(0x340, 0);
         cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
         cf.decrypted = true;
         cf.parse_perbox();
@@ -1077,6 +1077,11 @@ namespace {
             auto args = fixture.complete_loose_args(test.type);
             args.patch_extension = "test";
             fixture.write_binary("first/bin/" + test.name, valid_glitch_patchset());
+            if (test.type == BuildType::Jtag) {
+                // JTAG additionally requires a XeLL and a console type for the virtual fuses.
+                args.console = ConsoleType::Falcon;
+                fixture.write_binary("first/xell-2f.bin", Bytes(0x40000, 0x5A));
+            }
             const auto result = fixture.resolve(args);
             if (!require_resolved(result, "automatic patch fixture resolves") ||
                 !require(result->input.patches && result->input.patches->automatic &&
@@ -1098,6 +1103,43 @@ namespace {
             }
         }
         return true;
+    }
+
+    bool test_jtag_resolve_populates_payloads() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Jtag);
+        args.console = ConsoleType::Falcon;
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_fat_test.bin", valid_glitch_patchset());
+        fixture.write_binary("first/xell-2f.bin", Bytes(0x40000, 0x5A));
+
+        const auto result = fixture.resolve(args);
+        if (!require_resolved(result, "JTAG fixture carrying xell-2f.bin resolves")) {
+            return false;
+        }
+        const auto& payloads = result->input.payloads;
+        return require(payloads.has_value(), "JTAG resolution populates input.payloads") &&
+               require(payloads->xell && payloads->xell->size() == 0x40000,
+                       "xell-2f.bin is loaded verbatim") &&
+               require(payloads->rebooter && payloads->rebooter->size() == 0xd40,
+                       "the embedded freeBOOT rebooter is loaded at 0xd40 bytes") &&
+               require(payloads->payload && payloads->payload->size() == 0x200,
+                       "the embedded SMC payload is loaded at 0x200 bytes") &&
+               require(payloads->fuses && payloads->fuses->size() == 0x60,
+                       "generated virtual fuses fill the 0x60-byte region");
+    }
+
+    bool test_jtag_resolve_fails_without_xell() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Jtag);
+        args.console = ConsoleType::Falcon;
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_fat_test.bin", valid_glitch_patchset());
+
+        const auto result = fixture.resolve(args);
+        return require(!result.has_value(), "JTAG without a XeLL is rejected") &&
+               require(result.error().message.find("require a XeLL") != std::string::npos,
+                       "the missing-XeLL error names the requirement");
     }
 
     bool test_glitch3_searches_all_g3_roots_before_g2_fallback() {
@@ -1338,6 +1380,8 @@ int main() {
     passed = test_ini_payload_lookup_failure_is_terminal() && passed;
     passed = test_ini_payload_is_required_unless_donor_supplies_same_basename() && passed;
     passed = test_automatic_patchset_names_and_retail_devkit_behavior() && passed;
+    passed = test_jtag_resolve_populates_payloads() && passed;
+    passed = test_jtag_resolve_fails_without_xell() && passed;
     passed = test_glitch3_searches_all_g3_roots_before_g2_fallback() && passed;
     passed = test_missing_patchset_and_addon_errors_are_precise() && passed;
     passed = test_addons_resolve_from_root_bin_in_cli_order() && passed;

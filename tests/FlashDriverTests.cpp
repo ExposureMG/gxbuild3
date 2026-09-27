@@ -193,6 +193,58 @@ namespace {
                      "FlashImage must preserve files after root relocation");
     }
 
+    // Direct regression for the reported double-allocation bug: when files and mobile
+    // data pack the data region so only the final block below the limit stays free, a
+    // deferred-root filesystem must still place its root there and serialize. The old
+    // reserve-then-relocate path pre-consumed that block in format() and then failed
+    // with "Failed to place FlashFS root block after payload allocations".
+    bool test_flash_image_places_deferred_root_in_last_free_block() {
+        FlashImage image{};
+        image.flash_driver = Driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
+        const size_t limit = image.flash_driver.data_block_limit();
+
+        FlashFileSystem filesystem{};
+        filesystem.set_driver(&image.flash_driver);
+        if (!check(filesystem.format(image.flash_driver.block_count(), FlashFileSystem::kDeferRoot),
+                   "deferred-root FlashFS must format")) {
+            return false;
+        }
+        const std::vector<uint8_t> file_data{0x10, 0x20, 0x30};
+        if (!check(filesystem.add_file("test.bin", file_data), "FlashFS must accept a test file")) {
+            return false;
+        }
+        const size_t file_block = filesystem.stat("test.bin")->block_number;
+        if (!check(filesystem.reserve_blocks(file_block + 1, limit - 1 - (file_block + 1)),
+                   "FlashFS reserves every data block below the final one")) {
+            return false;
+        }
+        image.filesystem = std::move(filesystem);
+
+        const auto output = image.write();
+        if (!check(!output.empty(),
+                   "FlashImage must serialize a data region with one free block")) {
+            return false;
+        }
+        if (!check(image.filesystem->has_root(),
+                   "FlashFS root must be placed after serializing a full data region")) {
+            return false;
+        }
+        const auto root_block = image.filesystem->root_block();
+        if (!check(image.flash_driver.layout().fs_root_block == root_block &&
+                       root_block == limit - 1,
+                   "deferred root must land on the sole free data block, not the reserved tail")) {
+            return false;
+        }
+
+        auto parsed = FlashImage::read(output);
+        if (!check(parsed.has_value() && parsed->parse() && parsed->filesystem.has_value(),
+                   "FlashImage must parse the packed filesystem it just wrote")) {
+            return false;
+        }
+        return check(parsed->filesystem->get_file("test.bin") == file_data,
+                     "FlashImage must preserve the file when the root takes the last free block");
+    }
+
     bool test_flash_image_accepts_legacy_filesystem_root_type() {
         Driver source(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
         FlashFileSystem filesystem{};
@@ -414,6 +466,7 @@ int main() {
     passed = test_flash_image_reads_cross_page_config() && passed;
     passed = test_flash_image_reassembles_latest_mobile_data() && passed;
     passed = test_flash_image_places_filesystem_root_consistently() && passed;
+    passed = test_flash_image_places_deferred_root_in_last_free_block() && passed;
     passed = test_flash_image_accepts_legacy_filesystem_root_type() && passed;
     passed = test_writes_reject_out_of_range_data() && passed;
     passed = test_flash_filesystem_block_count_handles_boundaries() && passed;

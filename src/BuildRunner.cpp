@@ -569,6 +569,28 @@ BuildResult RunBuild(const Input& input) {
             Log::Info("Adding virtual fuses payload (size=0x{:X})",
                       flash_image.payloads.fuses->size());
         }
+        if (input.payloads->payload) {
+            flash_image.payloads.payload = input.payloads->payload;
+            Log::Info("Adding SMC payload (size=0x{:X})", flash_image.payloads.payload->size());
+        }
+    }
+
+    // The JTAG second CB/CD are captured by the INI reader and placed in the window tail.
+    if (input.bootloaders.extra_cb) {
+        try {
+            flash_image.payloads.extra_cb = BootloaderCb::parse(*input.bootloaders.extra_cb);
+        } catch (const std::exception& exception) {
+            return build_error(BuildErrorCode::InvalidBootloader,
+                               std::string("Failed to parse JTAG extra CB: ") + exception.what());
+        }
+    }
+    if (input.bootloaders.extra_cd) {
+        try {
+            flash_image.payloads.extra_cd = BootloaderCd::parse(*input.bootloaders.extra_cd);
+        } catch (const std::exception& exception) {
+            return build_error(BuildErrorCode::InvalidBootloader,
+                               std::string("Failed to parse JTAG extra CD: ") + exception.what());
+        }
     }
 
     if (const auto layout_error = flash_image.payload_layout_error(); layout_error) {
@@ -586,22 +608,16 @@ BuildResult RunBuild(const Input& input) {
                                "No usable blocks remain for the Flash File System");
         }
 
-        size_t initial_root = std::min<size_t>(0x3E0, data_limit - 1);
-        while (flash_image.flash_driver.is_bad_block(initial_root)) {
-            if (initial_root == 0) {
-                return build_error(BuildErrorCode::SerializationFailure,
-                                   "No good block remains for the Flash File System root");
-            }
-            --initial_root;
-        }
-
         const uint32_t previous_version =
             flash_image.filesystem ? flash_image.filesystem->version() : 0;
         const uint32_t version =
             previous_version == std::numeric_limits<uint32_t>::max()
                 ? 1
                 : previous_version + 1;
-        if (!fs.format(total_blocks, static_cast<uint16_t>(initial_root), version)) {
+        // Defer root placement so serialize allocates it once, last, from the same free
+        // pool as the files and mobile data. Reserving a root here double-counts it and
+        // starves a full image of the final block the root needs.
+        if (!fs.format(total_blocks, FlashFileSystem::kDeferRoot, version)) {
             return build_error(BuildErrorCode::SerializationFailure,
                                "Failed to format the Flash File System");
         }

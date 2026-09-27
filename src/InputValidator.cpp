@@ -55,15 +55,14 @@ std::expected<void, InputError> ValidateInput(const Input& input) {
                                           "Build type does not allow patch data"});
     }
 
-    if (input.payloads && input.payloads->payload.has_value()) {
-        return std::unexpected(
-            InputError{InputErrorCode::UnsupportedCustomPayload,
-                       "Custom payload is unsupported because no on-disk format contract exists"});
+    if (input.payloads && input.payloads->payload && input.payloads->payload->size() != 0x200) {
+        return std::unexpected(InputError{InputErrorCode::InvalidPayloadSize,
+                                          "Payload must contain exactly 0x200 bytes"});
     }
-    if (input.payloads && input.payloads->rebooter &&
-        input.payloads->rebooter->size() != 0x1000) {
-        return std::unexpected(InputError{InputErrorCode::InvalidRebooterSize,
-                                          "Rebooter payload must contain exactly 0x1000 bytes"});
+    if (input.payloads && input.payloads->rebooter && input.payloads->rebooter->size() > 0x1000) {
+        return std::unexpected(
+            InputError{InputErrorCode::InvalidRebooterSize,
+                       "Rebooter payload must not exceed the 0x1000-byte region"});
     }
     if (input.payloads && input.payloads->fuses && input.payloads->fuses->size() != 0x60) {
         return std::unexpected(

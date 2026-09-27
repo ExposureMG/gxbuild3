@@ -977,17 +977,18 @@ namespace gxbuild3::utils {
     std::optional<IniFilesResult> ReadIniFiles(std::string_view version, std::string_view type,
                                                std::string_view target_section,
                                                const std::filesystem::path& fw_dir,
-                                               ScanOptions options) {
+                                               ScanOptions options, BuildType build_type) {
         const auto cwd = std::filesystem::current_path();
         const auto version_dir = cwd / version;
         return ReadIniFiles(version_dir / ("_" + std::string(type) + ".ini"), target_section,
                             {fw_dir.empty() ? cwd / "mydata" : fw_dir, version_dir, cwd / "common"},
-                            options);
+                            options, build_type);
     }
 
     std::optional<IniFilesResult>
     ReadIniFiles(const std::filesystem::path& ini_path, std::string_view target_section,
-                 const std::vector<std::filesystem::path>& search_paths, ScanOptions options) {
+                 const std::vector<std::filesystem::path>& search_paths, ScanOptions options,
+                 BuildType build_type) {
         auto doc_res = Ini::ParseFile(ini_path);
         if (!doc_res) {
             Log::Error("Could not parse INI file at '{}'", ini_path.string());
@@ -1032,6 +1033,7 @@ namespace gxbuild3::utils {
         }
         AssetSearch search(search_paths, options, std::move(security_names));
         IniFilesResult result{};
+        const bool is_jtag = build_type == BuildType::Jtag;
         std::unordered_map<std::string, size_t> chain_counters;
         for (const auto& entry : *bl_sec) {
             const auto key = normalize_file_key(entry.key);
@@ -1062,12 +1064,19 @@ namespace gxbuild3::utils {
             } else if (key.starts_with("cb_") || key == "cb") {
                 if (chain == 0 || result.bootloaders.cb_or_a.empty())
                     result.bootloaders.cb_or_a = std::move(data);
+                else if (is_jtag)
+                    result.bootloaders.extra_cb = std::move(data);
                 else
                     result.bootloaders.cb_b = std::move(data);
             } else if (key.starts_with("sc") || stem == "3bl") {
                 result.bootloaders.sc = std::move(data);
             } else if (key.starts_with("cd") || key == "4bl") {
-                result.bootloaders.cd = std::move(data);
+                if (chain == 0 || result.bootloaders.cd.empty())
+                    result.bootloaders.cd = std::move(data);
+                else if (is_jtag)
+                    result.bootloaders.extra_cd = std::move(data);
+                else
+                    result.bootloaders.cd = std::move(data);
             } else if (key.starts_with("ce") || key == "5bl") {
                 result.bootloaders.ce = std::move(data);
             } else if (key.starts_with("cf") || stem == "6bl") {

@@ -34,13 +34,26 @@ namespace gxbuild3::NAND {
         constexpr uint32_t kSmallFsOffset = 0x10000;
         constexpr uint32_t kBigFsOffset = 0x20000;
 
-        constexpr uint32_t kJTAGRebooterOffset = 0x90000;
-        constexpr uint32_t kJTAGPatchesOffset = 0x91000;
+        // JTAG window offsets are derived from jtag_window_base() on both the read and write
+        // paths so they scale across xsb/psb/bb; only this region size is a fixed constant.
         constexpr uint32_t kJTAGPatchesSize = 0x4000;
-        constexpr uint32_t kJTAGvFusesOffset = 0x95000;
 
         inline constexpr uint32_t align_16(uint32_t value) noexcept {
             return (value + 0x0FU) & ~0x0FU;
+        }
+
+        // CG/7BL RC4 key material is the 7BL nonce in the decrypted CF payload at
+        // kCfCgNonceOffset (0x330), never the CF header fixpoint at +0x20. Returns nullopt
+        // while CF is still encrypted or too short to carry the nonce.
+        std::optional<std::array<uint8_t, 16>> cg_key_from_cf(const BootloaderCf& cf) {
+            if (!cf.is_decrypted())
+                return std::nullopt;
+            const auto serialized = cf.serialize();
+            if (serialized.size() < kCfCgNonceOffset + 16)
+                return std::nullopt;
+            std::array<uint8_t, 16> key{};
+            std::copy_n(serialized.begin() + kCfCgNonceOffset, key.size(), key.begin());
+            return key;
         }
 
         bool checked_add(size_t left, size_t right, size_t& result) {
@@ -59,22 +72,47 @@ namespace gxbuild3::NAND {
             return true;
         }
 
-        uint32_t xell_offset(uint32_t patch_base, bool is_jtag_patchset, bool is_glitch_patchset,
-                             const Payloads& payloads) {
-            if (is_jtag_patchset) {
-                return kJTAGvFusesOffset + 0x60;
-            }
-            return is_glitch_patchset ? 0x70000 : !payloads.rebooter ? patch_base
-                                                              : kJTAGvFusesOffset + 0x60;
+        // The JTAG window is anchored relative to the patch slots so it scales across
+        // xsb/psb/bb instead of reusing small-block absolute offsets.
+        inline constexpr uint32_t jtag_window_base(uint32_t patchslot_base, uint32_t stride) {
+            return patchslot_base + 2 * stride;
         }
 
-        uint32_t system_update_base(uint32_t patch_base, bool is_jtag_patchset,
+        struct JtagExtraOffsets {
+            size_t cb;
+            size_t cd;
+        };
+
+        // The JTAG second CB/CD sit in the window tail, directly past the fixed-size XeLL, with
+        // the CD following a 16-byte-aligned CB.
+        JtagExtraOffsets jtag_extra_offsets(uint32_t window_base, const Payloads& payloads) {
+            const size_t cb = window_base + 0x5060 + XeLL::kSize;
+            if (!payloads.extra_cb) {
+                return {cb, cb};
+            }
+            return {cb,
+                    cb + align_16(static_cast<uint32_t>(payloads.extra_cb->serialize().size()))};
+        }
+
+        uint32_t xell_offset(uint32_t patch_base, uint32_t stride, bool is_jtag_patchset,
+                             bool is_glitch_patchset, const Payloads& payloads) {
+            const uint32_t window_base = jtag_window_base(patch_base, stride);
+            if (is_jtag_patchset) {
+                return window_base + 0x5060;
+            }
+            return is_glitch_patchset ? patch_base
+                                      : (!payloads.rebooter ? patch_base : window_base + 0x5060);
+        }
+
+        uint32_t system_update_base(uint32_t patch_base, uint32_t stride, bool is_jtag_patchset,
                                     bool is_glitch_patchset, const Payloads& payloads) {
-            return payloads.xell && xell_offset(patch_base, is_jtag_patchset, is_glitch_patchset,
-                                                payloads) <= patch_base
-                       ? std::max<uint32_t>(patch_base, xell_offset(patch_base, is_jtag_patchset,
-                                                 is_glitch_patchset, payloads) + XeLL::kSize)
-                       : patch_base;
+            if (!payloads.xell) {
+                return patch_base;
+            }
+            const uint32_t offset =
+                xell_offset(patch_base, stride, is_jtag_patchset, is_glitch_patchset, payloads);
+            return offset <= patch_base ? std::max<uint32_t>(patch_base, offset + XeLL::kSize)
+                                        : patch_base;
         }
 
         uint32_t slot_size(const FlashImage& image) {
@@ -86,7 +124,7 @@ namespace gxbuild3::NAND {
         uint32_t update_base(const FlashImage& image, uint32_t base, bool jtag, bool glitch) {
             if (image.preserve_layout && image.header.cf_offset && image.header.cf_offset != 0xFFFFFFFF)
                 return image.header.cf_offset;
-            return system_update_base(base, jtag, glitch, image.payloads);
+            return system_update_base(base, slot_size(image), jtag, glitch, image.payloads);
         }
 
         bool manufacturing(const FlashImage& image) {
@@ -94,8 +132,9 @@ namespace gxbuild3::NAND {
                    (image.payloads.patchset && image.payloads.patchset->manufacturing);
         }
         size_t khv_prefix(const FlashImage& image) { return manufacturing(image) ? 0x60 : 0x10; }
-        uint32_t fuse_offset(const FlashImage& image, uint32_t update_base, uint32_t stride) {
-            return manufacturing(image) ? update_base + stride : kJTAGvFusesOffset;
+        uint32_t fuse_offset(const FlashImage& image, uint32_t update_base, uint32_t stride,
+                             uint32_t window_base) {
+            return manufacturing(image) ? update_base + stride : window_base + 0x5000;
         }
 
         bool ranges_overlap(size_t first_offset, size_t first_length, size_t second_offset,
@@ -548,11 +587,13 @@ namespace gxbuild3::NAND {
             if (BinaryParser::ParsePatchSet(automatic, *build_type, recovered))
                 payloads.patchset = std::move(recovered);
         }
-        payloads.xell = parse_xell_at(0x70000);
+        const uint32_t window_base = jtag_window_base(patch_base, slot_stride);
+        payloads.xell = parse_xell_at(patch_base);
         if (payloads.xell) {
             if (!build_type) build_type = BuildType::Glitch2;
-        } else if (!build_type && header.cf_offset != 0xB0000) {
-            payloads.xell = parse_xell_at(kJTAGvFusesOffset + 0x60);
+        } else if (!build_type &&
+                   header.cf_offset != patch_base + static_cast<uint32_t>(XeLL::kSize)) {
+            payloads.xell = parse_xell_at(window_base + 0x5060);
             if (payloads.xell && !build_type) build_type = BuildType::Jtag;
         }
         const auto nonempty = [](const auto& bytes) {
@@ -562,9 +603,9 @@ namespace gxbuild3::NAND {
             auto bytes = flash_driver.read_clean(overlay, 0x60);
             if (bytes.size() == 0x60) payloads.fuses = std::move(bytes);
         } else if (build_type == BuildType::Jtag) {
-            auto rebooter = flash_driver.read_clean(kJTAGRebooterOffset, 0x1000);
+            auto rebooter = flash_driver.read_clean(window_base, 0x1000);
             if (rebooter.size() == 0x1000 && nonempty(rebooter)) payloads.rebooter = std::move(rebooter);
-            auto fuses = flash_driver.read_clean(kJTAGvFusesOffset, 0x60);
+            auto fuses = flash_driver.read_clean(window_base + 0x5000, 0x60);
             if (fuses.size() == 0x60 && nonempty(fuses)) payloads.fuses = std::move(fuses);
         }
 
@@ -597,6 +638,7 @@ namespace gxbuild3::NAND {
             (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
         const uint32_t patchslot_base =
             update_base(*this, patch_base, is_jtag_patchset, is_glitch_patchset);
+        const uint32_t window_base = jtag_window_base(patch_base, slot_stride);
 
         const uint32_t fs_base = is_big_or_emmc ? kBigFsOffset : kSmallFsOffset;
         const size_t total_blocks = driver.block_count();
@@ -934,21 +976,27 @@ namespace gxbuild3::NAND {
             const std::vector<uint8_t> erased_overlay(slot_stride, 0xFF);
             if (!driver.write_offset(patchslot_base + slot_stride, erased_overlay)) return false;
         }
+        if (payloads.payload) {
+            if (!driver.write_offset(0x200, *payloads.payload)) {
+                return false;
+            }
+        }
         if (payloads.rebooter) {
-            if (!driver.write_offset(kJTAGRebooterOffset, *payloads.rebooter)) {
+            if (!driver.write_offset(window_base, *payloads.rebooter)) {
                 return false;
             }
         }
         if (payloads.fuses) {
-            if (!driver.write_offset(fuse_offset(*this, patchslot_base, slot_stride), *payloads.fuses)) {
+            if (!driver.write_offset(fuse_offset(*this, patchslot_base, slot_stride, window_base),
+                                     *payloads.fuses)) {
                 return false;
             }
         }
         if (payloads.xell) {
             const auto& xell_bytes = payloads.xell->data;
-            if (!driver.write_offset(
-                    xell_offset(patch_base, is_jtag_patchset, is_glitch_patchset, payloads),
-                    xell_bytes)) {
+            if (!driver.write_offset(xell_offset(patch_base, slot_stride, is_jtag_patchset,
+                                                 is_glitch_patchset, payloads),
+                                     xell_bytes)) {
                 return false;
             }
         }
@@ -959,7 +1007,7 @@ namespace gxbuild3::NAND {
             size_t patch_capacity = 0;
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
                 patch_bytes = BinaryParser::SerializePatchSet(*payloads.patchset);
-                patch_offset = kJTAGPatchesOffset;
+                patch_offset = window_base + 0x1000;
                 patch_capacity = kJTAGPatchesSize;
             } else {
                 const auto* khv = find_patch_section(*payloads.patchset, PatchSectionTarget::Khv);
@@ -977,23 +1025,38 @@ namespace gxbuild3::NAND {
             }
             if (payloads.xell &&
                 ranges_overlap(patch_offset, patch_bytes.size(),
-                               xell_offset(patch_base, is_jtag_patchset, is_glitch_patchset, payloads),
+                               xell_offset(patch_base, slot_stride, is_jtag_patchset,
+                                           is_glitch_patchset, payloads),
                                payloads.xell->data.size())) {
                 Log::Error("Patch payload overlaps the reserved XeLL region");
                 return false;
             }
-            if (payloads.rebooter &&
-                ranges_overlap(patch_offset, patch_bytes.size(), kJTAGRebooterOffset,
-                               payloads.rebooter->size())) {
+            if (payloads.rebooter && ranges_overlap(patch_offset, patch_bytes.size(), window_base,
+                                                    payloads.rebooter->size())) {
                 Log::Error("Patch payload overlaps the reserved rebooter region");
                 return false;
             }
-            if (payloads.fuses && ranges_overlap(patch_offset, patch_bytes.size(),
-                                                 fuse_offset(*this, patchslot_base, slot_stride), payloads.fuses->size())) {
+            if (payloads.fuses &&
+                ranges_overlap(patch_offset, patch_bytes.size(),
+                               fuse_offset(*this, patchslot_base, slot_stride, window_base),
+                               payloads.fuses->size())) {
                 Log::Error("Patch payload overlaps the reserved virtual-fuse region");
                 return false;
             }
             if (!patch_bytes.empty() && !driver.write_offset(patch_offset, patch_bytes)) {
+                return false;
+            }
+        }
+
+        // The JTAG second CB/CD live in the window tail, directly past the fixed-size XeLL.
+        if (is_jtag_patchset) {
+            const auto extra = jtag_extra_offsets(window_base, payloads);
+            if (payloads.extra_cb &&
+                !driver.write_offset(extra.cb, payloads.extra_cb->serialize())) {
+                return false;
+            }
+            if (payloads.extra_cd &&
+                !driver.write_offset(extra.cd, payloads.extra_cd->serialize())) {
                 return false;
             }
         }
@@ -1080,27 +1143,42 @@ namespace gxbuild3::NAND {
             (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
         const uint32_t slot_stride = slot_size(*this);
         const uint32_t patchslot_base = update_base(*this, patch_base, is_jtag_patchset, is_glitch_patchset);
+        const uint32_t window_base = jtag_window_base(patch_base, slot_stride);
         const auto add_range = [&ranges, this](size_t offset, size_t length) {
             if (const auto range = flash_driver.block_range_for_byte_interval(offset, length)) {
                 ranges.push_back(*range);
             }
         };
 
+        if (payloads.payload) {
+            add_range(0x200, payloads.payload->size());
+        }
         if (payloads.rebooter) {
-            add_range(kJTAGRebooterOffset, payloads.rebooter->size());
+            add_range(window_base, payloads.rebooter->size());
         }
         if (payloads.fuses) {
-            add_range(fuse_offset(*this, patchslot_base, slot_stride), payloads.fuses->size());
+            add_range(fuse_offset(*this, patchslot_base, slot_stride, window_base),
+                      payloads.fuses->size());
         }
         if (payloads.xell && !payloads.xell->data.empty()) {
-            add_range(xell_offset(patch_base, is_jtag_patchset, is_glitch_patchset, payloads),
+            add_range(xell_offset(patch_base, slot_stride, is_jtag_patchset, is_glitch_patchset,
+                                  payloads),
                       payloads.xell->data.size());
         }
         if (is_glitch_patchset) add_range(patchslot_base + slot_stride, slot_stride);
         if (payloads.patchset) {
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
-                add_range(kJTAGPatchesOffset,
+                add_range(window_base + 0x1000,
                           BinaryParser::SerializePatchSet(*payloads.patchset).size());
+            }
+        }
+        if (is_jtag_patchset) {
+            const auto extra = jtag_extra_offsets(window_base, payloads);
+            if (payloads.extra_cb) {
+                add_range(extra.cb, payloads.extra_cb->serialize().size());
+            }
+            if (payloads.extra_cd) {
+                add_range(extra.cd, payloads.extra_cd->serialize().size());
             }
         }
         return ranges;
@@ -1121,6 +1199,7 @@ namespace gxbuild3::NAND {
             (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
         const uint32_t patchslot_base =
             update_base(*this, patch_base, is_jtag_patchset, is_glitch_patchset);
+        const uint32_t window_base = jtag_window_base(patch_base, slot_stride);
 
         const bool has_cb = has_parsed_bootloader_header(
             cb_section.cb_or_A, NANDBootloaderMagic::CB, sizeof(generic_header));
@@ -1165,14 +1244,29 @@ namespace gxbuild3::NAND {
         // conflicting writer, rather than implying that the fixed JTAG payload moved.
         if (payloads.xell) {
             add_range("XeLL",
-                      xell_offset(patch_base, is_jtag_patchset, is_glitch_patchset, payloads),
+                      xell_offset(patch_base, slot_stride, is_jtag_patchset, is_glitch_patchset,
+                                  payloads),
                       payloads.xell->data.size());
         }
+        if (payloads.payload) {
+            add_range("SMC payload", 0x200, payloads.payload->size());
+        }
         if (payloads.rebooter) {
-            add_range("rebooter", kJTAGRebooterOffset, payloads.rebooter->size());
+            add_range("rebooter", window_base, payloads.rebooter->size());
         }
         if (payloads.fuses) {
-            add_range("virtual-fuse payload", fuse_offset(*this, patchslot_base, slot_stride), payloads.fuses->size());
+            add_range("virtual-fuse payload",
+                      fuse_offset(*this, patchslot_base, slot_stride, window_base),
+                      payloads.fuses->size());
+        }
+        if (is_jtag_patchset) {
+            const auto extra = jtag_extra_offsets(window_base, payloads);
+            if (payloads.extra_cb) {
+                add_range("JTAG extra CB", extra.cb, payloads.extra_cb->serialize().size());
+            }
+            if (payloads.extra_cd) {
+                add_range("JTAG extra CD", extra.cd, payloads.extra_cd->serialize().size());
+            }
         }
 
         size_t boot_chain_end = kEntryOffset;
@@ -1270,7 +1364,7 @@ namespace gxbuild3::NAND {
         if (payloads.patchset) {
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
                 const auto patch_bytes = BinaryParser::SerializePatchSet(*payloads.patchset);
-                add_range("JTAG patch payload", kJTAGPatchesOffset, patch_bytes.size());
+                add_range("JTAG patch payload", window_base + 0x1000, patch_bytes.size());
             } else if (const auto* khv =
                            find_patch_section(*payloads.patchset, PatchSectionTarget::Khv)) {
                 if (khv->raw_data.size() > slot_stride - khv_prefix(*this))
@@ -1415,14 +1509,24 @@ namespace gxbuild3::NAND {
                     Log::Error("Cannot decrypt CG0: parent CF0 is missing or not decrypted");
                     return false;
                 }
-                system_update_0.cg->decrypt(system_update_0.cf->header.cg_key);
+                const auto cg_key = cg_key_from_cf(*system_update_0.cf);
+                if (!cg_key) {
+                    Log::Error("Cannot decrypt CG0: CF0 payload lacks a 7BL nonce at +0x330");
+                    return false;
+                }
+                system_update_0.cg->decrypt(cg_key->data());
             }
             if (system_update_1.cg.has_value() && !system_update_1.cg->is_decrypted()) {
                 if (!system_update_1.cf.has_value() || !system_update_1.cf->is_decrypted()) {
                     Log::Error("Cannot decrypt CG1: parent CF1 is missing or not decrypted");
                     return false;
                 }
-                system_update_1.cg->decrypt(system_update_1.cf->header.cg_key);
+                const auto cg_key = cg_key_from_cf(*system_update_1.cf);
+                if (!cg_key) {
+                    Log::Error("Cannot decrypt CG1: CF1 payload lacks a 7BL nonce at +0x330");
+                    return false;
+                }
+                system_update_1.cg->decrypt(cg_key->data());
             }
 
             if (smc.has_value() && smc->encrypted) {
@@ -1566,7 +1670,15 @@ namespace gxbuild3::NAND {
             const size_t stride = slot_size(*this);
             auto prepare_update = [&](SystemUpdate& slot, const char* filename) {
                 if (!slot.cf || !slot.cg) return true;
-                if (slot.cg->decrypted) slot.cg->encrypt(slot.cf->header.cg_key);
+                if (slot.cg->decrypted) {
+                    slot.cf->decrypt(key_1bl);
+                    const auto cg_key = cg_key_from_cf(*slot.cf);
+                    if (!cg_key) {
+                        Log::Error("Cannot encrypt CG: CF payload lacks a 7BL nonce at +0x330");
+                        return false;
+                    }
+                    slot.cg->encrypt(cg_key->data());
+                }
                 const auto cg = slot.cg->serialize();
                 const size_t cf_size = align_16(slot.cf->serialize().size());
                 if (cf_size + sizeof(cg_header) > stride) return false;

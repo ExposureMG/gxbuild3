@@ -110,6 +110,45 @@ namespace {
         return true;
     }
 
+    Input valid_jtag_input() {
+        auto input = valid_input();
+        input.build_type = BuildType::Jtag;
+        input.patches = InputPatches{.automatic = InputPatchFile{"auto", {0x01}}, .addons = {}};
+        return input;
+    }
+
+    bool test_payload_and_rebooter_sizes() {
+        auto input = valid_jtag_input();
+        input.payloads = InputPayloads{};
+        input.payloads->payload = std::vector<uint8_t>(0x200, 0x00);
+        input.payloads->rebooter = std::vector<uint8_t>(0xd40, 0x00);
+        if (!require(ValidateInput(input).has_value(),
+                     "a 0x200 payload with a 0xd40 rebooter is valid")) {
+            return false;
+        }
+
+        input.payloads->rebooter = std::vector<uint8_t>(0x1000, 0x00);
+        if (!require(ValidateInput(input).has_value(),
+                     "a rebooter that exactly fills its 0x1000-byte region is valid")) {
+            return false;
+        }
+
+        input.payloads->rebooter = std::vector<uint8_t>(0xd40, 0x00);
+        input.payloads->payload = std::vector<uint8_t>(0x100, 0x00);
+        const auto short_payload = ValidateInput(input);
+        if (!require(!short_payload &&
+                         short_payload.error().code == InputErrorCode::InvalidPayloadSize,
+                     "a payload must contain exactly 0x200 bytes")) {
+            return false;
+        }
+
+        input.payloads->payload = std::vector<uint8_t>(0x200, 0x00);
+        input.payloads->rebooter = std::vector<uint8_t>(0x1001, 0x00);
+        const auto oversized = ValidateInput(input);
+        return require(!oversized && oversized.error().code == InputErrorCode::InvalidRebooterSize,
+                       "a rebooter must not exceed its 0x1000-byte region");
+    }
+
 } // namespace
 
 int main() {
@@ -120,5 +159,6 @@ int main() {
     passed = test_glitch_requires_patchset() && passed;
     passed = test_retail_rejects_automatic_patchset() && passed;
     passed = test_retail_and_devkit_reject_addon_patch_data() && passed;
+    passed = test_payload_and_rebooter_sizes() && passed;
     return passed ? 0 : 1;
 }

@@ -307,6 +307,90 @@ namespace {
                 "deduplication must preserve both CF/CG chains");
     }
 
+    void test_ini_jtag_separates_extra_bootloaders() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini", "[testbl]\n"
+                                                 "cb_4558.bin,57dba8ff\n"
+                                                 "cd_4558.bin,3286f409\n"
+                                                 "ce_1888.bin,ff9b60df\n"
+                                                 "cf_4532.bin,d28ef722\n"
+                                                 "cg_4532.bin,2530f8ce\n"
+                                                 "cb_4579.bin,a504b0f1\n"
+                                                 "cd_8453.bin,25e0acd0\n"
+                                                 "cf_17559.bin,0883e155\n"
+                                                 "cg_17559.bin,10fbc84d\n");
+        write_file(f.root / "mydata/cb_4558.bin", {0x01});
+        write_file(f.root / "mydata/cd_4558.bin", {0x02});
+        write_file(f.root / "mydata/ce_1888.bin", {0x03});
+        write_file(f.root / "mydata/cf_4532.bin", {0x04});
+        write_file(f.root / "mydata/cg_4532.bin", {0x05});
+        write_file(f.root / "mydata/cb_4579.bin", {0x06});
+        write_file(f.root / "mydata/cd_8453.bin", {0x07});
+        write_file(f.root / "mydata/cf_17559.bin", {0x08});
+        write_file(f.root / "mydata/cg_17559.bin", {0x09});
+
+        const auto result =
+            FileManager::ReadIniFiles("version", "test", "test", {}, {}, BuildType::Jtag);
+        require(result.has_value(), "JTAG INI must resolve");
+        const auto& bl = result->bootloaders;
+        require(bl.cb_or_a == Bytes{0x01}, "first CB is the boot-chain CB");
+        require(bl.cd == Bytes{0x02}, "first CD is the boot-chain CD");
+        require(bl.ce == Bytes{0x03}, "CE is the boot-chain CE");
+        require(bl.cf0 == Bytes{0x04} && bl.cg0 == Bytes{0x05}, "first CF/CG pair is patch slot 0");
+        require(bl.cf1 == Bytes{0x08} && bl.cg1 == Bytes{0x09},
+                "second CF/CG pair is patch slot 1");
+        require(!bl.cb_b.has_value(), "JTAG second CB must not become CB_B");
+        require(bl.extra_cb == Bytes{0x06}, "second CB is the JTAG extra bootloader");
+        require(bl.extra_cd == Bytes{0x07}, "second CD is the JTAG extra bootloader");
+    }
+
+    void test_ini_non_jtag_leaves_extra_bootloaders_empty() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini", "[testbl]\n"
+                                                 "cba_5772.bin,6cb45431\n"
+                                                 "cbb_5772.bin,7a62ed25\n"
+                                                 "cd_9452.bin,231d513c\n"
+                                                 "ce_1888.bin,ff9b60df\n"
+                                                 "cf_17559.bin,0883e155\n"
+                                                 "cg_17559.bin,10fbc84d\n");
+        write_file(f.root / "mydata/cba_5772.bin", {0xA1});
+        write_file(f.root / "mydata/cbb_5772.bin", {0xA2});
+        write_file(f.root / "mydata/cd_9452.bin", {0xA3});
+        write_file(f.root / "mydata/ce_1888.bin", {0xA4});
+        write_file(f.root / "mydata/cf_17559.bin", {0xA5});
+        write_file(f.root / "mydata/cg_17559.bin", {0xA6});
+
+        const auto result =
+            FileManager::ReadIniFiles("version", "test", "test", {}, {}, BuildType::Glitch2);
+        require(result.has_value(), "glitch2 INI must resolve");
+        const auto& bl = result->bootloaders;
+        require(bl.cb_or_a == Bytes{0xA1} && bl.cb_b == Bytes{0xA2}, "CBA/CBB map to cb_or_a/cb_b");
+        require(bl.cd == Bytes{0xA3} && bl.ce == Bytes{0xA4}, "CD/CE map to the boot chain");
+        require(bl.cf0 == Bytes{0xA5} && bl.cg0 == Bytes{0xA6}, "CF/CG map to patch slot 0");
+        require(!bl.extra_cb.has_value() && !bl.extra_cd.has_value(),
+                "non-JTAG builds never populate extra bootloaders");
+    }
+
+    void test_ini_non_jtag_second_cb_stays_cb_b() {
+        Fixture f;
+        // Synthetic: a non-JTAG INI with two plain cb_ files keeps the historical
+        // mapping (second cb_ -> CB_B). This is the branch the JTAG gate protects.
+        write_text(f.root / "version/_test.ini", "[testbl]\ncb_1.bin\ncd_1.bin\ncb_2.bin\n");
+        write_file(f.root / "mydata/cb_1.bin", {0x11});
+        write_file(f.root / "mydata/cd_1.bin", {0x22});
+        write_file(f.root / "mydata/cb_2.bin", {0x33});
+
+        const auto result =
+            FileManager::ReadIniFiles("version", "test", "test", {}, {}, BuildType::Glitch2);
+        require(result.has_value(), "glitch INI must resolve");
+        const auto& bl = result->bootloaders;
+        require(bl.cb_or_a == Bytes{0x11}, "first CB stays the boot-chain CB");
+        require(bl.cb_b == Bytes{0x33}, "second CB stays CB_B for non-JTAG");
+        require(!bl.extra_cb.has_value() && !bl.extra_cd.has_value(),
+                "non-JTAG builds never populate extra bootloaders");
+        require(bl.cd == Bytes{0x22}, "single CD is the boot-chain CD");
+    }
+
     void test_findfiles_alias_priority() {
         Fixture f;
         write_file(f.root / "first/old/asset.bin", {1});
@@ -785,6 +869,10 @@ int main() {
         {"INI later STFS fallback", test_ini_later_stfs_fallback},
         {"INI deduplication", test_ini_deduplicates_and_scores_aliases},
         {"INI bootloader chains", test_ini_preserves_bootloader_chains},
+        {"INI JTAG extra bootloaders", test_ini_jtag_separates_extra_bootloaders},
+        {"INI non-JTAG leaves extra bootloaders empty",
+         test_ini_non_jtag_leaves_extra_bootloaders_empty},
+        {"INI non-JTAG second CB stays CB_B", test_ini_non_jtag_second_cb_stays_cb_b},
         {"FindFiles alias priority", test_findfiles_alias_priority},
         {"nosu", test_nosu},
         {"nosusecurity", test_nosusecurity},

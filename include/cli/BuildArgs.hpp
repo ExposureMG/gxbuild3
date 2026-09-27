@@ -12,6 +12,7 @@ namespace gxbuild3::cli {
     struct BuildArgs {
         std::filesystem::path build_ini;
         std::string section;
+        std::optional<ConsoleType> console;
         BuildType build_type{BuildType::Retail};
         std::optional<ImageType> image_type;
         std::vector<std::filesystem::path> source_dirs;

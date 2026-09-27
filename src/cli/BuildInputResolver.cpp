@@ -3,8 +3,10 @@
 #include "BuildRunner.hpp"
 #include "InputValidator.hpp"
 #include "ini/IniParser.hpp"
+#include "nand/objects/Freeboot.hpp"
 #include "nand/objects/Keyvault.hpp"
 #include "utils/FileManager.hpp"
+#include "utils/FusesetGenerator.hpp"
 #include "utils/Utils.hpp"
 
 #include <algorithm>
@@ -681,8 +683,8 @@ namespace gxbuild3::cli {
                 }
             }
 
-            const auto ini_files =
-                FileManager::ReadIniFiles(ini_path, target_section, roots, scan_options);
+            const auto ini_files = FileManager::ReadIniFiles(ini_path, target_section, roots,
+                                                             scan_options, args.build_type);
             if (!ini_files) {
                 return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
                                              "Could not resolve build INI assets", ini_path,
@@ -842,6 +844,44 @@ namespace gxbuild3::cli {
                 input.patches = std::move(patches);
             } else {
                 input.patches.reset();
+            }
+
+            // Stage 2 loads the JTAG payloads; glitch XeLL/fuses remain a later stage.
+            if (args.build_type == BuildType::Jtag) {
+                InputPayloads payloads{};
+                auto xell = find_asset("xell-2f.bin", roots, scan_options);
+                if (!xell) {
+                    return std::unexpected(xell.error());
+                }
+                if (!*xell) {
+                    return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
+                                                 "JTAG builds require a XeLL payload (xell-2f.bin)",
+                                                 {}, "xell-2f.bin"));
+                }
+                payloads.xell = std::move((**xell).data);
+
+                const auto rebooter = gxbuild3::NAND::freeboot_rebooter();
+                payloads.rebooter = std::vector<uint8_t>(rebooter.begin(), rebooter.end());
+                const auto smc_payload = gxbuild3::NAND::freeboot_payload();
+                payloads.payload = std::vector<uint8_t>(smc_payload.begin(), smc_payload.end());
+
+                if (!args.console) {
+                    return std::unexpected(
+                        error(ResolutionErrorCode::InvalidInput,
+                              "JTAG virtual fuses require a console type, but section '" +
+                                  args.section + "' is not a known console",
+                              {}, args.section));
+                }
+                auto fuses = gxbuild3::utils::generate_fuseset(
+                    *args.console, args.build_type, foundations->cpu_key, input.metadata.cb_ldv,
+                    input.metadata.cf_ldv.value_or(0));
+                if (!fuses) {
+                    return std::unexpected(error(ResolutionErrorCode::InvalidInput,
+                                                 "Could not generate the JTAG virtual fuseset", {},
+                                                 "fuses"));
+                }
+                payloads.fuses = std::move(*fuses);
+                input.payloads = std::move(payloads);
             }
 
             if (const auto validation = ValidateInput(input); !validation) {

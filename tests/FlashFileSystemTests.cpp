@@ -234,6 +234,45 @@ namespace {
                check(got_other.has_value() && *got_other == other,
                      "partial-tail neighbour survives the same round-trip");
     }
+
+    // A deferred format (kDeferRoot) must not commit a root block, so serialize can
+    // allocate the root once, last, from the same free pool the files and mobile data
+    // draw from. Regression: format() used to pre-consume the final data block for the
+    // root, so a full image had no free block left for placement and the build failed.
+    bool test_deferred_root_is_placed_last_from_free_pool() {
+        Driver driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
+        FlashFileSystem fs;
+        fs.set_driver(&driver);
+        if (!check(fs.format(driver.block_count(), FlashFileSystem::kDeferRoot),
+                   "deferred-root filesystem formats"))
+            return false;
+        if (!check(!fs.has_root(), "kDeferRoot must leave the root unplaced after format"))
+            return false;
+        if (!check(!fs.save(), "save must be rejected before a root block is placed"))
+            return false;
+        if (!check(fs.is_block_free(0x3E0),
+                   "deferred format must not consume the default root block 0x3E0"))
+            return false;
+
+        // Consume every data block below the limit except the final one, mirroring a
+        // build whose files and mobile data leave a single free block for the root.
+        const size_t limit = driver.data_block_limit();
+        constexpr size_t reserved_boundary = 0x50;
+        if (!check(fs.reserve_blocks(reserved_boundary, limit - 1 - reserved_boundary),
+                   "data region below the final block reserves"))
+            return false;
+        if (!check(fs.is_block_free(limit - 1),
+                   "exactly one free data block remains below the limit"))
+            return false;
+
+        if (!check(fs.set_root_block(static_cast<uint16_t>(limit - 1)),
+                   "set_root_block places the sole remaining free data block"))
+            return false;
+        return check(fs.has_root(), "has_root() reports placement after set_root_block") &&
+               check(fs.root_block() == limit - 1, "root_block() reports the deferred placement") &&
+               check(!fs.is_block_free(limit - 1), "the placed root block is no longer free") &&
+               check(fs.save(), "save succeeds once the deferred root is placed");
+    }
 }
 
 int main() {
@@ -243,5 +282,6 @@ int main() {
     passed = test_big_block_serialize_restamps_root() && passed;
     passed = test_small_block_keeps_legacy_fs_metadata() && passed;
     passed = test_big_block_large_file_roundtrips_through_serialize() && passed;
+    passed = test_deferred_root_is_placed_last_from_free_pool() && passed;
     return passed ? 0 : 1;
 }

@@ -200,6 +200,10 @@ struct InputBootloaders {
     std::optional<std::vector<uint8_t>> cg0;
     std::optional<std::vector<uint8_t>> cf1;
     std::optional<std::vector<uint8_t>> cg1;
+    // JTAG only: the second CB and second CD listed in the INI are staged into the
+    // JTAG payload window as "extra bootloaders"; they are not part of the boot chain.
+    std::optional<std::vector<uint8_t>> extra_cb;
+    std::optional<std::vector<uint8_t>> extra_cd;
 };
 
 struct InputPayloads {
