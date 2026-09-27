@@ -846,41 +846,53 @@ namespace gxbuild3::cli {
                 input.patches.reset();
             }
 
-            // Stage 2 loads the JTAG payloads; glitch XeLL/fuses remain a later stage.
-            if (args.build_type == BuildType::Jtag) {
+            // JTAG and glitch builds carry a XeLL; JTAG also carries the freeBOOT
+            // rebooter + SMC payload, and JTAG/Glitch2m carry generated virtual fuses.
+            const bool is_jtag = args.build_type == BuildType::Jtag;
+            const bool is_glitch_family =
+                args.build_type == BuildType::Glitch || args.build_type == BuildType::Glitch2 ||
+                args.build_type == BuildType::Glitch2m || args.build_type == BuildType::Glitch3;
+            const bool needs_fuses = is_jtag || args.build_type == BuildType::Glitch2m;
+            if (is_jtag || is_glitch_family) {
                 InputPayloads payloads{};
-                auto xell = find_asset("xell-2f.bin", roots, scan_options);
+                const std::string xell_name = is_jtag ? "xell-2f.bin" : "xell-gggggg.bin";
+                auto xell = find_asset(xell_name, roots, scan_options);
                 if (!xell) {
                     return std::unexpected(xell.error());
                 }
                 if (!*xell) {
-                    return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
-                                                 "JTAG builds require a XeLL payload (xell-2f.bin)",
-                                                 {}, "xell-2f.bin"));
+                    return std::unexpected(
+                        error(ResolutionErrorCode::AssetNotFound,
+                              "JTAG and glitch builds require a XeLL payload (" + xell_name + ")",
+                              {}, xell_name));
                 }
                 payloads.xell = std::move((**xell).data);
 
-                const auto rebooter = gxbuild3::NAND::freeboot_rebooter();
-                payloads.rebooter = std::vector<uint8_t>(rebooter.begin(), rebooter.end());
-                const auto smc_payload = gxbuild3::NAND::freeboot_payload();
-                payloads.payload = std::vector<uint8_t>(smc_payload.begin(), smc_payload.end());
+                if (is_jtag) {
+                    const auto rebooter = gxbuild3::NAND::freeboot_rebooter();
+                    payloads.rebooter = std::vector<uint8_t>(rebooter.begin(), rebooter.end());
+                    const auto smc_payload = gxbuild3::NAND::freeboot_payload();
+                    payloads.payload = std::vector<uint8_t>(smc_payload.begin(), smc_payload.end());
+                }
 
-                if (!args.console) {
-                    return std::unexpected(
-                        error(ResolutionErrorCode::InvalidInput,
-                              "JTAG virtual fuses require a console type, but section '" +
-                                  args.section + "' is not a known console",
-                              {}, args.section));
+                if (needs_fuses) {
+                    if (!args.console) {
+                        return std::unexpected(
+                            error(ResolutionErrorCode::InvalidInput,
+                                  "Virtual fuses require a console type, but section '" +
+                                      args.section + "' is not a known console",
+                                  {}, args.section));
+                    }
+                    auto fuses = gxbuild3::utils::generate_fuseset(
+                        *args.console, args.build_type, foundations->cpu_key, input.metadata.cb_ldv,
+                        input.metadata.cf_ldv.value_or(0));
+                    if (!fuses) {
+                        return std::unexpected(error(ResolutionErrorCode::InvalidInput,
+                                                     "Could not generate the virtual fuseset", {},
+                                                     "fuses"));
+                    }
+                    payloads.fuses = std::move(*fuses);
                 }
-                auto fuses = gxbuild3::utils::generate_fuseset(
-                    *args.console, args.build_type, foundations->cpu_key, input.metadata.cb_ldv,
-                    input.metadata.cf_ldv.value_or(0));
-                if (!fuses) {
-                    return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                                 "Could not generate the JTAG virtual fuseset", {},
-                                                 "fuses"));
-                }
-                payloads.fuses = std::move(*fuses);
                 input.payloads = std::move(payloads);
             }
 

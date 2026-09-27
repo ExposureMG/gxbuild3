@@ -276,6 +276,7 @@ namespace {
             auto args = minimum_args();
             args.build_ini = "build.ini";
             args.section = "falcon";
+            args.console = ConsoleType::Falcon;
             args.build_type = build_type;
             args.image_type = image_type;
             return args;
@@ -1078,9 +1079,9 @@ namespace {
             args.patch_extension = "test";
             fixture.write_binary("first/bin/" + test.name, valid_glitch_patchset());
             if (test.type == BuildType::Jtag) {
-                // JTAG additionally requires a XeLL and a console type for the virtual fuses.
-                args.console = ConsoleType::Falcon;
                 fixture.write_binary("first/xell-2f.bin", Bytes(0x40000, 0x5A));
+            } else if (test.type != BuildType::Retail && test.type != BuildType::Devkit) {
+                fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
             }
             const auto result = fixture.resolve(args);
             if (!require_resolved(result, "automatic patch fixture resolves") ||
@@ -1142,6 +1143,54 @@ namespace {
                        "the missing-XeLL error names the requirement");
     }
 
+    bool test_glitch_resolve_populates_xell_only() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Glitch2);
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_g2falcon_test.bin", valid_glitch_patchset());
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
+
+        const auto result = fixture.resolve(args);
+        if (!require_resolved(result, "glitch2 carrying xell-gggggg.bin resolves")) {
+            return false;
+        }
+        const auto& payloads = result->input.payloads;
+        return require(payloads && payloads->xell && payloads->xell->size() == 0x40000,
+                       "xell-gggggg.bin is loaded") &&
+               require(!payloads->rebooter && !payloads->payload,
+                       "glitch carries no JTAG rebooter/payload") &&
+               require(!payloads->fuses, "non-manufacturing glitch carries no fuses");
+    }
+
+    bool test_glitch2m_resolve_populates_fuses() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Glitch2m);
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_g2mfalcon_test.bin", valid_glitch_patchset());
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
+
+        const auto result = fixture.resolve(args);
+        if (!require_resolved(result, "glitch2m resolves")) {
+            return false;
+        }
+        const auto& payloads = result->input.payloads;
+        return require(payloads && payloads->xell && payloads->fuses &&
+                           payloads->fuses->size() == 0x60,
+                       "glitch2m loads XeLL and generated 0x60 fuses");
+    }
+
+    bool test_glitch_resolve_fails_without_xell() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Glitch2);
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_g2falcon_test.bin", valid_glitch_patchset());
+
+        const auto result = fixture.resolve(args);
+        return require(!result.has_value(), "glitch without a XeLL is rejected") &&
+               require(result.error().message.find("require a XeLL") != std::string::npos,
+                       "the missing-XeLL error names the requirement");
+    }
+
     bool test_glitch3_searches_all_g3_roots_before_g2_fallback() {
         ResolverFixture fixture;
         auto args = fixture.complete_loose_args(BuildType::Glitch3);
@@ -1149,6 +1198,7 @@ namespace {
         args.patch_extension = "test";
         fixture.write_binary("first/bin/patches_g2falcon_test.bin", valid_glitch_patchset(0x22));
         fixture.write_binary("second/bin/patches_g3falcon_test.bin", valid_glitch_patchset(0x33));
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
         const auto g3 = fixture.resolve(args);
         if (!require_resolved(g3, "glitch3 fixture resolves") ||
             !require(g3->input.patches && g3->input.patches->automatic &&
@@ -1196,6 +1246,7 @@ namespace {
         fixture.write_binary("first/bin/second-addon.bin", Bytes{0x21});
         fixture.write_binary("second/bin/second-addon.bin", Bytes{0x99});
         fixture.write_binary("second/bin/first-addon.bin", Bytes{0x12});
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
         const auto result = fixture.resolve(args);
         return require_resolved(result, "add-on fixture resolves") &&
                require(result->input.patches && result->input.patches->addons.size() == 2,
@@ -1284,6 +1335,7 @@ namespace {
         auto args = fixture.complete_loose_args(BuildType::Glitch2);
         args.patch_extension = "test_alt";
         fixture.write_binary("first/bin/patches_g2falcon_test_alt.bin", valid_glitch_patchset());
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
         const auto valid_internal_underscore = fixture.resolve(args);
         if (!require_resolved(valid_internal_underscore,
                               "an internal-underscore patch suffix resolves") ||
@@ -1324,6 +1376,7 @@ namespace {
         auto args = fixture.complete_loose_args(BuildType::Glitch);
         args.image_type.reset();
         fixture.write_binary("first/nanddump.bin", *donor_bytes);
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
         fixture.write_binary("first/bin/patches_falcon.bin", valid_glitch_patchset(0xC4));
         const auto resolved = fixture.resolve(args);
         return require_resolved(resolved, "small-block Glitch KHV donor resolves") &&
@@ -1382,6 +1435,9 @@ int main() {
     passed = test_automatic_patchset_names_and_retail_devkit_behavior() && passed;
     passed = test_jtag_resolve_populates_payloads() && passed;
     passed = test_jtag_resolve_fails_without_xell() && passed;
+    passed = test_glitch_resolve_populates_xell_only() && passed;
+    passed = test_glitch2m_resolve_populates_fuses() && passed;
+    passed = test_glitch_resolve_fails_without_xell() && passed;
     passed = test_glitch3_searches_all_g3_roots_before_g2_fallback() && passed;
     passed = test_missing_patchset_and_addon_errors_are_precise() && passed;
     passed = test_addons_resolve_from_root_bin_in_cli_order() && passed;

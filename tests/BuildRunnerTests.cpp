@@ -678,23 +678,6 @@ namespace {
         return true;
     }
 
-    // Retained but unregistered; see the note at its registration site in main().
-    [[maybe_unused]] bool test_bigblock_and_emmc_glitch_reject_jtag_payload_overlap() {
-        for(auto type : {ImageType::BigBlock, ImageType::Emmc}) {
-            auto input = fresh_input(type);
-            input.build_type = BuildType::Glitch;
-            input.patches = InputPatches{};
-            input.patches->automatic = InputPatchFile{"automatic",glitch_patchset(0x20,0,0x30,0,Bytes{0xA5})};
-            input.payloads = InputPayloads{};
-            input.payloads->xell = valid_xell();
-            input.payloads->rebooter = Bytes(0x1000,0x71);
-            auto built = RunBuild(input);
-            if(!require(!built && built.error().message.find("XeLL overlaps rebooter")!=std::string::npos,
-                        "glitch XeLL overlaps JTAG payloads on every geometry")) return false;
-        }
-        return true;
-    }
-
     bool test_small_glitch_patch_base_xell_owns_overlapping_fixed_payload_offsets() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Glitch;
@@ -773,6 +756,62 @@ namespace {
             auto extracted=ExtractAll(image->flash_driver.serialize(),input.metadata.cpu_key);
             if(!require(extracted && (!extracted->payloads || !extracted->payloads->xell),
                         "known glitch image cannot infer JTAG XeLL inside its damaged payload"))return false;
+        }
+        return true;
+    }
+
+    bool test_bigblock_glitch_xell_anchors_at_patch_base_and_shifts_cf() {
+        for (const auto image_type : {ImageType::BigBlock, ImageType::Emmc}) {
+            auto input = fresh_input(image_type);
+            input.build_type = BuildType::Glitch2;
+            input.bootloaders.cb_b = input.bootloaders.cb_or_a;
+            const auto [cf, cg] = valid_system_update(0x61);
+            input.bootloaders.cf0 = cf;
+            input.bootloaders.cg0 = cg;
+            InputPatches patches{};
+            patches.automatic =
+                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xA5})};
+            input.patches = std::move(patches);
+            InputPayloads payloads{};
+            payloads.xell = valid_xell();
+            input.payloads = std::move(payloads);
+
+            const auto built = RunBuild(input);
+            if (!require(built.has_value(),
+                         "big-geometry glitch carrying a XeLL builds without a collision")) {
+                return false;
+            }
+            auto image = FlashImage::read(*built);
+            const bool parsed = image && image->parse();
+            constexpr size_t patch_base = 0xC0000;
+            constexpr size_t shifted_slot = patch_base + 0x40000;
+            const auto xell_magic = read_logical(*built, patch_base, 4);
+            const auto small_block_magic = read_logical(*built, 0x70000, 4);
+            const auto khv = read_logical(*built, shifted_slot + 0x20000 + 0x10, 1);
+            const auto cg_bytes =
+                read_logical(*built, shifted_slot + ((cf.size() + 0x0F) & ~0x0F), cg.size());
+            if (!require(parsed && image->system_update_0.cf.has_value() &&
+                             image->system_update_0.cg.has_value(),
+                         "big-geometry glitch parses CF and CG out of the shifted patch slot") ||
+                !require(image->header.cf_offset == shifted_slot,
+                         "the anchored XeLL pushes the patch slot to patch_base + XeLL::kSize") ||
+                !require(xell_magic == Bytes({0x7F, 'E', 'L', 'F'}),
+                         "big-geometry glitch XeLL anchors at the geometry patch base") ||
+                !require(small_block_magic != Bytes({0x7F, 'E', 'L', 'F'}),
+                         "big-geometry glitch never reuses the small-block 0x70000 anchor") ||
+                !require(khv == Bytes({0xA5}),
+                         "glitch KHV follows the shifted slot plus one big stride plus 0x10") ||
+                !require(cg_bytes == cg, "CG survives beside the anchored XeLL")) {
+                return false;
+            }
+
+            const auto extracted = ExtractAll(*built, input.metadata.cpu_key);
+            if (!require(extracted.has_value() && extracted->bootloaders.cf0.has_value(),
+                         "the shifted CF0 is recovered by ExtractAll") ||
+                !require(extracted->payloads && extracted->payloads->xell == input.payloads->xell,
+                         "the anchored XeLL round-trips byte for byte")) {
+                return false;
+            }
         }
         return true;
     }
@@ -2441,14 +2480,10 @@ int main() {
     passed = test_small_glitch_xell_rejects_fixed_payload_collisions() && passed;
     passed = test_donor_transition_rejects_retained_glitch_xell_collision() && passed;
     passed = test_fixed_payloads_roundtrip_in_valid_jtag_layout() && passed;
-    // SKIPPED (JTAG Stage 2): with the window anchored per geometry, big-block/eMMC glitch XeLL
-    // (0xC0000..0x100000) now ends exactly where the rebooter begins (0x100000), so the overlap
-    // this guarded against was an artifact of the old hardcoded small-block offsets. Stage 3
-    // (glitch XeLL placement) should decide whether a real guard is still wanted here.
-    // passed = test_bigblock_and_emmc_glitch_reject_jtag_payload_overlap() && passed;
     passed = test_small_glitch_patch_base_xell_owns_overlapping_fixed_payload_offsets() && passed;
     passed = test_patch_base_xell_ownership_never_falls_back_to_an_internal_jtag_elf() && passed;
     passed = test_big_and_emmc_glitch_do_not_infer_jtag_inside_xell() && passed;
+    passed = test_bigblock_glitch_xell_anchors_at_patch_base_and_shifts_cf() && passed;
     passed = test_unambiguous_jtag_xell_preserves_fixed_payload_extraction() && passed;
     passed = test_boot_chain_collision_is_rejected_for_unpatched_payload_layouts() && passed;
     passed = test_bootloader_patch_end_is_bounded_by_boot_chain_layout() && passed;
