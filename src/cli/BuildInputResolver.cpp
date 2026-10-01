@@ -875,16 +875,28 @@ namespace gxbuild3::cli {
                 }
 
                 if (needs_fuses) {
-                    if (!args.console) {
-                        return std::unexpected(
-                            error(ResolutionErrorCode::InvalidInput,
-                                  "Virtual fuses require a console type, but section '" +
-                                      args.section + "' is not a known console",
-                                  {}, args.section));
+                    // Lines 1-2 come from the word at 0x3B0 of the CB the fuses are bound to:
+                    // a manufacturing chain's CB_B, or a JTAG image's second CB.
+                    const auto& fuse_cb =
+                        is_jtag ? input.bootloaders.extra_cb : input.bootloaders.cb_b;
+                    if (!fuse_cb) {
+                        return std::unexpected(error(
+                            ResolutionErrorCode::InvalidInput,
+                            is_jtag ? "Virtual fuses are built from the second CB, and section '" +
+                                          args.section + "' names none"
+                                    : "Virtual fuses are built from the CB_B, and section '" +
+                                          args.section + "' names none",
+                            {}, "fuses"));
+                    }
+                    const auto cb_word = gxbuild3::utils::read_cb_word(*fuse_cb);
+                    if (!cb_word) {
+                        return std::unexpected(error(ResolutionErrorCode::InvalidInput,
+                                                     "Could not read the console word of the CB "
+                                                     "the virtual fuses are built from",
+                                                     {}, "fuses"));
                     }
                     auto fuses = gxbuild3::utils::generate_fuseset(
-                        *args.console, args.build_type, foundations->cpu_key, input.metadata.cb_ldv,
-                        input.metadata.cf_ldv.value_or(0));
+                        *cb_word, foundations->cpu_key, input.metadata.cf_ldv.value_or(0));
                     if (!fuses) {
                         return std::unexpected(error(ResolutionErrorCode::InvalidInput,
                                                      "Could not generate the virtual fuseset", {},

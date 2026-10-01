@@ -90,6 +90,7 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_patchset_tests tests/PatchsetTests.cpp)
     add_gxbuild3_test(gxbuild3_glitch_crypto_tests tests/GlitchCryptoTests.cpp)
     add_gxbuild3_test(gxbuild3_resolver_tests tests/BuildInputResolverTests.cpp)
+    add_gxbuild3_test(gxbuild3_fuseset_tests tests/FusesetGeneratorTests.cpp)
     add_gxbuild3_test(gxbuild3_buildcommand_tests tests/BuildCommandTests.cpp)
     add_gxbuild3_test(gxbuild3_keyvault_version_tests tests/KeyvaultVersionTests.cpp)
 

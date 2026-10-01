@@ -49,6 +49,20 @@ namespace {
         return require(result.has_value(), message);
     }
 
+    // xerunner test_build.py: a retail slim CB_B word, type 3 and allow bit 0.
+    constexpr uint32_t kFuseCbWord = 0x03010001;
+
+    Bytes cb_with_word(uint32_t word) {
+        Bytes cb(0x400, 0x00);
+        cb[0] = 0x43;
+        cb[1] = 0x42;
+        cb[0x3B0] = static_cast<uint8_t>(word >> 24);
+        cb[0x3B1] = static_cast<uint8_t>(word >> 16);
+        cb[0x3B2] = static_cast<uint8_t>(word >> 8);
+        cb[0x3B3] = static_cast<uint8_t>(word);
+        return cb;
+    }
+
     Bytes valid_cpu_key(bool alternate = false) {
         std::array<uint8_t, 16> key{};
         const size_t first_bit = alternate ? 53 : 0;
@@ -270,7 +284,19 @@ namespace {
             write_binary("first/smc.bin", make_smc(0x61));
             write_binary("first/cb_1.bin", Bytes{0xCB, 0x01});
             write_binary("first/cd.bin", Bytes{0xCD, 0x01});
-            write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+            // Virtual fuses read their CB's word at 0x3B0: CB_B for glitch2m, the second CB
+            // for JTAG.
+            std::string ini = "[falconbl]\ncb_1.bin\n";
+            if (build_type == BuildType::Glitch2m) {
+                write_binary("first/cbb_1.bin", cb_with_word(kFuseCbWord));
+                ini += "cbb_1.bin\n";
+            }
+            ini += "cd.bin\n";
+            if (build_type == BuildType::Jtag) {
+                write_binary("first/cb_2.bin", cb_with_word(kFuseCbWord));
+                ini += "cb_2.bin\n";
+            }
+            write_text("working/build.ini", ini);
             write_text("working/options.ini", "cbldv=2\ncfldv=3\npairing_data=010203\n");
 
             auto args = minimum_args();
@@ -1106,6 +1132,22 @@ namespace {
         return true;
     }
 
+    // Lines 0-6 for kFuseCbWord, as xerunner's test_build.py states them; lines 1-2 come
+    // from the CB, not from the falcon section, and 3-6 are the CPU key halves twice each.
+    bool require_fuse_lines_from_cb_word(const Bytes& fuses, const std::string& name) {
+        const auto key = valid_cpu_key();
+        const Bytes head{0xC0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F, 0x0F, 0x0F, 0x0F,
+                         0x0F, 0x0F, 0xF0, 0xF0, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+        Bytes expected = head;
+        expected.insert(expected.end(), key.begin(), key.begin() + 8);
+        expected.insert(expected.end(), key.begin(), key.begin() + 8);
+        expected.insert(expected.end(), key.begin() + 8, key.end());
+        expected.insert(expected.end(), key.begin() + 8, key.end());
+        return require(fuses.size() >= expected.size() &&
+                           std::equal(expected.begin(), expected.end(), fuses.begin()),
+                       name + " fuse lines 0-6 follow the CB word and CPU key");
+    }
+
     bool test_jtag_resolve_populates_payloads() {
         ResolverFixture fixture;
         auto args = fixture.complete_loose_args(BuildType::Jtag);
@@ -1127,7 +1169,8 @@ namespace {
                require(payloads->payload && payloads->payload->size() == 0x200,
                        "the embedded SMC payload is loaded at 0x200 bytes") &&
                require(payloads->fuses && payloads->fuses->size() == 0x60,
-                       "generated virtual fuses fill the 0x60-byte region");
+                       "generated virtual fuses fill the 0x60-byte region") &&
+               require_fuse_lines_from_cb_word(*payloads->fuses, "JTAG second CB");
     }
 
     bool test_jtag_resolve_fails_without_xell() {
@@ -1176,7 +1219,22 @@ namespace {
         const auto& payloads = result->input.payloads;
         return require(payloads && payloads->xell && payloads->fuses &&
                            payloads->fuses->size() == 0x60,
-                       "glitch2m loads XeLL and generated 0x60 fuses");
+                       "glitch2m loads XeLL and generated 0x60 fuses") &&
+               require_fuse_lines_from_cb_word(*payloads->fuses, "glitch2m CB_B");
+    }
+
+    bool test_glitch2m_without_cb_b_is_refused() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Glitch2m);
+        args.patch_extension = "test";
+        fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+        fixture.write_binary("first/bin/patches_g2mfalcon_test.bin", valid_glitch_patchset());
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
+
+        const auto result = fixture.resolve(args);
+        return require(!result.has_value() && result.error().item == "fuses" &&
+                           result.error().message.find("CB_B") != std::string::npos,
+                       "glitch2m fuses without a CB_B to read the word from are refused");
     }
 
     bool test_glitch_resolve_fails_without_xell() {
@@ -1437,6 +1495,7 @@ int main() {
     passed = test_jtag_resolve_fails_without_xell() && passed;
     passed = test_glitch_resolve_populates_xell_only() && passed;
     passed = test_glitch2m_resolve_populates_fuses() && passed;
+    passed = test_glitch2m_without_cb_b_is_refused() && passed;
     passed = test_glitch_resolve_fails_without_xell() && passed;
     passed = test_glitch3_searches_all_g3_roots_before_g2_fallback() && passed;
     passed = test_missing_patchset_and_addon_errors_are_precise() && passed;
