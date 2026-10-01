@@ -304,7 +304,7 @@ BuildResult RunBuild(const Input& input) {
             Glitch.value);
 
         if (hits == 0) {
-            Log::Warn("SMC reboot patch site not found — "
+            Log::Warn("SMC reboot patch site not found - "
                       "SMC may not be a supported retail variant");
         } else {
             Log::Info("Applied glitch reboot patch to retail SMC");
@@ -394,6 +394,13 @@ BuildResult RunBuild(const Input& input) {
          !flash_image.cb_section.cb_B || flash_image.cb_section.cb_B->data.empty())) {
         return build_error(BuildErrorCode::InvalidBootloader,
                            "Glitch3 requires CB_A, CB_X (15432), and CB_B");
+    }
+
+    if (input.build_type == BuildType::Glitch &&
+        (flash_image.cb_section.cb_B || flash_image.cb_section.cb_x)) {
+        return build_error(BuildErrorCode::InvalidBootloader,
+                           "glitch1/RGH1 does not support a CB_B (use glitch2) or a CB_X (use "
+                           "glitch3)");
     }
 
     std::optional<ParsedPatchSet> parsed_patchset;
@@ -534,7 +541,7 @@ BuildResult RunBuild(const Input& input) {
                 return build_error(BuildErrorCode::PatchFailure,
                                    "Glitch patchset has no KHV payload section");
             }
-            patch_size = khv->raw_data.size();
+            patch_size = BinaryParser::SerializeKhvPayload(*khv).size();
             const bool is_big_or_emmc =
                 flash_image.flash_driver.driver_mode() == Driver::DriverMode::Big ||
                 flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc;
@@ -829,7 +836,7 @@ std::optional<InputMetadata> ExtractMetadata(std::span<const uint8_t> nand_image
         console_sequence_allow = cb_a.header.console_seq_allow.console_sequence_allow;
     }
 
-    // CB_B, when present, overrides CB_A's LDV/pairing data — independent of
+    // CB_B, when present, overrides CB_A's LDV/pairing data - independent of
     // whether CB_A itself parsed, matching ExtractAll()/ExtractAllInfo().
     if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
         auto& cb_b = *img.cb_section.cb_B;

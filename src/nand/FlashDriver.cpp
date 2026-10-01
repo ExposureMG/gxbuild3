@@ -90,25 +90,25 @@ namespace gxbuild3::NAND {
 
         const uint8_t* p20_spare = image.data() + 0x4400;
 
-        // Step 1: Check XSB format (spare type 0)
-        //   block_id: low byte at spare[0], high nibble at spare[1]
-        //   bad block marker at spare[5]
+        // check XSB / spare type 0
+        // block_id: low byte at spare[0], high nibble at spare[1]
+        // bad block marker at spare[5]
         uint16_t xsb_block = static_cast<uint16_t>(p20_spare[0] | ((p20_spare[1] & 0x0F) << 8));
         if (xsb_block == 1 && p20_spare[5] == 0xFF) {
             return DriverMode::Small;
         }
 
-        // Step 2: Check PSB/NewSmall format (spare type 1)
-        //   block_id: low byte at spare[1], high nibble at spare[2]
-        //   bad block marker at spare[5]
+        // check PSB / spare type 1
+        // block_id: low byte at spare[1], high nibble at spare[2]
+        // bad block marker at spare[5]
         uint16_t psb_block = static_cast<uint16_t>(p20_spare[1] | ((p20_spare[2] & 0x0F) << 8));
         if (psb_block == 1 && p20_spare[5] == 0xFF) {
             return DriverMode::NewSmall;
         }
 
-        // Step 3: Check Big Block format (spare type 2)
-        //   block_id: low byte at spare[1], high nibble at spare[2]
-        //   bad block marker at spare[0]
+        // check bb / spare type 2
+        // block_id: low byte at spare[1], high nibble at spare[2]
+        // bad block marker at spare[0]
         if (image.size() >= 0x21210) {
             const uint8_t* p100_spare = image.data() + 0x21200;
             uint16_t bb_block =
@@ -118,7 +118,7 @@ namespace gxbuild3::NAND {
             }
         }
 
-        // Step 4: Fallback — if image is larger than 16MB, assume Big Block
+        // fallback check bb / spare type 2 if bigger then 16mb
         if (image.size() > 17301504) {
             return DriverMode::Big;
         }
@@ -422,10 +422,8 @@ namespace gxbuild3::NAND {
             meta.block_type = spare[0xC] & 0x3F;
             meta.page_count = spare[0x9];
         } else if (m_driver_mode == DriverMode::NewSmall) {
-            // PSB/NewSmall layout (spare type 1):
-            //   block_id: low byte at spare[1], high nibble at spare[2]
-            //   sequence byte 0 at spare[0]
-            //   bad block marker at spare[5]
+            // PSB/NewSmall/spare type 1
+            // sequence byte 0 at spare[0]
             meta.is_bad = (spare[5] != 0xFF);
             if (!meta.is_bad && pages_per_block() > 1) {
                 auto spare1 = read_page_spare(first_page + 1);
@@ -441,10 +439,8 @@ namespace gxbuild3::NAND {
             meta.block_type = spare[0xC] & 0x3F;
             meta.page_count = spare[0x9];
         } else {
-            // XSB/Small layout (spare type 0):
-            //   block_id: low byte at spare[0], high nibble at spare[1]
-            //   sequence byte 0 at spare[2]
-            //   bad block marker at spare[5]
+            // XSB/SmallBlock/spare type 0
+            // sequence byte 0 at spare[2]
             meta.is_bad = (spare[5] != 0xFF);
             if (!meta.is_bad && pages_per_block() > 1) {
                 auto spare1 = read_page_spare(first_page + 1);
@@ -558,10 +554,10 @@ namespace gxbuild3::NAND {
                 spare_data[9] = meta.page_count;
                 spare_data[0xC] = meta.block_type & 0x3F;
             } else if (m_driver_mode == DriverMode::NewSmall) {
-                // PSB/NewSmall layout (spare type 1):
-                //   block_id: low byte at spare[1], high nibble at spare[2]
-                //   sequence byte 0 at spare[0]
-                //   bad block marker at spare[5]
+                // PSB/NewSmall/spare type 1
+                // block_id: low byte at spare[1], high nibble at spare[2]
+                // sequence byte 0 at spare[0]
+                // bad block marker at spare[5]
                 if (meta.is_bad && p < 2) {
                     spare_data[5] = 0x00;
                 } else if (!meta.is_bad && p < 2) {

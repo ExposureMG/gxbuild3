@@ -1067,8 +1067,8 @@ namespace {
             std::string name;
         };
         const std::array cases{
-            Case{BuildType::Jtag, "patches_fat_test.bin"},
-            Case{BuildType::Glitch, "patches_falcon_test.bin"},
+            Case{BuildType::Jtag, "patches_falcon_test.bin"},
+            Case{BuildType::Glitch, "patches_fat_test.bin"},
             Case{BuildType::Glitch2, "patches_g2falcon_test.bin"},
             Case{BuildType::Glitch2m, "patches_g2mfalcon_test.bin"},
             Case{BuildType::Glitch3, "patches_g3falcon_test.bin"},
@@ -1111,7 +1111,7 @@ namespace {
         auto args = fixture.complete_loose_args(BuildType::Jtag);
         args.console = ConsoleType::Falcon;
         args.patch_extension = "test";
-        fixture.write_binary("first/bin/patches_fat_test.bin", valid_glitch_patchset());
+        fixture.write_binary("first/bin/patches_falcon_test.bin", valid_glitch_patchset());
         fixture.write_binary("first/xell-2f.bin", Bytes(0x40000, 0x5A));
 
         const auto result = fixture.resolve(args);
@@ -1135,7 +1135,7 @@ namespace {
         auto args = fixture.complete_loose_args(BuildType::Jtag);
         args.console = ConsoleType::Falcon;
         args.patch_extension = "test";
-        fixture.write_binary("first/bin/patches_fat_test.bin", valid_glitch_patchset());
+        fixture.write_binary("first/bin/patches_falcon_test.bin", valid_glitch_patchset());
 
         const auto result = fixture.resolve(args);
         return require(!result.has_value(), "JTAG without a XeLL is rejected") &&
@@ -1377,7 +1377,7 @@ namespace {
         args.image_type.reset();
         fixture.write_binary("first/nanddump.bin", *donor_bytes);
         fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
-        fixture.write_binary("first/bin/patches_falcon.bin", valid_glitch_patchset(0xC4));
+        fixture.write_binary("first/bin/patches_fat.bin", valid_glitch_patchset(0xC4));
         const auto resolved = fixture.resolve(args);
         return require_resolved(resolved, "small-block Glitch KHV donor resolves") &&
                require(!resolved->input.payloads || (!resolved->input.payloads->rebooter &&

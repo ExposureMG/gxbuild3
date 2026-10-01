@@ -1014,7 +1014,7 @@ namespace gxbuild3::NAND {
                 if (!khv) {
                     return false;
                 }
-                patch_bytes = khv->raw_data;
+                patch_bytes = BinaryParser::SerializeKhvPayload(*khv);
                 patch_offset = glitch_patch_offset;
                 patch_capacity = slot_stride - khv_prefix(*this);
             }
@@ -1367,7 +1367,8 @@ namespace gxbuild3::NAND {
                 add_range("JTAG patch payload", window_base + 0x1000, patch_bytes.size());
             } else if (const auto* khv =
                            find_patch_section(*payloads.patchset, PatchSectionTarget::Khv)) {
-                if (khv->raw_data.size() > slot_stride - khv_prefix(*this))
+                if (BinaryParser::SerializeKhvPayload(*khv).size() >
+                    slot_stride - khv_prefix(*this))
                     return "Glitch KHV payload exceeds its patch-slot region";
                 add_range("Glitch KHV payload", slot1_base + khv_prefix(*this),
                           slot_stride - khv_prefix(*this));

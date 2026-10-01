@@ -268,8 +268,7 @@ namespace gxbuild3::cli {
         apply_winning_metadata(InputMetadata& metadata, const OptionsArgs& file_options,
                                const OptionsArgs& cli_overrides, bool has_donor,
                                const std::filesystem::path& options_path) {
-            // Select a source before decoding it. In particular, malformed
-            // options.ini text must be irrelevant when donor or CLI data wins.
+            // select a source before decoding it
             if (cli_overrides.cbldv) {
                 auto value = parse_ldv(*cli_overrides.cbldv, "cbldv", {});
                 if (!value) {
@@ -385,9 +384,9 @@ namespace gxbuild3::cli {
                 case BuildType::Devkit:
                     return std::nullopt;
                 case BuildType::Jtag:
-                    return patch_name("fat", args.patch_extension);
-                case BuildType::Glitch:
                     return patch_name(args.section, args.patch_extension);
+                case BuildType::Glitch:
+                    return patch_name("fat", args.patch_extension);
                 case BuildType::Glitch2:
                     return patch_name("g2" + args.section, args.patch_extension);
                 case BuildType::Glitch2m:
@@ -846,8 +845,8 @@ namespace gxbuild3::cli {
                 input.patches.reset();
             }
 
-            // JTAG and glitch builds carry a XeLL; JTAG also carries the freeBOOT
-            // rebooter + SMC payload, and JTAG/Glitch2m carry generated virtual fuses.
+            // JTAG and glitch builds have xell; JTAG also has a rebooter and payload, locked to freeboot for now
+            // JTAG and g2m have generated vfuses
             const bool is_jtag = args.build_type == BuildType::Jtag;
             const bool is_glitch_family =
                 args.build_type == BuildType::Glitch || args.build_type == BuildType::Glitch2 ||

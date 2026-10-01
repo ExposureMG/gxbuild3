@@ -62,4 +62,5 @@ namespace BinaryParser {
     std::expected<ParsedPatchSet, PatchError> ParseAndMergePatchSet(const InputPatches& patches,
                                                                     BuildType buildType);
     std::vector<uint8_t> SerializePatchSet(const ParsedPatchSet& patchSet);
+    std::vector<uint8_t> SerializeKhvPayload(const ParsedPatchSection& section);
 } // namespace BinaryParser

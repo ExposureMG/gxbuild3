@@ -92,8 +92,8 @@ namespace gxbuild3::NAND {
         }
 
         if (defer_root) {
-            // Serialize allocates the root once, last, from the same free pool the files
-            // and mobile data draw from, so no block is pre-consumed for it here.
+            // serialize allocates the root once, last, from the same free pool the files
+            // and mobile data draw from, so no block is pre-consumed for it here
             m_root_placed = false;
             Log::Debug("Formatted Flash File System: total_blocks={}, root_block=deferred, "
                        "version={}",
@@ -497,7 +497,7 @@ namespace gxbuild3::NAND {
             file_meta.block_type =
                 big_block ? FlashFsMetadata::kDataTypeBig : FlashFsMetadata::kDataTypeSmall;
             if (big_block) {
-                // Big-block data blocks carry sequence 0 and the constant reference stamp.
+                // bb data blocks carry sequence 0 and the constant reference stamp
                 file_meta.sequence = 0;
                 file_meta.fs_size = FlashFsMetadata::kBigFsSize;
                 file_meta.page_count = FlashFsMetadata::kBigPageCount;

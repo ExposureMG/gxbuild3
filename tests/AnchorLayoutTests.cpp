@@ -27,6 +27,9 @@ static FlashImage fixture(Driver::DriverMode mode, BuildType type) {
     // Empty CB/CD patch sections followed by one valid runtime KHV record.
     Bytes p{255, 255, 255, 255, 255,  255, 255, 255, 0,   0,   0x10, 0,
             0,   0,   0,   1,   0x60, 0,   0,   0,   255, 255, 255,  255};
+    if (type == BuildType::Jtag) {
+        p.insert(p.begin() + 8, {255, 255, 255, 255});
+    }
     ParsedPatchSet ps;
     BinaryParser::ParsePatchSet(p, type, ps);
     f.payloads.patchset = ps;
@@ -212,6 +215,12 @@ static bool jtag_window(Driver::DriverMode mode) {
     f.payloads.extra_cd = synthetic_cd(0x22);
     if (!check(f.payloads.patchset && f.payloads.patchset->kind == PatchSetKind::Jtag,
                "fixture yields a JTAG patchset"))
+        return false;
+    const auto& sections = f.payloads.patchset->sections;
+    if (!check(sections.size() == 4 && sections.back().target == PatchSectionTarget::JtagSection4 &&
+                   sections.back().raw_data.size() == 12 &&
+                   be32(sections.back().raw_data, 0) == 0x1000,
+               "the KHV record occupies JtagSection4 as in [1bl][CB][CD][KHV]"))
         return false;
     if (!check(f.write_to_driver(), "anchored jtag image writes"))
         return false;

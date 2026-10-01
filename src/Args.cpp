@@ -301,14 +301,14 @@ bool OptionsManager::parse(std::string_view raw_args) {
                     all_ok = false;
                 }
             } else if (is_bool_option(token)) {
-                // Bare flag with no "=value" — implicit "true", valid only
+                // Bare flag with no "=value" - implicit "true", valid only
                 // for boolean-typed options.
                 if (!set(token, "true")) {
                     all_ok = false;
                 }
             } else {
                 // A string-valued option given with no value is a missing
-                // argument, not an implicit "true" — don't silently store
+                // argument, not an implicit "true" - don't silently store
                 // the literal string "true" into it.
                 all_ok = false;
             }
