@@ -991,6 +991,11 @@ namespace gxbuild3::NAND {
                 Log::Error("Failed to save Flash File System to NAND driver");
                 return false;
             }
+            const size_t clusters_per_block = driver.block_size_clean() / 0x4000;
+            for (const uint16_t cluster : fs.get_all_file_blocks()) {
+                layout.fs_data_blocks.push_back(
+                    static_cast<uint16_t>(cluster / clusters_per_block));
+            }
         }
 
         if (driver.driver_mode() == Driver::DriverMode::Emmc) {

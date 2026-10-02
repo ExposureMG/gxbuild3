@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <set>
 #include <unordered_set>
 
 namespace gxbuild3::NAND {
@@ -452,7 +453,7 @@ namespace gxbuild3::NAND {
         root_meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
         root_meta.is_bad = false;
 
-        std::map<size_t, size_t> physical_bytes_used;
+        std::set<size_t> physical_blocks;
         for (const auto& entry : m_entries) {
             if (!entry.is_valid()) {
                 continue;
@@ -472,17 +473,23 @@ namespace gxbuild3::NAND {
                     break;
                 }
 
+                // The last cluster of a file is zero-padded to its end, so every page of a
+                // file cluster is programmed.
                 size_t chunk_len =
                     std::min<size_t>(file_bytes.size() - bytes_written, kCleanBlockSize);
                 std::span<const uint8_t> chunk(file_bytes.data() + bytes_written, chunk_len);
-                if (!m_driver->write_offset(static_cast<size_t>(blk) * kCleanBlockSize, chunk)) {
+                const size_t cluster_offset = static_cast<size_t>(blk) * kCleanBlockSize;
+                if (!m_driver->write_offset(cluster_offset, chunk)) {
                     return false;
                 }
+                if (chunk_len < kCleanBlockSize) {
+                    const std::vector<uint8_t> padding(kCleanBlockSize - chunk_len, 0);
+                    if (!m_driver->write_offset(cluster_offset + chunk_len, padding)) {
+                        return false;
+                    }
+                }
 
-                const size_t physical_block = blk / clusters_per_block();
-                const size_t end = (blk % clusters_per_block()) * kCleanBlockSize + chunk_len;
-                physical_bytes_used[physical_block] =
-                    std::max(physical_bytes_used[physical_block], end);
+                physical_blocks.insert(blk / clusters_per_block());
 
                 bytes_written += chunk_len;
             }
@@ -491,23 +498,17 @@ namespace gxbuild3::NAND {
             }
         }
 
-        for (const auto& [physical_block, bytes_used] : physical_bytes_used) {
+        // File data blocks carry FS sequence 0. Small-block data blocks are plain type 0x00
+        // blocks with no size or page count; big-block ones carry type 0x2A and the
+        // constant reference stamp.
+        for (const size_t physical_block : physical_blocks) {
             BlockMetadata file_meta{};
             file_meta.logical_block_id = static_cast<uint16_t>(physical_block);
+            file_meta.sequence = 0;
             file_meta.block_type =
                 big_block ? FlashFsMetadata::kDataTypeBig : FlashFsMetadata::kDataTypeSmall;
-            if (big_block) {
-                // bb data blocks carry sequence 0 and the constant reference stamp
-                file_meta.sequence = 0;
-                file_meta.fs_size = FlashFsMetadata::kBigFsSize;
-                file_meta.page_count = FlashFsMetadata::kBigPageCount;
-            } else {
-                file_meta.sequence = m_version;
-                const size_t page_count = (bytes_used + 511) / 512;
-                file_meta.page_count = page_count >= m_driver->pages_per_block()
-                                           ? 0
-                                           : static_cast<uint8_t>(page_count);
-            }
+            file_meta.fs_size = big_block ? FlashFsMetadata::kBigFsSize : 0;
+            file_meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
             file_meta.is_bad = false;
             m_driver->write_block_metadata(physical_block, file_meta);
         }

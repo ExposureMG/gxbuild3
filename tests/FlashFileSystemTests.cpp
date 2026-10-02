@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <iostream>
+#include <span>
 #include <vector>
 
 using namespace gxbuild3::NAND;
@@ -155,32 +156,111 @@ namespace {
                      "serialize stamps the root page_count 0x04 on big-block");
     }
 
-    // Small/new-small images must keep the legacy stamps (0x30 root, 0x01 data, seq=version).
-    bool test_small_block_keeps_legacy_fs_metadata() {
-        Driver driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
+    // Small/new-small images stamp the root 0x30 with the FS version and leave file data
+    // blocks as plain type 0x00, sequence 0, no size or page count, as real 16 MB dumps
+    // and xeBuild do. The file's last cluster is zero-padded, so every page of it carries
+    // that spare, and the FsUnused nibble and bytes 0xA-0xB are zero.
+    bool small_block_fs_metadata_matches_dumps(Driver::DriverMode mode) {
+        Driver driver(Driver::ImageSize::Smallblock, mode);
         FlashFileSystem fs;
         fs.set_driver(&driver);
         if (!check(fs.format(driver.block_count(), 300, 7), "small-block filesystem formats"))
             return false;
         const Bytes payload(1024, 0x42);
-        if (!check(fs.add_file("boot.bin", payload), "small-block file allocates") ||
-            !check(fs.save(), "small-block filesystem saves"))
+        if (!check(fs.add_file("boot.bin", payload), "small-block file allocates"))
             return false;
-
         const auto entry = fs.stat("boot.bin");
         if (!check(entry.has_value(), "boot.bin entry exists"))
+            return false;
+
+        // Stale erased bytes and spare under the file's cluster.
+        const size_t first_page = static_cast<size_t>(entry->block_number) * 32;
+        if (!check(driver.write_offset(static_cast<size_t>(entry->block_number) * 0x4000,
+                                       Bytes(0x4000, 0xFF)),
+                   "stale cluster fill writes"))
+            return false;
+        for (size_t page = first_page; page < first_page + 32; ++page) {
+            driver.write_page_spare(page, Bytes(16, 0xFF));
+        }
+        if (!check(fs.save(), "small-block filesystem saves"))
             return false;
 
         const size_t clusters_per_block = driver.block_size_clean() / 0x4000;
         const auto root = driver.interpret_cluster(300 * clusters_per_block);
         const auto data = driver.interpret_block(entry->block_number / clusters_per_block);
+        const size_t nibble_byte = mode == Driver::DriverMode::Small ? 1 : 2;
+        bool spare_clean = true;
+        bool padded = true;
+        for (size_t page = first_page; page < first_page + 32; ++page) {
+            const auto spare = driver.read_page_spare(page);
+            spare_clean = spare_clean && (spare[nibble_byte] & 0xF0) == 0 && spare[0xA] == 0 &&
+                          spare[0xB] == 0 && spare[5] == 0xFF;
+            if (page >= first_page + 2) {
+                const auto bytes = driver.read_page(page);
+                padded = padded &&
+                         std::all_of(bytes.begin(), bytes.end(), [](uint8_t b) { return b == 0; });
+            }
+        }
 
         return check(root.block_type == FlashFsMetadata::kRootTypeSmall,
                      "small-block root stays 0x30") &&
                check(root.sequence == 7, "small-block root keeps the FS version") &&
-               check(data.block_type == FlashFsMetadata::kDataTypeSmall,
-                     "small-block data stays 0x01") &&
-               check(data.sequence == 7, "small-block data keeps the FS version");
+               check(data.block_type == 0x00, "small-block data is type 0x00") &&
+               check(data.sequence == 0, "small-block data sequence is 0") &&
+               check(data.fs_size == 0 && data.page_count == 0,
+                     "small-block data carries no size or page count") &&
+               check(data.logical_block_id == entry->block_number / clusters_per_block,
+                     "small-block data carries its block ID") &&
+               check(spare_clean, "small-block data spare has zero FsUnused fields") &&
+               check(padded, "the file's last cluster is zero-padded");
+    }
+
+    bool test_small_block_fs_metadata_matches_dumps() {
+        return small_block_fs_metadata_matches_dumps(Driver::DriverMode::Small) &&
+               small_block_fs_metadata_matches_dumps(Driver::DriverMode::NewSmall);
+    }
+
+    // serialize() stamps type-0 metadata on the blocks below 0x50 that are not the root, a
+    // mobile or FlashFS file data. Pages holding erased data there get an erased spare,
+    // whatever spare they held before; FlashFS file blocks keep the spare save() wrote.
+    bool test_serialize_leaves_erased_low_pages_unprogrammed() {
+        Driver driver(Driver::ImageSize::Smallblock, Driver::DriverMode::NewSmall);
+        const size_t block = 0x24;
+        const size_t file_block = 0x25;
+        const size_t ppb = driver.pages_per_block();
+        if (!check(driver.write_offset(block * 0x4000, Bytes(0x8000, 0xFF)),
+                   "erased low blocks write") ||
+            !check(driver.write_offset(block * 0x4000, Bytes(0x200, 0x5A)),
+                   "first low page writes"))
+            return false;
+        BlockMetadata file_meta{};
+        file_meta.logical_block_id = static_cast<uint16_t>(file_block);
+        driver.write_block_metadata(file_block, file_meta);
+        NandLayout layout;
+        layout.fs_data_blocks.push_back(static_cast<uint16_t>(file_block));
+        driver.set_layout(layout);
+
+        const auto& raw = driver.serialize();
+        const auto page_raw = [&](size_t page) {
+            return std::span<const uint8_t>(raw.data() + page * 528, 528);
+        };
+        const auto written = page_raw(block * ppb);
+        bool erased = true;
+        for (size_t page = block * ppb + 1; page < (block + 1) * ppb; ++page) {
+            const auto bytes = page_raw(page);
+            erased = erased &&
+                     std::all_of(bytes.begin(), bytes.end(), [](uint8_t b) { return b == 0xFF; });
+        }
+        bool file_stamped = true;
+        for (size_t page = file_block * ppb; page < (file_block + 1) * ppb; ++page) {
+            const auto bytes = page_raw(page);
+            file_stamped = file_stamped && bytes[0x201] == file_block && bytes[0x205] == 0xFF;
+        }
+        return check(written[0x201] == block && (written[0x202] & 0xF0) == 0 &&
+                         (written[0x20C] & 0x3F) == 0,
+                     "a programmed low page carries its block ID and type 0") &&
+               check(erased, "erased low pages carry erased data and spare") &&
+               check(file_stamped, "erased pages of a FlashFS file block keep their stamp");
     }
 
     // Method 4: a large, multi-cluster file must survive the full write path
@@ -280,7 +360,8 @@ int main() {
     passed = test_big_block_writer_uses_clusters() && passed;
     passed = test_big_block_stamps_retail_fs_metadata() && passed;
     passed = test_big_block_serialize_restamps_root() && passed;
-    passed = test_small_block_keeps_legacy_fs_metadata() && passed;
+    passed = test_small_block_fs_metadata_matches_dumps() && passed;
+    passed = test_serialize_leaves_erased_low_pages_unprogrammed() && passed;
     passed = test_big_block_large_file_roundtrips_through_serialize() && passed;
     passed = test_deferred_root_is_placed_last_from_free_pool() && passed;
     return passed ? 0 : 1;

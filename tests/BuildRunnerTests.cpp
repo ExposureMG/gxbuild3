@@ -1379,16 +1379,28 @@ namespace {
         higher_sequence_donor.metadata.nand_image = *first_build;
         higher_sequence_donor.flashfs_sec =
             std::vector<std::pair<std::string, Bytes>>{{"donor-old.bin", Bytes{2}}};
-        const auto donor_bytes = RunBuild(higher_sequence_donor);
-        const auto parsed_donor = donor_bytes ? parse_image(*donor_bytes) : std::nullopt;
+        const auto donor_build = RunBuild(higher_sequence_donor);
+        auto donor_image = donor_build ? parse_image(*donor_build) : std::nullopt;
+        if (!require(donor_image.has_value() && donor_image->filesystem.has_value() &&
+                         donor_image->filesystem->version() == 1,
+                     "a rebuilt FlashFS starts at root sequence 1")) {
+            return false;
+        }
+        // Raise the donor root above the sequence a new build writes.
+        const uint16_t donor_root = donor_image->filesystem->root_block();
+        BlockMetadata raised = donor_image->flash_driver.interpret_cluster(donor_root);
+        raised.sequence = 0x125;
+        donor_image->flash_driver.write_cluster_metadata(donor_root, raised);
+        const auto donor_bytes = donor_image->flash_driver.serialize();
+        const auto parsed_donor = parse_image(donor_bytes);
         if (!require(parsed_donor.has_value() && parsed_donor->filesystem.has_value() &&
-                         parsed_donor->filesystem->version() > 1,
-                     "serialized donor FlashFS has a version higher than the fresh default")) {
+                         parsed_donor->filesystem->version() == 0x125,
+                     "donor FlashFS root carries a sequence above the fresh default")) {
             return false;
         }
 
         auto overlay = fresh_input(ImageType::SmallBlock);
-        overlay.metadata.nand_image = *donor_bytes;
+        overlay.metadata.nand_image = donor_bytes;
         overlay.flashfs_sec =
             std::vector<std::pair<std::string, Bytes>>{{"replacement.bin", Bytes{7, 8, 9}}};
         const auto built = RunBuild(overlay);
@@ -1398,7 +1410,9 @@ namespace {
             return false;
         }
         const auto replacement = parsed->filesystem->get_file("replacement.bin");
-        return require(replacement == Bytes({7, 8, 9}),
+        return require(parsed->filesystem->version() == 1,
+                       "the overlay root is written at sequence 1") &&
+               require(replacement == Bytes({7, 8, 9}),
                        "FlashFS overlay selects the exact replacement contents") &&
                require(!parsed->filesystem->get_file("donor-old.bin").has_value(),
                        "stale donor FlashFS root cannot win selection");

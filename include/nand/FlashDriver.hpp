@@ -21,13 +21,14 @@ namespace gxbuild3::NAND {
 
     // FlashFS spare metadata values. Big-block images use a distinct block-type space
     // (0x2C root, 0x2A data) and carry a constant fs_size/page_count stamp on every root
-    // and data block; small/new-small images keep 0x30/0x01 and per-file sizes. The big
-    // constants were derived byte-for-byte from retail and xeBuild big-block references,
-    // whose filesystem the stock kernel only mounts when these values are present.
+    // and data block; small/new-small images use 0x30 for the root and leave data blocks
+    // as type 0x00 with sequence 0, as real 16 MB dumps and xeBuild do. The big constants
+    // were derived byte-for-byte from retail and xeBuild big-block references, whose
+    // filesystem the stock kernel only mounts when these values are present.
     namespace FlashFsMetadata {
         inline constexpr uint8_t kRootTypeSmall = 0x30;
         inline constexpr uint8_t kRootTypeBig = 0x2C;
-        inline constexpr uint8_t kDataTypeSmall = 0x01;
+        inline constexpr uint8_t kDataTypeSmall = 0x00;
         inline constexpr uint8_t kDataTypeBig = 0x2A;
         inline constexpr uint16_t kBigFsSize = 0x2006;
         inline constexpr uint8_t kBigPageCount = 0x04;

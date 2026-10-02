@@ -144,4 +144,6 @@ struct NandLayout {
     uint32_t fs_version = 1;
     uint16_t fs_size = 0;
     std::vector<MobileBlockPlacement> mobile_blocks;
+    // Physical blocks holding FlashFS file data; FlashFileSystem::save stamps their spare.
+    std::vector<uint16_t> fs_data_blocks;
 };

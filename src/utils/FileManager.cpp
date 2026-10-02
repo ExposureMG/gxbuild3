@@ -41,11 +41,10 @@ namespace gxbuild3::utils {
 
         // Xbox dashboard patch payloads live in the flash filesystem with a numeric
         // update-slot suffix. Firmware packs ship them unsuffixed ("aac.xexp",
-        // "xenonclatin.xttp") but the dash only loads "<name>.xexp1"; without the
-        // suffix the stale donor copy of "<name>.xexp1" survives and the patched
-        // dashboard is corrupt (POST 79 / "xam.xex corrupted"). Mirrors RGBuild's
-        // FileSystemControl and build360: append '1' when the name ends in "xexp" or
-        // "xttp" and does not already end in a digit. ".xtt" fonts are not suffixed.
+        // "xenonclatin.xttp") but the dash only loads "<name>.xexp1" and ignores an
+        // unsuffixed copy. Mirrors RGBuild's FileSystemControl and build360: append '1'
+        // when the name ends in "xexp" or "xttp" and does not already end in a digit.
+        // ".xtt" fonts are not suffixed.
         std::string flashfs_patch_suffix(std::string name) {
             const std::string_view view{name};
             const bool trailing_digit = !name.empty() && name.back() >= '0' && name.back() <= '9';

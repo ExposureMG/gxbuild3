@@ -547,8 +547,7 @@ namespace gxbuild3::NAND {
                 }
 
                 spare_data[1] = static_cast<uint8_t>(meta.logical_block_id & 0xFF);
-                spare_data[2] = static_cast<uint8_t>((spare_data[2] & 0xF0) |
-                                                     ((meta.logical_block_id >> 8) & 0x0F));
+                spare_data[2] = static_cast<uint8_t>((meta.logical_block_id >> 8) & 0x0F);
                 spare_data[5] = static_cast<uint8_t>(meta.sequence & 0xFF);
                 spare_data[3] = static_cast<uint8_t>((meta.sequence >> 8) & 0xFF);
                 spare_data[4] = static_cast<uint8_t>((meta.sequence >> 16) & 0xFF);
@@ -567,8 +566,7 @@ namespace gxbuild3::NAND {
                 }
 
                 spare_data[1] = static_cast<uint8_t>(meta.logical_block_id & 0xFF);
-                spare_data[2] = static_cast<uint8_t>((spare_data[2] & 0xF0) |
-                                                     ((meta.logical_block_id >> 8) & 0x0F));
+                spare_data[2] = static_cast<uint8_t>((meta.logical_block_id >> 8) & 0x0F);
                 spare_data[0] = static_cast<uint8_t>(meta.sequence & 0xFF);
                 spare_data[3] = static_cast<uint8_t>((meta.sequence >> 8) & 0xFF);
                 spare_data[4] = static_cast<uint8_t>((meta.sequence >> 16) & 0xFF);
@@ -587,8 +585,7 @@ namespace gxbuild3::NAND {
                 }
 
                 spare_data[0] = static_cast<uint8_t>(meta.logical_block_id & 0xFF);
-                spare_data[1] = static_cast<uint8_t>((spare_data[1] & 0xF0) |
-                                                     ((meta.logical_block_id >> 8) & 0x0F));
+                spare_data[1] = static_cast<uint8_t>((meta.logical_block_id >> 8) & 0x0F);
                 spare_data[2] = static_cast<uint8_t>(meta.sequence & 0xFF);
                 spare_data[3] = static_cast<uint8_t>((meta.sequence >> 8) & 0xFF);
                 spare_data[4] = static_cast<uint8_t>((meta.sequence >> 16) & 0xFF);
@@ -599,6 +596,10 @@ namespace gxbuild3::NAND {
 
             spare_data[0x7] = static_cast<uint8_t>(meta.fs_size & 0xFF);
             spare_data[0x8] = static_cast<uint8_t>((meta.fs_size >> 8) & 0xFF);
+            // The FsUnused nibble beside the block ID's high bits and FsUnused bytes 0xA-0xB
+            // are zero on every programmed page.
+            spare_data[0xA] = 0;
+            spare_data[0xB] = 0;
 
             write_page_spare(first_page + p, spare_data);
         }
@@ -865,11 +866,27 @@ namespace gxbuild3::NAND {
                         }
                     }
 
-                    if (!is_mobile) {
-                        if (blk < 0x50) {
-                            meta.block_type = 0x00;
-                            meta.sequence = 0;
-                            write_block_metadata(blk, meta);
+                    // Below 0x50, pages outside the FlashFS files get a type-0 stamp,
+                    // except pages holding erased (all-0xFF) data: those stay unprogrammed,
+                    // with an erased spare.
+                    const bool stamp_low_block =
+                        !is_mobile && blk < 0x50 &&
+                        std::find(m_layout.fs_data_blocks.begin(), m_layout.fs_data_blocks.end(),
+                                  blk) == m_layout.fs_data_blocks.end();
+                    if (stamp_low_block) {
+                        meta.block_type = 0x00;
+                        meta.sequence = 0;
+                        const std::vector<uint8_t> erased_spare(16, 0xFF);
+                        const size_t first_page = blk * pages_per_block();
+                        for (size_t page = first_page; page < first_page + pages_per_block();
+                             ++page) {
+                            const auto data = read_page(page);
+                            if (std::all_of(data.begin(), data.end(),
+                                            [](uint8_t b) { return b == 0xFF; })) {
+                                write_page_spare(page, erased_spare);
+                            } else {
+                                write_page_metadata_range(page, 1, meta);
+                            }
                         }
                     }
                 }

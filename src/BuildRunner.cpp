@@ -24,10 +24,14 @@
 #include "utils/Log.hpp"
 #include "utils/Utils.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstring>
 #include <expected>
 #include <limits>
+#include <string>
+#include <string_view>
 #include <utility>
 
 using namespace gxbuild3::NAND;
@@ -56,6 +60,14 @@ namespace {
             case Driver::DriverMode::Emmc: return ImageType::Emmc;
         }
         std::unreachable();
+    }
+
+    // FlashFS files sealed under the CPU key: plaintext inside Input, encrypted in the NAND.
+    bool is_cpu_keyed_secfile(std::string_view name) {
+        std::string lower{name};
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return lower == "secdata.bin" || lower == "extended.bin";
     }
 
     BuildResult build_error(BuildErrorCode code, std::string message) {
@@ -611,12 +623,9 @@ BuildResult RunBuild(const Input& input) {
                                "No usable blocks remain for the Flash File System");
         }
 
-        const uint32_t previous_version =
-            flash_image.filesystem ? flash_image.filesystem->version() : 0;
-        const uint32_t version =
-            previous_version == std::numeric_limits<uint32_t>::max()
-                ? 1
-                : previous_version + 1;
+        // A new FlashFS starts at root sequence 1. The image writer clears every older root
+        // block's metadata, so no donor root can outrank it.
+        constexpr uint32_t version = 1;
         // Defer root placement so serialize allocates it once, last, from the same free
         // pool as the files and mobile data. Reserving a root here double-counts it and
         // starves a full image of the final block the root needs.
@@ -647,8 +656,7 @@ BuildResult RunBuild(const Input& input) {
 
         for (const auto& [name, data] : *input.flashfs_sec) {
             std::vector<uint8_t> file_data = data;
-            if (input.metadata.cpu_key.size() >= 16 &&
-                (name == "secdata.bin" || name == "extended.bin")) {
+            if (input.metadata.cpu_key.size() >= 16 && is_cpu_keyed_secfile(name)) {
                 if (!crypt_secfile(input.metadata.cpu_key, file_data)) {
                     return build_error(BuildErrorCode::EncryptionFailure,
                                        "Failed to encrypt secure FlashFS file");
@@ -1312,8 +1320,7 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
         for (const auto& filename : file_list) {
             auto file_data = img.filesystem->get_file(filename);
             if (file_data.has_value()) {
-                if ((filename == "secdata.bin" || filename == "extended.bin") &&
-                    !crypt_secfile(cpu_key, *file_data)) {
+                if (is_cpu_keyed_secfile(filename) && !crypt_secfile(cpu_key, *file_data)) {
                     Log::Error("Failed to decrypt secure FlashFS file '{}'", filename);
                     return std::nullopt;
                 }

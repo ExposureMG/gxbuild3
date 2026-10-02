@@ -851,7 +851,7 @@ namespace {
                        "an explicit false CLI value remains present and wins");
     }
 
-    bool test_ini_flashfs_overlays_donor_by_lowercase_basename() {
+    bool test_flashfs_holds_ini_files_and_donor_secured_files_only() {
         ResolverFixture fixture;
         const auto key = valid_cpu_key();
         Input donor{};
@@ -860,11 +860,13 @@ namespace {
         donor.metadata.smc = make_smc(0x61);
         donor.metadata.keyvault = canonical_keyvault(key, 0x62);
         donor.bootloaders = valid_bootloaders();
-        donor.flashfs_sec =
-            std::vector<std::pair<std::string, Bytes>>{{"Launch.ini", Bytes{0x10}},
-                                                       {"launch.INI", Bytes{0x11}},
-                                                       {"SECDATA.BIN", Bytes(0x20, 0x20)},
-                                                       {"donor.bin", Bytes{0x30}}};
+        donor.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
+            {"Launch.ini", Bytes{0x10}},        {"launch.INI", Bytes{0x11}},
+            {"SECDATA.BIN", Bytes(0x20, 0x20)}, {"extended.bin", Bytes(0x20, 0x22)},
+            {"crl.bin", Bytes{0x23}},           {"fcrt.bin", Bytes{0x24}},
+            {"listed.bin", Bytes{0x25}},        {"donor.bin", Bytes{0x30}},
+            {"aac.xexp2", Bytes{0x31}},         {"aac.xexp1", Bytes{0x32}},
+            {"sysupdate.xexp2", Bytes{0x33}}};
         const auto image = RunBuild(donor);
         if (!image) {
             return require(false, "FlashFS donor fixture builds");
@@ -880,9 +882,10 @@ namespace {
         }
         fixture.write_binary("first/secdata.bin", encrypted_secdata);
         fixture.write_binary("first/new.bin", Bytes{0x61});
+        fixture.write_binary("first/aac.xexp", Bytes{0x62});
         fixture.write_text("working/build.ini",
-                           "[falconbl]\ncb_1.bin\ncd.bin\n[security]\nsecdata.bin\n"
-                           "[flashfs]\nlaunch.ini\nnew.bin\n");
+                           "[falconbl]\ncb_1.bin\ncd.bin\n[security]\nsecdata.bin\nextended.bin\n"
+                           "[flashfs]\nlaunch.ini\nnew.bin\nlisted.bin\naac.xexp\n");
 
         auto args = fixture.minimum_args();
         args.build_ini = "build.ini";
@@ -902,16 +905,27 @@ namespace {
                 return lower == name;
             });
         };
-        return require(files.size() == 4,
-                       "case-insensitive overlays do not duplicate donor files") &&
-               require(find("launch.ini") != files.end() &&
-                           find("launch.ini")->second == Bytes{0x41},
-                       "INI FlashFS replaces the donor basename") &&
-               require(find("secdata.bin") != files.end() &&
-                           find("secdata.bin")->second == plaintext_secdata,
-                       "secure Input boundary contains plaintext") &&
-               require(find("donor.bin") != files.end() && find("new.bin") != files.end(),
-                       "unreplaced donor and new INI files are retained");
+        const auto has = [&](std::string_view name, const Bytes& contents) {
+            const auto file = find(name);
+            return file != files.end() && file->second == contents;
+        };
+        return require(files.size() == 8, "the FlashFS holds exactly the expected files") &&
+               require(has("launch.ini", Bytes{0x41}),
+                       "an INI file from the source roots replaces the donor basename") &&
+               require(has("secdata.bin", plaintext_secdata),
+                       "a secure INI file from the source roots arrives as plaintext") &&
+               require(has("extended.bin", Bytes(0x20, 0x22)),
+                       "an INI security file missing from the roots comes from the donor") &&
+               require(has("crl.bin", Bytes{0x23}) && has("fcrt.bin", Bytes{0x24}),
+                       "donor secured files are carried without an INI entry") &&
+               require(has("listed.bin", Bytes{0x25}),
+                       "an INI file missing from the roots comes from the donor") &&
+               require(has("new.bin", Bytes{0x61}), "a new INI file is added") &&
+               require(has("aac.xexp1", Bytes{0x62}),
+                       "an INI patch file is suffixed and replaces the donor copy") &&
+               require(find("donor.bin") == files.end() && find("aac.xexp2") == files.end() &&
+                           find("sysupdate.xexp2") == files.end(),
+                       "unlisted donor files, patch files and CG tails are dropped");
     }
 
     bool test_metadata_values_require_full_valid_strings() {
@@ -1483,7 +1497,7 @@ int main() {
     passed = test_ini_sc_bootloader_reaches_resolved_input() && passed;
     passed = test_loose_donor_requires_and_populates_every_component() && passed;
     passed = test_metadata_precedence_and_user_file_overrides() && passed;
-    passed = test_ini_flashfs_overlays_donor_by_lowercase_basename() && passed;
+    passed = test_flashfs_holds_ini_files_and_donor_secured_files_only() && passed;
     passed = test_metadata_values_require_full_valid_strings() && passed;
     passed = test_metadata_parses_only_the_winning_precedence_source() && passed;
     passed = test_metadata_winner_errors_report_the_winning_source() && passed;

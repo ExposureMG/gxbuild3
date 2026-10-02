@@ -10,6 +10,7 @@
 #include "utils/Utils.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <charconv>
 #include <fstream>
@@ -443,6 +444,14 @@ namespace gxbuild3::cli {
             return std::optional<DirectFile>{};
         }
 
+        // Console-bound FlashFS files a build carries from the donor even when the INI
+        // does not list them.
+        bool is_donor_secured_file(std::string_view lowercase_name) {
+            static constexpr std::array<std::string_view, 5> kNames{
+                "crl.bin", "dae.bin", "extended.bin", "secdata.bin", "fcrt.bin"};
+            return std::find(kNames.begin(), kNames.end(), lowercase_name) != kNames.end();
+        }
+
         void overlay_flashfs(std::vector<std::pair<std::string, std::vector<uint8_t>>>& destination,
                              std::pair<std::string, std::vector<uint8_t>> file,
                              std::unordered_map<std::string, size_t>& positions) {
@@ -770,13 +779,31 @@ namespace gxbuild3::cli {
 
             input.bootloaders = ini_files->bootloaders;
 
-            std::vector<std::pair<std::string, std::vector<uint8_t>>> flashfs;
-            if (input.flashfs_sec) {
-                flashfs = std::move(*input.flashfs_sec);
+            // The FlashFS holds the INI [security] and [flashfs] files plus the console's
+            // secured files. From the donor it takes only those secured files and the
+            // INI-listed names that no source root supplies; its firmware, its patch files
+            // (*.xexpN, *.xttpN) and its CG tails (sysupdate.xexpN) are dropped. The image
+            // writer adds the CG tail of each slot it fills.
+            std::unordered_set<std::string> ini_flashfs_names;
+            for (const auto section_name : {"security", "flashfs"}) {
+                if (const auto* payload_section = ini_document->get(section_name)) {
+                    for (const auto& entry : *payload_section) {
+                        const auto key = lowercase_basename(entry.key);
+                        if (!key.empty() && key != "none") {
+                            ini_flashfs_names.insert(key);
+                        }
+                    }
+                }
             }
+            std::vector<std::pair<std::string, std::vector<uint8_t>>> flashfs;
             std::unordered_map<std::string, size_t> flashfs_positions;
-            for (size_t index = 0; index < flashfs.size(); ++index) {
-                flashfs_positions.try_emplace(lowercase_basename(flashfs[index].first), index);
+            if (input.flashfs_sec) {
+                for (auto& file : *input.flashfs_sec) {
+                    const auto key = lowercase_basename(file.first);
+                    if (is_donor_secured_file(key) || ini_flashfs_names.contains(key)) {
+                        overlay_flashfs(flashfs, std::move(file), flashfs_positions);
+                    }
+                }
             }
             for (auto file : ini_files->flashfs_sec) {
                 const auto key = lowercase_basename(file.first);
