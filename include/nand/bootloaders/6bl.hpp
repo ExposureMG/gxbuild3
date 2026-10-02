@@ -1,6 +1,7 @@
 #pragma once
 #include "nand/bootloaders/Common.hpp"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -20,6 +21,10 @@ class BootloaderCf {
 
     bool is_decrypted() const;
     bool verify_signature() const;
+    // The CG/7BL RC4 key material: the 7BL nonce in the decrypted CF payload at
+    // kCfCgNonceOffset (0x330), never the header fixpoint at +0x20. Empty while the CF is
+    // still encrypted or too short to carry the nonce.
+    std::optional<std::array<uint8_t, 16>> cg_key() const;
     bool parse_perbox();
     bool serialize_perbox();
     std::vector<uint8_t> serialize() const;

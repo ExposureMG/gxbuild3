@@ -152,6 +152,26 @@ namespace {
         return {cf.serialize(), cg.serialize()};
     }
 
+    // RunBuild opens a supplied sealed CG and seals it again under a new nonce, so a CG is
+    // compared by what it carries: its plaintext, with the nonce at +0x10 cleared.
+    std::optional<Bytes> opened_cg(const Bytes& cf_bytes, const Bytes& cg_bytes) {
+        auto cf = BootloaderCf::parse(cf_bytes);
+        if (!cf.is_decrypted()) {
+            cf.decrypt(key_1bl);
+        }
+        const auto key = cf.cg_key();
+        if (!key || cg_bytes.size() < sizeof(cg_header)) {
+            return std::nullopt;
+        }
+        auto cg = BootloaderCg::parse(cg_bytes);
+        if (!cg.decrypted) {
+            cg.decrypt(key->data());
+        }
+        auto opened = cg.serialize();
+        std::fill(opened.begin() + 0x10, opened.begin() + 0x20, 0);
+        return opened;
+    }
+
     Bytes decrypted_cf(uint8_t lockdown_value, std::array<uint8_t, 3> pairing_data,
                        uint16_t source_version = 0, uint16_t source_qfe = 0,
                        uint16_t target_version = 0, uint16_t target_qfe = 0, uint32_t reserved = 0,
@@ -803,7 +823,10 @@ namespace {
                          "big-geometry glitch XeLL sits at 0x70000") ||
                 !require(khv == Bytes({0xA5}),
                          "glitch KHV follows the shifted slot plus one stride plus 0x10") ||
-                !require(cg_bytes == cg, "CG survives beside the anchored XeLL")) {
+                !require(cg_bytes &&
+                             opened_cg(cf, cg) ==
+                                 opened_cg(image->system_update_0.cf->serialize(), *cg_bytes),
+                         "CG survives beside the anchored XeLL")) {
                 return false;
             }
 
@@ -1749,9 +1772,16 @@ namespace {
         const auto roundtrip_cd = bootloader_roundtrip
                                       ? BootloaderCd::parse(bootloader_roundtrip->bootloaders.cd)
                                       : BootloaderCd{};
+        // The donor chain stops before CE, so the rebuild seals CB/A under a fresh nonce.
+        const auto same_outside_nonce = [](const Bytes& left, const Bytes& right) {
+            return left.size() == right.size() && left.size() >= 0x20 &&
+                   std::equal(left.begin(), left.begin() + 0x10, right.begin()) &&
+                   std::equal(left.begin() + 0x20, left.end(), right.begin() + 0x20);
+        };
         if (!require(bootloader_roundtrip.has_value() &&
-                         bootloader_roundtrip->bootloaders.cb_or_a == source.bootloaders.cb_or_a,
-                     "rebuilt CB/A remains serialized-identical") ||
+                         same_outside_nonce(bootloader_roundtrip->bootloaders.cb_or_a,
+                                            source.bootloaders.cb_or_a),
+                     "rebuilt CB/A remains serialized-identical outside its nonce") ||
             !require(roundtrip_cd.header.header.magic == NANDBootloaderMagic::CD &&
                          roundtrip_cd.header.header.version == 1 &&
                          roundtrip_cd.data == Bytes(0x20, 0x42),
@@ -2056,7 +2086,10 @@ namespace {
                          "rebuilt donor parses requested CF and CG") ||
                 !require(image->header.cf_offset == test_case.expected_slot,
                          "serialized header names the actual replacement CF slot") ||
-                !require(cg_bytes == cg, "replacement CG remains intact beside fixed payloads") ||
+                !require(cg_bytes &&
+                             opened_cg(cf, cg) ==
+                                 opened_cg(image->system_update_0.cf->serialize(), *cg_bytes),
+                         "replacement CG remains intact beside fixed payloads") ||
                 !require(xell_magic == Bytes({0x7F, 'E', 'L', 'F'}),
                          "retained XeLL remains intact without CF collision")) {
                 return false;
@@ -2408,8 +2441,11 @@ namespace {
         return require(image && image->parse() && image->header.patch_slots == 2 &&
                            !image->system_update_0.cg_spill_blocks.empty() &&
                            image->system_update_1.cf && image->system_update_1.cg &&
-                           image->system_update_0.cg->serialize() == cg0.serialize() &&
-                           image->system_update_1.cg->serialize() == cg1,
+                           opened_cg(image->system_update_0.cf->serialize(),
+                                     image->system_update_0.cg->serialize()) ==
+                               opened_cg(cf0, cg0.serialize()) &&
+                           opened_cg(image->system_update_1.cf->serialize(),
+                                     image->system_update_1.cg->serialize()) == opened_cg(cf1, cg1),
                        "slot-zero CG spills while both supplied update slots survive");
     }
 
@@ -2449,6 +2485,255 @@ namespace {
                            image->system_update_1.cf.has_value() &&
                            image->system_update_1.cg.has_value(),
                        "both replacement CF/CG slots parse from the advertised two-slot layout");
+    }
+
+    Bytes valid_ce() {
+        BootloaderCe ce{};
+        ce.header.header.magic = NANDBootloaderMagic::CE;
+        ce.header.header.version = 1;
+        ce.header.header.size = static_cast<uint32_t>(sizeof(ce_header) + 0x20);
+        std::fill(std::begin(ce.header.key), std::end(ce.header.key), uint8_t{0x55});
+        ce.data.assign(0x20, 0xCE);
+        ce.decrypted = true;
+        return ce.serialize();
+    }
+
+    BootloaderNonce filled_nonce(uint8_t value) {
+        BootloaderNonce nonce{};
+        nonce.fill(value);
+        return nonce;
+    }
+
+    Bytes nonce_bytes(std::span<const uint8_t> bytes) {
+        return Bytes(bytes.begin(), bytes.begin() + 0x10);
+    }
+
+    bool test_fresh_build_seals_stages_under_random_nonces() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.bootloaders.ce = valid_ce();
+        const auto first = RunBuild(input);
+        const auto second = RunBuild(input);
+        auto one = first ? parse_image(*first) : std::nullopt;
+        auto two = second ? parse_image(*second) : std::nullopt;
+        if (!require(one && two && one->kernel_section.ce && two->kernel_section.ce,
+                     "fresh nonce fixtures build and parse")) {
+            return false;
+        }
+        const auto nonces = [](const FlashImage& image) {
+            return std::array<Bytes, 3>{nonce_bytes(image.cb_section.cb_or_A.data),
+                                        nonce_bytes(image.kernel_section.cd.header.key),
+                                        nonce_bytes(image.kernel_section.ce->header.key)};
+        };
+        const auto first_nonces = nonces(*one);
+        const auto second_nonces = nonces(*two);
+        bool distinct = true;
+        bool non_zero = true;
+        for (size_t index = 0; index < first_nonces.size(); ++index) {
+            distinct = distinct && first_nonces[index] != second_nonces[index];
+            non_zero = non_zero && first_nonces[index] != Bytes(0x10, 0);
+        }
+        const bool decrypted = one->decrypt_all(input.metadata.cpu_key);
+        return require(non_zero, "fresh CB, CD and CE take non-zero nonces") &&
+               require(first_nonces[2] != Bytes(0x10, 0x55),
+                       "a fresh CE does not keep its template's nonce") &&
+               require(distinct, "each fresh build draws new nonces") &&
+               require(decrypted && one->kernel_section.cd.data == Bytes(0x20, 0x42) &&
+                           one->kernel_section.ce->data == Bytes(0x20, 0xCE),
+                       "stages sealed under fresh nonces decrypt to their payloads");
+    }
+
+    bool test_donor_nonces_seal_stages_by_position_and_every_slot_alike() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.bootloaders.ce = valid_ce();
+        input.bootloaders.cf0 = decrypted_cf(3, {0x11, 0x12, 0x13});
+        input.bootloaders.cg0 = valid_system_update(0x51).second;
+        input.bootloaders.cf1 = decrypted_cf(4, {0x11, 0x12, 0x13});
+        input.bootloaders.cg1 = valid_system_update(0x61).second;
+        DonorNonces nonces{};
+        nonces.stages = {filled_nonce(0xA1), filled_nonce(0xA2), filled_nonce(0xA3),
+                         filled_nonce(0xA4)};
+        nonces.cf = filled_nonce(0xB1);
+        nonces.cg = filled_nonce(0xC1);
+        input.metadata.donor_nonces = nonces;
+
+        const auto built = RunBuild(input);
+        auto image = built ? parse_image(*built) : std::nullopt;
+        if (!require(image && image->kernel_section.ce && image->system_update_0.cf &&
+                         image->system_update_0.cg && image->system_update_1.cf &&
+                         image->system_update_1.cg,
+                     "donor nonce fixture builds and parses")) {
+            return false;
+        }
+        const auto is = [](std::span<const uint8_t> bytes, uint8_t value) {
+            return nonce_bytes(bytes) == Bytes(0x10, value);
+        };
+        const bool decrypted = image->decrypt_all(input.metadata.cpu_key);
+        return require(is(image->cb_section.cb_or_A.data, 0xA1) &&
+                           is(image->kernel_section.cd.header.key, 0xA3) &&
+                           is(image->kernel_section.ce->header.key, 0xA4),
+                       "first CB, CD and CE take the donor nonces of their positions") &&
+               require(is(image->system_update_0.cf->header.fixpoint_nonce, 0xB1) &&
+                           is(image->system_update_1.cf->header.fixpoint_nonce, 0xB1) &&
+                           is(image->system_update_0.cg->header.key, 0xC1) &&
+                           is(image->system_update_1.cg->header.key, 0xC1),
+                       "every update slot takes the donor CF and CG nonces") &&
+               require(decrypted && image->kernel_section.cd.data == Bytes(0x20, 0x42) &&
+                           image->kernel_section.ce->data == Bytes(0x20, 0xCE),
+                       "stages sealed under donor nonces decrypt to their payloads");
+    }
+
+    bool test_extraction_takes_cf_metadata_and_nonces_from_the_max_ldv_slot() {
+        auto source = fresh_input(ImageType::SmallBlock);
+        source.bootloaders.ce = valid_ce();
+        source.bootloaders.cf0 = decrypted_cf(3, {0x11, 0x12, 0x13});
+        source.bootloaders.cg0 = valid_system_update(0x51).second;
+        source.bootloaders.cf1 = decrypted_cf(7, {0x11, 0x12, 0x13});
+        source.bootloaders.cg1 = valid_system_update(0x61).second;
+        source.metadata.pairing_data = {0x21, 0x22, 0x23};
+        const auto built = RunBuild(source);
+
+        // Slot 1 states its own pairing, as after an update installed under other pairing.
+        auto staged = built ? parse_image(*built) : std::nullopt;
+        if (!require(staged && staged->decrypt_all(source.metadata.cpu_key) &&
+                         staged->system_update_1.cf && staged->system_update_1.cf->perbox,
+                     "max-LDV donor fixture builds and decrypts")) {
+            return false;
+        }
+        const std::array<uint8_t, 3> slot_one_pairing{0x31, 0x32, 0x33};
+        std::copy(slot_one_pairing.begin(), slot_one_pairing.end(),
+                  staged->system_update_1.cf->perbox->pairing_data);
+        if (!require(staged->encrypt_all(source.metadata.cpu_key),
+                     "max-LDV donor fixture re-encrypts")) {
+            return false;
+        }
+        const auto donor = staged->write();
+        auto donor_image = parse_image(donor);
+        const auto extracted = ExtractAll(donor, source.metadata.cpu_key);
+        const auto metadata = ExtractMetadata(donor, source.metadata.cpu_key);
+        if (!require(donor_image && extracted && metadata && extracted->metadata.donor_nonces &&
+                         metadata->donor_nonces,
+                     "max-LDV donor fixture extracts")) {
+            return false;
+        }
+        const auto& nonces = *extracted->metadata.donor_nonces;
+        const auto equal = [](const std::optional<BootloaderNonce>& nonce,
+                              std::span<const uint8_t> bytes) {
+            return nonce && Bytes(nonce->begin(), nonce->end()) == nonce_bytes(bytes);
+        };
+        const bool cf_metadata = extracted->metadata.cf_ldv == 7 &&
+                                 extracted->metadata.cf_pairing_data == slot_one_pairing &&
+                                 metadata->cf_ldv == 7 &&
+                                 metadata->cf_pairing_data == slot_one_pairing;
+        const bool slot_nonces =
+            equal(nonces.cf, donor_image->system_update_1.cf->header.fixpoint_nonce) &&
+            equal(nonces.cg, donor_image->system_update_1.cg->header.key);
+        const bool stage_order =
+            equal(nonces.stages[0], donor_image->cb_section.cb_or_A.data) && !nonces.stages[1] &&
+            equal(nonces.stages[2], donor_image->kernel_section.cd.header.key) &&
+            equal(nonces.stages[3], donor_image->kernel_section.ce->header.key);
+
+        auto rebuild = *extracted;
+        rebuild.bootloaders = source.bootloaders;
+        const auto rebuilt = RunBuild(rebuild);
+        auto image = rebuilt ? parse_image(*rebuilt) : std::nullopt;
+        const bool rebuilt_decrypts = image && image->decrypt_all(source.metadata.cpu_key);
+        return require(cf_metadata, "CF LDV and pairing come from the max-LDV donor slot") &&
+               require(slot_nonces, "donor CF and CG nonces come from the max-LDV slot") &&
+               require(stage_order, "donor stage nonces are read by chain position") &&
+               require(
+                   rebuilt_decrypts &&
+                       nonce_bytes(image->cb_section.cb_or_A.data) ==
+                           nonce_bytes(donor_image->cb_section.cb_or_A.data) &&
+                       nonce_bytes(image->system_update_0.cf->header.fixpoint_nonce) ==
+                           nonce_bytes(donor_image->system_update_1.cf->header.fixpoint_nonce) &&
+                       nonce_bytes(image->system_update_1.cf->header.fixpoint_nonce) ==
+                           nonce_bytes(donor_image->system_update_1.cf->header.fixpoint_nonce) &&
+                       nonce_bytes(image->system_update_0.cg->header.key) ==
+                           nonce_bytes(donor_image->system_update_1.cg->header.key) &&
+                       nonce_bytes(image->system_update_1.cg->header.key) ==
+                           nonce_bytes(donor_image->system_update_1.cg->header.key),
+                   "a rebuild over the donor reuses its CB and max-LDV CF and CG nonces") &&
+               require(image->system_update_0.cf->perbox &&
+                           image->system_update_0.cf->perbox->lockdown_value == 7 &&
+                           std::equal(slot_one_pairing.begin(), slot_one_pairing.end(),
+                                      image->system_update_0.cf->perbox->pairing_data),
+                       "the rebuilt CF states the max-LDV slot's LDV and pairing");
+    }
+
+    bool test_header_states_zero_pairing_and_the_board_copyright() {
+        const auto copyright = [](std::string_view year) {
+            const std::string text =
+                "\xA9 2004-" + std::string(year) + " Microsoft Corporation. All rights reserved.";
+            Bytes bytes(0x38, 0);
+            std::copy(text.begin(), text.end(), bytes.begin());
+            return bytes;
+        };
+        const auto header_copyright = [](const Bytes& image) {
+            return Bytes(image.begin() + 0x10, image.begin() + 0x48);
+        };
+
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.metadata.pairing_data = {0x63, 0xDB, 0x01};
+        input.console = ConsoleType::Trinity;
+        const auto trinity = RunBuild(input);
+        if (!require(trinity.has_value(), "header fixture builds") ||
+            !require((*trinity)[4] == 0 && (*trinity)[5] == 0, "header 0x04 states no pairing") ||
+            !require(header_copyright(*trinity) == copyright("2010"),
+                     "a fresh Trinity image states 2004-2010")) {
+            return false;
+        }
+
+        // The fixture SMC names a Xenon board, so a Xenon donor is the same board.
+        const auto smc = Smc::parse(*input.metadata.smc);
+        input.console = ConsoleType::Xenon;
+        const auto xenon = RunBuild(input);
+        auto custom = xenon ? parse_image(*xenon) : std::nullopt;
+        if (!require(smc && smc->motherboard == gxbuild3::NAND::SmcMotherboard::Xenon,
+                     "header fixture SMC names a Xenon board") ||
+            !require(xenon && header_copyright(*xenon) == copyright("2005"),
+                     "a fresh Xenon image states 2004-2005") ||
+            !require(custom.has_value(), "header donor parses")) {
+            return false;
+        }
+        const auto donor_copyright = copyright("2006");
+        std::copy(donor_copyright.begin(), donor_copyright.end(), custom->header.copyright);
+        const auto donor = custom->write();
+
+        auto same_board = input;
+        same_board.metadata.nand_image = donor;
+        const auto kept = RunBuild(same_board);
+        auto other_board = same_board;
+        other_board.console = ConsoleType::Falcon;
+        const auto replaced = RunBuild(other_board);
+        if (!require(kept && header_copyright(*kept) == donor_copyright,
+                     "a donor of the same board keeps its own notice") ||
+            !require(replaced && header_copyright(*replaced) == copyright("2007"),
+                     "a donor of another board takes the target's notice")) {
+            return false;
+        }
+
+        // A JTAG Jasper states 2008 even over a Jasper donor.
+        auto jasper = fresh_input(ImageType::SmallBlock);
+        (*jasper.metadata.smc)[0x100] = 0x40;
+        jasper.console = ConsoleType::Jasper;
+        const auto retail_jasper = RunBuild(jasper);
+        auto jasper_donor = retail_jasper ? parse_image(*retail_jasper) : std::nullopt;
+        if (!require(jasper_donor.has_value(), "Jasper header donor builds and parses")) {
+            return false;
+        }
+        std::copy(donor_copyright.begin(), donor_copyright.end(), jasper_donor->header.copyright);
+        jasper.metadata.nand_image = jasper_donor->write();
+        const auto kept_jasper = RunBuild(jasper);
+        auto jtag = jasper;
+        jtag.build_type = BuildType::Jtag;
+        InputPatches patches{};
+        patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13})};
+        jtag.patches = std::move(patches);
+        const auto jtag_jasper = RunBuild(jtag);
+        return require(kept_jasper && header_copyright(*kept_jasper) == donor_copyright,
+                       "a retail Jasper keeps its Jasper donor's notice") &&
+               require(jtag_jasper && header_copyright(*jtag_jasper) == copyright("2008"),
+                       "a JTAG Jasper over a Jasper donor states 2004-2008");
     }
 
     bool test_clear_bootloader_chain_clears_header_only_cb_and_cd_records() {
@@ -2581,5 +2866,9 @@ int main() {
     passed = test_system_update_slot_zero_spills_and_preserves_slot_one() && passed;
     passed = test_replacement_layout_overrides_a_one_slot_donor_header() && passed;
     passed = test_clear_bootloader_chain_clears_header_only_cb_and_cd_records() && passed;
+    passed = test_fresh_build_seals_stages_under_random_nonces() && passed;
+    passed = test_donor_nonces_seal_stages_by_position_and_every_slot_alike() && passed;
+    passed = test_extraction_takes_cf_metadata_and_nonces_from_the_max_ldv_slot() && passed;
+    passed = test_header_states_zero_pairing_and_the_board_copyright() && passed;
     return passed ? 0 : 1;
 }

@@ -86,6 +86,21 @@ inline const std::map<std::string, ImageType> kImageTypeMap = {
     {"winchester4g", ImageType::Emmc},
 };
 
+// The 16 bytes a stage stores in clear and keys its seal from: +0x10 on CB/SC/CD/CE/CG, the
+// header fixpoint at +0x20 on CF.
+using BootloaderNonce = std::array<uint8_t, 16>;
+
+// Nonces read from a donor image. RunBuild seals each new boot-chain stage under the donor nonce
+// at the same position and every CF and CG it writes under the donor's CF and CG nonce, and
+// draws a random nonce for any nonce left empty here.
+struct DonorNonces {
+    // Boot-chain positions: first CB (SB), second CB (SC), CD (SD), CE (SE).
+    std::array<std::optional<BootloaderNonce>, 4> stages;
+    // CF and CG nonce of the donor slot stating the largest CF LDV.
+    std::optional<BootloaderNonce> cf;
+    std::optional<BootloaderNonce> cg;
+};
+
 struct InputMetadata {
     std::vector<uint8_t> cpu_key;
     std::optional<std::vector<uint8_t>> nand_image;
@@ -95,11 +110,16 @@ struct InputMetadata {
     std::optional<std::vector<uint8_t>> smc;
     // Writable CB/CB_B per-box LDV at +0x23, not the display value at +0x3B1.
     uint8_t cb_ldv{0};
+    // CF per-box LDV and pairing, taken from the donor slot stating the largest CF LDV. A CF
+    // without its own pairing here takes pairing_data.
     std::optional<uint8_t> cf_ldv;
     std::array<uint8_t, 3> pairing_data{};
+    std::optional<std::array<uint8_t, 3>> cf_pairing_data;
     uint8_t console_type{0};
     uint8_t console_sequence{0};
     uint16_t console_sequence_allow{0};
+    // Empty when there is no donor or its chain does not reach CE.
+    std::optional<DonorNonces> donor_nonces;
 };
 
 struct BootloaderEntryInfo {
@@ -322,6 +342,8 @@ struct InputPatches {
 struct Input {
     BuildType build_type{BuildType::Retail};
     ImageType image_type{ImageType::SmallBlock};
+    // The board the image is built for; it selects the NAND header copyright.
+    std::optional<ConsoleType> console;
     OptionsArgs options{};
     InputMetadata metadata{};
     InputBootloaders bootloaders{};

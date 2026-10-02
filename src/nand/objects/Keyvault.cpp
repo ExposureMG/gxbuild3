@@ -1,8 +1,9 @@
 #include "nand/objects/Keyvault.hpp"
-#include "utils/Log.hpp"
 
 #include "excrypt.h"
+#include "utils/Log.hpp"
 
+#include <algorithm>
 #include <bit>
 #include <cstring>
 #include <random>
@@ -116,12 +117,13 @@ bool cpukey_valid(std::span<const uint8_t> cpu_key) {
 
 } // namespace gxbuild3::NAND
 
+// Every byte comes from the system's cryptographic source (getrandom, /dev/urandom, RtlGenRandom
+// or RDRAND, as the standard library selects), not from a seeded generator.
 void ExCryptRandom(uint8_t* dest, size_t size) {
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::uniform_int_distribution<uint32_t> distribution(0, 255);
-    for (size_t i = 0; i < size; ++i) {
-        dest[i] = static_cast<uint8_t>(distribution(generator));
+    std::random_device source;
+    for (size_t i = 0; i < size; i += sizeof(uint32_t)) {
+        const auto word = static_cast<uint32_t>(source());
+        std::memcpy(dest + i, &word, std::min(sizeof(word), size - i));
     }
 }
 

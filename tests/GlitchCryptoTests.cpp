@@ -89,6 +89,17 @@ namespace {
         ce.decrypted = true;
         input.bootloaders.ce = ce.serialize();
 
+        // A donor whose nonces equal the templates' keeps every stage's nonce, so the
+        // reference encryption below can read it from the input bytes.
+        DonorNonces nonces{};
+        const auto nonce = [](uint8_t value) {
+            BootloaderNonce bytes{};
+            bytes.fill(value);
+            return bytes;
+        };
+        nonces.stages = {nonce(0x11), nonce(0x33), nonce(0x44), nonce(0x55)};
+        input.metadata.donor_nonces = nonces;
+
         if (type != BuildType::Retail) {
             // Empty CB and CD patch sections followed by a KHV payload. This isolates
             // the crypto policy while still exercising the normal hacked-image build.
@@ -473,7 +484,13 @@ namespace {
         std::copy_n(planted.begin(), 16, cg_parent.begin());
         const Key cg_key = hmac(cg_parent, Bytes(cg_bytes.begin() + 0x10, cg_bytes.begin() + 0x20));
         ExCryptRc4(cg_key.data(), cg_key.size(), cg_bytes.data() + 0x20, cg_bytes.size() - 0x20);
-        return require(cg_bytes == cg_input, "CG decrypts with the CF payload nonce at +0x330");
+        // Without a donor the CG is sealed under a fresh random nonce, stored in clear.
+        Bytes expected_cg = cg_input;
+        std::copy_n(cg_bytes.begin() + 0x10, 0x10, expected_cg.begin() + 0x10);
+        return require(!std::equal(cg_bytes.begin() + 0x10, cg_bytes.begin() + 0x20,
+                                   cg_input.begin() + 0x10),
+                       "CG without a donor takes a fresh nonce") &&
+               require(cg_bytes == expected_cg, "CG decrypts with the CF payload nonce at +0x330");
     }
 } // namespace
 

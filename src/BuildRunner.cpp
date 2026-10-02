@@ -178,8 +178,8 @@ namespace {
         if (metadata.cf_ldv) {
             bootloader.perbox->lockdown_value = *metadata.cf_ldv;
         }
-        std::memcpy(bootloader.perbox->pairing_data, metadata.pairing_data.data(),
-                    metadata.pairing_data.size());
+        const auto& pairing = metadata.cf_pairing_data.value_or(metadata.pairing_data);
+        std::memcpy(bootloader.perbox->pairing_data, pairing.data(), pairing.size());
         if (!bootloader.serialize_perbox()) {
             return std::unexpected(
                 BuildError{BuildErrorCode::InvalidBootloader,
@@ -247,6 +247,211 @@ namespace {
         return {};
     }
 
+    bool is_zero_nonce(std::span<const uint8_t> nonce) {
+        return std::all_of(nonce.begin(), nonce.end(), [](uint8_t byte) { return byte == 0; });
+    }
+
+    std::optional<BootloaderNonce> nonce_from(std::span<const uint8_t> bytes) {
+        if (bytes.size() < std::tuple_size_v<BootloaderNonce> || is_zero_nonce(bytes.first(16))) {
+            return std::nullopt;
+        }
+        BootloaderNonce nonce{};
+        std::copy_n(bytes.begin(), nonce.size(), nonce.begin());
+        return nonce;
+    }
+
+    // The update slot whose CF states the largest LDV; slot 0 on a tie.
+    std::optional<size_t> max_ldv_slot(const FlashImage& image) {
+        std::optional<size_t> best;
+        uint8_t best_ldv = 0;
+        const std::array<const SystemUpdate*, 2> slots{&image.system_update_0,
+                                                       &image.system_update_1};
+        for (size_t index = 0; index < slots.size(); ++index) {
+            const auto& cf = slots[index]->cf;
+            if (!cf || cf->data.empty() || !cf->perbox) {
+                continue;
+            }
+            if (!best || cf->perbox->lockdown_value > best_ldv) {
+                best = index;
+                best_ldv = cf->perbox->lockdown_value;
+            }
+        }
+        return best;
+    }
+
+    // Stage nonces sit in clear, so they are read without decrypting. A donor whose chain does
+    // not reach CE gives none, and every new stage then takes a random nonce.
+    std::optional<DonorNonces> collect_donor_nonces(const FlashImage& image) {
+        const auto& cb_a = image.cb_section.cb_or_A;
+        const auto& cd = image.kernel_section.cd;
+        const auto& ce = image.kernel_section.ce;
+        if (cb_a.data.size() < 0x10 || cd.data.empty() || !ce || ce->data.empty()) {
+            return std::nullopt;
+        }
+
+        DonorNonces nonces{};
+        nonces.stages[0] = nonce_from(cb_a.data);
+        // A CB_B behind a CB_X carries its plaintext handoff key at +0x10, not a nonce.
+        if (!image.cb_section.cb_x && image.cb_section.cb_B &&
+            image.cb_section.cb_B->data.size() >= 0x10) {
+            nonces.stages[1] = nonce_from(image.cb_section.cb_B->data);
+        } else if (image.cb_section.sc) {
+            nonces.stages[1] = nonce_from(image.cb_section.sc->header.key);
+        }
+        nonces.stages[2] = nonce_from(cd.header.key);
+        nonces.stages[3] = nonce_from(ce->header.key);
+
+        const auto& slot =
+            max_ldv_slot(image).value_or(0) == 0 ? image.system_update_0 : image.system_update_1;
+        if (slot.cf && !slot.cf->data.empty()) {
+            nonces.cf = nonce_from(slot.cf->header.fixpoint_nonce);
+        }
+        if (slot.cg && !slot.cg->data.empty()) {
+            nonces.cg = nonce_from(slot.cg->header.key);
+        }
+        return nonces;
+    }
+
+    // CF LDV and pairing come from the slot the console booted last: the one stating the
+    // largest LDV.
+    void extract_cf_metadata(const FlashImage& image, InputMetadata& metadata) {
+        const auto slot = max_ldv_slot(image);
+        if (!slot) {
+            return;
+        }
+        const auto& perbox =
+            *(*slot == 0 ? image.system_update_0 : image.system_update_1).cf->perbox;
+        metadata.cf_ldv = perbox.lockdown_value;
+        std::array<uint8_t, 3> pairing{};
+        std::memcpy(pairing.data(), perbox.pairing_data, pairing.size());
+        metadata.cf_pairing_data = pairing;
+    }
+
+    BootloaderNonce donor_or_random(const std::optional<BootloaderNonce>& donor) {
+        if (donor) {
+            return *donor;
+        }
+        BootloaderNonce nonce{};
+        do {
+            ::ExCryptRandom(nonce.data(), nonce.size());
+        } while (is_zero_nonce(nonce));
+        return nonce;
+    }
+
+    // Sets the nonce of every stage RunBuild seals, before any key is derived from it. Each
+    // boot-chain key derives from its parent's, so a chain with any stage supplied already
+    // sealed keeps all its nonces. A CB_X chain keeps its CB_X and the handoff key its
+    // plaintext CB_B holds at +0x10. SC is written as supplied.
+    void apply_nonces(FlashImage& image, const std::optional<DonorNonces>& donor) {
+        const auto stage = [&donor](size_t index) {
+            return donor ? donor->stages[index] : std::optional<BootloaderNonce>{};
+        };
+        const auto cf_nonce = donor ? donor->cf : std::optional<BootloaderNonce>{};
+        const auto cg_nonce = donor ? donor->cg : std::optional<BootloaderNonce>{};
+
+        const auto set_cb = [](BootloaderCb& cb, const BootloaderNonce& nonce) {
+            std::copy(nonce.begin(), nonce.end(), cb.data.begin());
+            std::copy(nonce.begin(), nonce.end(), std::begin(cb.header.key));
+        };
+
+        auto& cb_a = image.cb_section.cb_or_A;
+        auto& cb_x = image.cb_section.cb_x;
+        auto& cb_b = image.cb_section.cb_B;
+        auto& sc = image.cb_section.sc;
+        auto& cd = image.kernel_section.cd;
+        auto& ce = image.kernel_section.ce;
+        // An SC counts as sealed as decrypt_all reads it: not plaintext, with a non-zero nonce.
+        const bool sc_sealed = sc && !sc->is_decrypted() && !is_zero_nonce(sc->header.key);
+        const bool chain_plaintext =
+            cb_a.decrypted && cb_a.data.size() >= 0x10 && (!cb_x || cb_x->decrypted) &&
+            (!cb_b || (cb_b->decrypted && cb_b->data.size() >= 0x10)) && !sc_sealed &&
+            cd.decrypted && !cd.data.empty() && (!ce || ce->decrypted);
+        if (chain_plaintext) {
+            set_cb(cb_a, donor_or_random(stage(0)));
+            if (!cb_x && cb_b) {
+                set_cb(*cb_b, donor_or_random(stage(1)));
+            }
+            const auto cd_nonce = donor_or_random(stage(2));
+            std::copy(cd_nonce.begin(), cd_nonce.end(), std::begin(cd.header.key));
+            if (ce) {
+                const auto ce_nonce = donor_or_random(stage(3));
+                std::copy(ce_nonce.begin(), ce_nonce.end(), std::begin(ce->header.key));
+            }
+        }
+
+        for (auto* slot : {&image.system_update_0, &image.system_update_1}) {
+            auto& cf = slot->cf;
+            if (cf && cf->decrypted && !cf->data.empty()) {
+                const auto nonce = donor_or_random(cf_nonce);
+                std::copy(nonce.begin(), nonce.end(), std::begin(cf->header.fixpoint_nonce));
+            }
+            // An update package's CG arrives sealed under its CF's 7BL nonce; it is opened
+            // here so it can be sealed again under the chosen nonce.
+            auto& cg = slot->cg;
+            if (cg && !cg->decrypted && !cg->data.empty() && cf && cf->is_decrypted()) {
+                if (const auto key = cf->cg_key()) {
+                    cg->decrypt(key->data());
+                }
+            }
+            if (cg && cg->decrypted && !cg->data.empty()) {
+                const auto nonce = donor_or_random(cg_nonce);
+                std::copy(nonce.begin(), nonce.end(), std::begin(cg->header.key));
+            }
+        }
+    }
+
+    std::optional<ConsoleType> console_of(SmcMotherboard board) {
+        switch (board) {
+            case SmcMotherboard::Xenon:
+                return ConsoleType::Xenon;
+            case SmcMotherboard::Zephyr:
+                return ConsoleType::Zephyr;
+            case SmcMotherboard::Falcon:
+                return ConsoleType::Falcon;
+            case SmcMotherboard::Jasper:
+                return ConsoleType::Jasper;
+            case SmcMotherboard::Trinity:
+                return ConsoleType::Trinity;
+            case SmcMotherboard::Corona:
+                return ConsoleType::Corona;
+            case SmcMotherboard::Winchester:
+                return ConsoleType::Winchester;
+            case SmcMotherboard::Unknown:
+                return std::nullopt;
+        }
+        return std::nullopt;
+    }
+
+    // The year xeBuild states for each board. A JTAG Jasper boots the 2008 CB 6723.
+    uint16_t copyright_year(ConsoleType console, BuildType build_type) {
+        switch (console) {
+            case ConsoleType::Xenon:
+            case ConsoleType::Zephyr:
+                return 2005;
+            case ConsoleType::Falcon:
+                return 2007;
+            case ConsoleType::Jasper:
+                return build_type == BuildType::Jtag ? 2008 : 2009;
+            case ConsoleType::Trinity:
+            case ConsoleType::Corona:
+            case ConsoleType::Winchester:
+                return 2010;
+        }
+        std::unreachable();
+    }
+
+    // Header 0x10..0x47 holds the copyright notice; 0x48..0x4F are boot flags.
+    constexpr size_t kCopyrightLength = 0x38;
+
+    // The Latin-1 copyright sign, the notice and zeros, over 0x10..0x47 only.
+    void write_copyright(nand_header& header, ConsoleType console, BuildType build_type) {
+        const std::string text = "\xA9 2004-" +
+                                 std::to_string(copyright_year(console, build_type)) +
+                                 " Microsoft Corporation. All rights reserved.";
+        std::fill_n(header.copyright, kCopyrightLength, uint8_t{0});
+        std::memcpy(header.copyright, text.data(), std::min(text.size(), kCopyrightLength - 1));
+    }
+
 } // namespace
 
 BuildResult RunBuild(const Input& input) {
@@ -255,6 +460,9 @@ BuildResult RunBuild(const Input& input) {
     }
 
     FlashImage flash_image{};
+    std::optional<DonorNonces> donor_nonces = input.metadata.donor_nonces;
+    bool has_donor = false;
+    std::optional<ConsoleType> donor_console;
 
     if (input.metadata.nand_image && !input.metadata.nand_image->empty()) {
         try {
@@ -268,6 +476,13 @@ BuildResult RunBuild(const Input& input) {
                 Log::Error("Failed to decrypt donor NAND dump components");
                 return build_error(BuildErrorCode::InvalidDonor,
                                    "Failed to decrypt donor NAND dump components");
+            }
+            if (!donor_nonces) {
+                donor_nonces = collect_donor_nonces(*donor_img);
+            }
+            has_donor = true;
+            if (donor_img->smc) {
+                donor_console = console_of(donor_img->smc->motherboard);
             }
             flash_image = std::move(*donor_img);
         } catch (const std::exception& exception) {
@@ -327,8 +542,21 @@ BuildResult RunBuild(const Input& input) {
     flash_image.keyvault = *keyvault;
     flash_image.keyvault->encrypted = false;
 
-    flash_image.header.pairing = static_cast<uint16_t>((input.metadata.pairing_data[0] << 8) |
-                                                       input.metadata.pairing_data[1]);
+    // Header 0x04 carries no pairing; console dumps and xeBuild images hold zero there.
+    flash_image.header.pairing = 0;
+
+    // A donor of the same board keeps its own notice; any other image states the target's. A
+    // JTAG Jasper always states the year of the CB it boots, which no retail donor carries.
+    const bool donor_copyright_usable =
+        has_donor && !std::all_of(std::begin(flash_image.header.copyright),
+                                  std::begin(flash_image.header.copyright) + kCopyrightLength,
+                                  [](uint8_t byte) { return byte == 0; });
+    const bool jtag_jasper =
+        input.build_type == BuildType::Jtag && input.console == ConsoleType::Jasper;
+    if (input.console &&
+        (!donor_copyright_usable || donor_console != input.console || jtag_jasper)) {
+        write_copyright(flash_image.header, *input.console, input.build_type);
+    }
 
     const auto supplied = [](const std::optional<std::vector<uint8_t>>& bootloader) {
         return bootloader && !bootloader->empty();
@@ -534,6 +762,7 @@ BuildResult RunBuild(const Input& input) {
     if (const auto metadata = apply_bootloader_metadata(flash_image, input.metadata); !metadata) {
         return std::unexpected(metadata.error());
     }
+    apply_nonces(flash_image, donor_nonces);
 
     if (parsed_patchset) {
         size_t patch_size = 0;
@@ -858,16 +1087,8 @@ std::optional<InputMetadata> ExtractMetadata(std::span<const uint8_t> nand_image
     meta.console_sequence = console_sequence;
     meta.console_sequence_allow = console_sequence_allow;
 
-    if (img.system_update_0.cf.has_value()) {
-        auto& cf = *img.system_update_0.cf;
-        if (!cf.is_decrypted()) {
-            cf.decrypt(key_1bl);
-        }
-
-        if (cf.perbox.has_value()) {
-            meta.cf_ldv = cf.perbox->lockdown_value;
-        }
-    }
+    extract_cf_metadata(img, meta);
+    meta.donor_nonces = collect_donor_nonces(img);
 
     Log::Debug("Extracted metadata: CB LDV={}, CF LDV={}, ConsoleType=0x{:02X}, Sequence=0x{:02X}",
                meta.cb_ldv, meta.cf_ldv ? std::to_string(*meta.cf_ldv) : "none", meta.console_type,
@@ -1280,9 +1501,6 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
 
     if (img.system_update_0.cf.has_value() && !img.system_update_0.cf->data.empty()) {
         out.bootloaders.cf0 = img.system_update_0.cf->serialize();
-        if (img.system_update_0.cf->perbox.has_value()) {
-            out.metadata.cf_ldv = img.system_update_0.cf->perbox->lockdown_value;
-        }
     }
 
     if (img.system_update_0.cg.has_value() && !img.system_update_0.cg->data.empty()) {
@@ -1291,9 +1509,6 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
 
     if (img.system_update_1.cf.has_value() && !img.system_update_1.cf->data.empty()) {
         out.bootloaders.cf1 = img.system_update_1.cf->serialize();
-        if (!out.metadata.cf_ldv.has_value() && img.system_update_1.cf->perbox.has_value()) {
-            out.metadata.cf_ldv = img.system_update_1.cf->perbox->lockdown_value;
-        }
     }
 
     if (img.system_update_1.cg.has_value() && !img.system_update_1.cg->data.empty()) {
@@ -1302,6 +1517,8 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
 
     out.metadata.cb_ldv = cb_ldv;
     std::memcpy(out.metadata.pairing_data.data(), pairing_data, 3);
+    extract_cf_metadata(img, out.metadata);
+    out.metadata.donor_nonces = collect_donor_nonces(img);
     out.metadata.console_type = console_type;
     out.metadata.console_sequence = console_sequence;
     out.metadata.console_sequence_allow = console_sequence_allow;

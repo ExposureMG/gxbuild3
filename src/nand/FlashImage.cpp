@@ -47,20 +47,6 @@ namespace gxbuild3::NAND {
             return (value + 0x0FU) & ~0x0FU;
         }
 
-        // CG/7BL RC4 key material is the 7BL nonce in the decrypted CF payload at
-        // kCfCgNonceOffset (0x330), never the CF header fixpoint at +0x20. Returns nullopt
-        // while CF is still encrypted or too short to carry the nonce.
-        std::optional<std::array<uint8_t, 16>> cg_key_from_cf(const BootloaderCf& cf) {
-            if (!cf.is_decrypted())
-                return std::nullopt;
-            const auto serialized = cf.serialize();
-            if (serialized.size() < kCfCgNonceOffset + 16)
-                return std::nullopt;
-            std::array<uint8_t, 16> key{};
-            std::copy_n(serialized.begin() + kCfCgNonceOffset, key.size(), key.begin());
-            return key;
-        }
-
         bool checked_add(size_t left, size_t right, size_t& result) {
             if (right > std::numeric_limits<size_t>::max() - left) {
                 return false;
@@ -1557,7 +1543,7 @@ namespace gxbuild3::NAND {
                     Log::Error("Cannot decrypt CG0: parent CF0 is missing or not decrypted");
                     return false;
                 }
-                const auto cg_key = cg_key_from_cf(*system_update_0.cf);
+                const auto cg_key = system_update_0.cf->cg_key();
                 if (!cg_key) {
                     Log::Error("Cannot decrypt CG0: CF0 payload lacks a 7BL nonce at +0x330");
                     return false;
@@ -1569,7 +1555,7 @@ namespace gxbuild3::NAND {
                     Log::Error("Cannot decrypt CG1: parent CF1 is missing or not decrypted");
                     return false;
                 }
-                const auto cg_key = cg_key_from_cf(*system_update_1.cf);
+                const auto cg_key = system_update_1.cf->cg_key();
                 if (!cg_key) {
                     Log::Error("Cannot decrypt CG1: CF1 payload lacks a 7BL nonce at +0x330");
                     return false;
@@ -1715,7 +1701,7 @@ namespace gxbuild3::NAND {
                 if (!slot.cf || !slot.cg) return true;
                 if (slot.cg->decrypted) {
                     slot.cf->decrypt(key_1bl);
-                    const auto cg_key = cg_key_from_cf(*slot.cf);
+                    const auto cg_key = slot.cf->cg_key();
                     if (!cg_key) {
                         Log::Error("Cannot encrypt CG: CF payload lacks a 7BL nonce at +0x330");
                         return false;

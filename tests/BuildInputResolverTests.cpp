@@ -981,6 +981,38 @@ namespace {
                        "CLI metadata is parsed only after winning precedence is selected");
     }
 
+    bool test_cli_pairing_override_reaches_the_cf_and_console_is_carried() {
+        ResolverFixture fixture;
+        const auto key = valid_cpu_key();
+        fixture.write_binary("first/nanddump.bin",
+                             donor_image_with_metadata(ImageType::SmallBlock, key));
+        fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
+        fixture.write_binary("first/cd.bin", Bytes{0xCD});
+        fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+        auto args = fixture.minimum_args();
+        args.build_ini = "build.ini";
+        args.section = "falcon";
+        args.console = ConsoleType::Falcon;
+        args.image_type.reset();
+        const auto donor = fixture.resolve(args);
+        if (!require_resolved(donor, "donor CF pairing fixture resolves") ||
+            !require(donor->input.metadata.cf_pairing_data ==
+                         std::array<uint8_t, 3>{0xA1, 0xB2, 0xC3},
+                     "the donor CF pairing reaches the input") ||
+            !require(donor->input.console == ConsoleType::Falcon,
+                     "the selected console reaches the input")) {
+            return false;
+        }
+
+        args.config = {"pairing_data=0a0b0c"};
+        const auto overridden = fixture.resolve(args);
+        return require_resolved(overridden, "CLI pairing override resolves") &&
+               require(overridden->input.metadata.pairing_data ==
+                               std::array<uint8_t, 3>{0x0A, 0x0B, 0x0C} &&
+                           !overridden->input.metadata.cf_pairing_data,
+                       "a CLI pairing override also replaces the donor CF pairing");
+    }
+
     bool test_metadata_winner_errors_report_the_winning_source() {
         ResolverFixture file_fixture;
         auto file_args = file_fixture.complete_loose_args();
@@ -1500,6 +1532,7 @@ int main() {
     passed = test_flashfs_holds_ini_files_and_donor_secured_files_only() && passed;
     passed = test_metadata_values_require_full_valid_strings() && passed;
     passed = test_metadata_parses_only_the_winning_precedence_source() && passed;
+    passed = test_cli_pairing_override_reaches_the_cf_and_console_is_carried() && passed;
     passed = test_metadata_winner_errors_report_the_winning_source() && passed;
     passed = test_invalid_cli_metadata_retains_cli_provenance_in_loose_donor_mode() && passed;
     passed = test_ini_payload_lookup_failure_is_terminal() && passed;

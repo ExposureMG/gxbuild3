@@ -304,12 +304,14 @@ namespace gxbuild3::cli {
                     return std::unexpected(value.error());
                 }
                 metadata.pairing_data = *value;
+                metadata.cf_pairing_data.reset();
             } else if (!has_donor && file_options.pairing_data) {
                 auto value = parse_pairing_data(*file_options.pairing_data, options_path);
                 if (!value) {
                     return std::unexpected(value.error());
                 }
                 metadata.pairing_data = *value;
+                metadata.cf_pairing_data.reset();
             }
             return {};
         }
@@ -702,6 +704,7 @@ namespace gxbuild3::cli {
             Input input = foundations->donor.value_or(Input{});
             input.build_type = args.build_type;
             input.image_type = foundations->image_type;
+            input.console = args.console;
             input.options = foundations->options;
             input.metadata.cpu_key = foundations->cpu_key;
 

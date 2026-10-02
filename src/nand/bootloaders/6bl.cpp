@@ -114,6 +114,17 @@ bool BootloaderCf::is_decrypted() const {
     return decrypted || (data.size() >= 0x10 && data[0] == 0x00 && data[1] == 0x00);
 }
 
+std::optional<std::array<uint8_t, 16>> BootloaderCf::cg_key() const {
+    if (!is_decrypted())
+        return std::nullopt;
+    const auto serialized = serialize();
+    if (serialized.size() < kCfCgNonceOffset + 16)
+        return std::nullopt;
+    std::array<uint8_t, 16> key{};
+    std::copy_n(serialized.begin() + kCfCgNonceOffset, key.size(), key.begin());
+    return key;
+}
+
 bool BootloaderCf::parse_perbox() {
     if (!is_decrypted() || data.size() < 0x1C0 + sizeof(cf_perbox))
         return false;
