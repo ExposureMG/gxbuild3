@@ -191,12 +191,8 @@ namespace {
                             BuildError{BuildErrorCode::InvalidBootloader,
                                        "Could not derive CB_A key for replacement CB_B metadata"});
                     }
-                    if ((cb_a.header.header.flags & 0x1000) == 0x1000) {
-                        cb_b.decrypt_v2(cb_a.header, cb_a.derived_key->data(),
-                                        metadata.cpu_key.data());
-                    } else {
-                        cb_b.decrypt_v1(cb_a.derived_key->data(), metadata.cpu_key.data());
-                    }
+                    cb_b.decrypt_cb_b(cb_a.header, cb_a.derived_key->data(),
+                                      metadata.cpu_key.data());
                 }
                 if (auto applied = apply_cb_metadata(cb_b, metadata, "CB_B"); !applied) {
                     return std::unexpected(applied.error());

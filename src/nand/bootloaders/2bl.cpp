@@ -169,6 +169,19 @@ void BootloaderCb::encrypt_retail(const uint8_t parent_key[16],
         throw std::runtime_error("Retail CB authentication requires plaintext per-box data, a CPU key, and an aligned encrypted SMC");
     }
 
+    // A CB_B under a manufacturing CB_A, or bound to an all-zero CPU key, binds no SMC:
+    // its digest slot is sixteen zeros (xeBuild "zeropairing CB_B").
+    const bool unbound_cb_b = cb_a_header && (manufacturing_chain(*cb_a_header) ||
+                                              std::all_of(cpu_key.begin(), cpu_key.end(),
+                                                          [](uint8_t b) { return b == 0; }));
+    if (unbound_cb_b) {
+        std::fill(std::begin(perbox->per_box_digest), std::end(perbox->per_box_digest), 0);
+        if (!serialize_perbox())
+            throw std::runtime_error("Could not serialize retail CB authentication digest");
+        encrypt_cb_b(*cb_a_header, parent_key, cpu_key.data());
+        return;
+    }
+
     // Match the existing CB/CB_B encryption derivation, including the v2 CB_A header.
     uint8_t rc4_key[16];
     EXCRYPT_HMACSHA_STATE state;
@@ -207,10 +220,19 @@ void BootloaderCb::encrypt_retail(const uint8_t parent_key[16],
 
     if (!cb_a_header)
         encrypt(parent_key);
-    else if ((cb_a_header->header.flags & 0x1000) != 0)
-        encrypt_v2(*cb_a_header, parent_key, cpu_key.data());
     else
-        encrypt_v1(parent_key, cpu_key.data());
+        encrypt_cb_b(*cb_a_header, parent_key, cpu_key.data());
+}
+
+void BootloaderCb::decrypt_cb_b(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
+                                const uint8_t cpu_key[16]) {
+    static constexpr uint8_t zero_key[16] = {};
+    if (manufacturing_chain(cb_a_hdr))
+        decrypt_v1(cb_a_key, zero_key);
+    else if ((cb_a_hdr.header.flags & 0x1000) != 0)
+        decrypt_v2(cb_a_hdr, cb_a_key, cpu_key);
+    else
+        decrypt_v1(cb_a_key, cpu_key);
 }
 
 void BootloaderCb::decrypt_mfg(const uint8_t cb_a_key[16]) {

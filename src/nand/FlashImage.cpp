@@ -1440,14 +1440,9 @@ namespace gxbuild3::NAND {
                     Log::Error("Cannot decrypt CB_B: CB_A derived key is missing");
                     return false;
                 }
-                if ((cb_section.cb_or_A.header.header.flags & 0x1000) == 0x1000) {
-                    cb_section.cb_B->decrypt_v2(cb_section.cb_or_A.header,
-                                                cb_section.cb_or_A.derived_key->data(),
-                                                cpu_key.data());
-                } else {
-                    cb_section.cb_B->decrypt_v1(cb_section.cb_or_A.derived_key->data(),
-                                                cpu_key.data());
-                }
+                cb_section.cb_B->decrypt_cb_b(cb_section.cb_or_A.header,
+                                              cb_section.cb_or_A.derived_key->data(),
+                                              cpu_key.data());
             }
 
             if (cb_section.sc.has_value() && !cb_section.sc->data.empty() &&
@@ -1629,13 +1624,20 @@ namespace gxbuild3::NAND {
                     cb_section.cb_B->encrypt_retail(cb_section.cb_or_A.derived_key->data(),
                                                    cpu_key, smc->data,
                                                    &cb_section.cb_or_A.header);
-                } else if ((cb_section.cb_or_A.header.header.flags & 0x1000) == 0x1000) {
-                    cb_section.cb_B->encrypt_v2(cb_section.cb_or_A.header,
-                                                cb_section.cb_or_A.derived_key->data(),
-                                                cpu_key.data());
                 } else {
-                    cb_section.cb_B->encrypt_v1(cb_section.cb_or_A.derived_key->data(),
-                                                cpu_key.data());
+                    // A manufacturing CB_B binds no SMC: its digest slot is sixteen zeros.
+                    auto& cb_b = *cb_section.cb_B;
+                    if (BootloaderCb::manufacturing_chain(cb_section.cb_or_A.header) &&
+                        (cb_b.perbox || cb_b.parse_perbox())) {
+                        std::fill(std::begin(cb_b.perbox->per_box_digest),
+                                  std::end(cb_b.perbox->per_box_digest), 0);
+                        if (!cb_b.serialize_perbox()) {
+                            Log::Error("Cannot clear the manufacturing CB_B digest");
+                            return false;
+                        }
+                    }
+                    cb_b.encrypt_cb_b(cb_section.cb_or_A.header,
+                                      cb_section.cb_or_A.derived_key->data(), cpu_key.data());
                 }
             }
 

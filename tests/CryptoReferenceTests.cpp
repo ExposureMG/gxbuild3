@@ -3,9 +3,12 @@
 // run over the release files in tests/gxBuild-support-files/common.
 
 #include "excrypt.h"
+#include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
 #include "nand/bootloaders/BootloaderPacker.hpp"
 #include "nand/objects/SMC.hpp"
+
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -15,6 +18,8 @@
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -136,11 +141,129 @@ namespace {
             require(parsed->data == sealed, "encrypt() does not seal an encrypted SMC twice") && ok;
         return ok;
     }
+
+    using Key = std::array<uint8_t, 16>;
+
+    Key key_from_hex(const char* hex) {
+        Key key{};
+        for (size_t i = 0; i < key.size(); ++i)
+            key[i] = static_cast<uint8_t>(std::stoul(std::string(hex + i * 2, 2), nullptr, 16));
+        return key;
+    }
+
+    // xerunner `sealing.keys` over cba_9188_mfg.bin + cbb_6752.bin with the CB_A flag word
+    // set as listed, for CPU keys 00..0f and a5 * 16. Bit 0 makes CB_B independent of the
+    // CPU key and of bit 0x1000.
+    struct CbBVector {
+        uint16_t flags;
+        const char* cb_b_key_cpu_0f;
+        const char* cb_b_key_cpu_a5;
+    };
+    constexpr const char* kCbAKey = "0773a05f2c7b9d2e3e3703e678c0dc27";
+    constexpr CbBVector kCbBVectors[] = {
+        {0x0801, "04cdc9871e6f58c01bff03fbe58e91d9", "04cdc9871e6f58c01bff03fbe58e91d9"},
+        {0x1801, "04cdc9871e6f58c01bff03fbe58e91d9", "04cdc9871e6f58c01bff03fbe58e91d9"},
+        {0x0800, "65c72ed08c4318d2580f341403467ad1", "9c343766fde280530a9d19ac130ec964"},
+        {0x1800, "0159fbe5ff63094f537d8d5120aa9975", "52962fa0a51519e7e0af98fa64e56799"},
+    };
+
+    bool test_cb_b_regime_matches_xerunner() {
+        const Bytes cba_bytes = read_common("cba_9188_mfg.bin");
+        const Bytes cbb_bytes = read_common("cbb_6752.bin");
+        if (!require(cba_bytes.size() > 0x400 && cbb_bytes.size() > 0x400,
+                     "cba_9188_mfg.bin and cbb_6752.bin fixtures are present"))
+            return false;
+        auto cba = BootloaderCb::parse(cba_bytes);
+        cba.decrypted = true;
+        cba.encrypt(key_1bl);
+        if (!require(cba.derived_key && *cba.derived_key == key_from_hex(kCbAKey),
+                     "CB_A key matches xerunner"))
+            return false;
+
+        Key cpu_0f{};
+        for (size_t i = 0; i < cpu_0f.size(); ++i)
+            cpu_0f[i] = static_cast<uint8_t>(i);
+        Key cpu_a5{};
+        cpu_a5.fill(0xA5);
+
+        bool ok = true;
+        for (const auto& vector : kCbBVectors) {
+            auto header = cba.header;
+            header.header.flags = vector.flags;
+            for (const auto& [cpu, expected] : {std::pair{cpu_0f, vector.cb_b_key_cpu_0f},
+                                                std::pair{cpu_a5, vector.cb_b_key_cpu_a5}}) {
+                auto cbb = BootloaderCb::parse(cbb_bytes);
+                cbb.decrypted = true;
+                cbb.populate_metadata();
+                cbb.encrypt_cb_b(header, cba.derived_key->data(), cpu.data());
+                const std::string label = "CB_B key under CB_A flags " +
+                                          std::to_string(vector.flags) + " matches xerunner";
+                ok =
+                    require(cbb.derived_key && *cbb.derived_key == key_from_hex(expected), label) &&
+                    ok;
+                auto sealed = BootloaderCb::parse(cbb.serialize());
+                sealed.decrypt_cb_b(header, cba.derived_key->data(), cpu.data());
+                ok = require(sealed.serialize() == cbb_bytes, "CB_B opens back: " + label) && ok;
+            }
+        }
+        return ok;
+    }
+
+    // xerunner build.py writes sixteen zeros where the SMC digest goes for a manufacturing
+    // chain or a zero CPU key, and seals CB_B with the regime's key.
+    bool test_unbound_cb_b_has_zero_digest() {
+        const Bytes cba_bytes = read_common("cba_9188_mfg.bin");
+        const Bytes cbb_bytes = read_common("cbb_6752.bin");
+        auto cba = BootloaderCb::parse(cba_bytes);
+        cba.decrypted = true;
+        cba.encrypt(key_1bl);
+        const Bytes smc(0x3000, 0x5A);
+
+        Key cpu_0f{};
+        for (size_t i = 0; i < cpu_0f.size(); ++i)
+            cpu_0f[i] = static_cast<uint8_t>(i);
+        const Key zero_cpu{};
+
+        bool ok = true;
+        for (const auto& [flags, cpu, expected] :
+             {std::tuple{uint16_t{0x0801}, cpu_0f, kCbBVectors[0].cb_b_key_cpu_0f},
+              std::tuple{uint16_t{0x1801}, cpu_0f, kCbBVectors[1].cb_b_key_cpu_0f}}) {
+            auto header = cba.header;
+            header.header.flags = flags;
+            auto cbb = BootloaderCb::parse(cbb_bytes);
+            cbb.decrypted = true;
+            cbb.populate_metadata();
+            cbb.encrypt_retail(cba.derived_key->data(), cpu, smc, &header);
+            ok = require(cbb.derived_key && *cbb.derived_key == key_from_hex(expected),
+                         "retail seal of a manufacturing CB_B uses xerunner's key") &&
+                 ok;
+            cbb.decrypt_cb_b(header, cba.derived_key->data(), cpu.data());
+            ok = require(std::all_of(cbb.data.begin() + 0x20, cbb.data.begin() + 0x30,
+                                     [](uint8_t b) { return b == 0; }),
+                         "manufacturing CB_B digest slot is zero") &&
+                 ok;
+        }
+
+        auto header = cba.header;
+        header.header.flags = 0x0800;
+        auto cbb = BootloaderCb::parse(cbb_bytes);
+        cbb.decrypted = true;
+        cbb.populate_metadata();
+        cbb.encrypt_retail(cba.derived_key->data(), zero_cpu, smc, &header);
+        cbb.decrypt_cb_b(header, cba.derived_key->data(), zero_cpu.data());
+        ok = require(std::all_of(cbb.data.begin() + 0x20, cbb.data.begin() + 0x30,
+                                 [](uint8_t b) { return b == 0; }),
+                     "zero-CPU-key CB_B digest slot is zero") &&
+             ok;
+        return ok;
+    }
 } // namespace
 
 int main() {
     bool ok = test_sc_seals_like_xerunner();
     ok = test_packer_seals_devkit_chain_like_xerunner() && ok;
     ok = test_smc_encryption_is_detected_by_zero_tail() && ok;
+    ok = test_cb_b_regime_matches_xerunner() && ok;
+    ok = test_unbound_cb_b_has_zero_digest() && ok;
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

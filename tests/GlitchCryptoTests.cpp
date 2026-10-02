@@ -243,10 +243,18 @@ namespace {
                  ok;
         } else if (input.bootloaders.cb_b) {
             auto plain = *input.bootloaders.cb_b;
-            if (input.build_type == BuildType::Retail)
+            auto cb_b_suffix = suffix;
+            if ((input.bootloaders.cb_or_a[7] & 0x01) != 0) {
+                // Manufacturing CB_A (xerunner sealing.message_for / build.py): CB_B is
+                // keyed over its nonce and sixteen zeros, with no CB_A head, and its SMC
+                // digest slot is zero.
+                cb_b_suffix.assign(16, 0);
+                std::fill_n(plain.begin() + 0x30, 16, 0);
+            } else if (input.build_type == BuildType::Retail) {
                 plain = authenticate(plain, encrypt(plain, cba_key, suffix).second,
                                      input.metadata.cpu_key, image->smc->data);
-            const auto [cbb, key] = encrypt(plain, cba_key, suffix);
+            }
+            const auto [cbb, key] = encrypt(plain, cba_key, cb_b_suffix);
             cd_parent = key;
             ok = require(image->cb_section.cb_B && image->cb_section.cb_B->serialize() == cbb,
                          label + " CB_B remains encrypted") &&
@@ -268,6 +276,10 @@ namespace {
                            ImageType image_type = ImageType::SmallBlock) {
         auto input = fixture(type, flags);
         input.image_type = image_type;
+        const bool manufacturing = (flags & 0x01) != 0;
+        // A stale digest in the input CB_B, which a manufacturing seal must clear.
+        if (manufacturing)
+            std::fill_n(input.bootloaders.cb_b->begin() + 0x30, 16, 0xCC);
         const auto built = RunBuild(input);
         if (!require(built.has_value(), name + " builds"))
             return false;
@@ -278,7 +290,7 @@ namespace {
         ok = require(extracted->bootloaders.cb_x == input.bootloaders.cb_x,
                      name + " extracts plaintext CB_X") &&
              ok;
-        if (type == BuildType::Retail) {
+        if (type == BuildType::Retail || manufacturing) {
             auto expected = *input.bootloaders.cb_b;
             std::copy_n(extracted->bootloaders.cb_b->begin() + 0x30, 16, expected.begin() + 0x30);
             input.bootloaders.cb_b = expected;
@@ -473,6 +485,9 @@ int main() {
     ok = test_build_policy(BuildType::Glitch2, "big-block glitch2", 0x800, ImageType::BigBlock) &&
          ok;
     ok = test_build_policy(BuildType::Glitch2m, "glitch2m") && ok;
+    ok = test_build_policy(BuildType::Glitch2m, "glitch2m manufacturing", 0x0801) && ok;
+    ok = test_build_policy(BuildType::Glitch2m, "glitch2m manufacturing v2", 0x1801) && ok;
+    ok = test_build_policy(BuildType::Retail, "retail manufacturing", 0x0801) && ok;
     ok = test_build_policy(BuildType::Glitch3, "glitch3") && ok;
     ok = test_build_policy(BuildType::Glitch3, "glitch3 v2", 0x1800) && ok;
     ok = test_glitch3_requires_cb_x_and_cb_b() && ok;

@@ -33,6 +33,19 @@ class BootloaderCb {
     }
     void encrypt_mfg(const uint8_t cb_a_key[16]) { decrypt_mfg(cb_a_key); }
 
+    // CB_B keyed as its CB_A's flags select. Bit 0 (manufacturing) keys it over its nonce
+    // and sixteen zero bytes instead of the CPU key, and takes precedence over bit 0x1000,
+    // which appends CB_A's head (flag word cleared) after the CPU key.
+    void decrypt_cb_b(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
+                      const uint8_t cpu_key[16]);
+    void encrypt_cb_b(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
+                      const uint8_t cpu_key[16]) {
+        decrypt_cb_b(cb_a_hdr, cb_a_key, cpu_key);
+    }
+    static bool manufacturing_chain(const cb_header& cb_a_hdr) {
+        return (cb_a_hdr.header.flags & 0x0001) != 0;
+    }
+
     // Authenticate paired retail CB/CB_B against the final encrypted SMC, then encrypt.
     // A null CB_A header selects the single-CB (1BL parent) derivation.
     void encrypt_retail(const uint8_t parent_key[16], std::span<const uint8_t> cpu_key,
