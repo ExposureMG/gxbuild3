@@ -723,9 +723,10 @@ namespace gxbuild3::NAND {
         raw.kv_version = bswap16(header.kv_version ? header.kv_version : 0x0712);
         raw.kv_addr = bswap32(header.kv_addr ? header.kv_addr : kKeyvaultOffset);
         raw.fs_addr = bswap32(slot_stride); // Runtime dwSysUpdateSlotSize (header + 0x70).
-        raw.smc_config_offset =
-            bswap32(header.smc_config_offset ? header.smc_config_offset
-                                             : static_cast<uint32_t>(smc_cfg_offset.value_or(0)));
+        // Zero on every image, a donor's value or not: xeBuild never states the settings
+        // block here (xerunner build.py `header`), and the three console dumps measured
+        // carry zero. The block is found by its place in the layout instead.
+        raw.smc_config_offset = 0;
         raw.smc_boot_size = bswap32(static_cast<uint32_t>(smc_len));
         raw.smc_boot_offset = bswap32(smc_offset);
 

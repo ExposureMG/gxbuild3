@@ -1269,6 +1269,30 @@ namespace {
         return true;
     }
 
+    // xeBuild leaves header 0x74 zero (xerunner build.py `header`), as do the console
+    // dumps measured; a rewrite must not carry a donor's value forward either.
+    bool test_header_0x74_stays_zero_on_fresh_and_rewritten_images() {
+        const auto zero_at_0x74 = [](const Bytes& image) {
+            return image.size() >= 0x78 && std::all_of(image.begin() + 0x74, image.begin() + 0x78,
+                                                       [](uint8_t b) { return b == 0; });
+        };
+        for (const auto image_type :
+             {ImageType::SmallBlock, ImageType::BigBlock, ImageType::Emmc}) {
+            const auto built = RunBuild(fresh_input(image_type));
+            if (!require(built.has_value(), "header 0x74 fixture builds") ||
+                !require(zero_at_0x74(*built), "fresh image leaves header 0x74 zero"))
+                return false;
+            auto parsed = parse_image(*built);
+            if (!require(parsed.has_value(), "header 0x74 fixture parses"))
+                return false;
+            parsed->header.smc_config_offset = 0xF7C000;
+            if (!require(zero_at_0x74(parsed->write()),
+                         "rewrite does not carry a donor's header 0x74"))
+                return false;
+        }
+        return true;
+    }
+
     bool test_bigblock_flashfs_formats_and_roundtrips_an_empty_overlay() {
         auto input = fresh_input(ImageType::BigBlock);
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{};
@@ -2505,6 +2529,7 @@ int main() {
     passed = test_sc_survives_extraction_and_backing_cleared_layout_override() && passed;
     passed = test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() && passed;
     passed = test_fresh_layouts_match_requested_image_types() && passed;
+    passed = test_header_0x74_stays_zero_on_fresh_and_rewritten_images() && passed;
     passed = test_bigblock_flashfs_formats_and_roundtrips_an_empty_overlay() && passed;
     passed = test_bigblock_flashfs_roundtrips_a_file_larger_than_16_kib() && passed;
     passed = test_secure_flashfs_files_roundtrip_through_extract_and_rebuild() && passed;
