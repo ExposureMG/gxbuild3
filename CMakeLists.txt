@@ -93,6 +93,9 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_fuseset_tests tests/FusesetGeneratorTests.cpp)
     add_gxbuild3_test(gxbuild3_buildcommand_tests tests/BuildCommandTests.cpp)
     add_gxbuild3_test(gxbuild3_keyvault_version_tests tests/KeyvaultVersionTests.cpp)
+    add_gxbuild3_test(gxbuild3_crypto_reference_tests tests/CryptoReferenceTests.cpp)
+    target_compile_definitions(gxbuild3_crypto_reference_tests PRIVATE
+        GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
 
     add_executable(gxbuild3_keyvault_crypto_tests tests/KeyvaultCryptoTests.cpp)
     target_link_libraries(gxbuild3_keyvault_crypto_tests PRIVATE gxbuild3_lib)

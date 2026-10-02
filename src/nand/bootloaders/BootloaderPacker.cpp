@@ -83,10 +83,8 @@ bool crypt_bootloaders(std::vector<BootloaderBlock>& bls, std::span<const uint8_
     bool plaintext = false;
 
     for (auto& bl : bls) {
-        size_t crypt_start = 0x20;
-        if (bl.magic == 0x5343) {
-            crypt_start = 0x120;
-        }
+        // Every stage here, SC included, keeps its nonce at 0x10 and seals from 0x20.
+        const size_t crypt_start = 0x20;
 
         if (plaintext) {
             if (bl.data.size() >= 0x20) {
