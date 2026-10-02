@@ -257,6 +257,55 @@ namespace {
              ok;
         return ok;
     }
+
+    // SHA-1 of CB_B (cbb_6752.bin) sealed by xerunner `Build.chain` under cba_9188.bin with
+    // the flag word listed: Fields.write(pairing 123456, CPU key 00..0f, CB_B key,
+    // fingerprint(smc)) at the start of the body, smc being bytes (i * 13 + 7) & 0xFF over
+    // 0x3000 taken as the sealed image. The digest is bound on every regime but bit 0.
+    constexpr std::pair<uint16_t, const char*> kBoundCbB[] = {
+        {0x0800, "05a75da213f6d05cf70c0e08bf1956f88df780b7"},
+        {0x1800, "1f6094da88850d62f1eb8fa044236091185873de"},
+        {0x0801, "883bb208466f1988a9a34a8700ec910d623d9da2"},
+    };
+
+    bool test_cb_b_binding_matches_xerunner() {
+        const Bytes cba_bytes = read_common("cba_9188.bin");
+        const Bytes cbb_bytes = read_common("cbb_6752.bin");
+        if (!require(cba_bytes.size() > 0x400 && cbb_bytes.size() > 0x400,
+                     "cba_9188.bin and cbb_6752.bin fixtures are present"))
+            return false;
+        auto cba = BootloaderCb::parse(cba_bytes);
+        cba.decrypted = true;
+        cba.encrypt(key_1bl);
+
+        Bytes smc(0x3000);
+        for (size_t i = 0; i < smc.size(); ++i)
+            smc[i] = static_cast<uint8_t>(i * 13 + 7);
+        Key cpu{};
+        for (size_t i = 0; i < cpu.size(); ++i)
+            cpu[i] = static_cast<uint8_t>(i);
+
+        bool ok = true;
+        for (const auto& [flags, expected] : kBoundCbB) {
+            auto header = cba.header;
+            header.header.flags = flags;
+            auto cbb = BootloaderCb::parse(cbb_bytes);
+            cbb.decrypted = true;
+            cbb.populate_metadata();
+            // xerunner's console block: pairing, LDV 0, twelve zero bytes.
+            *cbb.perbox = cb_perbox{};
+            cbb.perbox->pairing_data[0] = 0x12;
+            cbb.perbox->pairing_data[1] = 0x34;
+            cbb.perbox->pairing_data[2] = 0x56;
+            cbb.serialize_perbox();
+            cbb.encrypt_retail(cba.derived_key->data(), cpu, smc, &header);
+            ok = require(sha1(cbb.serialize()) == digest_from_hex(expected),
+                         "bound CB_B under CB_A flags " + std::to_string(flags) +
+                             " matches xerunner") &&
+                 ok;
+        }
+        return ok;
+    }
 } // namespace
 
 int main() {
@@ -265,5 +314,6 @@ int main() {
     ok = test_smc_encryption_is_detected_by_zero_tail() && ok;
     ok = test_cb_b_regime_matches_xerunner() && ok;
     ok = test_unbound_cb_b_has_zero_digest() && ok;
+    ok = test_cb_b_binding_matches_xerunner() && ok;
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

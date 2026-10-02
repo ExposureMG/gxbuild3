@@ -46,8 +46,8 @@ class BootloaderCb {
         return (cb_a_hdr.header.flags & 0x0001) != 0;
     }
 
-    // Authenticate paired retail CB/CB_B against the final encrypted SMC, then encrypt.
-    // A null CB_A header selects the single-CB (1BL parent) derivation.
+    // Bind CB/CB_B to the final encrypted SMC, then encrypt. A null CB_A header selects
+    // the single-CB (1BL parent) derivation.
     void encrypt_retail(const uint8_t parent_key[16], std::span<const uint8_t> cpu_key,
                         std::span<const uint8_t> encrypted_smc,
                         const cb_header* cb_a_header = nullptr);

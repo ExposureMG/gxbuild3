@@ -250,7 +250,9 @@ namespace {
                 // digest slot is zero.
                 cb_b_suffix.assign(16, 0);
                 std::fill_n(plain.begin() + 0x30, 16, 0);
-            } else if (input.build_type == BuildType::Retail) {
+            } else {
+                // Every other split chain binds the final encrypted SMC (xerunner
+                // build.py `chain`), glitch2 included.
                 plain = authenticate(plain, encrypt(plain, cba_key, suffix).second,
                                      input.metadata.cpu_key, image->smc->data);
             }
@@ -290,7 +292,7 @@ namespace {
         ok = require(extracted->bootloaders.cb_x == input.bootloaders.cb_x,
                      name + " extracts plaintext CB_X") &&
              ok;
-        if (type == BuildType::Retail || manufacturing) {
+        if (input.bootloaders.cb_b && type != BuildType::Glitch3) {
             auto expected = *input.bootloaders.cb_b;
             std::copy_n(extracted->bootloaders.cb_b->begin() + 0x30, 16, expected.begin() + 0x30);
             input.bootloaders.cb_b = expected;

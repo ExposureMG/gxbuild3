@@ -1607,11 +1607,14 @@ namespace gxbuild3::NAND {
                 return false;
             }
 
-            const bool authenticate_retail = build_type == BuildType::Retail &&
-                (cb_section.cb_B.has_value() || cd_requires_cpu_key);
-            if (authenticate_retail) {
+            // CB_B binds the final encrypted SMC on every split chain, whatever the image
+            // type (xerunner build.py `chain`); a retail single CB binds it as well.
+            // Glitch3 emits CB_B plaintext, so it binds nothing here.
+            const bool bind_cb_b = cb_section.cb_B.has_value() && !plaintext_cb_b;
+            const bool bind_single_cb = build_type == BuildType::Retail && cd_requires_cpu_key;
+            if (bind_cb_b || bind_single_cb) {
                 if (cpu_key.size() != 16 || !smc || smc->data.empty() || smc->data.size() % 4 != 0) {
-                    Log::Error("Retail CB authentication requires a CPU key and an aligned SMC");
+                    Log::Error("CB authentication requires a CPU key and an aligned SMC");
                     return false;
                 }
                 // Authentication covers the exact SMC ciphertext written to NAND.
@@ -1619,7 +1622,7 @@ namespace gxbuild3::NAND {
             }
 
             if (!cb_section.cb_or_A.data.empty() && cb_section.cb_or_A.decrypted) {
-                if (authenticate_retail && !cb_section.cb_B)
+                if (bind_single_cb)
                     cb_section.cb_or_A.encrypt_retail(key_1bl, cpu_key, smc->data);
                 else
                     cb_section.cb_or_A.encrypt(key_1bl);
@@ -1666,25 +1669,10 @@ namespace gxbuild3::NAND {
                     Log::Error("Cannot encrypt CB_B: CB_A derived key is missing");
                     return false;
                 }
-                if (authenticate_retail) {
-                    cb_section.cb_B->encrypt_retail(cb_section.cb_or_A.derived_key->data(),
-                                                   cpu_key, smc->data,
-                                                   &cb_section.cb_or_A.header);
-                } else {
-                    // A manufacturing CB_B binds no SMC: its digest slot is sixteen zeros.
-                    auto& cb_b = *cb_section.cb_B;
-                    if (BootloaderCb::manufacturing_chain(cb_section.cb_or_A.header) &&
-                        (cb_b.perbox || cb_b.parse_perbox())) {
-                        std::fill(std::begin(cb_b.perbox->per_box_digest),
-                                  std::end(cb_b.perbox->per_box_digest), 0);
-                        if (!cb_b.serialize_perbox()) {
-                            Log::Error("Cannot clear the manufacturing CB_B digest");
-                            return false;
-                        }
-                    }
-                    cb_b.encrypt_cb_b(cb_section.cb_or_A.header,
-                                      cb_section.cb_or_A.derived_key->data(), cpu_key.data());
-                }
+                // Computes the digest, or zeros it for a manufacturing chain or a zero
+                // CPU key, then seals under CB_A's regime.
+                cb_section.cb_B->encrypt_retail(cb_section.cb_or_A.derived_key->data(), cpu_key,
+                                                smc->data, &cb_section.cb_or_A.header);
             }
 
             // xeBuild's CB_B patches keep CD decryption enabled. Plaintext CD is
