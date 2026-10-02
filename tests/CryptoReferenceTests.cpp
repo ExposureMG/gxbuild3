@@ -5,6 +5,7 @@
 #include "excrypt.h"
 #include "nand/bootloaders/3bl.hpp"
 #include "nand/bootloaders/BootloaderPacker.hpp"
+#include "nand/objects/SMC.hpp"
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -97,10 +98,49 @@ namespace {
              ok;
         return ok;
     }
+
+    // An encrypted SMC whose ciphertext byte 0x100 has a high nibble of 1..7 looks like a
+    // plaintext motherboard nibble. Plaintext SMCs end in four zero bytes (xerunner
+    // smc.py `handed_in`), so the decrypted tail decides.
+    bool test_smc_encryption_is_detected_by_zero_tail() {
+        using namespace gxbuild3::NAND;
+        Bytes plain(0x3000, 0);
+        for (size_t i = 0; i < 0x2F00; ++i)
+            plain[i] = static_cast<uint8_t>(i * 7 + 3);
+        plain[0x100] = 0x41; // Jasper
+        Bytes sealed;
+        for (unsigned seed = 0; seed < 0x100; ++seed) {
+            plain[0] = static_cast<uint8_t>(seed);
+            sealed = smc_encrypt(plain);
+            const uint8_t nibble = sealed[0x100] >> 4;
+            if (nibble >= 1 && nibble <= 7)
+                break;
+        }
+        if (!require((sealed[0x100] >> 4) >= 1 && (sealed[0x100] >> 4) <= 7,
+                     "constructed SMC ciphertext has a motherboard-like nibble at 0x100"))
+            return false;
+
+        bool ok = require(!smc_is_encrypted(plain), "zero-tail plaintext SMC is plaintext");
+        ok = require(smc_is_encrypted(sealed), "SMC ciphertext is detected as encrypted") && ok;
+
+        auto parsed = Smc::parse(sealed);
+        ok =
+            require(parsed && parsed->encrypted, "Smc::parse marks the ciphertext encrypted") && ok;
+        if (!parsed)
+            return false;
+        ok = require(parsed->motherboard == SmcMotherboard::Jasper,
+                     "Smc::parse reads metadata from the plaintext") &&
+             ok;
+        parsed->encrypt();
+        ok =
+            require(parsed->data == sealed, "encrypt() does not seal an encrypted SMC twice") && ok;
+        return ok;
+    }
 } // namespace
 
 int main() {
     bool ok = test_sc_seals_like_xerunner();
     ok = test_packer_seals_devkit_chain_like_xerunner() && ok;
+    ok = test_smc_encryption_is_detected_by_zero_tail() && ok;
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
