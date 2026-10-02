@@ -131,10 +131,17 @@ typedef struct _nand_header {
 
 #pragma pack(pop)
 
+// One settings blob copy (mobile type 0x31-0x39). On NAND it fills `page_count` pages from
+// `first_page` of `start_block`, and only those pages carry its spare: the type, the version,
+// the length in bytes and how much of the block is left free after it, in pages on small
+// block and in 0x800-byte slots on big block. On eMMC it starts at `start_block` and the
+// anchor blocks say where it is.
 struct MobileBlockPlacement {
     uint8_t block_type = 0;
     uint16_t start_block = 0;
-    uint16_t block_count = 0;
+    uint16_t first_page = 0;
+    uint16_t page_count = 0;
+    uint8_t free_count = 0;
     uint32_t sequence = 1;
     uint32_t data_size = 0;
 };

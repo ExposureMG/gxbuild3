@@ -452,6 +452,13 @@ namespace {
         std::memcpy(header.copyright, text.data(), std::min(text.size(), kCopyrightLength - 1));
     }
 
+    // The donor's settings, statistics and manufacturing blocks, carried as bytes.
+    void extract_settings_blocks(const FlashImage& img, InputMetadata& meta) {
+        meta.smc_config = img.smc_config;
+        meta.statistics = img.statistics;
+        meta.manufacturing = img.manufacturing;
+    }
+
 } // namespace
 
 BuildResult RunBuild(const Input& input) {
@@ -496,14 +503,15 @@ BuildResult RunBuild(const Input& input) {
 
     flash_image.build_type = input.build_type;
 
-    if (flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc) {
-        for (uint8_t block_type = 0x33; block_type <= 0x39; ++block_type) {
-            const auto* slot = input.mobiles.slot(block_type);
-            if (slot && *slot) {
-                return build_error(BuildErrorCode::InvalidInput,
-                                   "eMMC Corona metadata supports mobile slots 0x31 and 0x32 only");
-            }
-        }
+    // The console's own blocks follow it into whatever layout is built.
+    if (input.metadata.smc_config) {
+        flash_image.smc_config = *input.metadata.smc_config;
+    }
+    if (input.metadata.statistics) {
+        flash_image.statistics = *input.metadata.statistics;
+    }
+    if (input.metadata.manufacturing) {
+        flash_image.manufacturing = *input.metadata.manufacturing;
     }
 
     const auto smc = Smc::parse(*input.metadata.smc);
@@ -916,6 +924,18 @@ BuildResult RunBuild(const Input& input) {
                 *flash_image.mobile_data->get_slot(block_type) = **override_slot;
             }
         }
+        // An eMMC anchor names four blobs, types 0x31-0x34; the rest have nowhere to go.
+        if (flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc) {
+            for (uint8_t block_type = 0x35; block_type <= 0x39; ++block_type) {
+                auto* slot = flash_image.mobile_data->get_slot(block_type);
+                if (*slot && !(*slot)->empty()) {
+                    Log::Warn("Mobile data type 0x{:02X} has no slot in an eMMC anchor block; "
+                              "it is left out",
+                              block_type);
+                }
+                slot->reset();
+            }
+        }
     }
 
     Log::Debug("Encrypting NAND image components");
@@ -1089,6 +1109,7 @@ std::optional<InputMetadata> ExtractMetadata(std::span<const uint8_t> nand_image
 
     extract_cf_metadata(img, meta);
     meta.donor_nonces = collect_donor_nonces(img);
+    extract_settings_blocks(img, meta);
 
     Log::Debug("Extracted metadata: CB LDV={}, CF LDV={}, ConsoleType=0x{:02X}, Sequence=0x{:02X}",
                meta.cb_ldv, meta.cf_ldv ? std::to_string(*meta.cf_ldv) : "none", meta.console_type,
@@ -1519,6 +1540,7 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
     std::memcpy(out.metadata.pairing_data.data(), pairing_data, 3);
     extract_cf_metadata(img, out.metadata);
     out.metadata.donor_nonces = collect_donor_nonces(img);
+    extract_settings_blocks(img, out.metadata);
     out.metadata.console_type = console_type;
     out.metadata.console_sequence = console_sequence;
     out.metadata.console_sequence_allow = console_sequence_allow;

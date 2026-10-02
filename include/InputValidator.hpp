@@ -18,6 +18,7 @@ enum class InputErrorCode {
     InvalidPayloadSize,
     InvalidRebooterSize,
     InvalidFusesSize,
+    InvalidSettingsBlockSize,
 };
 
 struct InputError {

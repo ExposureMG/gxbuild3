@@ -193,7 +193,9 @@ namespace gxbuild3::NAND {
         // the one's complement of the byte sum over [0x10, 0x10C), little-endian. Checked
         // against the settings blocks of real small-block and big-block dumps.
         constexpr size_t kSmcConfigLength = 0x400;
-        constexpr size_t kSmcConfigSpan = 0x1000;
+        // The settings, statistics and manufacturing blocks are each laid in 0x1000 bytes at
+        // the head of their erase block; the rest of that block stays erased.
+        constexpr size_t kSettingsSpan = 0x1000;
 
         bool smc_config_sums(std::span<const uint8_t> block) {
             if (block.size() < kSmcConfigLength) {
@@ -205,6 +207,31 @@ namespace gxbuild3::NAND {
             }
             const uint16_t expected = static_cast<uint16_t>(~sum);
             return (block[0] | (block[1] << 8)) == expected;
+        }
+
+        // Lays one of the console's 0x1000-byte blocks (settings, statistics, manufacturing) at
+        // the head of its erase block, as xeBuild does: the erase block is erased, the bytes
+        // go in and their pages carry a type-0 spare naming the block. A block of all 0xFF
+        // stays erased, as on a console that keeps none. A bad block keeps its spare.
+        bool lay_settings_block(Driver& driver, size_t offset, std::span<const uint8_t> bytes) {
+            const size_t block_size = driver.block_size_clean();
+            const size_t block = offset / block_size;
+            const bool bad = driver.is_bad_block(block);
+            if (!bad) {
+                driver.erase_block(block);
+            }
+            if (std::all_of(bytes.begin(), bytes.end(), [](uint8_t b) { return b == 0xFF; })) {
+                return true;
+            }
+            if (!driver.write_offset(offset, bytes)) {
+                return false;
+            }
+            if (!bad && driver.driver_mode() != Driver::DriverMode::Emmc) {
+                BlockMetadata meta{};
+                meta.logical_block_id = static_cast<uint16_t>(block);
+                driver.write_page_metadata(offset / 512, (bytes.size() + 511) / 512, meta);
+            }
+            return true;
         }
 
         // Where the settings block sits: the last block before the reserved tail, which is
@@ -449,6 +476,16 @@ namespace gxbuild3::NAND {
             if (cfg_bytes.size() == kSmcConfigLength && smc_config_sums(cfg_bytes)) {
                 smc_config = std::vector<uint8_t>(cfg_bytes.begin(), cfg_bytes.end());
             }
+            if (*cfg_offset >= 2 * block_size) {
+                auto stats = flash_driver.read_clean(*cfg_offset - block_size, kSettingsSpan);
+                if (stats.size() == kSettingsSpan) {
+                    statistics = std::move(stats);
+                }
+                auto manu = flash_driver.read_clean(*cfg_offset - 2 * block_size, kSettingsSpan);
+                if (manu.size() == kSettingsSpan) {
+                    manufacturing = std::move(manu);
+                }
+            }
         }
 
         if (flash_driver.driver_mode() == Driver::DriverMode::Emmc) {
@@ -488,65 +525,61 @@ namespace gxbuild3::NAND {
                 }
             }
         } else {
-            struct MobileCandidate {
+            // Each blob copy fills consecutive pages that share its type, version and free
+            // count, and only those pages carry its spare. A console appends a new copy
+            // after the last one in the same block, so the free count falls with each copy,
+            // and opens another block under a higher version when one fills. The live copy
+            // is therefore the one with the highest version and, within it, the lowest free
+            // count; a tie goes to the later copy.
+            struct MobileCopy {
+                bool found = false;
                 uint32_t sequence = 0;
-                std::vector<std::pair<size_t, BlockMetadata>> blocks;
+                uint8_t free_count = 0;
+                size_t first_page = 0;
+                size_t page_count = 0;
+                uint16_t length = 0;
             };
-
-            std::array<std::vector<MobileCandidate>, 9> candidates;
+            std::array<MobileCopy, 9> latest{};
+            const size_t pages_per_block = flash_driver.pages_per_block();
             for (size_t blk = 0; blk < total_blocks; ++blk) {
-                auto meta = flash_driver.interpret_block(blk);
-                if (!is_mobile_block_type(meta.block_type) || meta.is_bad) {
+                if (flash_driver.is_bad_block(blk)) {
                     continue;
                 }
-
-                auto& type_candidates = candidates[meta.block_type - 0x31];
-                if (type_candidates.empty() || type_candidates.back().sequence != meta.sequence ||
-                    type_candidates.back().blocks.back().first + 1 != blk) {
-                    type_candidates.push_back(MobileCandidate{meta.sequence, {}});
+                for (size_t page = blk * pages_per_block; page < (blk + 1) * pages_per_block;
+                     ++page) {
+                    const auto meta = flash_driver.interpret_page(page);
+                    if (!is_mobile_block_type(meta.block_type)) {
+                        continue;
+                    }
+                    auto& copy = latest[meta.block_type - 0x31];
+                    if (copy.found && copy.sequence == meta.sequence &&
+                        copy.free_count == meta.page_count &&
+                        copy.first_page + copy.page_count == page) {
+                        ++copy.page_count;
+                        continue;
+                    }
+                    if (!copy.found || meta.sequence > copy.sequence ||
+                        (meta.sequence == copy.sequence && meta.page_count <= copy.free_count)) {
+                        copy =
+                            MobileCopy{true, meta.sequence, meta.page_count, page, 1, meta.fs_size};
+                    }
                 }
-                type_candidates.back().blocks.emplace_back(blk, meta);
             }
 
             MobileData mob{};
-            for (size_t type_idx = 0; type_idx < candidates.size(); ++type_idx) {
-                auto& type_candidates = candidates[type_idx];
-                if (type_candidates.empty()) {
+            for (size_t type_idx = 0; type_idx < latest.size(); ++type_idx) {
+                const auto& copy = latest[type_idx];
+                if (!copy.found) {
                     continue;
                 }
-
-                const auto& latest =
-                    *std::max_element(type_candidates.begin(), type_candidates.end(),
-                                      [](const MobileCandidate& lhs, const MobileCandidate& rhs) {
-                                          return lhs.sequence < rhs.sequence;
-                                      });
-
-                std::vector<uint8_t> data;
-                for (size_t block_pos = 0; block_pos < latest.blocks.size(); ++block_pos) {
-                    const auto [block_idx, meta] = latest.blocks[block_pos];
-                    auto block_data = flash_driver.read_block(block_idx);
-                    if (block_data.empty()) {
-                        data.clear();
-                        break;
-                    }
-                    data.insert(data.end(), block_data.begin(), block_data.end());
-                    if (block_pos + 1 == latest.blocks.size() && meta.page_count > 0 &&
-                        meta.page_count < flash_driver.pages_per_block()) {
-                        const size_t valid_size =
-                            (latest.blocks.size() - 1) * block_size + meta.page_count * 512;
-                        data.resize(std::min(valid_size, data.size()));
-                    }
-                }
-
-                if (!data.empty()) {
-                    const auto& first_meta = latest.blocks.front().second;
-                    if (first_meta.fs_size > 0 && first_meta.fs_size < data.size()) {
-                        data.resize(first_meta.fs_size);
-                    }
-                    auto* slot = mob.get_slot(static_cast<uint8_t>(type_idx + 0x31));
-                    if (slot) {
-                        *slot = std::move(data);
-                    }
+                // The spare states the length in bytes; a copy cannot run past its block.
+                const size_t room = (pages_per_block - copy.first_page % pages_per_block) * 512;
+                const size_t length =
+                    std::min<size_t>(copy.length != 0 ? copy.length : copy.page_count * 512, room);
+                auto data = flash_driver.read_clean(copy.first_page * 512, length);
+                auto* slot = mob.get_slot(static_cast<uint8_t>(type_idx + 0x31));
+                if (slot && data.size() == length) {
+                    *slot = std::move(data);
                 }
             }
             if (!mob.empty()) {
@@ -844,9 +877,27 @@ namespace gxbuild3::NAND {
                            kSmcConfigLength);
                 return false;
             }
-            std::vector<uint8_t> cfg_bytes(kSmcConfigSpan, 0xFF);
+            std::vector<uint8_t> cfg_bytes(kSettingsSpan, 0xFF);
             std::copy(smc_config->begin(), smc_config->end(), cfg_bytes.begin());
-            if (!driver.write_offset(*smc_cfg_offset, cfg_bytes)) {
+            if (!lay_settings_block(driver, *smc_cfg_offset, cfg_bytes)) {
+                return false;
+            }
+        }
+        const std::array<std::pair<const std::optional<std::vector<uint8_t>>*, size_t>, 2>
+            console_blocks{{{&statistics, 1}, {&manufacturing, 2}}};
+        for (const auto& [bytes, steps] : console_blocks) {
+            if (!*bytes) {
+                continue;
+            }
+            if (!smc_cfg_offset || *smc_cfg_offset < steps * block_size) {
+                return false;
+            }
+            if ((*bytes)->size() != kSettingsSpan) {
+                Log::Error("Statistics and manufacturing blocks must be 0x{:X} bytes",
+                           kSettingsSpan);
+                return false;
+            }
+            if (!lay_settings_block(driver, *smc_cfg_offset - steps * block_size, **bytes)) {
                 return false;
             }
         }
@@ -892,19 +943,21 @@ namespace gxbuild3::NAND {
             return std::nullopt;
         };
 
-
-        // A donor may have a longer mobile allocation than an input overlay. Clear the old
-        // mobile metadata before recording the replacement layout so parsing cannot append
-        // stale donor blocks to the new mobile data sequence.
+        // Every older blob copy goes: a donor's mobile blocks are erased before the blobs are
+        // laid again, so no stale copy can outrank or trail the new ones.
         if (driver.driver_mode() != Driver::DriverMode::Emmc) {
             for (size_t block = 0; block < total_blocks; ++block) {
                 if (!is_mobile_block_type(driver.interpret_block(block).block_type)) {
                     continue;
                 }
-                BlockMetadata cleared{};
-                cleared.logical_block_id = static_cast<uint16_t>(block);
-                cleared.is_bad = driver.is_bad_block(block);
-                driver.write_block_metadata(block, cleared);
+                if (driver.is_bad_block(block)) {
+                    BlockMetadata cleared{};
+                    cleared.logical_block_id = static_cast<uint16_t>(block);
+                    cleared.is_bad = true;
+                    driver.write_block_metadata(block, cleared);
+                    continue;
+                }
+                driver.erase_block(block);
             }
         }
 
@@ -923,41 +976,71 @@ namespace gxbuild3::NAND {
         }
 
         if (mobile_data) {
+            // One version of each blob, as xeBuild lays them, in type order. Small block gives
+            // each its own block; big block packs them 0x800 apart in one erase block, where
+            // the free count is kept in those slots; eMMC gives each its own blocks and
+            // names them in the anchors, which hold types 0x31-0x34 only.
+            const bool emmc = driver.driver_mode() == Driver::DriverMode::Emmc;
+            const bool big = driver.driver_mode() == Driver::DriverMode::Big;
+            const size_t pages_per_block = driver.pages_per_block();
+            constexpr size_t kBigSlotPages = 0x800 / 512;
+            std::optional<size_t> open_block;
+            size_t next_page = 0;
             for (uint8_t bt = 0x31; bt <= 0x39; ++bt) {
                 const auto* slot = mobile_data->get_slot(bt);
-                if (slot && *slot && !(*slot)->empty()) {
-                    const auto& mdata = **slot;
-                    size_t blks_needed = (mdata.size() + fs_blk_size - 1) / fs_blk_size;
-                    if (blks_needed == 0) {
-                        Log::Error("Mobile data type 0x{:02X} does not fit in NAND", bt);
-                        return false;
-                    }
-                    auto free_start = find_data_free_run(current_blk, blks_needed);
-                    if (!free_start) {
+                if (!slot || !*slot || (*slot)->empty()) {
+                    continue;
+                }
+                if (emmc && size_t(bt - CoronaConfig::kFirstBlobType) >= CoronaConfig::kBlobSlots) {
+                    Log::Warn("Mobile data type 0x{:02X} has no slot in an eMMC anchor block; "
+                              "it is left out",
+                              bt);
+                    continue;
+                }
+                const auto& mdata = **slot;
+                const size_t limit =
+                    std::min<size_t>(emmc ? std::numeric_limits<uint16_t>::max() : fs_blk_size,
+                                     std::numeric_limits<uint16_t>::max());
+                if (mdata.size() > limit) {
+                    Log::Error("Mobile data type 0x{:02X} is 0x{:X} bytes; one copy holds at "
+                               "most 0x{:X}",
+                               bt, mdata.size(), limit);
+                    return false;
+                }
+                const size_t pages = (mdata.size() + 511) / 512;
+                const size_t used_pages =
+                    big ? (pages + kBigSlotPages - 1) / kBigSlotPages * kBigSlotPages : pages;
+                const size_t blocks_needed =
+                    emmc ? (mdata.size() + fs_blk_size - 1) / fs_blk_size : 1;
+                if (!big || !open_block || next_page + used_pages > pages_per_block) {
+                    auto free_start = find_data_free_run(current_blk, blocks_needed);
+                    if (!free_start || *free_start > std::numeric_limits<uint16_t>::max()) {
                         Log::Error(
                             "Mobile data type 0x{:02X} does not fit below reserved NAND tail", bt);
                         return false;
                     }
-                    current_blk = *free_start;
-                    for (size_t b = 0; b < blks_needed; ++b) {
-                        size_t chunk_off = b * fs_blk_size;
-                        size_t chunk_len = std::min(fs_blk_size, mdata.size() - chunk_off);
-                        if (!driver.write_block(
-                                current_blk + b,
-                                std::span<const uint8_t>(mdata.data() + chunk_off, chunk_len))) {
-                            return false;
-                        }
+                    for (size_t b = 0; b < blocks_needed; ++b) {
+                        driver.erase_block(*free_start + b);
                     }
                     if (mutable_filesystem &&
-                        !mutable_filesystem->reserve_blocks(current_blk, blks_needed)) {
+                        !mutable_filesystem->reserve_blocks(*free_start, blocks_needed)) {
                         Log::Error("Failed to reserve mobile data type 0x{:02X} in FlashFS", bt);
                         return false;
                     }
-                    layout.mobile_blocks.push_back({bt, static_cast<uint16_t>(current_blk),
-                                                    static_cast<uint16_t>(blks_needed), 1,
-                                                    static_cast<uint32_t>(mdata.size())});
-                    current_blk += blks_needed;
+                    open_block = *free_start;
+                    next_page = 0;
+                    current_blk = *free_start + blocks_needed;
                 }
+                if (!driver.write_offset(*open_block * fs_blk_size + next_page * 512, mdata)) {
+                    return false;
+                }
+                const size_t free_pages = emmc ? 0 : pages_per_block - next_page - used_pages;
+                layout.mobile_blocks.push_back(
+                    {bt, static_cast<uint16_t>(*open_block), static_cast<uint16_t>(next_page),
+                     static_cast<uint16_t>(pages),
+                     static_cast<uint8_t>(big ? free_pages / kBigSlotPages : free_pages), 1,
+                     static_cast<uint32_t>(mdata.size())});
+                next_page += used_pages;
             }
         }
 
@@ -989,17 +1072,6 @@ namespace gxbuild3::NAND {
             cc.table = layout.fs_root_block.value_or(0);
             for (const auto& mob : layout.mobile_blocks) {
                 const size_t slot = size_t(mob.block_type) - CoronaConfig::kFirstBlobType;
-                if (mob.block_type < CoronaConfig::kFirstBlobType ||
-                    slot >= CoronaConfig::kBlobSlots) {
-                    Log::Warn("Mobile data type 0x{:02X} has no slot in an eMMC anchor block",
-                              mob.block_type);
-                    continue;
-                }
-                if (mob.data_size > std::numeric_limits<uint16_t>::max()) {
-                    Log::Error("Mobile data type 0x{:02X} is too long for an anchor block",
-                               mob.block_type);
-                    return false;
-                }
                 cc.blobs[slot] = {mob.start_block, static_cast<uint16_t>(mob.data_size)};
             }
 

@@ -106,7 +106,13 @@ namespace gxbuild3::NAND {
 
         BlockMetadata interpret_block(size_t block_idx) const;
         BlockMetadata interpret_cluster(size_t cluster_idx) const;
+        // One page's spare fields, read the way interpret_block reads a block's first page.
+        BlockMetadata interpret_page(size_t page) const;
         void write_cluster_metadata(size_t cluster_idx, const BlockMetadata& meta);
+        // Stamps the spare of `page_count` pages from `first_page`, leaving their data alone.
+        void write_page_metadata(size_t first_page, size_t page_count, const BlockMetadata& meta);
+        // Returns a block to the erased state: 0xFF data and, on NAND, 0xFF spare.
+        void erase_block(size_t block_idx);
         bool is_bad_block(size_t block_idx) const;
         void mark_bad_block(size_t block_idx);
         void write_block_metadata(size_t block_idx, const BlockMetadata& meta);

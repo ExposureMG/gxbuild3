@@ -120,6 +120,12 @@ struct InputMetadata {
     uint16_t console_sequence_allow{0};
     // Empty when there is no donor or its chain does not reach CE.
     std::optional<DonorNonces> donor_nonces;
+    // The console's settings block (0x400 bytes whose head checksum holds) and its statistics
+    // and manufacturing blocks (0x1000 bytes each; all 0xFF where the console keeps none).
+    // They go to the target layout's own offsets, so a donor of another layout keeps them.
+    std::optional<std::vector<uint8_t>> smc_config;
+    std::optional<std::vector<uint8_t>> statistics;
+    std::optional<std::vector<uint8_t>> manufacturing;
 };
 
 struct BootloaderEntryInfo {

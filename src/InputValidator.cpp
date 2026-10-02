@@ -69,16 +69,15 @@ std::expected<void, InputError> ValidateInput(const Input& input) {
             InputError{InputErrorCode::InvalidFusesSize,
                        "Virtual fuses payload must contain exactly 0x60 bytes"});
     }
-
-    const bool has_donor_backing = input.metadata.nand_image && !input.metadata.nand_image->empty();
-    if (!has_donor_backing && input.image_type == ImageType::Emmc) {
-        for (uint8_t block_type = 0x33; block_type <= 0x39; ++block_type) {
-            const auto* slot = input.mobiles.slot(block_type);
-            if (slot && *slot) {
-                return std::unexpected(
-                    InputError{InputErrorCode::UnsupportedMobileData,
-                               "eMMC Corona metadata supports mobile slots 0x31 and 0x32 only"});
-            }
+    if (input.metadata.smc_config && input.metadata.smc_config->size() != 0x400) {
+        return std::unexpected(InputError{InputErrorCode::InvalidSettingsBlockSize,
+                                          "SMC config block must contain exactly 0x400 bytes"});
+    }
+    for (const auto* block : {&input.metadata.statistics, &input.metadata.manufacturing}) {
+        if (*block && (*block)->size() != 0x1000) {
+            return std::unexpected(InputError{
+                InputErrorCode::InvalidSettingsBlockSize,
+                "Statistics and manufacturing blocks must contain exactly 0x1000 bytes"});
         }
     }
 

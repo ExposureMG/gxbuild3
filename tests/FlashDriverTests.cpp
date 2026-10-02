@@ -328,49 +328,265 @@ namespace {
         return ok;
     }
 
-    bool test_flash_image_reassembles_latest_mobile_data() {
-        Driver source(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
-        const size_t block_size = source.block_size_clean();
-        const size_t old_block = 0x80;
-        const size_t new_block = 0x90;
+    // Lays one blob copy as a console does: its bytes in consecutive pages and, on those pages
+    // only, a spare naming its type, version, length and the free count left behind it.
+    void stamp_mobile_copy(Driver& driver, size_t block, size_t first_page, uint8_t type,
+                           uint32_t sequence, uint8_t free_count, size_t tagged_pages,
+                           const std::vector<uint8_t>& bytes) {
+        const size_t page = block * driver.pages_per_block() + first_page;
+        driver.write_offset(page * 512, bytes);
+        BlockMetadata meta{};
+        meta.logical_block_id = static_cast<uint16_t>(block);
+        meta.sequence = sequence;
+        meta.block_type = type;
+        meta.page_count = free_count;
+        meta.fs_size = static_cast<uint16_t>(bytes.size());
+        driver.write_page_metadata(page, tagged_pages, meta);
+    }
 
-        std::vector<uint8_t> old_data(block_size, 0x11);
-        source.write_block(old_block, old_data);
-        BlockMetadata old_meta{};
-        old_meta.logical_block_id = static_cast<uint16_t>(old_block);
-        old_meta.sequence = 1;
-        old_meta.block_type = 0x31;
-        old_meta.page_count = static_cast<uint8_t>(block_size / 512);
-        source.write_block_metadata(old_block, old_meta);
+    bool test_flash_image_takes_the_latest_mobile_copy() {
+        bool ok = true;
+        for (const auto mode : {Driver::DriverMode::Small, Driver::DriverMode::NewSmall}) {
+            Driver source(Driver::ImageSize::Smallblock, mode);
+            // An older block of MobileB, then its live block holding three copies appended
+            // one after another, each with four fewer pages free.
+            source.erase_block(0x80);
+            stamp_mobile_copy(source, 0x80, 0, 0x31, 5, 28, 4, std::vector<uint8_t>(0x800, 0x99));
+            source.erase_block(0x90);
+            for (uint8_t copy = 0; copy < 3; ++copy) {
+                stamp_mobile_copy(source, 0x90, copy * 4, 0x31, 6,
+                                  static_cast<uint8_t>(28 - copy * 4), 4,
+                                  std::vector<uint8_t>(0x800, static_cast<uint8_t>(0x11 + copy)));
+            }
+            // MobileC: one-page copies.
+            source.erase_block(0xA0);
+            stamp_mobile_copy(source, 0xA0, 0, 0x32, 1, 31, 1, std::vector<uint8_t>(0x200, 0x21));
+            stamp_mobile_copy(source, 0xA0, 1, 0x32, 1, 30, 1, std::vector<uint8_t>(0x200, 0x22));
 
-        std::vector<uint8_t> latest_data(block_size + 123, 0x22);
-        source.write_block(new_block, std::span<const uint8_t>(latest_data.data(), block_size));
-        source.write_block(new_block + 1,
-                           std::span<const uint8_t>(latest_data.data() + block_size, 123));
+            auto image = FlashImage::read(source.serialize());
+            ok = check(image && image->parse() && image->mobile_data,
+                       "FlashImage must parse small-block mobile copies") &&
+                 ok;
+            if (!image || !image->mobile_data) {
+                continue;
+            }
+            ok = check(image->mobile_data->x31 == std::vector<uint8_t>(0x800, 0x13),
+                       "the newest version's last copy of MobileB is taken") &&
+                 ok;
+            ok = check(image->mobile_data->x32 == std::vector<uint8_t>(0x200, 0x22),
+                       "the last one-page copy of MobileC is taken") &&
+                 ok;
+        }
 
-        BlockMetadata latest_meta{};
-        latest_meta.sequence = 2;
-        latest_meta.block_type = 0x31;
-        latest_meta.fs_size = static_cast<uint16_t>(latest_data.size());
-        latest_meta.page_count = static_cast<uint8_t>(block_size / 512);
-        latest_meta.logical_block_id = static_cast<uint16_t>(new_block);
-        source.write_block_metadata(new_block, latest_meta);
-        latest_meta.logical_block_id = static_cast<uint16_t>(new_block + 1);
-        latest_meta.page_count = 1;
-        source.write_block_metadata(new_block + 1, latest_meta);
+        // Big block: every type shares one erase block, each copy in its own 0x800 slot. A
+        // console tags the whole slot, so a 0x200-byte copy is followed by three tagged
+        // pages of 0xFF.
+        Driver big(Driver::ImageSize::Bigordevkit, Driver::DriverMode::Big);
+        big.erase_block(0x1C4);
+        std::vector<uint8_t> slot_32(0x200, 0x32);
+        stamp_mobile_copy(big, 0x1C4, 0, 0x32, 7, 60, 4, slot_32);
+        stamp_mobile_copy(big, 0x1C4, 4, 0x31, 7, 60, 4, std::vector<uint8_t>(0x800, 0x41));
+        stamp_mobile_copy(big, 0x1C4, 8, 0x31, 7, 59, 4, std::vector<uint8_t>(0x800, 0x42));
+        auto image = FlashImage::read(big.serialize());
+        ok = check(image && image->parse() && image->mobile_data,
+                   "FlashImage must parse big-block mobile copies") &&
+             ok;
+        if (image && image->mobile_data) {
+            ok = check(image->mobile_data->x31 == std::vector<uint8_t>(0x800, 0x42),
+                       "the latest big-block MobileB slot is taken") &&
+                 ok;
+            ok = check(image->mobile_data->x32 == slot_32,
+                       "a short big-block copy is read from its slot's first page") &&
+                 ok;
+        }
+        return ok;
+    }
 
+    struct MobilePageSurvey {
+        size_t tagged_pages = 0;
+        size_t first_page = 0;
+        BlockMetadata meta{};
+    };
+
+    // Where a type's pages are and what their spare says; assumes a single copy.
+    MobilePageSurvey survey_mobile(const Driver& driver, uint8_t type) {
+        MobilePageSurvey survey{};
+        const size_t pages = driver.block_count() * driver.pages_per_block();
+        for (size_t page = 0; page < pages; ++page) {
+            const auto meta = driver.interpret_page(page);
+            if (meta.block_type != type) {
+                continue;
+            }
+            if (survey.tagged_pages++ == 0) {
+                survey.first_page = page;
+                survey.meta = meta;
+            }
+        }
+        return survey;
+    }
+
+    bool page_is_erased(const Driver& driver, size_t page) {
+        const auto raw = driver.read_page_raw(page);
+        return std::all_of(raw.begin(), raw.end(), [](uint8_t b) { return b == 0xFF; });
+    }
+
+    bool test_mobile_copies_are_laid_as_xebuild_lays_them() {
+        bool ok = true;
+        const std::vector<uint8_t> mobile_b(0x800, 0x31);
+        const std::vector<uint8_t> mobile_c(0x200, 0x32);
+        struct Shape {
+            Driver::ImageSize size;
+            Driver::DriverMode mode;
+            uint8_t b_free;
+            uint8_t c_free;
+            size_t c_after_b; // pages from MobileB's first page to MobileC's
+        };
+        // Small block: a block each, free pages counted. Big block: one erase block, 0x800
+        // slots counted, 63 then 62 down the block.
+        constexpr Shape kShapes[] = {
+            {Driver::ImageSize::Smallblock, Driver::DriverMode::Small, 28, 31, 32},
+            {Driver::ImageSize::Smallblock, Driver::DriverMode::NewSmall, 28, 31, 32},
+            {Driver::ImageSize::Bigordevkit, Driver::DriverMode::Big, 63, 62, 4},
+        };
+        for (const auto& shape : kShapes) {
+            FlashImage image{};
+            image.flash_driver = Driver(shape.size, shape.mode);
+            gxbuild3::NAND::MobileData mobile;
+            mobile.x31 = mobile_b;
+            mobile.x32 = mobile_c;
+            image.mobile_data = mobile;
+            const auto bytes = image.write();
+            ok = check(!bytes.empty(), "an image with mobile data writes") && ok;
+            if (bytes.empty()) {
+                continue;
+            }
+            const auto& driver = std::as_const(image.flash_driver);
+            const auto b = survey_mobile(driver, 0x31);
+            const auto c = survey_mobile(driver, 0x32);
+            ok = check(b.tagged_pages == 4 && c.tagged_pages == 1,
+                       "only the pages holding a blob carry its type") &&
+                 ok;
+            ok = check(b.first_page % driver.pages_per_block() == 0 &&
+                           c.first_page == b.first_page + shape.c_after_b,
+                       "blobs are laid in type order where xeBuild lays them") &&
+                 ok;
+            ok = check(b.meta.sequence == 1 && c.meta.sequence == 1,
+                       "every blob is written as version 1") &&
+                 ok;
+            ok = check(b.meta.page_count == shape.b_free && c.meta.page_count == shape.c_free,
+                       "the spare states what is left free behind each blob") &&
+                 ok;
+            ok = check(b.meta.fs_size == 0x800 && c.meta.fs_size == 0x200,
+                       "the spare states each blob's length") &&
+                 ok;
+            // On big block MobileC's slot follows MobileB's directly.
+            ok = check((b.first_page + 4 == c.first_page ||
+                        page_is_erased(driver, b.first_page + 4)) &&
+                           page_is_erased(driver, c.first_page + 1),
+                       "the pages after a blob stay erased") &&
+                 ok;
+
+            auto parsed = FlashImage::read(bytes);
+            ok = check(parsed && parsed->parse() && parsed->mobile_data &&
+                           parsed->mobile_data->x31 == mobile_b &&
+                           parsed->mobile_data->x32 == mobile_c,
+                       "laid blobs read back byte for byte") &&
+                 ok;
+        }
+        return ok;
+    }
+
+    bool test_rewrite_erases_every_older_mobile_copy() {
+        Driver source(Driver::ImageSize::Smallblock, Driver::DriverMode::NewSmall);
+        // A donor copy whose version outranks the version 1 the writer gives the new one.
+        source.erase_block(0x200);
+        stamp_mobile_copy(source, 0x200, 0, 0x31, 900, 28, 4, std::vector<uint8_t>(0x800, 0xEE));
         auto image = FlashImage::read(source.serialize());
-        if (!check(image.has_value(), "FlashImage must accept a valid-sized NAND image")) {
+        if (!check(image && image->parse() && image->mobile_data,
+                   "a donor with a mobile copy parses")) {
             return false;
         }
-        if (!check(image->parse(), "FlashImage must parse mobile block metadata")) {
-            return false;
-        }
+        image->mobile_data->x31 = std::vector<uint8_t>(0x800, 0x5A);
+        const auto bytes = image->write();
+        auto parsed = bytes.empty() ? std::nullopt : FlashImage::read(bytes);
+        return check(parsed && parsed->parse() && parsed->mobile_data &&
+                         parsed->mobile_data->x31 == std::vector<uint8_t>(0x800, 0x5A),
+                     "the replacement blob is the one read back") &&
+               check(page_is_erased(parsed->flash_driver, 0x200 * 32),
+                     "the donor's mobile block is erased");
+    }
 
-        const auto* mobile = image->mobile_data ? image->mobile_data->x31.operator->() : nullptr;
-        return check(mobile != nullptr, "FlashImage must expose the latest mobile data version") &&
-               check(*mobile == latest_data,
-                     "FlashImage must concatenate all blocks from the latest mobile data version");
+    bool test_mobile_longer_than_one_copy_is_refused() {
+        FlashImage image{};
+        image.flash_driver = Driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
+        gxbuild3::NAND::MobileData mobile;
+        mobile.x31 = std::vector<uint8_t>(0x4001, 0x31);
+        image.mobile_data = mobile;
+        return check(image.write().empty(),
+                     "a small-block blob longer than its block cannot be written");
+    }
+
+    bool test_settings_blocks_are_laid_at_the_head_of_erased_blocks() {
+        bool ok = true;
+        const auto block = sound_smc_config_block();
+        std::vector<uint8_t> statistics(0x1000);
+        for (size_t i = 0; i < statistics.size(); ++i) {
+            statistics[i] = static_cast<uint8_t>(i * 13 + 1);
+        }
+        const std::vector<uint8_t> no_manufacturing(0x1000, 0xFF);
+        for (const auto& shape : kConfigShapes) {
+            FlashImage image{};
+            image.flash_driver = Driver(shape.size, shape.mode);
+            image.smc_config = block;
+            image.statistics = statistics;
+            image.manufacturing = no_manufacturing;
+            const auto bytes = image.write();
+            ok = check(!bytes.empty(), "an image with settings blocks writes") && ok;
+            if (bytes.empty()) {
+                continue;
+            }
+            const auto& driver = std::as_const(image.flash_driver);
+            const size_t step = driver.block_size_clean();
+            const auto read = [&driver](size_t offset, size_t length) {
+                return driver.read_clean(offset, length);
+            };
+            const auto all_ff = [](const std::vector<uint8_t>& bytes_read) {
+                return std::all_of(bytes_read.begin(), bytes_read.end(),
+                                   [](uint8_t b) { return b == 0xFF; });
+            };
+            std::vector<uint8_t> settings(0x1000, 0xFF);
+            std::copy(block.begin(), block.end(), settings.begin());
+            ok = check(read(shape.offset, 0x1000) == settings &&
+                           all_ff(read(shape.offset + 0x1000, step - 0x1000)),
+                       "the settings block heads an otherwise erased block") &&
+                 ok;
+            ok = check(read(shape.offset - step, 0x1000) == statistics &&
+                           all_ff(read(shape.offset - step + 0x1000, step - 0x1000)),
+                       "the statistics block heads an otherwise erased block") &&
+                 ok;
+            ok = check(all_ff(read(shape.offset - 2 * step, step)),
+                       "a console without manufacturing data keeps that block erased") &&
+                 ok;
+            if (shape.mode != Driver::DriverMode::Emmc) {
+                const size_t stats_page = (shape.offset - step) / 512;
+                const auto stats_meta = driver.interpret_page(stats_page + 7);
+                ok = check(stats_meta.block_type == 0 && stats_meta.sequence == 0 &&
+                               stats_meta.logical_block_id == (shape.offset - step) / step,
+                           "the statistics pages carry a type-0 spare naming their block") &&
+                     ok;
+                ok = check(page_is_erased(driver, stats_page + 8) &&
+                               page_is_erased(driver, (shape.offset - 2 * step) / 512),
+                           "pages past the 0x1000 and an erased block carry no spare") &&
+                     ok;
+            }
+            auto parsed = FlashImage::read(bytes);
+            ok = check(parsed && parsed->parse() && parsed->smc_config == block &&
+                           parsed->statistics == statistics &&
+                           parsed->manufacturing == no_manufacturing,
+                       "the settings blocks read back where the shape keeps them") &&
+                 ok;
+        }
+        return ok;
     }
 
     bool test_flash_image_places_filesystem_root_consistently() {
@@ -690,7 +906,11 @@ int main() {
     passed = test_anchor_block_matches_reference_layout() && passed;
     passed = test_anchor_choice_follows_the_number() && passed;
     passed = test_emmc_write_lays_both_anchors() && passed;
-    passed = test_flash_image_reassembles_latest_mobile_data() && passed;
+    passed = test_flash_image_takes_the_latest_mobile_copy() && passed;
+    passed = test_mobile_copies_are_laid_as_xebuild_lays_them() && passed;
+    passed = test_rewrite_erases_every_older_mobile_copy() && passed;
+    passed = test_mobile_longer_than_one_copy_is_refused() && passed;
+    passed = test_settings_blocks_are_laid_at_the_head_of_erased_blocks() && passed;
     passed = test_flash_image_places_filesystem_root_consistently() && passed;
     passed = test_flash_image_places_deferred_root_in_last_free_block() && passed;
     passed = test_flash_image_accepts_legacy_filesystem_root_type() && passed;

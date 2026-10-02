@@ -455,16 +455,27 @@ namespace {
             InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xA0, 0xA1, 0xA2})};
         input.patches = std::move(patches);
 
-        Bytes expected_mobile(33 * 0x4000);
-        for (size_t index = 0; index < expected_mobile.size(); ++index) {
-            expected_mobile[index] = static_cast<uint8_t>((index * 17U + 0x39U) & 0xFFU);
+        // Every blob type, each a full block, laid from the first free block.
+        for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
+            Bytes expected_mobile(0x4000);
+            for (size_t index = 0; index < expected_mobile.size(); ++index) {
+                expected_mobile[index] = static_cast<uint8_t>((index * 17U + block_type) & 0xFFU);
+            }
+            *input.mobiles.slot(block_type) = std::move(expected_mobile);
         }
-        *input.mobiles.slot(0x31) = expected_mobile;
 
         const auto built = RunBuild(input);
         const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
-        return require(extracted.has_value() && *extracted->mobiles.slot(0x31) == expected_mobile,
-                       "glitch patch reservation prevents overwriting mobile data");
+        if (!require(extracted.has_value(), "glitch image with mobile data extracts")) {
+            return false;
+        }
+        for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
+            if (!require(*extracted->mobiles.slot(block_type) == *input.mobiles.slot(block_type),
+                         "glitch patch reservation prevents overwriting mobile data")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     bool test_glitch_patch_uses_header_overlay_anchor() {
@@ -975,36 +986,48 @@ namespace {
                        "invalid input has an InvalidInput build error");
     }
 
-    bool test_emmc_rejects_mobile_slots_without_corona_metadata_fields() {
-        auto input = fresh_input(ImageType::Emmc);
-        *input.mobiles.slot(0x33) = Bytes{3};
+    // An eMMC anchor names four blobs, types 0x31-0x34. Those are laid; 0x35-0x39 are left
+    // out with a warning and the build goes on.
+    bool emmc_keeps_anchor_mobiles_only(const Input& input, std::string_view what) {
         const auto built = RunBuild(input);
-        return require(!built.has_value(), "eMMC rejects unsupported mobile slots") &&
-               require(built.error().code == BuildErrorCode::InvalidInput,
-                       "unsupported eMMC mobile has an input error");
-    }
-
-    bool test_emmc_donor_rejects_each_high_mobile_when_requested_type_is_mismatched() {
-        const auto donor = RunBuild(fresh_input(ImageType::Emmc));
-        if (!require(donor.has_value(), "eMMC donor fixture builds")) {
+        const auto parsed = built ? parse_image(*built) : std::nullopt;
+        if (!require(built.has_value() && parsed.has_value() && parsed->mobile_data.has_value(),
+                     std::string(what) + ": eMMC build with mobile data succeeds")) {
             return false;
         }
-
-        for (uint8_t block_type = 0x33; block_type <= 0x39; ++block_type) {
-            auto input = fresh_input(ImageType::SmallBlock);
-            input.metadata.nand_image = *donor;
-            *input.mobiles.slot(block_type) = Bytes{block_type};
-            const auto built = RunBuild(input);
-            if (!require(!built.has_value(), "effective eMMC geometry rejects high mobile slot") ||
-                !require(built.error().code == BuildErrorCode::InvalidInput,
-                         "effective eMMC geometry returns InvalidInput") ||
-                !require(built.error().message ==
-                             "eMMC Corona metadata supports mobile slots 0x31 and 0x32 only",
-                         "effective eMMC geometry reports the ruled Corona limitation")) {
+        for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
+            const auto* given = input.mobiles.slot(block_type);
+            const auto* laid = parsed->mobile_data->get_slot(block_type);
+            const bool expected = block_type <= 0x34 && given && *given;
+            if (!require(expected ? *laid == *given : !laid->has_value(),
+                         std::string(what) + ": eMMC lays mobiles 0x31-0x34 and drops the rest")) {
                 return false;
             }
         }
         return true;
+    }
+
+    bool test_emmc_lays_four_anchor_mobiles_and_drops_the_rest() {
+        auto input = fresh_input(ImageType::Emmc);
+        for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
+            *input.mobiles.slot(block_type) = Bytes(0x800, block_type);
+        }
+        *input.mobiles.slot(0x32) = Bytes(0x200, 0x32);
+        return emmc_keeps_anchor_mobiles_only(input, "fresh eMMC");
+    }
+
+    bool test_emmc_donor_lays_four_anchor_mobiles_and_drops_the_rest() {
+        const auto donor = RunBuild(fresh_input(ImageType::Emmc));
+        if (!require(donor.has_value(), "eMMC donor fixture builds")) {
+            return false;
+        }
+        // The donor's eMMC geometry wins over the requested small block.
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.metadata.nand_image = *donor;
+        for (uint8_t block_type = 0x33; block_type <= 0x39; ++block_type) {
+            *input.mobiles.slot(block_type) = Bytes{block_type};
+        }
+        return emmc_keeps_anchor_mobiles_only(input, "eMMC donor");
     }
 
     bool test_nand_donor_accepts_high_mobile_when_requested_type_is_emmc() {
@@ -1060,8 +1083,8 @@ namespace {
 
     bool test_mobile_overlay_replaces_longer_donor_mobile_without_stale_tail() {
         auto input = fresh_input(ImageType::SmallBlock);
-        input.metadata.nand_image = make_donor(input, {{0x32, Bytes(0x20000, 2)}});
-        *input.mobiles.slot(0x32) = Bytes(0x10000, 9);
+        input.metadata.nand_image = make_donor(input, {{0x32, Bytes(0x800, 2)}});
+        *input.mobiles.slot(0x32) = Bytes(0x200, 9);
 
         const auto built = RunBuild(input);
         if (!require(built.has_value(), "long mobile overlay build succeeds")) {
@@ -1079,19 +1102,16 @@ namespace {
                        "shorter replacement mobile does not retain the donor tail");
     }
 
-    bool test_mobile_overlay_clears_donor_size_when_replacement_exceeds_uint16() {
+    // One copy of a blob fills at most its block on small block; nothing longer can be laid.
+    bool test_mobile_overlay_longer_than_one_block_is_refused() {
         auto input = fresh_input(ImageType::SmallBlock);
-        input.metadata.nand_image = make_donor(input, {{0x32, Bytes(0x8000, 2)}});
-        *input.mobiles.slot(0x32) = Bytes(0x14000, 9);
+        input.metadata.nand_image = make_donor(input, {{0x32, Bytes(0x800, 2)}});
+        *input.mobiles.slot(0x32) = Bytes(0x4001, 9);
 
         const auto built = RunBuild(input);
-        const auto parsed = built ? parse_image(*built) : std::nullopt;
-        return require(built.has_value(), "large mobile overlay build succeeds") &&
-               require(parsed.has_value() && parsed->mobile_data.has_value() &&
-                           parsed->mobile_data->x32.has_value(),
-                       "large mobile overlay reparses") &&
-               require(parsed->mobile_data->x32 == *input.mobiles.slot(0x32),
-                       "large mobile replacement clears the donor size metadata");
+        return require(!built.has_value(), "a mobile overlay longer than a block is refused") &&
+               require(built.error().code == BuildErrorCode::SerializationFailure,
+                       "an over-long mobile reports SerializationFailure");
     }
 
     bool test_extracted_plaintext_keyvault_reencrypts_for_a_fresh_layout() {
@@ -1469,15 +1489,31 @@ namespace {
     }
 
     bool test_mobile_allocation_rejects_smc_tail_overlap() {
-        auto input = fresh_input(ImageType::SmallBlock);
-        constexpr size_t first_mobile_block = 4;
-        constexpr size_t smc_tail_start = 0x3DC;
-        *input.mobiles.slot(0x31) = Bytes((smc_tail_start - first_mobile_block + 1) * 0x4000, 0x31);
+        FlashImage image{};
+        image.flash_driver = Driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
+        const size_t limit = image.flash_driver.data_block_limit();
+        gxbuild3::NAND::FlashFileSystem filesystem{};
+        filesystem.set_driver(&image.flash_driver);
+        if (!require(filesystem.format(image.flash_driver.block_count(),
+                                       gxbuild3::NAND::FlashFileSystem::kDeferRoot) &&
+                         filesystem.reserve_blocks(0, limit),
+                     "a FlashFS holding every data block formats")) {
+            return false;
+        }
+        image.filesystem = std::move(filesystem);
+        image.mobile_data = MobileData{};
+        image.mobile_data->x31 = Bytes(0x800, 0x31);
 
-        const auto built = RunBuild(input);
-        return require(!built.has_value(), "mobile allocation cannot enter the SMC tail") &&
-               require(built.error().code == BuildErrorCode::SerializationFailure,
-                       "SMC-tail mobile allocation reports SerializationFailure");
+        if (!require(image.write().empty(), "mobile allocation cannot enter the SMC tail")) {
+            return false;
+        }
+        for (size_t block = limit; block < image.flash_driver.block_count(); ++block) {
+            if (!require(image.flash_driver.interpret_block(block).block_type != 0x31,
+                         "no tail block is given the mobile")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     bool test_flashfs_allocation_reports_exhaustion_before_the_smc_tail() {
@@ -1514,15 +1550,21 @@ namespace {
         payloads.xell = valid_xell();
         input.payloads = std::move(payloads);
 
-        // The unreserved range begins at block 4; 50 blocks would formerly cover every
-        // payload block from the rebooter at 0x90000 through XeLL at 0x95060.
-        *input.mobiles.slot(0x31) = Bytes(50 * 0x4000, 0x31);
+        // The unreserved range begins at block 4. Nine one-block blobs are laid from there,
+        // past the payload blocks from the rebooter at 0x90000 through XeLL at 0x95060.
+        for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
+            *input.mobiles.slot(block_type) = Bytes(0x4000, block_type);
+        }
         const auto built = RunBuild(input);
         const auto parsed = built ? parse_image(*built) : std::nullopt;
+        bool mobiles_intact = parsed.has_value() && parsed->mobile_data.has_value();
+        for (uint8_t block_type = 0x31; mobiles_intact && block_type <= 0x39; ++block_type) {
+            mobiles_intact =
+                *parsed->mobile_data->get_slot(block_type) == *input.mobiles.slot(block_type);
+        }
 
         return require(built.has_value(), "mobile and fixed payload image builds") &&
-               require(parsed.has_value() && parsed->mobile_data.has_value() &&
-                           parsed->mobile_data->x31 == *input.mobiles.slot(0x31),
+               require(mobiles_intact,
                        "serialized mobile bytes are not overwritten by fixed payloads") &&
                require(parsed->payloads.rebooter == input.payloads->rebooter,
                        "serialized rebooter bytes survive mobile allocation") &&
@@ -1700,17 +1742,12 @@ namespace {
                        "eMMC absent 0x32 preserves donor data");
     }
 
-    bool test_emmc_rejects_each_mobile_slot_without_corona_metadata() {
+    bool test_emmc_takes_each_anchor_mobile_alone_and_drops_each_other_type() {
         for (uint8_t block_type = 0x33; block_type <= 0x39; ++block_type) {
             auto input = fresh_input(ImageType::Emmc);
+            *input.mobiles.slot(0x31) = Bytes{0x31};
             *input.mobiles.slot(block_type) = Bytes{block_type};
-            const auto built = RunBuild(input);
-            if (!require(!built.has_value(), "eMMC rejects unsupported mobile input") ||
-                !require(built.error().code == BuildErrorCode::InvalidInput,
-                         "unsupported eMMC mobile returns InvalidInput") ||
-                !require(built.error().message ==
-                             "eMMC Corona metadata supports mobile slots 0x31 and 0x32 only",
-                         "unsupported eMMC mobile explains Corona metadata limitation")) {
+            if (!emmc_keeps_anchor_mobiles_only(input, "single eMMC mobile")) {
                 return false;
             }
         }
@@ -1740,6 +1777,80 @@ namespace {
                          "absent NAND mobile slot preserves donor data") ||
                 !require(parsed->mobile_data->x39 == Bytes({0xA9, 0x39}),
                          "high NAND mobile slot accepts user replacement")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // A settings block as a console holds it: 0x400 bytes whose head is the one's complement
+    // of the byte sum over [0x10, 0x10C), little-endian.
+    Bytes sound_smc_config() {
+        Bytes block(0x400);
+        for (size_t i = 2; i < block.size(); ++i) {
+            block[i] = static_cast<uint8_t>(i * 5 + 1);
+        }
+        uint32_t sum = 0;
+        for (size_t i = 0x10; i < 0x10C; ++i) {
+            sum += block[i];
+        }
+        const uint16_t head = static_cast<uint16_t>(~sum);
+        block[0] = static_cast<uint8_t>(head);
+        block[1] = static_cast<uint8_t>(head >> 8);
+        return block;
+    }
+
+    // A donor of one layout rebuilt as another keeps its settings, statistics and
+    // manufacturing blocks, each at the offsets of the layout built.
+    bool test_settings_blocks_follow_the_console_into_another_layout() {
+        auto donor_input = fresh_input(ImageType::NewSmallBlock);
+        donor_input.metadata.smc_config = sound_smc_config();
+        donor_input.metadata.statistics = Bytes(0x1000, 0x5A);
+        Bytes manufacturing(0x1000, 0xFF);
+        std::fill_n(manufacturing.begin(), 0x40, uint8_t{0x4D});
+        donor_input.metadata.manufacturing = manufacturing;
+        const auto donor = RunBuild(donor_input);
+        if (!require(donor.has_value(), "settings donor builds")) {
+            return false;
+        }
+
+        const struct {
+            ImageType type;
+            size_t settings;
+            size_t step;
+        } targets[] = {
+            {ImageType::SmallBlock, 0xF7C000, 0x4000},
+            {ImageType::BigBlock, 0x3BE0000, 0x20000},
+            {ImageType::Emmc, 0x2FFC000, 0x4000},
+        };
+        for (const auto& target : targets) {
+            auto extracted = ExtractAll(*donor, donor_input.metadata.cpu_key);
+            if (!require(extracted.has_value() &&
+                             extracted->metadata.smc_config == donor_input.metadata.smc_config &&
+                             extracted->metadata.statistics == donor_input.metadata.statistics &&
+                             extracted->metadata.manufacturing == manufacturing,
+                         "extraction takes the donor's settings blocks")) {
+                return false;
+            }
+            extracted->metadata.nand_image.reset();
+            extracted->image_type = target.type;
+            const auto built = RunBuild(*extracted);
+            const auto parsed = built ? parse_image(*built) : std::nullopt;
+            if (!require(parsed.has_value(), "cross-layout build with settings blocks parses")) {
+                return false;
+            }
+            const auto& driver = std::as_const(parsed->flash_driver);
+            Bytes settings(0x1000, 0xFF);
+            std::copy(donor_input.metadata.smc_config->begin(),
+                      donor_input.metadata.smc_config->end(), settings.begin());
+            if (!require(driver.read_clean(target.settings, 0x1000) == settings,
+                         "the settings block lands at the target layout's offset") ||
+                !require(driver.read_clean(target.settings - target.step, 0x1000) ==
+                             *donor_input.metadata.statistics,
+                         "the statistics block lands one erase block below it") ||
+                !require(driver.read_clean(target.settings - 2 * target.step, 0x1000) ==
+                             manufacturing,
+                         "the manufacturing block lands two erase blocks below it")) {
                 return false;
             }
         }
@@ -2813,12 +2924,12 @@ int main() {
     passed = test_boot_chain_collision_is_rejected_for_unpatched_payload_layouts() && passed;
     passed = test_bootloader_patch_end_is_bounded_by_boot_chain_layout() && passed;
     passed = test_invalid_input_returns_structured_error() && passed;
-    passed = test_emmc_rejects_mobile_slots_without_corona_metadata_fields() && passed;
-    passed = test_emmc_donor_rejects_each_high_mobile_when_requested_type_is_mismatched() && passed;
+    passed = test_emmc_lays_four_anchor_mobiles_and_drops_the_rest() && passed;
+    passed = test_emmc_donor_lays_four_anchor_mobiles_and_drops_the_rest() && passed;
     passed = test_nand_donor_accepts_high_mobile_when_requested_type_is_emmc() && passed;
     passed = test_donor_overlays_replace_explicit_values_and_preserve_mobile_slots() && passed;
     passed = test_mobile_overlay_replaces_longer_donor_mobile_without_stale_tail() && passed;
-    passed = test_mobile_overlay_clears_donor_size_when_replacement_exceeds_uint16() && passed;
+    passed = test_mobile_overlay_longer_than_one_block_is_refused() && passed;
     passed = test_extracted_plaintext_keyvault_reencrypts_for_a_fresh_layout() && passed;
     passed = test_donor_rejects_a_different_structurally_valid_cpu_key() && passed;
     passed = test_payload_must_match_its_0x200_size_contract() && passed;
@@ -2844,7 +2955,8 @@ int main() {
     passed = test_flashfs_directory_serialization_capacity() && passed;
     passed = test_bigblock_flashfs_overlay_handles_the_24_bit_sequence_limit() && passed;
     passed = test_emmc_mobile_slots_roundtrip_and_an_empty_input_removes_donor_data() && passed;
-    passed = test_emmc_rejects_each_mobile_slot_without_corona_metadata() && passed;
+    passed = test_emmc_takes_each_anchor_mobile_alone_and_drops_each_other_type() && passed;
+    passed = test_settings_blocks_follow_the_console_into_another_layout() && passed;
     passed = test_serialized_mobile_overlays_preserve_absent_slots_for_nand_layouts() && passed;
     passed = test_extraction_roundtrips_serialized_bootloaders_and_payloads() && passed;
     passed = test_metadata_overrides_reach_final_patched_cb_b_and_cf0() && passed;

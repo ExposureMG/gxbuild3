@@ -149,6 +149,32 @@ namespace {
                        "a rebooter must not exceed its 0x1000-byte region");
     }
 
+    bool test_settings_block_sizes() {
+        auto input = valid_input();
+        input.metadata.smc_config = std::vector<uint8_t>(0x400, 0x00);
+        input.metadata.statistics = std::vector<uint8_t>(0x1000, 0xFF);
+        input.metadata.manufacturing = std::vector<uint8_t>(0x1000, 0xFF);
+        if (!require(ValidateInput(input).has_value(),
+                     "0x400 of settings and 0x1000 of statistics and manufacturing are valid")) {
+            return false;
+        }
+
+        input.metadata.smc_config = std::vector<uint8_t>(0x3FF, 0x00);
+        const auto short_config = ValidateInput(input);
+        if (!require(!short_config &&
+                         short_config.error().code == InputErrorCode::InvalidSettingsBlockSize,
+                     "a settings block must contain exactly 0x400 bytes")) {
+            return false;
+        }
+
+        input.metadata.smc_config.reset();
+        input.metadata.manufacturing = std::vector<uint8_t>(0x1001, 0xFF);
+        const auto long_block = ValidateInput(input);
+        return require(!long_block &&
+                           long_block.error().code == InputErrorCode::InvalidSettingsBlockSize,
+                       "a manufacturing block must contain exactly 0x1000 bytes");
+    }
+
 } // namespace
 
 int main() {
@@ -160,5 +186,6 @@ int main() {
     passed = test_retail_rejects_automatic_patchset() && passed;
     passed = test_retail_and_devkit_reject_addon_patch_data() && passed;
     passed = test_payload_and_rebooter_sizes() && passed;
+    passed = test_settings_block_sizes() && passed;
     return passed ? 0 : 1;
 }

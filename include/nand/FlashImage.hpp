@@ -68,6 +68,11 @@ struct FlashImage {
     // The console's 0x400-byte settings block (fan curves, MAC, regions), carried as bytes.
     // Only a block whose own head checksum holds is kept.
     std::optional<std::vector<uint8_t>> smc_config;
+    // The statistics and manufacturing blocks, one and two erase blocks below the settings
+    // block: 0x1000 bytes each, carried as bytes. All 0xFF where the console keeps none, which
+    // the writer leaves erased.
+    std::optional<std::vector<uint8_t>> statistics;
+    std::optional<std::vector<uint8_t>> manufacturing;
     std::optional<CoronaConfig> corona_config;
     std::optional<MobileData> mobile_data;
     std::optional<FlashFileSystem> filesystem;

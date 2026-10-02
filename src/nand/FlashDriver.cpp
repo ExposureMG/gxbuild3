@@ -395,6 +395,10 @@ namespace gxbuild3::NAND {
         return meta;
     }
 
+    BlockMetadata Driver::interpret_page(size_t page) const {
+        return interpret_page_metadata(page);
+    }
+
     BlockMetadata Driver::interpret_page_metadata(size_t first_page) const {
         BlockMetadata meta{};
         if (m_driver_mode == DriverMode::Emmc) {
@@ -524,6 +528,24 @@ namespace gxbuild3::NAND {
 
     void Driver::write_cluster_metadata(size_t cluster_idx, const BlockMetadata& meta) {
         write_page_metadata_range(cluster_idx * 32, 32, meta);
+    }
+
+    void Driver::write_page_metadata(size_t first_page, size_t page_count,
+                                     const BlockMetadata& meta) {
+        write_page_metadata_range(first_page, page_count, meta);
+    }
+
+    void Driver::erase_block(size_t block_idx) {
+        if (block_idx >= block_count()) {
+            return;
+        }
+        if (m_driver_mode == DriverMode::Emmc) {
+            const size_t offset = block_idx * 0x4000;
+            std::fill_n(m_nand_image.begin() + offset, 0x4000, uint8_t{0xFF});
+            return;
+        }
+        auto raw = read_block_raw(block_idx);
+        std::fill(raw.begin(), raw.end(), uint8_t{0xFF});
     }
 
     void Driver::write_page_metadata_range(size_t first_page, size_t page_count,
@@ -844,26 +866,17 @@ namespace gxbuild3::NAND {
                 } else {
                     bool is_mobile = false;
                     for (const auto& mob : m_layout.mobile_blocks) {
-                        if (blk >= mob.start_block && blk < mob.start_block + mob.block_count) {
-                            meta.block_type = mob.block_type;
-                            meta.sequence = mob.sequence;
-                            const size_t block_offset = blk - mob.start_block;
-                            const size_t data_offset = block_offset * block_size_clean();
-                            if (data_offset < mob.data_size) {
-                                const size_t chunk_len =
-                                    std::min(block_size_clean(), mob.data_size - data_offset);
-                                const size_t page_count = (chunk_len + 511) / 512;
-                                meta.page_count = page_count >= pages_per_block()
-                                                      ? 0
-                                                      : static_cast<uint8_t>(page_count);
-                                if (block_offset == 0 && mob.data_size <= 0xFFFF) {
-                                    meta.fs_size = static_cast<uint16_t>(mob.data_size);
-                                }
-                            }
-                            write_block_metadata(blk, meta);
-                            is_mobile = true;
-                            break;
+                        if (blk != mob.start_block) {
+                            continue;
                         }
+                        BlockMetadata mobile_meta = meta;
+                        mobile_meta.block_type = mob.block_type;
+                        mobile_meta.sequence = mob.sequence;
+                        mobile_meta.page_count = mob.free_count;
+                        mobile_meta.fs_size = static_cast<uint16_t>(mob.data_size);
+                        write_page_metadata_range(blk * pages_per_block() + mob.first_page,
+                                                  mob.page_count, mobile_meta);
+                        is_mobile = true;
                     }
 
                     // Below 0x50, pages outside the FlashFS files get a type-0 stamp,
