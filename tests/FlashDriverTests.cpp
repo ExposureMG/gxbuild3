@@ -53,6 +53,37 @@ namespace {
                      "fresh unused blocks must have a good-block marker");
     }
 
+    bool test_bad_block_mark_is_read_on_the_first_and_middle_pages() {
+        bool ok = true;
+        const std::array<std::pair<Driver::ImageSize, Driver::DriverMode>, 2> shapes{
+            {{Driver::Smallblock, Driver::DriverMode::Small},
+             {Driver::Bigordevkit, Driver::DriverMode::Big}}};
+        for (const auto& [size, mode] : shapes) {
+            Driver driver(size, mode);
+            const size_t mark = mode == Driver::DriverMode::Big ? 0 : 5;
+            const size_t pages = driver.pages_per_block();
+
+            // A big block's filesystem pages after the first hold zero at the mark byte.
+            driver.read_page_spare(3 * pages + 1)[mark] = 0;
+            ok = check(!driver.is_bad_block(3), "a mark on the second page is not a bad block") &&
+                 ok;
+
+            driver.read_page_spare(4 * pages + pages / 2)[mark] = 0;
+            ok = check(driver.is_bad_block(4), "a mark on the middle page is a bad block") && ok;
+
+            driver.mark_bad_block(5);
+            ok = check(driver.read_page_spare(5 * pages)[mark] == 0 &&
+                           driver.read_page_spare(5 * pages + pages / 2)[mark] == 0 &&
+                           driver.read_page_spare(5 * pages + 1)[mark] == 0xFF,
+                       "marking a block bad marks its first and middle pages") &&
+                 ok;
+            ok = check(driver.is_bad_block(5) && driver.interpret_block(5).is_bad,
+                       "a block marked bad reads back bad") &&
+                 ok;
+        }
+        return ok;
+    }
+
     bool test_big_block_sequence_layout() {
         Driver driver(Driver::ImageSize::Bigordevkit, Driver::DriverMode::Big);
         BlockMetadata metadata{};
@@ -161,6 +192,8 @@ namespace {
         for (const auto& shape : kConfigShapes) {
             FlashImage image{};
             image.flash_driver = Driver(shape.size, shape.mode);
+            // A dump written back keeps the bytes it does not model, as here the neighbours.
+            image.preserve_layout = true;
             const size_t step = image.flash_driver.block_size_clean();
             // The statistics and manufacturing blocks lie one and two erase blocks below.
             const std::vector<uint8_t> statistics(0x1000, 0xA5);
@@ -316,6 +349,12 @@ namespace {
             ok = check(std::all_of(bytes.begin() + CoronaConfig::kSize, bytes.end(),
                                    [](uint8_t b) { return b == 0; }),
                        "the anchor's span is zero after the structure") &&
+                 ok;
+            const auto tail = driver.read_offset(CoronaConfig::kOffsets[copy] + CoronaConfig::kSpan,
+                                                 CoronaConfig::kBlockSize - CoronaConfig::kSpan);
+            ok = check(!tail.empty() && std::all_of(tail.begin(), tail.end(),
+                                                    [](uint8_t b) { return b == 0xFF; }),
+                       "the anchor's block is erased past its span") &&
                  ok;
         }
 
@@ -897,6 +936,7 @@ namespace {
 int main() {
     bool passed = true;
     passed = test_fresh_blocks_are_not_bad() && passed;
+    passed = test_bad_block_mark_is_read_on_the_first_and_middle_pages() && passed;
     passed = test_big_block_sequence_layout() && passed;
     passed = test_block_type_masks_ecc_bits() && passed;
     passed = test_emmc_image_is_48_megabytes() && passed;

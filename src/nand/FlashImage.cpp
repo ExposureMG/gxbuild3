@@ -43,6 +43,11 @@ namespace gxbuild3::NAND {
         // Everything in the JTAG window is counted from kJtagWindowOffset.
         constexpr uint32_t kJTAGPatchesSize = 0x4000;
 
+        // xeBuild lays a built image in 16 KiB blocks on erased flash: the block holding the
+        // end of the boot chain is programmed zero past it, and every byte nothing lays stays
+        // erased.
+        constexpr size_t kLayBlockSize = 0x4000;
+
         inline constexpr uint32_t align_16(uint32_t value) noexcept {
             return (value + 0x0FU) & ~0x0FU;
         }
@@ -688,6 +693,18 @@ namespace gxbuild3::NAND {
 
         auto& driver = const_cast<Driver&>(flash_driver);
 
+        // A built image starts from erased flash, so whatever this writer does not lay (an
+        // unused update slot, free filesystem blocks, the remap pool, a donor's old data)
+        // stays erased: 0xFF data and, on NAND, an erased spare. A bad block keeps its marker.
+        // A parsed dump written back keeps its bytes.
+        if (!preserve_layout) {
+            for (size_t block = 0; block < driver.block_count(); ++block) {
+                if (!driver.is_bad_block(block)) {
+                    driver.erase_block(block);
+                }
+            }
+        }
+
         const bool is_big_or_emmc = (driver.driver_mode() == Driver::DriverMode::Big ||
                                      driver.driver_mode() == Driver::DriverMode::Emmc);
         const auto slot_mode = driver.driver_mode();
@@ -753,6 +770,11 @@ namespace gxbuild3::NAND {
                 0, std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&raw), sizeof(raw)))) {
             return false;
         }
+        // On a built image the header block is programmed zero from the header to the SMC.
+        if (!preserve_layout &&
+            !driver.write_offset(sizeof(raw), std::vector<uint8_t>(smc_offset - sizeof(raw), 0))) {
+            return false;
+        }
 
         if (smc) {
             if (!driver.write_offset(smc_offset, smc->data)) {
@@ -809,6 +831,12 @@ namespace gxbuild3::NAND {
                 return false;
             }
             cursor += align_16(static_cast<uint32_t>(ce.size()));
+        }
+        if (!preserve_layout) {
+            const size_t block_end = (cursor + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize;
+            if (!driver.write_offset(cursor, std::vector<uint8_t>(block_end - cursor, 0))) {
+                return false;
+            }
         }
 
         size_t highest_used_offset = cursor;
@@ -1076,11 +1104,12 @@ namespace gxbuild3::NAND {
             }
 
             // The copies are numbered 1 and 2, each given CoronaConfig::kSpan with zeros
-            // after the structure.
+            // after the structure; the rest of its block stays erased.
             for (size_t copy = 0; copy < CoronaConfig::kOffsets.size(); ++copy) {
                 cc.number = static_cast<uint32_t>(copy + 1);
                 auto cc_bytes = cc.serialize();
                 cc_bytes.resize(CoronaConfig::kSpan, 0);
+                cc_bytes.resize(CoronaConfig::kBlockSize, 0xFF);
                 if (!driver.write_offset(CoronaConfig::kOffsets[copy], cc_bytes)) {
                     return false;
                 }
@@ -1238,7 +1267,7 @@ namespace gxbuild3::NAND {
                 span_size += slot.cg_spill_blocks.empty() ? align_16(static_cast<uint32_t>(slot.cg->serialize().size())) :
                     std::min<size_t>(align_16(slot.cg->serialize().size()), slot_stride - span_size);
             }
-            return flash_driver.write_offset(base_offset, std::vector<uint8_t>(span_size, 0));
+            return flash_driver.write_offset(base_offset, std::vector<uint8_t>(span_size, 0xFF));
         };
         return clear_patchslot(donor_patchslot_base, system_update_0) &&
                clear_patchslot(donor_patchslot_base + slot_stride, system_update_1);

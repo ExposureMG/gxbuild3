@@ -2896,6 +2896,150 @@ namespace {
                        "a replacement header-only required CD remains structurally invalid");
     }
 
+    bool all_bytes(std::span<const uint8_t> bytes, uint8_t value) {
+        return !bytes.empty() &&
+               std::all_of(bytes.begin(), bytes.end(), [value](uint8_t b) { return b == value; });
+    }
+
+    // Every page from `first_page` on: 0xFF data and an erased spare.
+    bool pages_are_erased(const Driver& driver, size_t first_page, size_t page_count) {
+        for (size_t page = first_page; page < first_page + page_count; ++page) {
+            if (!all_bytes(driver.read_page(page), 0xFF) ||
+                !all_bytes(driver.read_page_spare(page), 0xFF)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool test_donor_build_leaves_unlaid_space_erased() {
+        const auto initial = RunBuild(fresh_input(ImageType::SmallBlock));
+        auto donor = initial ? FlashImage::read(*initial) : std::nullopt;
+        if (!require(donor.has_value(), "erased-fill donor image opens")) {
+            return false;
+        }
+
+        // A donor's old data in update slot 1, in a free filesystem block and in the remap
+        // pool, each block programmed with a data spare; and one block the chip marked bad.
+        constexpr size_t kSlotOneBlock = 0x80000 / 0x4000;
+        constexpr size_t kStaleBlock = 0x3B0;
+        constexpr size_t kPoolBlock = 0x3F0;
+        constexpr size_t kBadBlock = 0x3C0;
+        for (const size_t block : {kSlotOneBlock, kStaleBlock, kPoolBlock}) {
+            BlockMetadata stale{};
+            stale.logical_block_id = static_cast<uint16_t>(block);
+            stale.block_type = 0x28;
+            donor->flash_driver.write_block(block, Bytes(0x4000, 0x5A));
+            donor->flash_driver.write_block_metadata(block, stale);
+        }
+        donor->flash_driver.mark_bad_block(kBadBlock);
+
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.metadata.nand_image = donor->flash_driver.serialize();
+        const auto built = RunBuild(input);
+        const auto image = built ? parse_image(*built) : std::nullopt;
+        if (!require(image.has_value(), "a build over a donor with old data parses")) {
+            return false;
+        }
+        const auto& driver = image->flash_driver;
+        const size_t pages = driver.pages_per_block();
+
+        // The header block is zero from the header to the SMC; the boot chain's last 16 KiB
+        // block is zero past its end; the rest up to the first update slot is erased.
+        const auto smc_offset = driver.read_clean(0x7C, 4);
+        const size_t smc_at = smc_offset.size() == 4
+                                  ? (size_t(smc_offset[0]) << 24) | (size_t(smc_offset[1]) << 16) |
+                                        (size_t(smc_offset[2]) << 8) | smc_offset[3]
+                                  : 0;
+        size_t chain_end = 0x8000;
+        const auto account = [&chain_end](const auto& bootloader) {
+            chain_end += (bootloader.serialize().size() + 0xF) & ~size_t{0xF};
+        };
+        account(image->cb_section.cb_or_A);
+        if (image->cb_section.cb_x) {
+            account(*image->cb_section.cb_x);
+        }
+        if (image->cb_section.cb_B) {
+            account(*image->cb_section.cb_B);
+        }
+        if (image->cb_section.sc) {
+            account(*image->cb_section.sc);
+        }
+        account(image->kernel_section.cd);
+        if (image->kernel_section.ce) {
+            account(*image->kernel_section.ce);
+        }
+        const size_t pad_end = (chain_end + 0x3FFF) / 0x4000 * 0x4000;
+
+        return require(smc_at > 0x80 && all_bytes(driver.read_clean(0x80, smc_at - 0x80), 0),
+                       "the header block is zero from the header to the SMC") &&
+               require(pad_end < 0x70000 &&
+                           all_bytes(driver.read_clean(chain_end, pad_end - chain_end), 0),
+                       "the boot chain's last block is zero past the chain") &&
+               require(pages_are_erased(driver, pad_end / 512, (0x70000 - pad_end) / 512),
+                       "the blocks between the chain and the first update slot stay erased") &&
+               require(pages_are_erased(driver, kSlotOneBlock * pages, 4 * pages),
+                       "an unused update slot 1 is erased, not zeroed or left to the donor") &&
+               require(pages_are_erased(driver, kStaleBlock * pages, pages),
+                       "a donor's old filesystem block is erased") &&
+               require(pages_are_erased(driver, kPoolBlock * pages, pages),
+                       "a donor's remap-pool block is erased") &&
+               require(driver.is_bad_block(kBadBlock), "a block marked bad keeps its mark");
+    }
+
+    bool test_emmc_build_leaves_anchor_tails_and_unused_blocks_erased() {
+        using gxbuild3::NAND::CoronaConfig;
+        const auto built = RunBuild(fresh_input(ImageType::Emmc));
+        if (!require(built.has_value() && built->size() == 0x3000000, "an eMMC image builds")) {
+            return false;
+        }
+        const std::span<const uint8_t> bytes(*built);
+        bool ok = true;
+        for (const size_t anchor : CoronaConfig::kOffsets) {
+            ok = require(all_bytes(bytes.subspan(anchor + CoronaConfig::kSize,
+                                                 CoronaConfig::kSpan - CoronaConfig::kSize),
+                                   0),
+                         "an anchor's span is zero after its structure") &&
+                 require(all_bytes(bytes.subspan(anchor + CoronaConfig::kSpan,
+                                                 CoronaConfig::kBlockSize - CoronaConfig::kSpan),
+                                   0xFF),
+                         "an anchor's block is erased past its span") &&
+                 ok;
+        }
+        return require(all_bytes(bytes.subspan(0x80000, 0x10000), 0xFF),
+                       "an unused eMMC update slot 1 is erased") &&
+               require(all_bytes(bytes.subspan(0xB00 * 0x4000, 0x4000), 0xFF),
+                       "an unused eMMC block is erased") &&
+               ok;
+    }
+
+    bool test_bigblock_flashfs_stamps_only_the_clusters_it_fills() {
+        auto input = fresh_input(ImageType::BigBlock);
+        input.flashfs_sec =
+            std::vector<std::pair<std::string, Bytes>>{{"small.bin", Bytes(0x100, 0x6B)}};
+        const auto built = RunBuild(input);
+        const auto image = built ? parse_image(*built) : std::nullopt;
+        const auto entry =
+            image && image->filesystem ? image->filesystem->stat("small.bin") : std::nullopt;
+        if (!require(entry.has_value(), "a big-block image with one small file parses")) {
+            return false;
+        }
+        const auto& driver = image->flash_driver;
+        const size_t clusters_per_block = driver.block_size_clean() / 0x4000;
+        const size_t file_cluster = entry->block_number;
+        const size_t first_cluster = file_cluster / clusters_per_block * clusters_per_block;
+        bool rest_erased = true;
+        for (size_t cluster = first_cluster; cluster < first_cluster + clusters_per_block;
+             ++cluster) {
+            if (cluster != file_cluster && !pages_are_erased(driver, cluster * 32, 32)) {
+                rest_erased = false;
+            }
+        }
+        return require(driver.interpret_cluster(file_cluster).block_type == 0x2A,
+                       "the file's cluster carries the big-block data stamp") &&
+               require(rest_erased, "the rest of the file's big block stays erased");
+    }
+
 } // namespace
 
 int main() {
@@ -2982,5 +3126,8 @@ int main() {
     passed = test_donor_nonces_seal_stages_by_position_and_every_slot_alike() && passed;
     passed = test_extraction_takes_cf_metadata_and_nonces_from_the_max_ldv_slot() && passed;
     passed = test_header_states_zero_pairing_and_the_board_copyright() && passed;
+    passed = test_donor_build_leaves_unlaid_space_erased() && passed;
+    passed = test_emmc_build_leaves_anchor_tails_and_unused_blocks_erased() && passed;
+    passed = test_bigblock_flashfs_stamps_only_the_clusters_it_fills() && passed;
     return passed ? 0 : 1;
 }

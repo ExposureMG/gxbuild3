@@ -453,7 +453,7 @@ namespace gxbuild3::NAND {
         root_meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
         root_meta.is_bad = false;
 
-        std::set<size_t> physical_blocks;
+        std::set<size_t> file_clusters;
         for (const auto& entry : m_entries) {
             if (!entry.is_valid()) {
                 continue;
@@ -489,7 +489,7 @@ namespace gxbuild3::NAND {
                     }
                 }
 
-                physical_blocks.insert(blk / clusters_per_block());
+                file_clusters.insert(blk);
 
                 bytes_written += chunk_len;
             }
@@ -500,17 +500,18 @@ namespace gxbuild3::NAND {
 
         // File data blocks carry FS sequence 0. Small-block data blocks are plain type 0x00
         // blocks with no size or page count; big-block ones carry type 0x2A and the
-        // constant reference stamp.
-        for (const size_t physical_block : physical_blocks) {
+        // constant reference stamp. Only the 16 KiB clusters holding file data are stamped:
+        // the rest of a big block stays erased, as xeBuild leaves it.
+        for (const size_t cluster : file_clusters) {
             BlockMetadata file_meta{};
-            file_meta.logical_block_id = static_cast<uint16_t>(physical_block);
+            file_meta.logical_block_id = static_cast<uint16_t>(cluster / clusters_per_block());
             file_meta.sequence = 0;
             file_meta.block_type =
                 big_block ? FlashFsMetadata::kDataTypeBig : FlashFsMetadata::kDataTypeSmall;
             file_meta.fs_size = big_block ? FlashFsMetadata::kBigFsSize : 0;
             file_meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
             file_meta.is_bad = false;
-            m_driver->write_block_metadata(physical_block, file_meta);
+            m_driver->write_cluster_metadata(cluster, file_meta);
         }
 
         m_driver->write_cluster_metadata(root_cluster, root_meta);

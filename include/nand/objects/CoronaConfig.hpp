@@ -27,9 +27,11 @@ namespace gxbuild3::NAND {
         static constexpr size_t kBlobSlots = 4;
         static constexpr uint8_t kFirstBlobType = 0x31;
 
-        // Where the two copies sit, and how much room each is given.
+        // Where the two copies sit, and how much room each is given. Each copy owns its
+        // 0x4000-byte block; past kSpan the block is erased (0xFF).
         static constexpr std::array<size_t, 2> kOffsets = {0x2FE8000, 0x2FEC000};
         static constexpr size_t kSpan = 0x1000;
+        static constexpr size_t kBlockSize = 0x4000;
 
         struct Blob {
             uint16_t block = 0;  // in 0x4000-byte blocks

@@ -413,14 +413,7 @@ namespace gxbuild3::NAND {
         }
 
         if (m_driver_mode == DriverMode::Big) {
-            meta.is_bad = (spare[0] != 0xFF);
-            if (!meta.is_bad && pages_per_block() > 1) {
-                auto spare1 = read_page_spare(first_page + 1);
-                if (spare1.size() >= 16 && spare1[0] != 0xFF) {
-                    meta.is_bad = true;
-                }
-            }
-
+            meta.is_bad = is_bad_block(first_page / pages_per_block());
             meta.logical_block_id = static_cast<uint16_t>(((spare[2] & 0x0F) << 8) | spare[1]);
             meta.sequence = static_cast<uint32_t>(spare[5] | (spare[3] << 8) | (spare[4] << 16) |
                                                   (uint32_t(spare[6]) << 24));
@@ -430,14 +423,7 @@ namespace gxbuild3::NAND {
         } else if (m_driver_mode == DriverMode::NewSmall) {
             // PSB/NewSmall/spare type 1
             // sequence byte 0 at spare[0]
-            meta.is_bad = (spare[5] != 0xFF);
-            if (!meta.is_bad && pages_per_block() > 1) {
-                auto spare1 = read_page_spare(first_page + 1);
-                if (spare1.size() >= 16 && spare1[5] != 0xFF) {
-                    meta.is_bad = true;
-                }
-            }
-
+            meta.is_bad = is_bad_block(first_page / pages_per_block());
             meta.logical_block_id = static_cast<uint16_t>(((spare[2] & 0x0F) << 8) | spare[1]);
             meta.sequence = static_cast<uint32_t>(spare[0] | (spare[3] << 8) | (spare[4] << 16) |
                                                   (spare[6] << 24));
@@ -447,14 +433,7 @@ namespace gxbuild3::NAND {
         } else {
             // XSB/SmallBlock/spare type 0
             // sequence byte 0 at spare[2]
-            meta.is_bad = (spare[5] != 0xFF);
-            if (!meta.is_bad && pages_per_block() > 1) {
-                auto spare1 = read_page_spare(first_page + 1);
-                if (spare1.size() >= 16 && spare1[5] != 0xFF) {
-                    meta.is_bad = true;
-                }
-            }
-
+            meta.is_bad = is_bad_block(first_page / pages_per_block());
             meta.logical_block_id = static_cast<uint16_t>(((spare[1] & 0x0F) << 8) | spare[0]);
             meta.sequence = static_cast<uint32_t>(spare[2] | (spare[3] << 8) | (spare[4] << 16) |
                                                   (spare[6] << 24));
@@ -466,30 +445,24 @@ namespace gxbuild3::NAND {
         return meta;
     }
 
+    // The chip's mark is read where xeBuild reads it: on a block's first page and on the page
+    // halfway through it, 0 and 16 of a small block's 32 pages and 0 and 128 of a big block's
+    // 256. Other pages carry other fields at that byte; a big block's filesystem pages hold
+    // zero there.
     bool Driver::is_bad_block(size_t block_idx) const {
         if (m_driver_mode == DriverMode::Emmc) {
             return false;
         }
 
-        size_t first_page = block_idx * pages_per_block();
-        auto spare0 = read_page_spare(first_page);
-        if (spare0.size() < 16) {
-            return false;
-        }
-
-        if (m_driver_mode == DriverMode::Big) {
-            if (spare0[0] != 0xFF) {
+        const size_t mark_byte = m_driver_mode == DriverMode::Big ? 0 : 5;
+        const size_t first_page = block_idx * pages_per_block();
+        for (const size_t page : {first_page, first_page + pages_per_block() / 2}) {
+            const auto spare = read_page_spare(page);
+            if (spare.size() >= 16 && spare[mark_byte] != 0xFF) {
                 return true;
             }
-            auto spare1 = read_page_spare(first_page + 1);
-            return spare1.size() >= 16 && spare1[0] != 0xFF;
-        } else {
-            if (spare0[5] != 0xFF) {
-                return true;
-            }
-            auto spare1 = read_page_spare(first_page + 1);
-            return spare1.size() >= 16 && spare1[5] != 0xFF;
         }
+        return false;
     }
 
     void Driver::mark_bad_block(size_t block_idx) {
@@ -497,19 +470,11 @@ namespace gxbuild3::NAND {
             return;
         }
 
-        size_t ppb = pages_per_block();
-        size_t first_page = block_idx * ppb;
-
-        for (size_t p = 0; p < std::min<size_t>(ppb, 2); ++p) {
-            auto spare = read_page_spare(first_page + p);
+        const size_t first_page = block_idx * pages_per_block();
+        for (const size_t page : {first_page, first_page + pages_per_block() / 2}) {
+            auto spare = read_page_spare(page);
             if (spare.size() >= 16) {
-                std::vector<uint8_t> updated_spare(spare.begin(), spare.end());
-                if (m_driver_mode == DriverMode::Big) {
-                    updated_spare[0] = 0x00;
-                } else {
-                    updated_spare[5] = 0x00;
-                }
-                write_page_spare(first_page + p, updated_spare);
+                spare[m_driver_mode == DriverMode::Big ? 0 : 5] = 0x00;
             }
         }
     }
@@ -555,6 +520,9 @@ namespace gxbuild3::NAND {
         }
 
         for (size_t p = 0; p < page_count; ++p) {
+            // The bad-block mark lives on a block's first page and the page halfway through.
+            const size_t page_in_block = (first_page + p) % pages_per_block();
+            const bool mark_page = page_in_block == 0 || page_in_block == pages_per_block() / 2;
             auto current_spare = read_page_spare(first_page + p);
             std::vector<uint8_t> spare_data(16, 0xFF);
             if (current_spare.size() >= 16) {
@@ -562,9 +530,9 @@ namespace gxbuild3::NAND {
             }
 
             if (m_driver_mode == DriverMode::Big) {
-                if (meta.is_bad && p < 2) {
+                if (meta.is_bad && mark_page) {
                     spare_data[0] = 0x00;
-                } else if (!meta.is_bad && p < 2) {
+                } else if (!meta.is_bad && mark_page) {
                     spare_data[0] = 0xFF;
                 }
 
@@ -581,9 +549,9 @@ namespace gxbuild3::NAND {
                 // block_id: low byte at spare[1], high nibble at spare[2]
                 // sequence byte 0 at spare[0]
                 // bad block marker at spare[5]
-                if (meta.is_bad && p < 2) {
+                if (meta.is_bad && mark_page) {
                     spare_data[5] = 0x00;
-                } else if (!meta.is_bad && p < 2) {
+                } else if (!meta.is_bad && mark_page) {
                     spare_data[5] = 0xFF;
                 }
 
@@ -600,9 +568,9 @@ namespace gxbuild3::NAND {
                 //   block_id: low byte at spare[0], high nibble at spare[1]
                 //   sequence byte 0 at spare[2]
                 //   bad block marker at spare[5]
-                if (meta.is_bad && p < 2) {
+                if (meta.is_bad && mark_page) {
                     spare_data[5] = 0x00;
-                } else if (!meta.is_bad && p < 2) {
+                } else if (!meta.is_bad && mark_page) {
                     spare_data[5] = 0xFF;
                 }
 

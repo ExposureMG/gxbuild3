@@ -87,8 +87,9 @@ struct FlashImage {
     // Hacked chains may deliberately leave stages plaintext for their patched parent.
     bool encrypt_all(std::span<const uint8_t> cpu_key, BuildType build_type = BuildType::Retail);
 
-    // Remove serialized bootloader records inherited from a donor before replacing the chain.
-    // This deliberately leaves the donor's non-bootloader payloads intact.
+    // Remove serialized bootloader records inherited from a donor before replacing the chain:
+    // the chain is zeroed and the CF/CG records in the update slots are erased (0xFF). This
+    // deliberately leaves the donor's non-bootloader payloads intact.
     bool clear_bootloader_chain();
 
     [[nodiscard]] std::vector<BlockRange> active_payload_block_ranges() const;
@@ -96,6 +97,8 @@ struct FlashImage {
     // Describes a collision between payload writers, if the resolved layout is unsafe.
     [[nodiscard]] std::optional<std::string> payload_layout_error() const;
 
+    // Lays the image into the driver. Unless preserve_layout is set (a parsed dump written
+    // back), every good block is erased first, so what the writer does not lay stays erased.
     bool write_to_driver() const;
     [[nodiscard]] std::vector<uint8_t> write() const;
 };
