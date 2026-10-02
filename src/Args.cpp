@@ -2,7 +2,9 @@
 #include "ini/IniParser.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <utility>
 
 namespace {
 
@@ -79,6 +81,34 @@ bool OptionsManager::is_bool_option(std::string_view name) {
            key == "smcnocheck" || key == "nochecksmc" || key == "noblpatch";
 }
 
+std::optional<uint8_t> OptionsManager::power_on_reason(std::string_view name) {
+    // `wiredx` is xeBuild's own spelling of `wiredxb3`.
+    static constexpr std::array<std::pair<std::string_view, uint8_t>, 13> kReasons{{
+        {"power", 0x11},
+        {"eject", 0x12},
+        {"remopower", 0x20},
+        {"remox", 0x22},
+        {"winbutton", 0x24},
+        {"kiosk", 0x41},
+        {"wirelessx", 0x55},
+        {"wiredxf1", 0x56},
+        {"wiredxf2", 0x57},
+        {"wiredxb2", 0x58},
+        {"wiredxb1", 0x59},
+        {"wiredx", 0x5A},
+        {"wiredxb3", 0x5A},
+    }};
+    std::string key = trim_str(name);
+    std::transform(key.begin(), key.end(), key.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const auto found = std::find_if(kReasons.begin(), kReasons.end(),
+                                    [&key](const auto& reason) { return reason.first == key; });
+    if (found == kReasons.end()) {
+        return std::nullopt;
+    }
+    return found->second;
+}
+
 bool OptionsManager::has(std::string_view name) const {
     const std::string key = normalize_key(name);
     if (key == "cygnos") return m_args.cygnos.has_value();
@@ -152,9 +182,21 @@ bool OptionsManager::set(std::string_view name, std::string_view value) {
     if (key == "cbldv") { m_args.cbldv = val; return true; }
     if (key == "pairing_data" || key == "pairingdata" || key == "pd") { m_args.pairing_data = val; return true; }
     if (key == "cfldv") { m_args.cfldv = val; return true; }
-    if (key == "xellbutton") { m_args.xellbutton = val; return true; }
-    if (key == "xellbutton2") { m_args.xellbutton2 = val; return true; }
-    if (key == "dualboot") { m_args.dualboot = val; return true; }
+    if (key == "xellbutton" || key == "xellbutton2" || key == "dualboot") {
+        // A blank button names none, as in xeBuild's options.ini.
+        auto& button = key == "xellbutton"    ? m_args.xellbutton
+                       : key == "xellbutton2" ? m_args.xellbutton2
+                                              : m_args.dualboot;
+        if (val.empty()) {
+            button.reset();
+            return true;
+        }
+        if (!power_on_reason(val)) {
+            return false;
+        }
+        button = val;
+        return true;
+    }
     if (key == "cputemp") { m_args.cputemp = val; return true; }
     if (key == "gputemp") { m_args.gputemp = val; return true; }
     if (key == "edramtemp") { m_args.edramtemp = val; return true; }

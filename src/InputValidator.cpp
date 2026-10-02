@@ -1,6 +1,8 @@
 #include "InputValidator.hpp"
 
 #include <expected>
+#include <string>
+#include <utility>
 
 namespace {
 
@@ -78,6 +80,15 @@ std::expected<void, InputError> ValidateInput(const Input& input) {
             return std::unexpected(InputError{
                 InputErrorCode::InvalidSettingsBlockSize,
                 "Statistics and manufacturing blocks must contain exactly 0x1000 bytes"});
+        }
+    }
+    for (const auto& [name, button] : {std::pair{"xellbutton", &input.options.xellbutton},
+                                       std::pair{"xellbutton2", &input.options.xellbutton2},
+                                       std::pair{"dualboot", &input.options.dualboot}}) {
+        if (*button && !OptionsManager::power_on_reason(**button)) {
+            return std::unexpected(
+                InputError{InputErrorCode::InvalidOption,
+                           std::string(name) + " names no known button: '" + **button + "'"});
         }
     }
 

@@ -298,6 +298,10 @@ class OptionsManager {
 
     static bool is_known_option(std::string_view name);
     static bool is_bool_option(std::string_view name);
+    // The header byte for a power-on reason named by xellbutton, xellbutton2 or dualboot
+    // (any case): the device in the high nibble, the button in the low one, as xeBuild
+    // writes it. Nothing for a name xeBuild does not take.
+    static std::optional<uint8_t> power_on_reason(std::string_view name);
     bool has(std::string_view name) const;
 
     bool set_bool(std::string_view name, bool value);

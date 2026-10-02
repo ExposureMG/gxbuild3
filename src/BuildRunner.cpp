@@ -441,7 +441,60 @@ namespace {
     }
 
     // Header 0x10..0x47 holds the copyright notice; 0x48..0x4F are boot flags.
-    constexpr size_t kCopyrightLength = 0x38;
+    constexpr size_t kCopyrightLength = sizeof(nand_header::copyright);
+
+    // The types whose CB/CD are patched: their header states 0x48 = 1 and the boot flags.
+    bool is_hacked(BuildType build_type) {
+        switch (build_type) {
+            case BuildType::Jtag:
+            case BuildType::Glitch:
+            case BuildType::Glitch2:
+            case BuildType::Glitch2m:
+            case BuildType::Glitch3:
+                return true;
+            case BuildType::Retail:
+            case BuildType::Devkit:
+                return false;
+        }
+        std::unreachable();
+    }
+
+    // Header 0x4C..0x4F from the options, as xeBuild builds them (xerunner build.py
+    // boot_options): 0x4F is the XeLL button, eject unless one is named, none for nodvd or
+    // olddvd; 0x4E the second XeLL button, zero when it is the first; 0x4D is 1 for cygnos or
+    // demon, and on JTAG adds 2 for nodvd, otherwise 4 unless olddvd; 0x4C is the dualboot
+    // button, JTAG only, zero when it is either XeLL button. Zero on retail and devkit.
+    uint32_t boot_flags(BuildType build_type, const OptionsArgs& options) {
+        if (!is_hacked(build_type)) {
+            return 0;
+        }
+        const auto button = [](const std::optional<std::string>& name) -> uint8_t {
+            return name ? OptionsManager::power_on_reason(*name).value_or(0) : 0;
+        };
+        constexpr uint8_t kEject = 0x12;
+        const bool jtag = build_type == BuildType::Jtag;
+        const bool nodvd = options.nodvd.value_or(false);
+        const bool olddvd = options.olddvd.value_or(false);
+
+        const uint8_t reason = options.xellbutton  ? button(options.xellbutton)
+                               : (nodvd || olddvd) ? 0
+                                                   : kEject;
+        const uint8_t second = button(options.xellbutton2);
+        uint8_t boot_options =
+            (options.cygnos.value_or(false) || options.demon.value_or(false)) ? 1 : 0;
+        if (jtag && nodvd) {
+            boot_options |= 2;
+        } else if (jtag && !olddvd) {
+            boot_options |= 4;
+        }
+        uint8_t dualboot = jtag ? button(options.dualboot) : 0;
+        if (dualboot && (dualboot == reason || dualboot == second)) {
+            Log::Warn("dualboot names a XeLL button; the setting is ignored");
+            dualboot = 0;
+        }
+        return uint32_t(dualboot) << 24 | uint32_t(boot_options) << 16 |
+               uint32_t(second == reason ? 0 : second) << 8 | reason;
+    }
 
     // The Latin-1 copyright sign, the notice and zeros, over 0x10..0x47 only.
     void write_copyright(nand_header& header, ConsoleType console, BuildType build_type) {
@@ -565,6 +618,8 @@ BuildResult RunBuild(const Input& input) {
         (!donor_copyright_usable || donor_console != input.console || jtag_jasper)) {
         write_copyright(flash_image.header, *input.console, input.build_type);
     }
+    flash_image.header.hack_flags = is_hacked(input.build_type) ? 1 : 0;
+    flash_image.header.boot_flags = boot_flags(input.build_type, input.options);
 
     const auto supplied = [](const std::optional<std::vector<uint8_t>>& bootloader) {
         return bootloader && !bootloader->empty();

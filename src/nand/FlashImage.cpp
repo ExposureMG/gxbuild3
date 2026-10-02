@@ -311,6 +311,8 @@ namespace gxbuild3::NAND {
         header.entrypoint = bswap32(raw.entrypoint);
         header.size = bswap32(raw.size);
         std::memcpy(header.copyright, raw.copyright, sizeof(header.copyright));
+        header.hack_flags = bswap32(raw.hack_flags);
+        header.boot_flags = bswap32(raw.boot_flags);
         std::memcpy(header.reserved, raw.reserved, sizeof(header.reserved));
         header.kv_size = bswap32(raw.kv_size);
         header.cf_offset = bswap32(raw.cf_offset);
@@ -752,10 +754,14 @@ namespace gxbuild3::NAND {
         // earlier boot-chain boundary.
         raw.size = bswap32(patchslot_base);
         std::memcpy(raw.copyright, header.copyright, sizeof(raw.copyright));
+        raw.hack_flags = bswap32(header.hack_flags);
+        raw.boot_flags = bswap32(header.boot_flags);
         std::memcpy(raw.reserved, header.reserved, sizeof(raw.reserved));
         raw.kv_size = bswap32(header.kv_size ? header.kv_size : Keyvault::kSize);
         raw.cf_offset = bswap32(patchslot_base);
-        raw.patch_slots = bswap16(is_glitch_patchset ? 1 : 2);
+        // Two update slots on every image, as xeBuild states them. On a glitch image the
+        // second is the KHV patch slot, which the kernel passes over for want of a CF.
+        raw.patch_slots = bswap16(2);
         raw.kv_version = bswap16(header.kv_version ? header.kv_version : 0x0712);
         raw.kv_addr = bswap32(header.kv_addr ? header.kv_addr : kKeyvaultOffset);
         raw.fs_addr = bswap32(slot_stride); // Runtime dwSysUpdateSlotSize (header + 0x70).
@@ -877,23 +883,15 @@ namespace gxbuild3::NAND {
             return true;
         };
 
+        // A CG longer than its slot continues in spill blocks, so each slot ends within its
+        // own stride.
         size_t slot0_end = patchslot_base;
         if (!write_patchslot(patchslot_base, system_update_0, slot0_end)) {
             return false;
         }
-        if (patchslot_base + slot_stride >= slot0_end) {
-            size_t slot1_end = patchslot_base + slot_stride;
-            if (!write_patchslot(patchslot_base + slot_stride, system_update_1, slot1_end)) {
-                return false;
-            }
-        } else {
-            // CG0 was too large and overflowed into the second slot. The layout validator
-            // permits this only when no slot one replacement was supplied.
-            raw.patch_slots = bswap16(1);
-            if (!driver.write_offset(0, std::span<const uint8_t>(
-                                            reinterpret_cast<const uint8_t*>(&raw), sizeof(raw)))) {
-                return false;
-            }
+        size_t slot1_end = patchslot_base + slot_stride;
+        if (!write_patchslot(patchslot_base + slot_stride, system_update_1, slot1_end)) {
+            return false;
         }
 
         if (smc_config) {
@@ -1190,6 +1188,14 @@ namespace gxbuild3::NAND {
                 return false;
             }
             if (!patch_bytes.empty() && !driver.write_offset(patch_offset, patch_bytes)) {
+                return false;
+            }
+            // xeBuild programs the rest of the patch slot's first 0x4000 bytes zero after the
+            // KHV terminator; the slot past them stays erased.
+            const size_t khv_end = patch_offset + patch_bytes.size();
+            const size_t zero_end = size_t(patchslot_base) + slot_stride + kLayBlockSize;
+            if (payloads.patchset->kind != PatchSetKind::Jtag && khv_end < zero_end &&
+                !driver.write_offset(khv_end, std::vector<uint8_t>(zero_end - khv_end, 0))) {
                 return false;
             }
         }

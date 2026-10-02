@@ -116,7 +116,13 @@ typedef struct _nand_header {
     uint16_t flags;
     uint32_t entrypoint;
     uint32_t size;
-    uint8_t copyright[0x40];
+    uint8_t copyright[0x38];
+    // 1 on a hacked image (the glitch types and JTAG), 0 on retail and devkit.
+    uint32_t hack_flags;
+    // The XeLL and boot switches the hacked CB/CD read, high byte first: 0x4C dualboot
+    // reason, 0x4D boot options, 0x4E second XeLL reason, 0x4F XeLL reason. Zero on retail
+    // and devkit.
+    uint32_t boot_flags;
     uint8_t reserved[0x10];
     uint32_t kv_size;
     uint32_t cf_offset;
@@ -130,6 +136,11 @@ typedef struct _nand_header {
 } nand_header;
 
 #pragma pack(pop)
+
+static_assert(offsetof(nand_header, hack_flags) == 0x48);
+static_assert(offsetof(nand_header, boot_flags) == 0x4C);
+static_assert(offsetof(nand_header, patch_slots) == 0x68);
+static_assert(sizeof(nand_header) == 0x80);
 
 // One settings blob copy (mobile type 0x31-0x39). On NAND it fills `page_count` pages from
 // `first_page` of `start_block`, and only those pages carry its spare: the type, the version,

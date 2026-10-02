@@ -175,6 +175,44 @@ namespace {
                        "a manufacturing block must contain exactly 0x1000 bytes");
     }
 
+    bool test_button_options_take_xebuild_names_only() {
+        OptionsManager options;
+        if (!require(OptionsManager::power_on_reason("power") == 0x11 &&
+                         OptionsManager::power_on_reason(" Eject ") == 0x12 &&
+                         OptionsManager::power_on_reason("wiredx") == 0x5A &&
+                         OptionsManager::power_on_reason("wiredxb3") == 0x5A,
+                     "button names map to xeBuild's header bytes in any case") ||
+            !require(!OptionsManager::power_on_reason("0x11") &&
+                         !OptionsManager::power_on_reason("") &&
+                         !OptionsManager::power_on_reason("powerbutton"),
+                     "a number or an unknown name is no button") ||
+            !require(options.set("xellbutton", "Power") && options.set("xellbutton2", "remox") &&
+                         options.set("dualboot", "kiosk"),
+                     "xellbutton, xellbutton2 and dualboot take button names") ||
+            !require(!options.set("xellbutton", "bogus") &&
+                         options.get_string("xellbutton") == "Power",
+                     "an unknown button is refused and the earlier value kept")) {
+            return false;
+        }
+        OptionsManager blank;
+        if (!require(blank.set("xellbutton2", "") && !blank.has("xellbutton2") &&
+                         blank.set("xellbutton2", "remox") && blank.set("xellbutton2", " ") &&
+                         !blank.has("xellbutton2"),
+                     "a blank button names none")) {
+            return false;
+        }
+
+        auto input = valid_input();
+        input.options = options.data();
+        if (!require(ValidateInput(input).has_value(), "named buttons validate")) {
+            return false;
+        }
+        input.options.dualboot = "sideways";
+        const auto result = ValidateInput(input);
+        return require(!result && result.error().code == InputErrorCode::InvalidOption,
+                       "an unknown button supplied directly is rejected");
+    }
+
 } // namespace
 
 int main() {
@@ -187,5 +225,6 @@ int main() {
     passed = test_retail_and_devkit_reject_addon_patch_data() && passed;
     passed = test_payload_and_rebooter_sizes() && passed;
     passed = test_settings_block_sizes() && passed;
+    passed = test_button_options_take_xebuild_names_only() && passed;
     return passed ? 0 : 1;
 }

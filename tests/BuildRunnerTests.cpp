@@ -2847,6 +2847,105 @@ namespace {
                        "a JTAG Jasper over a Jasper donor states 2004-2008");
     }
 
+    bool test_hacked_header_states_boot_flags_two_slots_and_a_zeroed_khv_tail() {
+        const auto header_words = [](const BuildResult& image) {
+            return image ? std::pair{read_be32(*image, 0x48), read_be32(*image, 0x4C)}
+                         : std::pair{~0u, ~0u};
+        };
+        const auto glitch2 = [](OptionsArgs options) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            input.build_type = BuildType::Glitch2;
+            input.bootloaders.cb_b = input.bootloaders.cb_or_a;
+            InputPatches patches{};
+            patches.automatic =
+                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0x92})};
+            input.patches = std::move(patches);
+            input.options = std::move(options);
+            return RunBuild(input);
+        };
+        const auto jtag = [](OptionsArgs options) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            input.build_type = BuildType::Jtag;
+            InputPatches patches{};
+            patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13})};
+            input.patches = std::move(patches);
+            input.options = std::move(options);
+            return RunBuild(input);
+        };
+
+        // Glitch2 with no options: XeLL on eject, two slots, and the KHV patch slot (0x80000,
+        // behind slot zero at 0x70000) zero after its terminator up to 0x84000, erased after.
+        const auto plain = glitch2({});
+        const auto khv = plain ? read_logical(*plain, 0x80010, 5) : std::nullopt;
+        const auto tail = plain ? read_logical(*plain, 0x80015, 0x4000 - 0x15) : std::nullopt;
+        const auto past = plain ? read_logical(*plain, 0x84000, 0x10) : std::nullopt;
+        if (!require(header_words(plain) == std::pair{1u, 0x12u},
+                     "a glitch2 image states 0x48 = 1 and XeLL on eject at 0x4C") ||
+            !require(read_be16(*plain, 0x68) == 2, "a glitch2 image states two update slots") ||
+            !require(khv == Bytes({0x92, 0xFF, 0xFF, 0xFF, 0xFF}),
+                     "the KHV and its terminator open the patch slot") ||
+            !require(tail && std::all_of(tail->begin(), tail->end(),
+                                         [](uint8_t byte) { return byte == 0; }),
+                     "the patch slot is zero from the KHV terminator to 0x4000") ||
+            !require(past == Bytes(0x10, 0xFF), "the patch slot past 0x4000 stays erased")) {
+            return false;
+        }
+
+        OptionsArgs buttons{};
+        buttons.xellbutton = "Power";
+        buttons.xellbutton2 = "eject";
+        buttons.cygnos = true;
+        buttons.dualboot = "kiosk";
+        OptionsArgs same_button{};
+        same_button.xellbutton = "power";
+        same_button.xellbutton2 = "power";
+        OptionsArgs nodvd{};
+        nodvd.nodvd = true;
+        OptionsArgs olddvd{};
+        olddvd.olddvd = true;
+        olddvd.demon = true;
+        OptionsArgs dualboot{};
+        dualboot.dualboot = "wiredx";
+        OptionsArgs dualboot_on_xell{};
+        dualboot_on_xell.dualboot = "eject";
+        if (!require(header_words(glitch2(buttons)) == std::pair{1u, 0x00011211u},
+                     "glitch2 takes both XeLL buttons and cygnos, and no dualboot") ||
+            !require(header_words(glitch2(same_button)) == std::pair{1u, 0x00000011u},
+                     "a second XeLL button equal to the first is dropped") ||
+            !require(header_words(glitch2(nodvd)) == std::pair{1u, 0u},
+                     "nodvd leaves a glitch2 image without a XeLL button") ||
+            !require(header_words(jtag({})) == std::pair{1u, 0x00040012u},
+                     "a JTAG image states the DVD bit and XeLL on eject") ||
+            !require(header_words(jtag(nodvd)) == std::pair{1u, 0x00020000u},
+                     "nodvd on JTAG states bit 2 and no XeLL button") ||
+            !require(header_words(jtag(olddvd)) == std::pair{1u, 0x00010000u},
+                     "olddvd on JTAG clears the DVD bits; demon states bit 1") ||
+            !require(header_words(jtag(dualboot)) == std::pair{1u, 0x5A040012u},
+                     "a JTAG dualboot button lands at 0x4C") ||
+            !require(header_words(jtag(dualboot_on_xell)) == std::pair{1u, 0x00040012u},
+                     "a dualboot button that starts XeLL is ignored")) {
+            return false;
+        }
+
+        // Retail states neither word, whatever the options and whatever its donor held.
+        auto donor_input = fresh_input(ImageType::SmallBlock);
+        const auto donor = RunBuild(donor_input);
+        auto donor_image = donor ? FlashImage::read(*donor) : std::nullopt;
+        const std::array<uint8_t, 8> hacked{{0, 0, 0, 1, 0x11, 0x04, 0x00, 0x12}};
+        const bool donor_patched =
+            donor_image && donor_image->parse() &&
+            donor_image->flash_driver.write_offset(offsetof(nand_header, hack_flags), hacked);
+        auto retail = fresh_input(ImageType::SmallBlock);
+        retail.metadata.nand_image =
+            donor_patched ? donor_image->flash_driver.serialize() : Bytes{};
+        retail.options = buttons;
+        const auto rebuilt = RunBuild(retail);
+        return require(donor_patched, "hacked-header donor fixture is created") &&
+               require(header_words(rebuilt) == std::pair{0u, 0u},
+                       "a retail image over a hacked donor states 0x48 and 0x4C zero") &&
+               require(read_be16(*rebuilt, 0x68) == 2, "a retail image states two update slots");
+    }
+
     bool test_clear_bootloader_chain_clears_header_only_cb_and_cd_records() {
         const auto source = RunBuild(fresh_input(ImageType::SmallBlock));
         auto donor = source ? FlashImage::read(*source) : std::nullopt;
@@ -3126,6 +3225,7 @@ int main() {
     passed = test_donor_nonces_seal_stages_by_position_and_every_slot_alike() && passed;
     passed = test_extraction_takes_cf_metadata_and_nonces_from_the_max_ldv_slot() && passed;
     passed = test_header_states_zero_pairing_and_the_board_copyright() && passed;
+    passed = test_hacked_header_states_boot_flags_two_slots_and_a_zeroed_khv_tail() && passed;
     passed = test_donor_build_leaves_unlaid_space_erased() && passed;
     passed = test_emmc_build_leaves_anchor_tails_and_unused_blocks_erased() && passed;
     passed = test_bigblock_flashfs_stamps_only_the_clusters_it_fills() && passed;
