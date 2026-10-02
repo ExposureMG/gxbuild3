@@ -21,7 +21,6 @@ using gxbuild3::NAND::Driver;
 using gxbuild3::NAND::FlashFileSystem;
 using gxbuild3::NAND::FlashImage;
 using gxbuild3::NAND::Smc;
-using gxbuild3::NAND::SmcConfig;
 
 namespace gxbuild3::NAND {
 
@@ -87,25 +86,246 @@ namespace {
                      "ECC bits must not be returned as part of the block type");
     }
 
+    // A settings block as a console holds it: 0x400 bytes whose head is the one's complement
+    // of the byte sum over [0x10, 0x10C), little-endian.
+    std::vector<uint8_t> sound_smc_config_block() {
+        std::vector<uint8_t> block(0x400);
+        for (size_t i = 2; i < block.size(); ++i) {
+            block[i] = static_cast<uint8_t>(i * 7 + 3);
+        }
+        uint32_t sum = 0;
+        for (size_t i = 0x10; i < 0x10C; ++i) {
+            sum += block[i];
+        }
+        const uint16_t head = static_cast<uint16_t>(~sum);
+        block[0] = static_cast<uint8_t>(head);
+        block[1] = static_cast<uint8_t>(head >> 8);
+        return block;
+    }
+
+    struct ConfigShape {
+        Driver::ImageSize size;
+        Driver::DriverMode mode;
+        size_t offset;
+    };
+
+    // Where the settings block sits on each shape, read off real dumps (16 MB and big block)
+    // and the eMMC layout.
+    constexpr ConfigShape kConfigShapes[] = {
+        {Driver::Smallblock, Driver::DriverMode::Small, 0xF7C000},
+        {Driver::Bigordevkit, Driver::DriverMode::Big, 0x3BE0000},
+        {Driver::Emmcblock, Driver::DriverMode::Emmc, 0x2FFC000},
+    };
+
+    bool test_emmc_image_is_48_megabytes() {
+        Driver emmc(Driver::Emmcblock, Driver::DriverMode::Emmc);
+        return check(emmc.block_count() == 0xC00, "an eMMC image has 0xC00 blocks") &&
+               check(emmc.serialize().size() == size_t{0xC00} * 0x4000,
+                     "an eMMC image is 48 MB long");
+    }
+
     bool test_flash_image_reads_cross_page_config() {
-        Driver source(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
-        auto config = SmcConfig{};
-        config.Static.Version = 0x12345678;
-        auto config_bytes = config.serialize(0x10000, 0);
-        const size_t config_offset = (0x3E0 - 4) * source.block_size_clean();
-        source.write_offset(config_offset, config_bytes);
+        bool ok = true;
+        const auto block = sound_smc_config_block();
+        for (const auto& shape : kConfigShapes) {
+            Driver source(shape.size, shape.mode);
+            source.write_offset(shape.offset, block);
+
+            auto image = FlashImage::read(source.serialize());
+            ok = check(image.has_value(), "FlashImage must accept a valid-sized NAND image") && ok;
+            if (!image) {
+                continue;
+            }
+            ok = check(image->parse(), "FlashImage must parse the NAND image") && ok;
+            ok = check(image->smc_config == block,
+                       "FlashImage must read the SMC config block where the shape keeps it") &&
+                 ok;
+        }
+        return ok;
+    }
+
+    bool test_smc_config_with_bad_checksum_is_not_carried() {
+        Driver source(Driver::Smallblock, Driver::DriverMode::Small);
+        auto block = sound_smc_config_block();
+        block[0x50] ^= 0xFF;
+        source.write_offset(0xF7C000, block);
 
         auto image = FlashImage::read(source.serialize());
-        if (!check(image.has_value(), "FlashImage must accept a valid-sized NAND image")) {
-            return false;
+        return check(image && image->parse() && !image->smc_config.has_value(),
+                     "a settings block whose checksum fails must not be carried");
+    }
+
+    bool test_smc_config_write_leaves_neighbouring_blocks() {
+        bool ok = true;
+        const auto block = sound_smc_config_block();
+        for (const auto& shape : kConfigShapes) {
+            FlashImage image{};
+            image.flash_driver = Driver(shape.size, shape.mode);
+            const size_t step = image.flash_driver.block_size_clean();
+            // The statistics and manufacturing blocks lie one and two erase blocks below.
+            const std::vector<uint8_t> statistics(0x1000, 0xA5);
+            const std::vector<uint8_t> manufacturing(0x1000, 0x5A);
+            image.flash_driver.write_offset(shape.offset - step, statistics);
+            image.flash_driver.write_offset(shape.offset - 2 * step, manufacturing);
+            image.smc_config = block;
+
+            ok = check(image.write_to_driver(), "an image with a settings block writes") && ok;
+            const auto& driver = std::as_const(image.flash_driver);
+            // A raw NAND read lands in a scratch buffer the next read replaces, so each
+            // result is copied out before the next one is taken.
+            const auto copy_of = [&driver](size_t offset) {
+                const auto span = driver.read_offset(offset, 0x1000);
+                return std::vector<uint8_t>(span.begin(), span.end());
+            };
+            const auto settings = copy_of(shape.offset);
+            std::vector<uint8_t> expected(0x1000, 0xFF);
+            std::copy(block.begin(), block.end(), expected.begin());
+            ok = check(settings == expected,
+                       "the settings block is laid in 0x1000 with 0xFF after it") &&
+                 ok;
+            const auto stats = copy_of(shape.offset - step);
+            const auto manu = copy_of(shape.offset - 2 * step);
+            ok = check(stats == statistics,
+                       "writing the settings block must not touch the statistics block") &&
+                 ok;
+            ok = check(manu == manufacturing,
+                       "writing the settings block must not touch the manufacturing block") &&
+                 ok;
         }
-        if (!check(image->parse(), "FlashImage must parse the NAND image")) {
-            return false;
+        return ok;
+    }
+
+    std::vector<uint8_t> hex_bytes(std::string_view hex) {
+        std::vector<uint8_t> out;
+        for (size_t i = 0; i + 1 < hex.size(); i += 2) {
+            out.push_back(
+                static_cast<uint8_t>(std::stoi(std::string(hex.substr(i, 2)), nullptr, 16)));
         }
-        return check(image->smc_config.has_value(),
-                     "FlashImage must read configuration ranges that cross raw page spare gaps") &&
-               check(image->smc_config->Static.Version == config.Static.Version,
-                     "FlashImage must read SMC config from the reference reserve-block location");
+        return out;
+    }
+
+    // Vectors from xerunner's Anchor.encoded, which was measured on images the original
+    // built: only the first 0x30 bytes are non-zero.
+    bool test_anchor_block_matches_reference_layout() {
+        using gxbuild3::NAND::CoronaConfig;
+        bool ok = true;
+
+        CoronaConfig first{};
+        first.number = 1;
+        first.table = 0x38E;
+        first.blobs[1] = {0x38C, 0x200}; // type 0x32 is slot 1, which sits at 0x24
+        first.blobs[3] = {0x38D, 0x800}; // type 0x34 is slot 3, which sits at 0x2C
+        auto bytes = first.serialize();
+        ok = check(bytes.size() == 0x200, "an anchor block is 0x200 bytes") && ok;
+        ok = check(std::vector<uint8_t>(bytes.begin(), bytes.begin() + 0x14) ==
+                       hex_bytes("af9c1da90c94a9fb5329ea470c7618833abb5d4e"),
+                   "anchor digest matches the reference") &&
+             ok;
+        ok = check(std::vector<uint8_t>(bytes.begin() + 0x14, bytes.begin() + 0x30) ==
+                       hex_bytes("0000000000000001038e000000000000038c020000000000038d0800"),
+                   "anchor body matches the reference") &&
+             ok;
+        ok = check(std::all_of(bytes.begin() + 0x30, bytes.end(), [](uint8_t b) { return b == 0; }),
+                   "an anchor block is zero past 0x30") &&
+             ok;
+
+        CoronaConfig second{};
+        second.number = 2;
+        second.table = 0x38E;
+        second.blobs[0] = {0x38B, 0x800};
+        auto second_bytes = second.serialize();
+        ok = check(std::vector<uint8_t>(second_bytes.begin(), second_bytes.begin() + 0x14) ==
+                       hex_bytes("f8c15d3b38d5dafe77d001984aa909b62c5eab1b"),
+                   "second anchor digest matches the reference") &&
+             ok;
+
+        auto parsed = CoronaConfig::parse(bytes);
+        ok = check(parsed && parsed->number == 1 && parsed->table == 0x38E &&
+                       parsed->blobs[1].block == 0x38C && parsed->blobs[1].length == 0x200 &&
+                       parsed->blobs[3].block == 0x38D && parsed->blobs[3].length == 0x800 &&
+                       parsed->blobs[0].length == 0 && parsed->blobs[2].length == 0,
+                   "an anchor block reads back what was written") &&
+             ok;
+
+        auto damaged = bytes;
+        damaged[0x40] ^= 0xFF;
+        ok = check(!CoronaConfig::parse(damaged).has_value(),
+                   "an anchor whose hash disagrees is refused") &&
+             ok;
+        return ok;
+    }
+
+    // The anchor a console believes is decided by its number, not by where it sits.
+    bool test_anchor_choice_follows_the_number() {
+        using gxbuild3::NAND::CoronaConfig;
+        CoronaConfig low{};
+        low.number = 1;
+        low.table = 0x111;
+        CoronaConfig high{};
+        high.number = 2;
+        high.table = 0x222;
+        const auto low_bytes = low.serialize();
+        const auto high_bytes = high.serialize();
+        auto damaged = high_bytes;
+        damaged[0x30] ^= 0xFF;
+        bool ok = true;
+
+        auto swapped = CoronaConfig::choose(
+            {std::span<const uint8_t>(high_bytes), std::span<const uint8_t>(low_bytes)});
+        ok =
+            check(swapped && swapped->table == 0x222, "the higher number wins in the first slot") &&
+            ok;
+        auto normal = CoronaConfig::choose(
+            {std::span<const uint8_t>(low_bytes), std::span<const uint8_t>(high_bytes)});
+        ok = check(normal && normal->table == 0x222, "the higher number wins in the second slot") &&
+             ok;
+        auto fallback = CoronaConfig::choose(
+            {std::span<const uint8_t>(damaged), std::span<const uint8_t>(low_bytes)});
+        ok = check(fallback && fallback->table == 0x111,
+                   "a copy whose hash disagrees is skipped for the other") &&
+             ok;
+        auto none = CoronaConfig::choose(
+            {std::span<const uint8_t>(damaged), std::span<const uint8_t>(damaged)});
+        ok = check(!none.has_value(), "no sound copy names no filesystem") && ok;
+        return ok;
+    }
+
+    bool test_emmc_write_lays_both_anchors() {
+        using gxbuild3::NAND::CoronaConfig;
+        FlashImage image{};
+        image.flash_driver = Driver(Driver::Emmcblock, Driver::DriverMode::Emmc);
+        gxbuild3::NAND::MobileData mobile;
+        mobile.x31 = std::vector<uint8_t>(0x800, 0x31);
+        mobile.x32 = std::vector<uint8_t>(0x200, 0x32);
+        image.mobile_data = mobile;
+
+        bool ok = check(image.write_to_driver(), "an eMMC image with mobile data writes");
+        const auto& driver = std::as_const(image.flash_driver);
+        for (size_t copy = 0; copy < CoronaConfig::kOffsets.size(); ++copy) {
+            auto bytes = driver.read_offset(CoronaConfig::kOffsets[copy], CoronaConfig::kSpan);
+            auto parsed = CoronaConfig::parse(std::span<const uint8_t>(bytes));
+            ok = check(parsed.has_value(), "each anchor copy parses") && ok;
+            if (!parsed) {
+                continue;
+            }
+            ok = check(parsed->number == copy + 1, "the copies are numbered 1 and 2") && ok;
+            ok = check(parsed->blobs[0].length == 0x800 && parsed->blobs[1].length == 0x200 &&
+                           parsed->blobs[2].length == 0 && parsed->blobs[3].length == 0,
+                       "blob lengths are bytes and each blob sits in the slot of its type") &&
+                 ok;
+            ok = check(std::all_of(bytes.begin() + CoronaConfig::kSize, bytes.end(),
+                                   [](uint8_t b) { return b == 0; }),
+                       "the anchor's span is zero after the structure") &&
+                 ok;
+        }
+
+        auto reread = FlashImage::read(image.flash_driver.serialize());
+        ok = check(reread && reread->parse() && reread->mobile_data &&
+                       reread->mobile_data->x31 == mobile.x31 &&
+                       reread->mobile_data->x32 == mobile.x32,
+                   "mobile data is found again through the anchor") &&
+             ok;
+        return ok;
     }
 
     bool test_flash_image_reassembles_latest_mobile_data() {
@@ -463,7 +683,13 @@ int main() {
     passed = test_fresh_blocks_are_not_bad() && passed;
     passed = test_big_block_sequence_layout() && passed;
     passed = test_block_type_masks_ecc_bits() && passed;
+    passed = test_emmc_image_is_48_megabytes() && passed;
     passed = test_flash_image_reads_cross_page_config() && passed;
+    passed = test_smc_config_with_bad_checksum_is_not_carried() && passed;
+    passed = test_smc_config_write_leaves_neighbouring_blocks() && passed;
+    passed = test_anchor_block_matches_reference_layout() && passed;
+    passed = test_anchor_choice_follows_the_number() && passed;
+    passed = test_emmc_write_lays_both_anchors() && passed;
     passed = test_flash_image_reassembles_latest_mobile_data() && passed;
     passed = test_flash_image_places_filesystem_root_consistently() && passed;
     passed = test_flash_image_places_deferred_root_in_last_free_block() && passed;

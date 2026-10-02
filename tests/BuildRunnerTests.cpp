@@ -477,7 +477,9 @@ namespace {
         input.patches = std::move(patches);
 
         const auto built = RunBuild(input);
-        const auto first = built ? read_logical(*built, 0xE0010, 1) : std::nullopt;
+        // With no XeLL the first slot is the chain's end rounded up by 0x20000, which is 0x80000,
+        // and the overlay one 0x20000 stride above it.
+        const auto first = built ? read_logical(*built, 0xA0010, 1) : std::nullopt;
         return require(built.has_value(), "big-block glitch accepts payload above small stride") &&
                require(first == Bytes({0xB4}),
                        "big-block KHV uses the second-slot overlay");
@@ -533,15 +535,16 @@ namespace {
             auto [cf,cg] = valid_system_update(0x61);
             input.bootloaders.cf0 = cf; input.bootloaders.cg0 = cg;
             auto built = RunBuild(input);
-            const size_t base = image_type == ImageType::SmallBlock ? 0xB0000 : 0x100000;
-            const size_t stride = image_type == ImageType::SmallBlock ? 0x10000 : 0x20000;
-            // Glitch XeLL sits at the geometry's patch-slot anchor and shifts the slots above it.
-            const size_t xell_at = image_type == ImageType::SmallBlock ? 0x70000 : 0xC0000;
+            // XeLL sits at 0x70000 on every shape and the slots follow it, rounded up by the
+            // erase block: 0xB0000, or 0xC0000 on big block, whose slot is 0x20000 long.
+            const size_t base = image_type == ImageType::BigBlock ? 0xC0000 : 0xB0000;
+            const size_t stride = image_type == ImageType::BigBlock ? 0x20000 : 0x10000;
+            const size_t xell_at = 0x70000;
             if (!require(built.has_value(), "one update slot and runtime overlay build") ||
                 !require(read_logical(*built, base + stride + 0x10, 4) == Bytes({0, 0, 0x10, 0}),
                          "KHV matches CD header anchor") ||
                 !require(read_logical(*built, xell_at, 0x40000) == input.payloads->xell,
-                         "XeLL sits at the patch-slot anchor"))
+                         "XeLL sits at 0x70000"))
                 return false;
             auto extracted=ExtractAll(*built,input.metadata.cpu_key);
             if(!require(extracted && extracted->patches && extracted->build_type==BuildType::Glitch,
@@ -783,24 +786,23 @@ namespace {
             }
             auto image = FlashImage::read(*built);
             const bool parsed = image && image->parse();
-            constexpr size_t patch_base = 0xC0000;
-            constexpr size_t shifted_slot = patch_base + 0x40000;
-            const auto xell_magic = read_logical(*built, patch_base, 4);
-            const auto small_block_magic = read_logical(*built, 0x70000, 4);
-            const auto khv = read_logical(*built, shifted_slot + 0x20000 + 0x10, 1);
+            constexpr size_t xell_at = 0x70000;
+            const bool big = image_type == ImageType::BigBlock;
+            const size_t stride = big ? 0x20000 : 0x10000;
+            const size_t shifted_slot = big ? 0xC0000 : 0xB0000;
+            const auto xell_magic = read_logical(*built, xell_at, 4);
+            const auto khv = read_logical(*built, shifted_slot + stride + 0x10, 1);
             const auto cg_bytes =
                 read_logical(*built, shifted_slot + ((cf.size() + 0x0F) & ~0x0F), cg.size());
             if (!require(parsed && image->system_update_0.cf.has_value() &&
                              image->system_update_0.cg.has_value(),
                          "big-geometry glitch parses CF and CG out of the shifted patch slot") ||
                 !require(image->header.cf_offset == shifted_slot,
-                         "the anchored XeLL pushes the patch slot to patch_base + XeLL::kSize") ||
+                         "the XeLL pushes the first slot to the next erase-block boundary") ||
                 !require(xell_magic == Bytes({0x7F, 'E', 'L', 'F'}),
-                         "big-geometry glitch XeLL anchors at the geometry patch base") ||
-                !require(small_block_magic != Bytes({0x7F, 'E', 'L', 'F'}),
-                         "big-geometry glitch never reuses the small-block 0x70000 anchor") ||
+                         "big-geometry glitch XeLL sits at 0x70000") ||
                 !require(khv == Bytes({0xA5}),
-                         "glitch KHV follows the shifted slot plus one big stride plus 0x10") ||
+                         "glitch KHV follows the shifted slot plus one stride plus 0x10") ||
                 !require(cg_bytes == cg, "CG survives beside the anchored XeLL")) {
                 return false;
             }

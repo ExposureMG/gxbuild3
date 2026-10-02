@@ -29,13 +29,18 @@ namespace gxbuild3::NAND {
 
         constexpr uint32_t kKeyvaultOffset = 0x4000;
         constexpr uint32_t kEntryOffset = 0x8000;
-        constexpr uint32_t kSmallPatchslotOffset = 0x70000;
-        constexpr uint32_t kBigPatchslotOffset = 0xC0000;
+        // XeLL sits at 0x70000 on every shape and is 0x40000 long. The slots follow it, rounded
+        // up by the shape's erase block, or follow the chain when there is no XeLL.
+        constexpr uint32_t kXellOffset = 0x70000;
+        // A JTAG image is laid out by the loader it carries, whose neighbours sit at addresses
+        // compiled into it: the slot pair at 0x70000 and 0x80000 on every shape, the core at
+        // 0x90000.
+        constexpr uint32_t kJtagSlotOffset = 0x70000;
+        constexpr uint32_t kJtagWindowOffset = 0x90000;
         constexpr uint32_t kSmallFsOffset = 0x10000;
         constexpr uint32_t kBigFsOffset = 0x20000;
 
-        // JTAG window offsets are derived from jtag_window_base() on both the read and write
-        // paths so they scale across xsb/psb/bb; only this region size is a fixed constant.
+        // Everything in the JTAG window is counted from kJtagWindowOffset.
         constexpr uint32_t kJTAGPatchesSize = 0x4000;
 
         inline constexpr uint32_t align_16(uint32_t value) noexcept {
@@ -72,10 +77,31 @@ namespace gxbuild3::NAND {
             return true;
         }
 
-        // The JTAG window is anchored relative to the patch slots so it scales across
-        // xsb/psb/bb instead of reusing small-block absolute offsets.
-        inline constexpr uint32_t jtag_window_base(uint32_t patchslot_base, uint32_t stride) {
-            return patchslot_base + 2 * stride;
+        // The step the update slots round up by: the erase block of the shape, never under
+        // 0x10000. Big block is the 0x20000 of Jasper's chip.
+        inline uint32_t slot_round(Driver::DriverMode mode) {
+            return mode == Driver::DriverMode::Big ? 0x20000 : 0x10000;
+        }
+
+        inline uint32_t round_up(uint32_t value, uint32_t step) {
+            return (value + step - 1) / step * step;
+        }
+
+        // Where a retail image's first update slot sits: the end of the chain rounded up by
+        // slot_round(). A retail chain ends at 0x6CB20, which makes it 0x70000, and 0x80000
+        // on big block.
+        inline uint32_t retail_slot_offset(Driver::DriverMode mode) {
+            return mode == Driver::DriverMode::Big ? 0x80000 : 0x70000;
+        }
+
+        // Where the first update slot sits behind XeLL: 0xB0000, or 0xC0000 on big block.
+        inline uint32_t glitch_slot_offset(Driver::DriverMode mode) {
+            return round_up(kXellOffset + static_cast<uint32_t>(XeLL::kSize), slot_round(mode));
+        }
+
+        bool is_jtag_image(const FlashImage& image) {
+            return image.build_type == BuildType::Jtag ||
+                   (image.payloads.patchset && image.payloads.patchset->kind == PatchSetKind::Jtag);
         }
 
         struct JtagExtraOffsets {
@@ -94,37 +120,43 @@ namespace gxbuild3::NAND {
                     cb + align_16(static_cast<uint32_t>(payloads.extra_cb->serialize().size()))};
         }
 
-        uint32_t xell_offset(uint32_t patch_base, uint32_t stride, bool is_jtag_patchset,
-                             bool is_glitch_patchset, const Payloads& payloads) {
-            const uint32_t window_base = jtag_window_base(patch_base, stride);
+        uint32_t xell_offset(bool is_jtag_patchset, bool is_glitch_patchset,
+                             const Payloads& payloads) {
             if (is_jtag_patchset) {
-                return window_base + 0x5060;
+                return kJtagWindowOffset + 0x5060;
             }
-            return is_glitch_patchset ? patch_base
-                                      : (!payloads.rebooter ? patch_base : window_base + 0x5060);
+            return is_glitch_patchset
+                       ? kXellOffset
+                       : (!payloads.rebooter ? kXellOffset : kJtagWindowOffset + 0x5060);
         }
 
-        uint32_t system_update_base(uint32_t patch_base, uint32_t stride, bool is_jtag_patchset,
+        uint32_t system_update_base(uint32_t slot_base, uint32_t round, bool is_jtag_patchset,
                                     bool is_glitch_patchset, const Payloads& payloads) {
             if (!payloads.xell) {
-                return patch_base;
+                return slot_base;
             }
-            const uint32_t offset =
-                xell_offset(patch_base, stride, is_jtag_patchset, is_glitch_patchset, payloads);
-            return offset <= patch_base ? std::max<uint32_t>(patch_base, offset + XeLL::kSize)
-                                        : patch_base;
+            const uint32_t offset = xell_offset(is_jtag_patchset, is_glitch_patchset, payloads);
+            return offset <= slot_base
+                       ? std::max<uint32_t>(
+                             slot_base,
+                             round_up(offset + static_cast<uint32_t>(XeLL::kSize), round))
+                       : slot_base;
         }
 
         uint32_t slot_size(const FlashImage& image) {
             if (image.preserve_layout)
                 return image.header.fs_addr && image.header.fs_addr != 0xFFFFFFFF ? image.header.fs_addr : 0x10000;
-            return image.flash_driver.driver_mode() == Driver::Big ||
-                   image.flash_driver.driver_mode() == Driver::Emmc ? 0x20000 : 0x10000;
+            if (is_jtag_image(image)) {
+                return 0x10000;
+            }
+            return image.flash_driver.driver_mode() == Driver::Big ? 0x20000 : 0x10000;
         }
-        uint32_t update_base(const FlashImage& image, uint32_t base, bool jtag, bool glitch) {
+        uint32_t update_base(const FlashImage& image, bool jtag, bool glitch) {
             if (image.preserve_layout && image.header.cf_offset && image.header.cf_offset != 0xFFFFFFFF)
                 return image.header.cf_offset;
-            return system_update_base(base, slot_size(image), jtag, glitch, image.payloads);
+            const auto mode = image.flash_driver.driver_mode();
+            const uint32_t slot_base = jtag ? kJtagSlotOffset : retail_slot_offset(mode);
+            return system_update_base(slot_base, slot_round(mode), jtag, glitch, image.payloads);
         }
 
         bool manufacturing(const FlashImage& image) {
@@ -171,6 +203,27 @@ namespace gxbuild3::NAND {
             return section == patchset.sections.end() ? nullptr : &*section;
         }
 
+        // The settings block is 0x400 bytes laid in a 0x1000 span, the rest 0xFF. Its head holds
+        // the one's complement of the byte sum over [0x10, 0x10C), little-endian. Checked
+        // against the settings blocks of real small-block and big-block dumps.
+        constexpr size_t kSmcConfigLength = 0x400;
+        constexpr size_t kSmcConfigSpan = 0x1000;
+
+        bool smc_config_sums(std::span<const uint8_t> block) {
+            if (block.size() < kSmcConfigLength) {
+                return false;
+            }
+            uint32_t sum = 0;
+            for (size_t i = 0x10; i < 0x10C; ++i) {
+                sum += block[i];
+            }
+            const uint16_t expected = static_cast<uint16_t>(~sum);
+            return (block[0] | (block[1] << 8)) == expected;
+        }
+
+        // Where the settings block sits: the last block before the reserved tail, which is
+        // 0xF7C000 on a 16 MB image, 0x3BE0000 on big block and 0x2FFC000 on eMMC. The
+        // statistics and manufacturing blocks lie one and two erase blocks below it.
         std::optional<size_t> smc_config_offset(const Driver& driver) {
             const size_t total_blocks = driver.block_count();
             if (total_blocks < 4 || driver.block_size_clean() == 0) {
@@ -195,7 +248,7 @@ namespace gxbuild3::NAND {
             if (reserve_block < 4) {
                 return std::nullopt;
             }
-            return (reserve_block - 4) * driver.block_size_clean();
+            return (reserve_block - 1) * driver.block_size_clean();
         }
 
     } // namespace
@@ -321,13 +374,12 @@ namespace gxbuild3::NAND {
             cursor += align_16(bldr_size);
         }
 
-        const bool is_big_or_emmc = (flash_driver.driver_mode() == Driver::DriverMode::Big ||
-                                     flash_driver.driver_mode() == Driver::DriverMode::Emmc);
-        const uint32_t patch_base = is_big_or_emmc ? kBigPatchslotOffset : kSmallPatchslotOffset;
+        const auto slot_mode = flash_driver.driver_mode();
         const uint32_t slot_stride = header.fs_addr && header.fs_addr != 0xFFFFFFFF ?
             header.fs_addr : 0x10000;
-        const uint32_t patchslot_base =
-            header.cf_offset != 0 && header.cf_offset != 0xFFFFFFFF ? header.cf_offset : patch_base;
+        const uint32_t patchslot_base = header.cf_offset != 0 && header.cf_offset != 0xFFFFFFFF
+                                            ? header.cf_offset
+                                            : retail_slot_offset(slot_mode);
 
         bool invalid_continuation = false;
         auto parse_patchslot = [&](uint32_t base_offset, SystemUpdate& slot) {
@@ -407,50 +459,44 @@ namespace gxbuild3::NAND {
         const size_t block_size = flash_driver.block_size_clean();
 
         if (auto cfg_offset = smc_config_offset(flash_driver)) {
-            auto cfg_bytes = std::as_const(flash_driver).read_offset(*cfg_offset, 0x10000);
-            if (!cfg_bytes.empty()) {
-                smc_config = SmcConfig::parse(cfg_bytes, 0);
+            auto cfg_bytes = std::as_const(flash_driver).read_offset(*cfg_offset, kSmcConfigLength);
+            if (cfg_bytes.size() == kSmcConfigLength && smc_config_sums(cfg_bytes)) {
+                smc_config = std::vector<uint8_t>(cfg_bytes.begin(), cfg_bytes.end());
             }
         }
 
         if (flash_driver.driver_mode() == Driver::DriverMode::Emmc) {
-            if (total_blocks >= 6) {
-                const size_t cc_offset = (total_blocks - 6) * 0x4000;
-                auto cc_bytes = std::as_const(flash_driver).read_offset(cc_offset, 0x200);
-                if (!cc_bytes.empty()) {
-                    corona_config = CoronaConfig::parse(cc_bytes);
-                }
-            }
+            // An eMMC has no spare bytes to scan, so two anchor blocks at fixed offsets say
+            // where the settings blobs and the filesystem table went.
+            const auto& readable = std::as_const(flash_driver);
+            const auto first = readable.read_offset(CoronaConfig::kOffsets[0], CoronaConfig::kSize);
+            const auto second =
+                readable.read_offset(CoronaConfig::kOffsets[1], CoronaConfig::kSize);
+            corona_config = CoronaConfig::choose(
+                {std::span<const uint8_t>(first), std::span<const uint8_t>(second)});
 
             if (corona_config) {
                 MobileData mob{};
-                if (corona_config->data.wMobile1Length > 0) {
-                    size_t m1_offset =
-                        static_cast<size_t>(corona_config->data.wMobile1BlockIdx) * 0x4000;
-                    size_t m1_len =
-                        static_cast<size_t>(corona_config->data.wMobile1Length) * 0x4000;
-                    auto m1_span = std::as_const(flash_driver).read_offset(m1_offset, m1_len);
-                    if (!m1_span.empty()) {
-                        mob.x31 = std::vector<uint8_t>(m1_span.begin(), m1_span.end());
+                for (size_t slot = 0; slot < CoronaConfig::kBlobSlots; ++slot) {
+                    const auto& blob = corona_config->blobs[slot];
+                    if (blob.length == 0) {
+                        continue;
                     }
-                }
-                if (corona_config->data.wMobile2Length > 0) {
-                    size_t m2_offset =
-                        static_cast<size_t>(corona_config->data.wMobile2BlockIdx) * 0x4000;
-                    size_t m2_len =
-                        static_cast<size_t>(corona_config->data.wMobile2Length) * 0x4000;
-                    auto m2_span = std::as_const(flash_driver).read_offset(m2_offset, m2_len);
-                    if (!m2_span.empty()) {
-                        mob.x32 = std::vector<uint8_t>(m2_span.begin(), m2_span.end());
+                    auto bytes =
+                        readable.read_offset(static_cast<size_t>(blob.block) * 0x4000, blob.length);
+                    auto* target =
+                        mob.get_slot(static_cast<uint8_t>(CoronaConfig::kFirstBlobType + slot));
+                    if (target && bytes.size() == blob.length) {
+                        *target = std::vector<uint8_t>(bytes.begin(), bytes.end());
                     }
                 }
                 if (!mob.empty()) {
                     mobile_data = std::move(mob);
                 }
 
-                if (corona_config->data.wFSBlockIdx != 0) {
+                if (corona_config->table != 0) {
                     FlashFileSystem fs{};
-                    if (fs.load(flash_driver, corona_config->data.wFSBlockIdx)) {
+                    if (fs.load(flash_driver, corona_config->table)) {
                         filesystem = std::move(fs);
                     }
                 }
@@ -587,12 +633,11 @@ namespace gxbuild3::NAND {
             if (BinaryParser::ParsePatchSet(automatic, *build_type, recovered))
                 payloads.patchset = std::move(recovered);
         }
-        const uint32_t window_base = jtag_window_base(patch_base, slot_stride);
-        payloads.xell = parse_xell_at(patch_base);
+        const uint32_t window_base = kJtagWindowOffset;
+        payloads.xell = parse_xell_at(kXellOffset);
         if (payloads.xell) {
             if (!build_type) build_type = BuildType::Glitch2;
-        } else if (!build_type &&
-                   header.cf_offset != patch_base + static_cast<uint32_t>(XeLL::kSize)) {
+        } else if (!build_type && header.cf_offset != glitch_slot_offset(slot_mode)) {
             payloads.xell = parse_xell_at(window_base + 0x5060);
             if (payloads.xell && !build_type) build_type = BuildType::Jtag;
         }
@@ -626,19 +671,19 @@ namespace gxbuild3::NAND {
 
         const bool is_big_or_emmc = (driver.driver_mode() == Driver::DriverMode::Big ||
                                      driver.driver_mode() == Driver::DriverMode::Emmc);
-        const uint32_t patch_base = is_big_or_emmc ? kBigPatchslotOffset : kSmallPatchslotOffset;
+        const auto slot_mode = driver.driver_mode();
         const uint32_t slot_stride = slot_size(*this);
         const bool is_glitch_patchset =
-            (build_type && (*build_type == BuildType::Glitch || *build_type == BuildType::Glitch2 ||
-                            *build_type == BuildType::Glitch2m || *build_type == BuildType::Glitch3)) ||
+            (build_type &&
+             (*build_type == BuildType::Glitch || *build_type == BuildType::Glitch2 ||
+              *build_type == BuildType::Glitch2m || *build_type == BuildType::Glitch3)) ||
             (payloads.patchset && payloads.patchset->kind == PatchSetKind::Glitch) ||
-            (payloads.xell && header.cf_offset == patch_base + static_cast<uint32_t>(XeLL::kSize));
+            (payloads.xell && header.cf_offset == glitch_slot_offset(slot_mode));
         const bool is_jtag_patchset =
             (build_type == BuildType::Jtag) ||
             (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
-        const uint32_t patchslot_base =
-            update_base(*this, patch_base, is_jtag_patchset, is_glitch_patchset);
-        const uint32_t window_base = jtag_window_base(patch_base, slot_stride);
+        const uint32_t patchslot_base = update_base(*this, is_jtag_patchset, is_glitch_patchset);
+        const uint32_t window_base = kJtagWindowOffset;
 
         const uint32_t fs_base = is_big_or_emmc ? kBigFsOffset : kSmallFsOffset;
         const size_t total_blocks = driver.block_count();
@@ -807,7 +852,13 @@ namespace gxbuild3::NAND {
             if (!smc_cfg_offset) {
                 return false;
             }
-            auto cfg_bytes = smc_config->serialize(0x10000);
+            if (smc_config->size() != kSmcConfigLength || !smc_config_sums(*smc_config)) {
+                Log::Error("SMC config block is not 0x{:X} bytes with a sound checksum",
+                           kSmcConfigLength);
+                return false;
+            }
+            std::vector<uint8_t> cfg_bytes(kSmcConfigSpan, 0xFF);
+            std::copy(smc_config->begin(), smc_config->end(), cfg_bytes.begin());
             if (!driver.write_offset(*smc_cfg_offset, cfg_bytes)) {
                 return false;
             }
@@ -942,27 +993,31 @@ namespace gxbuild3::NAND {
         }
 
         if (driver.driver_mode() == Driver::DriverMode::Emmc) {
-            CoronaConfig cc = corona_config.value_or(CoronaConfig{});
-            cc.data.dwFSVersion = layout.fs_version;
-            cc.data.wFSBlockIdx = layout.fs_root_block.value_or(0);
-            cc.data.wMobile1BlockIdx = 0;
-            cc.data.wMobile1Length = 0;
-            cc.data.wMobile2BlockIdx = 0;
-            cc.data.wMobile2Length = 0;
+            CoronaConfig cc{};
+            cc.table = layout.fs_root_block.value_or(0);
             for (const auto& mob : layout.mobile_blocks) {
-                if (mob.block_type == 0x31) {
-                    cc.data.wMobile1BlockIdx = mob.start_block;
-                    cc.data.wMobile1Length = mob.block_count;
-                } else if (mob.block_type == 0x32) {
-                    cc.data.wMobile2BlockIdx = mob.start_block;
-                    cc.data.wMobile2Length = mob.block_count;
+                const size_t slot = size_t(mob.block_type) - CoronaConfig::kFirstBlobType;
+                if (mob.block_type < CoronaConfig::kFirstBlobType ||
+                    slot >= CoronaConfig::kBlobSlots) {
+                    Log::Warn("Mobile data type 0x{:02X} has no slot in an eMMC anchor block",
+                              mob.block_type);
+                    continue;
                 }
+                if (mob.data_size > std::numeric_limits<uint16_t>::max()) {
+                    Log::Error("Mobile data type 0x{:02X} is too long for an anchor block",
+                               mob.block_type);
+                    return false;
+                }
+                cc.blobs[slot] = {mob.start_block, static_cast<uint16_t>(mob.data_size)};
             }
 
-            if (total_blocks >= 6) {
+            // The copies are numbered 1 and 2, each given CoronaConfig::kSpan with zeros
+            // after the structure.
+            for (size_t copy = 0; copy < CoronaConfig::kOffsets.size(); ++copy) {
+                cc.number = static_cast<uint32_t>(copy + 1);
                 auto cc_bytes = cc.serialize();
-                if (!driver.write_offset((total_blocks - 6) * 0x4000, cc_bytes) ||
-                    !driver.write_offset((total_blocks - 5) * 0x4000, cc_bytes)) {
+                cc_bytes.resize(CoronaConfig::kSpan, 0);
+                if (!driver.write_offset(CoronaConfig::kOffsets[copy], cc_bytes)) {
                     return false;
                 }
             }
@@ -994,8 +1049,7 @@ namespace gxbuild3::NAND {
         }
         if (payloads.xell) {
             const auto& xell_bytes = payloads.xell->data;
-            if (!driver.write_offset(xell_offset(patch_base, slot_stride, is_jtag_patchset,
-                                                 is_glitch_patchset, payloads),
+            if (!driver.write_offset(xell_offset(is_jtag_patchset, is_glitch_patchset, payloads),
                                      xell_bytes)) {
                 return false;
             }
@@ -1025,8 +1079,7 @@ namespace gxbuild3::NAND {
             }
             if (payloads.xell &&
                 ranges_overlap(patch_offset, patch_bytes.size(),
-                               xell_offset(patch_base, slot_stride, is_jtag_patchset,
-                                           is_glitch_patchset, payloads),
+                               xell_offset(is_jtag_patchset, is_glitch_patchset, payloads),
                                payloads.xell->data.size())) {
                 Log::Error("Patch payload overlaps the reserved XeLL region");
                 return false;
@@ -1107,12 +1160,11 @@ namespace gxbuild3::NAND {
             return false;
         }
 
-        const bool is_big_or_emmc = (flash_driver.driver_mode() == Driver::DriverMode::Big ||
-                                     flash_driver.driver_mode() == Driver::DriverMode::Emmc);
-        const uint32_t patch_base = is_big_or_emmc ? kBigPatchslotOffset : kSmallPatchslotOffset;
+        const auto slot_mode = flash_driver.driver_mode();
         const uint32_t slot_stride = slot_size(*this);
         const uint32_t donor_patchslot_base =
-            header.cf_offset != 0 && header.cf_offset != 0xFFFFFFFF ? header.cf_offset : patch_base;
+            header.cf_offset != 0 && header.cf_offset != 0xFFFFFFFF ? header.cf_offset
+                                                                    : retail_slot_offset(slot_mode);
         const auto clear_patchslot = [&](uint32_t base_offset, const SystemUpdate& slot) {
             if (!slot.cf) {
                 return true;
@@ -1130,20 +1182,19 @@ namespace gxbuild3::NAND {
 
     std::vector<BlockRange> FlashImage::active_payload_block_ranges() const {
         std::vector<BlockRange> ranges;
-        const bool is_big_or_emmc = (flash_driver.driver_mode() == Driver::DriverMode::Big ||
-                                     flash_driver.driver_mode() == Driver::DriverMode::Emmc);
-        const uint32_t patch_base = is_big_or_emmc ? kBigPatchslotOffset : kSmallPatchslotOffset;
+        const auto slot_mode = flash_driver.driver_mode();
         const bool is_glitch_patchset =
-            (build_type && (*build_type == BuildType::Glitch || *build_type == BuildType::Glitch2 ||
-                            *build_type == BuildType::Glitch2m || *build_type == BuildType::Glitch3)) ||
+            (build_type &&
+             (*build_type == BuildType::Glitch || *build_type == BuildType::Glitch2 ||
+              *build_type == BuildType::Glitch2m || *build_type == BuildType::Glitch3)) ||
             (payloads.patchset && payloads.patchset->kind == PatchSetKind::Glitch) ||
-            (payloads.xell && header.cf_offset == patch_base + static_cast<uint32_t>(XeLL::kSize));
+            (payloads.xell && header.cf_offset == glitch_slot_offset(slot_mode));
         const bool is_jtag_patchset =
             (build_type == BuildType::Jtag) ||
             (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
         const uint32_t slot_stride = slot_size(*this);
-        const uint32_t patchslot_base = update_base(*this, patch_base, is_jtag_patchset, is_glitch_patchset);
-        const uint32_t window_base = jtag_window_base(patch_base, slot_stride);
+        const uint32_t patchslot_base = update_base(*this, is_jtag_patchset, is_glitch_patchset);
+        const uint32_t window_base = kJtagWindowOffset;
         const auto add_range = [&ranges, this](size_t offset, size_t length) {
             if (const auto range = flash_driver.block_range_for_byte_interval(offset, length)) {
                 ranges.push_back(*range);
@@ -1161,8 +1212,7 @@ namespace gxbuild3::NAND {
                       payloads.fuses->size());
         }
         if (payloads.xell && !payloads.xell->data.empty()) {
-            add_range(xell_offset(patch_base, slot_stride, is_jtag_patchset, is_glitch_patchset,
-                                  payloads),
+            add_range(xell_offset(is_jtag_patchset, is_glitch_patchset, payloads),
                       payloads.xell->data.size());
         }
         if (is_glitch_patchset) add_range(patchslot_base + slot_stride, slot_stride);
@@ -1185,21 +1235,19 @@ namespace gxbuild3::NAND {
     }
 
     std::optional<std::string> FlashImage::payload_layout_error() const {
-        const bool is_big_or_emmc = (flash_driver.driver_mode() == Driver::DriverMode::Big ||
-                                     flash_driver.driver_mode() == Driver::DriverMode::Emmc);
-        const uint32_t patch_base = is_big_or_emmc ? kBigPatchslotOffset : kSmallPatchslotOffset;
+        const auto slot_mode = flash_driver.driver_mode();
         const uint32_t slot_stride = slot_size(*this);
         const bool is_glitch_patchset =
-            (build_type && (*build_type == BuildType::Glitch || *build_type == BuildType::Glitch2 ||
-                            *build_type == BuildType::Glitch2m || *build_type == BuildType::Glitch3)) ||
+            (build_type &&
+             (*build_type == BuildType::Glitch || *build_type == BuildType::Glitch2 ||
+              *build_type == BuildType::Glitch2m || *build_type == BuildType::Glitch3)) ||
             (payloads.patchset && payloads.patchset->kind == PatchSetKind::Glitch) ||
-            (payloads.xell && header.cf_offset == patch_base + static_cast<uint32_t>(XeLL::kSize));
+            (payloads.xell && header.cf_offset == glitch_slot_offset(slot_mode));
         const bool is_jtag_patchset =
             (build_type == BuildType::Jtag) ||
             (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
-        const uint32_t patchslot_base =
-            update_base(*this, patch_base, is_jtag_patchset, is_glitch_patchset);
-        const uint32_t window_base = jtag_window_base(patch_base, slot_stride);
+        const uint32_t patchslot_base = update_base(*this, is_jtag_patchset, is_glitch_patchset);
+        const uint32_t window_base = kJtagWindowOffset;
 
         const bool has_cb = has_parsed_bootloader_header(
             cb_section.cb_or_A, NANDBootloaderMagic::CB, sizeof(generic_header));
@@ -1243,9 +1291,7 @@ namespace gxbuild3::NAND {
         // Keep XeLL first so a collision explains that its historically fixed placement is the
         // conflicting writer, rather than implying that the fixed JTAG payload moved.
         if (payloads.xell) {
-            add_range("XeLL",
-                      xell_offset(patch_base, slot_stride, is_jtag_patchset, is_glitch_patchset,
-                                  payloads),
+            add_range("XeLL", xell_offset(is_jtag_patchset, is_glitch_patchset, payloads),
                       payloads.xell->data.size());
         }
         if (payloads.payload) {
@@ -1704,11 +1750,9 @@ namespace gxbuild3::NAND {
                 filesystem->set_driver(&flash_driver);
                 for (auto range : active_payload_block_ranges())
                     if (!filesystem->reserve_blocks(range.start_block, range.block_count)) return false;
-                const size_t geometry_base = flash_driver.driver_mode() == Driver::Big ||
-                                             flash_driver.driver_mode() == Driver::Emmc ? 0xC0000 : 0x70000;
                 const bool jtag_layout = build_type == BuildType::Jtag ||
                     (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
-                const size_t base = update_base(*this, geometry_base, jtag_layout, glitch_layout);
+                const size_t base = update_base(*this, jtag_layout, glitch_layout);
                 if (const auto range = flash_driver.block_range_for_byte_interval(base, 2 * stride))
                     if (!filesystem->reserve_blocks(range->start_block, range->block_count)) return false;
                 if (filesystem->exists(filename) && !filesystem->delete_file(filename)) return false;

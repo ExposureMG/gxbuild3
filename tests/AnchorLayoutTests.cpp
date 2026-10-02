@@ -60,10 +60,10 @@ static bool anchors() {
             ok = check(k.size() == 16 && be32(k, 0) == 0x1000 && be32(k, 4) == 1,
                        "CD finds KHV through header") &&
                  ok;
-            const size_t xell_at = mode == Driver::DriverMode::Small ? 0x70000 : 0xC0000;
+            const size_t xell_at = 0x70000;
             auto xb = d.read_offset(xell_at, 0x40000);
             ok = check(Bytes(xb.begin(), xb.end()) == x.data,
-                       "CD finds raw XeLL at the geometry's patch-slot anchor") &&
+                       "CD finds raw XeLL at 0x70000 on every shape") &&
                  ok;
             if (type == BuildType::Glitch2m) {
                 auto v = d.read_offset(s, 0x60);
@@ -198,11 +198,10 @@ static BootloaderCd synthetic_cd(uint8_t fill) {
     cd.header.header.size = sizeof(cd_header) + cd.data.size();
     return cd;
 }
-// The JTAG window is anchored at patchslot_base + 2 * slot_stride so it scales with geometry
-// instead of reusing the small-block absolute offsets.
+// The JTAG loader reads its neighbours from addresses compiled into it, so its window sits at
+// 0x90000 on every shape.
 static bool jtag_window(Driver::DriverMode mode) {
-    const bool big = mode != Driver::DriverMode::Small;
-    const size_t window = big ? 0x100000 : 0x90000;
+    const size_t window = 0x90000;
     auto f = fixture(mode, BuildType::Jtag);
     f.build_type = BuildType::Jtag;
     XeLL x{};

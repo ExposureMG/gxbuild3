@@ -65,7 +65,9 @@ struct FlashImage {
     KernelSection kernel_section;
     SystemUpdate system_update_0;
     SystemUpdate system_update_1;
-    std::optional<SmcConfig> smc_config;
+    // The console's 0x400-byte settings block (fan curves, MAC, regions), carried as bytes.
+    // Only a block whose own head checksum holds is kept.
+    std::optional<std::vector<uint8_t>> smc_config;
     std::optional<CoronaConfig> corona_config;
     std::optional<MobileData> mobile_data;
     std::optional<FlashFileSystem> filesystem;

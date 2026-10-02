@@ -28,7 +28,9 @@ namespace gxbuild3::NAND {
                 initial_size = 17301504;
                 break;
             case ImageSize::Emmcblock:
-                initial_size = 49283072;
+                // 0xC00 blocks of 0x4000: the front 48 MB of the eMMC. The anchors, the
+                // SMC config and data_block_limit() are all counted from this length.
+                initial_size = 0xC00 * 0x4000;
                 break;
             case ImageSize::Bigordevkit:
                 initial_size = 69206016;
