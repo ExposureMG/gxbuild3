@@ -41,16 +41,61 @@ namespace gxbuild3::utils {
 
         // Xbox dashboard patch payloads live in the flash filesystem with a numeric
         // update-slot suffix. Firmware packs ship them unsuffixed ("aac.xexp",
-        // "xenonclatin.xttp") but the dash only loads "<name>.xexp1" and ignores an
-        // unsuffixed copy. Mirrors RGBuild's FileSystemControl and build360: append '1'
-        // when the name ends in "xexp" or "xttp" and does not already end in a digit.
-        // ".xtt" fonts are not suffixed.
-        std::string flashfs_patch_suffix(std::string name) {
+        // "xenonclatin.xttp") but the dash only loads "<name>.xexpN" and ignores an
+        // unsuffixed copy. The suffix is the number of update slots the build type has:
+        // '2' on a JTAG image, which carries two update pairs, and '1' on every other
+        // (xeBuild 1.21 JTAG writes aac.xexp2; RGBuild and build360 write '1'). It is
+        // appended when the name ends in "xexp" or "xttp" and does not already end in a
+        // digit. ".xtt" fonts are not suffixed.
+        std::string flashfs_patch_suffix(std::string name, BuildType build_type) {
             const std::string_view view{name};
             const bool trailing_digit = !name.empty() && name.back() >= '0' && name.back() <= '9';
             if (!trailing_digit && (view.ends_with("xexp") || view.ends_with("xttp")))
-                name += '1';
+                name += build_type == BuildType::Jtag ? '2' : '1';
             return name;
+        }
+
+        // The version a CF/CG request names after its stage prefix: 4532 for "cf_4532.bin"
+        // or "cg4532.bin". Empty when the name states none ("cf.bin", "6bl.bin").
+        std::optional<uint32_t> requested_bootloader_version(std::string_view stem) {
+            if (!stem.starts_with("cf") && !stem.starts_with("cg"))
+                return std::nullopt;
+            stem.remove_prefix(2);
+            if (stem.starts_with('_') || stem.starts_with('.'))
+                stem.remove_prefix(1);
+            uint32_t version = 0;
+            size_t digits = 0;
+            while (digits < stem.size() && digits < 6 && stem[digits] >= '0' &&
+                   stem[digits] <= '9') {
+                version = version * 10 + static_cast<uint32_t>(stem[digits] - '0');
+                ++digits;
+            }
+            if (digits == 0)
+                return std::nullopt;
+            return version;
+        }
+
+        // The CF or CG an update package's xboxupd.bin supplies for a request, or null when
+        // the request names another stage, or a version other than the one the package
+        // carries: "cf_4532.bin" is never answered with the CF of a 17559 package. A request
+        // naming no version takes the package's.
+        const std::vector<uint8_t>* xboxupd_part_for(const bootloaders::XboxupdParts& parts,
+                                                     std::string_view key, std::string_view stem) {
+            const std::vector<uint8_t>* part = nullptr;
+            if (key.starts_with("cf") || stem == "6bl")
+                part = &parts.cf_raw;
+            else if (key.starts_with("cg") || stem == "7bl")
+                part = &parts.cg_raw;
+            // The stage version is the big-endian word at +2 of its clear header.
+            if (!part || part->size() < 4)
+                return nullptr;
+            if (const auto requested = requested_bootloader_version(stem)) {
+                const uint32_t supplied =
+                    (static_cast<uint32_t>((*part)[2]) << 8) | static_cast<uint32_t>((*part)[3]);
+                if (*requested != supplied)
+                    return nullptr;
+            }
+            return part;
         }
 
         std::filesystem::path entry_to_lookup_path(std::string_view name) {
@@ -368,11 +413,7 @@ namespace gxbuild3::utils {
                                     pkg->container->containsFileByName("xboxupd.bin")) {
                                     const auto* parts = get_xboxupd_parts(*pkg);
                                     if (parts) {
-                                        const std::vector<uint8_t>* part = nullptr;
-                                        if (key.starts_with("cf") || stem == "6bl")
-                                            part = &parts->cf_raw;
-                                        else if (key.starts_with("cg") || stem == "7bl")
-                                            part = &parts->cg_raw;
+                                        const auto* part = xboxupd_part_for(*parts, key, stem);
                                         if (part && !part->empty()) {
                                             return LocatedFile{{},
                                                                contents ? *part
@@ -445,11 +486,7 @@ namespace gxbuild3::utils {
                                 pkg->container->containsFileByName("xboxupd.bin")) {
                                 const auto* parts = get_xboxupd_parts(*pkg);
                                 if (parts) {
-                                    const std::vector<uint8_t>* part = nullptr;
-                                    if (key.starts_with("cf") || stem == "6bl")
-                                        part = &parts->cf_raw;
-                                    else if (key.starts_with("cg") || stem == "7bl")
-                                        part = &parts->cg_raw;
+                                    const auto* part = xboxupd_part_for(*parts, key, stem);
                                     if (part && !part->empty()) {
                                         return LocatedFile{*package,
                                                            contents ? *part : std::vector<uint8_t>{},
@@ -547,12 +584,7 @@ namespace gxbuild3::utils {
                             pkg->container->containsFileByName("xboxupd.bin")) {
                             const auto* parts = get_xboxupd_parts(*pkg);
                             if (parts) {
-                                const std::vector<uint8_t>* part = nullptr;
-                                if (key.starts_with("cf") || stem == "6bl") {
-                                    part = &parts->cf_raw;
-                                } else if (key.starts_with("cg") || stem == "7bl") {
-                                    part = &parts->cg_raw;
-                                }
+                                const auto* part = xboxupd_part_for(*parts, key, stem);
                                 if (part && !part->empty()) {
                                     return ResolvedFile{std::string(filename), {}, *part,
                                                         mem_idx, AssetSource::Xboxupd};
@@ -628,12 +660,7 @@ namespace gxbuild3::utils {
                                   filename, package->string(), pkg->xboxupd_error);
                         continue;
                     }
-                    const std::vector<uint8_t>* part = nullptr;
-                    if (key.starts_with("cf") || stem == "6bl") {
-                        part = &parts->cf_raw;
-                    } else if (key.starts_with("cg") || stem == "7bl") {
-                        part = &parts->cg_raw;
-                    }
+                    const auto* part = xboxupd_part_for(*parts, key, stem);
                     if (part && !part->empty()) {
                         return ResolvedFile{std::string(filename), *package, *part, root_index,
                                             AssetSource::Xboxupd};
@@ -744,12 +771,7 @@ namespace gxbuild3::utils {
                                     .root_index = mem_idx,
                                     .source = AssetSource::Xboxupd});
                             }
-                            const std::vector<uint8_t>* part = nullptr;
-                            if (key.starts_with("cf") || stem == "6bl") {
-                                part = &parts->cf_raw;
-                            } else if (key.starts_with("cg") || stem == "7bl") {
-                                part = &parts->cg_raw;
-                            }
+                            const auto* part = xboxupd_part_for(*parts, key, stem);
                             if (part && !part->empty()) {
                                 return std::optional<ResolvedFile>{ResolvedFile{
                                     std::string(filename), {}, *part, mem_idx,
@@ -923,12 +945,7 @@ namespace gxbuild3::utils {
                             .root_index = root_index,
                             .source = AssetSource::Xboxupd});
                     }
-                    const std::vector<uint8_t>* part = nullptr;
-                    if (key.starts_with("cf") || stem == "6bl") {
-                        part = &parts->cf_raw;
-                    } else if (key.starts_with("cg") || stem == "7bl") {
-                        part = &parts->cg_raw;
-                    }
+                    const auto* part = xboxupd_part_for(*parts, key, stem);
                     if (part && !part->empty()) {
                         return std::optional<ResolvedFile>{ResolvedFile{std::string(filename),
                                                                         *package, *part, root_index,
@@ -1099,7 +1116,7 @@ namespace gxbuild3::utils {
             if (key.empty() || key == "none")
                 return;
             if (auto found = search.find(entry.key)) {
-                std::string stored = flashfs_patch_suffix(display_basename(entry.key));
+                std::string stored = flashfs_patch_suffix(display_basename(entry.key), build_type);
                 const auto [it, inserted] =
                     payloads.emplace(normalize_file_key(stored),
                                      std::pair{result.flashfs_sec.size(), found->rank});

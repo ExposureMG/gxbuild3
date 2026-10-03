@@ -103,6 +103,13 @@ struct FlashImage {
     [[nodiscard]] std::vector<uint8_t> write() const;
 };
 
+// Whether update slot `slot` carries the console: its slot number at 0x21B, pairing, LDV and
+// the CPU-key binding at 0x220. A JTAG image's first pair is the one its exploit boots: its CF
+// keeps the per-box block it was supplied with (xeBuild 1.21 JTAG: CF 4532, 0x21B..0x22F zero).
+[[nodiscard]] constexpr bool update_slot_binds_console(BuildType build_type, size_t slot) {
+    return !(build_type == BuildType::Jtag && slot == 0);
+}
+
 using cb_section = CbSection;
 using kernel_section = KernelSection;
 using system_update = SystemUpdate;

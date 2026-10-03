@@ -1866,14 +1866,14 @@ namespace gxbuild3::NAND {
 
             if (system_update_0.cf.has_value() && system_update_0.cf->is_decrypted()) {
                 system_update_0.cf->serialize_perbox();
-                if (!cpu_key.empty()) {
+                if (!cpu_key.empty() && update_slot_binds_console(build_type, 0)) {
                     system_update_0.cf->calc_mac(key_1bl, cpu_key.data());
                 }
                 system_update_0.cf->encrypt(key_1bl);
             }
             if (system_update_1.cf.has_value() && system_update_1.cf->is_decrypted()) {
                 system_update_1.cf->serialize_perbox();
-                if (!cpu_key.empty()) {
+                if (!cpu_key.empty() && update_slot_binds_console(build_type, 1)) {
                     system_update_1.cf->calc_mac(key_1bl, cpu_key.data());
                 }
                 system_update_1.cf->encrypt(key_1bl);

@@ -191,16 +191,18 @@ namespace {
         return {};
     }
 
-    // A paired CF takes the console's pairing; an unpaired one states zero there. Either
-    // keeps the LDV resolved for the console.
+    // A CF bound to the console states its update slot at 0x21B. A paired CF takes the
+    // console's pairing; an unpaired one states zero there. Either keeps the LDV resolved for
+    // the console.
     std::expected<void, BuildError> apply_cf_metadata(BootloaderCf& bootloader,
                                                       const InputMetadata& metadata, bool paired,
-                                                      std::string_view name) {
+                                                      uint8_t slot, std::string_view name) {
         if (!bootloader.perbox.has_value()) {
             return std::unexpected(
                 BuildError{BuildErrorCode::InvalidBootloader,
                            std::string(name) + " has no writable per-box metadata"});
         }
+        bootloader.perbox->update_slot = slot;
         if (metadata.cf_ldv) {
             bootloader.perbox->lockdown_value = *metadata.cf_ldv;
         }
@@ -217,7 +219,8 @@ namespace {
 
     // A glitch (RGH1) image boots a single zero-paired CB, so its CD is keyed without the
     // CPU key, and its CFs state no pairing (xeBuild 1.21 glitch Jasper and Falcon). Every
-    // other chain carries the console's pairing and CB LDV.
+    // other chain carries the console's pairing and CB LDV. A JTAG image's first update pair
+    // carries nothing of the console and keeps its CF's per-box block as supplied.
     std::expected<void, BuildError> apply_bootloader_metadata(FlashImage& flash_image,
                                                               const InputMetadata& metadata,
                                                               BuildType build_type) {
@@ -257,8 +260,11 @@ namespace {
                 if (!cf.is_decrypted()) {
                     cf.decrypt(key_1bl);
                 }
-                if (auto applied = apply_cf_metadata(cf, metadata, paired, "CF_0"); !applied) {
-                    return std::unexpected(applied.error());
+                if (update_slot_binds_console(build_type, 0)) {
+                    if (auto applied = apply_cf_metadata(cf, metadata, paired, 0, "CF_0");
+                        !applied) {
+                        return std::unexpected(applied.error());
+                    }
                 }
             }
             if (flash_image.system_update_1.cf.has_value()) {
@@ -266,8 +272,11 @@ namespace {
                 if (!cf.is_decrypted()) {
                     cf.decrypt(key_1bl);
                 }
-                if (auto applied = apply_cf_metadata(cf, metadata, paired, "CF_1"); !applied) {
-                    return std::unexpected(applied.error());
+                if (update_slot_binds_console(build_type, 1)) {
+                    if (auto applied = apply_cf_metadata(cf, metadata, paired, 1, "CF_1");
+                        !applied) {
+                        return std::unexpected(applied.error());
+                    }
                 }
             }
         } catch (const std::exception& exception) {

@@ -72,6 +72,19 @@ namespace {
         write_file(path, make_stfs_bytes(files, corrupt_file));
     }
 
+    // A synthetic xboxupd.bin: a 0x20-byte CF and a 0x20-byte CG, each stating `version`.
+    Bytes make_xboxupd(uint16_t version = 1) {
+        Bytes xboxupd(0x40, 0);
+        xboxupd[0] = xboxupd[0x20] = 0x43;
+        xboxupd[1] = 0x46;
+        xboxupd[0x21] = 0x47;
+        xboxupd[2] = xboxupd[0x22] = static_cast<uint8_t>(version >> 8);
+        xboxupd[3] = xboxupd[0x23] = static_cast<uint8_t>(version);
+        be32(xboxupd, 0x0C, 0x20);
+        be32(xboxupd, 0x1C, 0x20);
+        return xboxupd;
+    }
+
     struct Fixture {
         fs::path original = fs::current_path();
         fs::path root;
@@ -238,12 +251,7 @@ namespace {
 
     void test_find_file_data_derives_bootloaders_only_on_request() {
         Fixture f;
-        Bytes xboxupd(0x40, 0);
-        xboxupd[0] = xboxupd[0x20] = 0x43;
-        xboxupd[1] = 0x46;
-        xboxupd[0x21] = 0x47;
-        be32(xboxupd, 0x0C, 0x20);
-        be32(xboxupd, 0x1C, 0x20);
+        const Bytes xboxupd = make_xboxupd();
         write_stfs(f.root / "first/su_test", {{"xboxupd.bin", xboxupd}});
         require(!FileManager::FindFileData("cf_1.bin", {f.root / "first"}),
                 "regular lookup does not derive bootloaders");
@@ -483,15 +491,8 @@ namespace {
 
     void test_split_bootloader_priority() {
         Fixture f;
-        write_text(f.root / "version/_test.ini",
-                   "[testbl]\ncf_1.bin\ncg_1.bin\ncf_2.bin\ncg_2.bin\n");
-        Bytes xboxupd(0x40, 0);
-        xboxupd[0] = 0x43;
-        xboxupd[1] = 0x46;
-        xboxupd[0x20] = 0x43;
-        xboxupd[0x21] = 0x47;
-        be32(xboxupd, 0x0C, 0x20);
-        be32(xboxupd, 0x1C, 0x20);
+        write_text(f.root / "version/_test.ini", "[testbl]\ncf_1.bin\ncg_1.bin\ncf.bin\ncg.bin\n");
+        const Bytes xboxupd = make_xboxupd();
         const Bytes cf(xboxupd.begin(), xboxupd.begin() + 0x20);
         const Bytes cg(xboxupd.begin() + 0x20, xboxupd.end());
         write_stfs(f.root / "mydata/su_test", {{"xboxupd.bin", xboxupd}});
@@ -595,6 +596,82 @@ namespace {
                 "already-suffixed .xexp1 payload must not be double-suffixed");
     }
 
+    void test_flashfs_jtag_patch_slot_suffix() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nnone\n[flashfs]\naac.xexp\nxenonclatin.xttp\nxenonclatin.xtt\n"
+                   "nomni.xexp1\n");
+        write_file(f.root / "mydata/aac.xexp", {1});
+        write_file(f.root / "mydata/xenonclatin.xttp", {2});
+        write_file(f.root / "mydata/xenonclatin.xtt", {4});
+        write_file(f.root / "mydata/nomni.xexp1", {5});
+        const auto result =
+            FileManager::ReadIniFiles("version", "test", "test", {}, {}, BuildType::Jtag);
+        require(result && result->flashfs_sec.size() == 4,
+                "each distinct JTAG payload must be present exactly once");
+        require(payload(*result, "aac.xexp2") == Bytes{1},
+                "a JTAG image stores an unsuffixed .xexp payload with the two-slot suffix");
+        require(payload(*result, "xenonclatin.xttp2") == Bytes{2},
+                "a JTAG image stores an unsuffixed .xttp payload with the two-slot suffix");
+        require(payload(*result, "xenonclatin.xtt") == Bytes{4},
+                ".xtt fonts must not be suffixed on a JTAG image");
+        require(payload(*result, "nomni.xexp1") == Bytes{5},
+                "an already-suffixed payload keeps its suffix on a JTAG image");
+    }
+
+    void test_versioned_bootloader_skips_other_release_xboxupd() {
+        Fixture f;
+        const Bytes xboxupd = make_xboxupd(17559);
+        const Bytes cf(xboxupd.begin(), xboxupd.begin() + 0x20);
+        const Bytes cg(xboxupd.begin() + 0x20, xboxupd.end());
+        write_stfs(f.root / "version/su_test", {{"xboxupd.bin", xboxupd}});
+        write_file(f.root / "common/cf_4532.bin", {0x45});
+        write_file(f.root / "common/cg_4532.bin", {0x46});
+        const std::vector<fs::path> roots{f.root / "version", f.root / "common"};
+
+        const auto legacy =
+            FileManager::FindFileData("cf_4532.bin", roots, {}, FileManager::AssetKind::Bootloader);
+        require(legacy && legacy->data == Bytes{0x45} && legacy->root_index == 1 &&
+                    legacy->source == FileManager::AssetSource::Loose,
+                "a CF naming another release is not answered from the package's xboxupd");
+        const auto detailed = FileManager::FindFileDataDetailed("cg_4532.bin", roots, {},
+                                                                FileManager::AssetKind::Bootloader);
+        require(detailed && *detailed && (*detailed)->data == Bytes{0x46} &&
+                    (*detailed)->source == FileManager::AssetSource::Loose,
+                "a CG naming another release is not answered from the package's xboxupd");
+        const auto own = FileManager::FindFileDataDetailed("cf_17559.bin", roots, {},
+                                                           FileManager::AssetKind::Bootloader);
+        require(own && *own && (*own)->data == cf &&
+                    (*own)->source == FileManager::AssetSource::Xboxupd,
+                "a CF naming the package's own release comes from its xboxupd");
+        const auto absent = FileManager::FindFileDataDetailed("cf_17489.bin", roots, {},
+                                                              FileManager::AssetKind::Bootloader);
+        require(absent && !*absent, "a release no source supplies is reported absent");
+
+        const auto paths = FileManager::FindFiles({"cf_4532.bin", "cf_17559.bin"}, roots);
+        require(paths.at("cf_4532.bin") == f.root / "common/cf_4532.bin" &&
+                    paths.at("cf_17559.bin") == f.root / "version/su_test",
+                "FindFiles resolves CF requests by release");
+
+        FileManager::ScanOptions in_memory;
+        in_memory.in_memory_stfs.push_back(
+            {"versioned_update", make_stfs_bytes({{"xboxupd.bin", xboxupd}})});
+        const auto memory = FileManager::FindFileDataDetailed(
+            "cf_4532.bin", {f.root / "common"}, in_memory, FileManager::AssetKind::Bootloader);
+        require(memory && *memory && (*memory)->data == Bytes{0x45} &&
+                    (*memory)->source == FileManager::AssetSource::Loose,
+                "an in-memory package does not answer a CF naming another release");
+
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\ncf_4532.bin\ncg_4532.bin\ncf_17559.bin\ncg_17559.bin\n");
+        const auto jtag = FileManager::ReadIniFiles(f.root / "version/_test.ini", "test", roots, {},
+                                                    BuildType::Jtag);
+        require(jtag && jtag->bootloaders.cf0 == Bytes{0x45} &&
+                    jtag->bootloaders.cg0 == Bytes{0x46} && jtag->bootloaders.cf1 == cf &&
+                    jtag->bootloaders.cg1 == cg,
+                "a JTAG list takes its 4532 pair from disk and its 17559 pair from the package");
+    }
+
     void test_nested_bootloader_chains() {
         Fixture f;
         write_text(f.root / "version/_test.ini",
@@ -617,12 +694,7 @@ namespace {
     void test_numeric_bootloader_aliases() {
         Fixture f;
         write_text(f.root / "version/_test.ini", "[testbl]\n6bl.bin\n7bl.bin\n");
-        Bytes xboxupd(0x40, 0);
-        xboxupd[0] = xboxupd[0x20] = 0x43;
-        xboxupd[1] = 0x46;
-        xboxupd[0x21] = 0x47;
-        be32(xboxupd, 0x0C, 0x20);
-        be32(xboxupd, 0x1C, 0x20);
+        const Bytes xboxupd = make_xboxupd();
         write_stfs(f.root / "mydata/su_test", {{"xboxupd.bin", xboxupd}});
         const auto result = FileManager::ReadIniFiles("version", "test", "test");
         require(result &&
@@ -701,13 +773,7 @@ namespace {
 
     void test_stfs_caching_and_cache_clearing() {
         Fixture f;
-        Bytes xboxupd(0x40, 0);
-        xboxupd[0] = 0x43;
-        xboxupd[1] = 0x46;
-        xboxupd[0x20] = 0x43;
-        xboxupd[0x21] = 0x47;
-        be32(xboxupd, 0x0C, 0x20);
-        be32(xboxupd, 0x1C, 0x20);
+        const Bytes xboxupd = make_xboxupd();
         const Bytes cf(xboxupd.begin(), xboxupd.begin() + 0x20);
         const Bytes cg(xboxupd.begin() + 0x20, xboxupd.end());
 
@@ -775,13 +841,7 @@ namespace {
     }
 
     void test_in_memory_stfs_bootloader_derivation() {
-        Bytes xboxupd(0x40, 0);
-        xboxupd[0] = 0x43;
-        xboxupd[1] = 0x46;
-        xboxupd[0x20] = 0x43;
-        xboxupd[0x21] = 0x47;
-        be32(xboxupd, 0x0C, 0x20);
-        be32(xboxupd, 0x1C, 0x20);
+        const Bytes xboxupd = make_xboxupd();
         const Bytes cf(xboxupd.begin(), xboxupd.begin() + 0x20);
         const Bytes cg(xboxupd.begin() + 0x20, xboxupd.end());
 
@@ -883,6 +943,9 @@ int main() {
         {"duplicate loose wins over STFS", test_duplicate_loose_wins_over_stfs},
         {"FlashFS preserves filename case", test_flashfs_preserves_filename_case},
         {"FlashFS appends patch slot suffix", test_flashfs_appends_patch_slot_suffix},
+        {"FlashFS JTAG patch slot suffix", test_flashfs_jtag_patch_slot_suffix},
+        {"versioned bootloader skips another release's xboxupd",
+         test_versioned_bootloader_skips_other_release_xboxupd},
         {"nested bootloader chains", test_nested_bootloader_chains},
         {"numeric bootloader aliases", test_numeric_bootloader_aliases},
         {"INI recognizes SC and 3BL", test_ini_recognizes_sc_and_3bl_bootloaders},

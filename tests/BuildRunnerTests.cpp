@@ -2364,6 +2364,57 @@ namespace {
                        "pairing-only metadata writes all three bytes to every CF");
     }
 
+    // A JTAG image's first update pair carries nothing of the console: its CF keeps the
+    // per-box block it was supplied with (slot 0, no pairing, no LDV, no binding). The second
+    // pair states slot 1, the console's pairing and LDV, and the CPU-key binding at 0x220.
+    bool test_jtag_first_update_pair_stays_unbound() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.build_type = BuildType::Jtag;
+        InputPatches patches{};
+        patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0xA1})};
+        input.patches = std::move(patches);
+        input.bootloaders.cf0 = decrypted_cf(0, {0, 0, 0});
+        input.bootloaders.cf1 = decrypted_cf(0x41, {0x42, 0x43, 0x44});
+        input.bootloaders.cg0 = valid_system_update(0x51).second;
+        input.bootloaders.cg1 = valid_system_update(0x61).second;
+        input.metadata.cf_ldv = 9;
+        input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
+
+        const auto built = RunBuild(input);
+        auto image = built ? FlashImage::read(*built) : std::nullopt;
+        const bool parsed = image && image->parse();
+        const bool decrypted = parsed && image->decrypt_all(input.metadata.cpu_key);
+        if (!require(built.has_value(), "two-pair JTAG fixture builds") ||
+            !require(decrypted && image->system_update_0.cf && image->system_update_1.cf &&
+                         image->system_update_0.cf->perbox && image->system_update_1.cf->perbox,
+                     "two-pair JTAG output parses and decrypts both CF per-boxes")) {
+            return false;
+        }
+        const auto binding = [&input](const BootloaderCf& cf) {
+            auto copy = cf;
+            copy.calc_mac(key_1bl, input.metadata.cpu_key.data());
+            return std::to_array(copy.perbox->per_box_digest);
+        };
+        const auto& first = *image->system_update_0.cf->perbox;
+        const auto& second = *image->system_update_1.cf->perbox;
+        const std::array<uint8_t, 3> no_pairing{};
+        const std::array<uint8_t, 16> no_binding{};
+        return require(first.update_slot == 0 && first.lockdown_value == 0 &&
+                           std::equal(std::begin(first.pairing_data), std::end(first.pairing_data),
+                                      no_pairing.begin()),
+                       "first JTAG CF states slot 0, no pairing and no LDV") &&
+               require(std::equal(std::begin(first.per_box_digest), std::end(first.per_box_digest),
+                                  no_binding.begin()),
+                       "first JTAG CF carries no CPU-key binding") &&
+               require(second.update_slot == 1 && second.lockdown_value == 9 &&
+                           std::equal(std::begin(second.pairing_data),
+                                      std::end(second.pairing_data),
+                                      input.metadata.pairing_data.begin()),
+                       "second JTAG CF states slot 1, the console pairing and its LDV") &&
+               require(std::to_array(second.per_box_digest) == binding(*image->system_update_1.cf),
+                       "second JTAG CF is bound to the CPU key");
+    }
+
     bool test_pairing_only_metadata_rejects_unwritable_cf_perbox() {
         auto input = fresh_input(ImageType::SmallBlock);
         BootloaderCf cf{};
@@ -3308,6 +3359,7 @@ int main() {
     passed = test_rebuilt_donor_uses_actual_cf_slot_base_for_each_build_type() && passed;
     passed = test_metadata_cf_roundtrip_preserves_extended_header_fields() && passed;
     passed = test_pairing_only_metadata_updates_every_cf_without_changing_ldv() && passed;
+    passed = test_jtag_first_update_pair_stays_unbound() && passed;
     passed = test_pairing_only_metadata_rejects_unwritable_cf_perbox() && passed;
     passed = test_generic_header_pairing_roundtrips_for_every_bootloader() && passed;
     passed = test_stage_specific_numeric_headers_are_host_order_and_wire_big_endian() && passed;
