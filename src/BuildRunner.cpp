@@ -54,10 +54,14 @@ namespace {
 
     ImageType image_type_from_driver(Driver::DriverMode mode) {
         switch (mode) {
-            case Driver::DriverMode::Small: return ImageType::SmallBlock;
-            case Driver::DriverMode::NewSmall: return ImageType::NewSmallBlock;
-            case Driver::DriverMode::Big: return ImageType::BigBlock;
-            case Driver::DriverMode::Emmc: return ImageType::Emmc;
+            case Driver::DriverMode::Small:
+                return ImageType::SmallBlock;
+            case Driver::DriverMode::NewSmall:
+                return ImageType::NewSmallBlock;
+            case Driver::DriverMode::Big:
+                return ImageType::BigBlock;
+            case Driver::DriverMode::Emmc:
+                return ImageType::Emmc;
         }
         std::unreachable();
     }
@@ -604,7 +608,8 @@ BuildResult RunBuild(const Input& input) {
     flash_image.smc = *smc;
 
     // A clean retail SMC gets the glitch reboot patch on every glitch type whose SMC it
-    // suits: glitch, glitch2 and glitch2m. Glitch3 needs an RGH3 SMC instead.
+    // suits: glitch, glitch2 and glitch2m. Glitch3 writes the donor's or smc.bin's SMC as
+    // supplied, without checking its type.
     if ((input.build_type == BuildType::Glitch || input.build_type == BuildType::Glitch2 ||
          input.build_type == BuildType::Glitch2m) &&
         flash_image.smc->variant == SmcType::Retail) {
@@ -612,10 +617,8 @@ BuildResult RunBuild(const Input& input) {
         flash_image.smc->decrypt();
 
         const uint32_t hits = Signature::ApplyPatch(
-            flash_image.smc->data.data(),
-            static_cast<uint32_t>(flash_image.smc->data.size()),
-            Glitch.addr,
-            Glitch.value);
+            flash_image.smc->data.data(), static_cast<uint32_t>(flash_image.smc->data.size()),
+            Glitch.addr, Glitch.value);
 
         if (hits == 0) {
             Log::Warn("SMC reboot patch site not found - "
@@ -684,6 +687,10 @@ BuildResult RunBuild(const Input& input) {
                 // in the region the retail-CB parser uses for plaintext detection.
                 flash_image.cb_section.cb_x->decrypted = true;
                 flash_image.cb_section.cb_x->populate_metadata();
+                // Its nonce stays as supplied, so it is sealed under the key its input names.
+                if (flash_image.cb_section.cb_x->patch_rgh3_v1_cb_x()) {
+                    Log::Info("Applied the RGH2to3 v1 fix to the RGH3 CB_X");
+                }
             }
         }
         if (input.bootloaders.cb_b && !input.bootloaders.cb_b->empty()) {
@@ -1546,7 +1553,8 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
     if (img.payloads.patchset && img.build_type) {
         out.build_type = *img.build_type;
         out.patches = InputPatches{};
-        out.patches->automatic = InputPatchFile{"extracted", BinaryParser::SerializePatchSet(*img.payloads.patchset)};
+        out.patches->automatic =
+            InputPatchFile{"extracted", BinaryParser::SerializePatchSet(*img.payloads.patchset)};
     }
     out.metadata.cpu_key = std::vector<uint8_t>(cpu_key.begin(), cpu_key.end());
     out.metadata.nand_image = std::vector<uint8_t>(nand_image.begin(), nand_image.end());

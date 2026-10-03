@@ -115,7 +115,8 @@ namespace {
         uint64_t sums[2]{};
         for (size_t i = 0; i + 4 <= smc.size(); i += 4) {
             uint32_t word = 0;
-            for (size_t j = 0; j < 4; ++j) word = (word << 8) | smc[i + j];
+            for (size_t j = 0; j < 4; ++j)
+                word = (word << 8) | smc[i + j];
             sums[0] += word;
             sums[1] -= word;
             sums[0] = (sums[0] << 29) | (sums[0] >> 35);
@@ -124,7 +125,8 @@ namespace {
         Bytes message(rc4_key.begin(), rc4_key.end());
         message.insert(message.end(), cb.begin() + 0x20, cb.begin() + 0x30);
         for (auto sum : sums)
-            for (int shift = 56; shift >= 0; shift -= 8) message.push_back(sum >> shift);
+            for (int shift = 56; shift >= 0; shift -= 8)
+                message.push_back(sum >> shift);
         Key cpu_key{};
         std::copy_n(cpu.begin(), 16, cpu_key.begin());
         const auto digest = hmac(cpu_key, message);
@@ -136,28 +138,34 @@ namespace {
         // Fixed vectors generated separately with Python hashlib/hmac and struct.pack
         // from the J-Runner FixPerBoxDigest algorithm. SMC input is ciphertext 00..3f,
         // CPU key 00..0f, and the 16 authenticated metadata bytes are 10..1f.
-        const std::array<Key, 3> expected{{
-            {0xab,0xe7,0x10,0x53,0x08,0x26,0xc0,0x7d,0x59,0xd4,0x80,0x91,0x36,0x2a,0x0c,0xa0},
-            {0x91,0x1a,0x8b,0xa4,0x93,0x53,0x59,0x36,0x9f,0xee,0xd9,0xf7,0x93,0x1d,0x11,0x6a},
-            {0xbb,0x31,0x7e,0xfb,0x41,0xe0,0x42,0xdd,0xe5,0x7c,0xca,0xcd,0xce,0xfa,0xc2,0x3d}
-        }};
+        const std::array<Key, 3> expected{{{0xab, 0xe7, 0x10, 0x53, 0x08, 0x26, 0xc0, 0x7d, 0x59,
+                                            0xd4, 0x80, 0x91, 0x36, 0x2a, 0x0c, 0xa0},
+                                           {0x91, 0x1a, 0x8b, 0xa4, 0x93, 0x53, 0x59, 0x36, 0x9f,
+                                            0xee, 0xd9, 0xf7, 0x93, 0x1d, 0x11, 0x6a},
+                                           {0xbb, 0x31, 0x7e, 0xfb, 0x41, 0xe0, 0x42, 0xdd, 0xe5,
+                                            0x7c, 0xca, 0xcd, 0xce, 0xfa, 0xc2, 0x3d}}};
         const Key onebl{0xDD, 0x88, 0xAD, 0x0C, 0x9E, 0xD6, 0x69, 0xE7,
                         0xB5, 0x67, 0x94, 0xFB, 0x68, 0x56, 0x3E, 0xFA};
         Key cpu{};
         Bytes smc(64);
-        for (size_t i = 0; i < cpu.size(); ++i) cpu[i] = i;
-        for (size_t i = 0; i < smc.size(); ++i) smc[i] = i;
+        for (size_t i = 0; i < cpu.size(); ++i)
+            cpu[i] = i;
+        for (size_t i = 0; i < smc.size(); ++i)
+            smc[i] = i;
         bool ok = true;
         for (size_t variant = 0; variant < 3; ++variant) {
             auto cba = BootloaderCb::parse(cb(9188, variant == 2 ? 0x1800 : 0x800, 0x11));
             auto target = BootloaderCb::parse(cb(6750, 0, variant == 0 ? 0x11 : 0x33));
-            for (size_t i = 0; i < 16; ++i) target.data[0x10 + i] = 0x10 + i;
+            for (size_t i = 0; i < 16; ++i)
+                target.data[0x10 + i] = 0x10 + i;
             const auto parent = variant == 0 ? onebl : hmac(onebl, Bytes(16, 0x11));
             target.encrypt_retail(parent.data(), cpu, smc, variant == 0 ? nullptr : &cba.header);
             auto wire = target.serialize();
             ExCryptRc4(target.derived_key->data(), 16, wire.data() + 0x20, wire.size() - 0x20);
-            ok = require(std::equal(expected[variant].begin(), expected[variant].end(), wire.begin() + 0x30),
-                         "retail digest matches independent Python vector") && ok;
+            ok = require(std::equal(expected[variant].begin(), expected[variant].end(),
+                                    wire.begin() + 0x30),
+                         "retail digest matches independent Python vector") &&
+                 ok;
         }
         return ok;
     }
@@ -171,24 +179,30 @@ namespace {
         }
         input.metadata.pairing_data = {1, 2, 3};
         input.metadata.cb_ldv = 4;
-        if (change == 1) input.metadata.pairing_data[1] ^= 0x80;
-        if (change == 2) input.metadata.cb_ldv = 5;
+        if (change == 1)
+            input.metadata.pairing_data[1] ^= 0x80;
+        if (change == 2)
+            input.metadata.cb_ldv = 5;
         if (change == 3) {
             // Move one set bit within the CPU key's data region, then repair ECC.
             input.metadata.cpu_key[0] ^= 1;
             input.metadata.cpu_key[8] ^= 1;
             XeCryptUidEccEncode(input.metadata.cpu_key.data());
-            input.metadata.keyvault = keyvault_decrypt(input.metadata.cpu_key,
+            input.metadata.keyvault = keyvault_decrypt(
+                input.metadata.cpu_key,
                 keyvault_encrypt(input.metadata.cpu_key, Bytes(Keyvault::kSize, 0)));
         }
-        if (change == 4) (*input.metadata.smc)[7] = 0xAB;
+        if (change == 4)
+            (*input.metadata.smc)[7] = 0xAB;
         auto& target = split ? *input.bootloaders.cb_b : input.bootloaders.cb_or_a;
         target[0x24] = 0xA7; // Reserved bytes also participate in authentication.
         std::fill(target.begin() + 0x30, target.begin() + 0x40, 0xCC);
         const auto built = RunBuild(input);
-        if (!require(bool(built), "retail BB digest fixture builds")) return false;
+        if (!require(bool(built), "retail BB digest fixture builds"))
+            return false;
         auto image = FlashImage::read(*built);
-        if (!require(image && image->parse() && image->smc, "retail BB parses")) return false;
+        if (!require(image && image->parse() && image->smc, "retail BB parses"))
+            return false;
         // parse() retains the on-NAND bytes; do not apply the SMC plaintext heuristic
         // to ciphertext when checking the authentication input.
         const auto& smc = image->smc->data;
@@ -198,27 +212,38 @@ namespace {
         if (split) {
             Bytes suffix = input.metadata.cpu_key;
             if (flags & 0x1000) {
-                Bytes header(input.bootloaders.cb_or_a.begin(), input.bootloaders.cb_or_a.begin() + 16);
+                Bytes header(input.bootloaders.cb_or_a.begin(),
+                             input.bootloaders.cb_or_a.begin() + 16);
                 header[6] = header[7] = 0;
                 suffix.insert(suffix.end(), header.begin(), header.end());
             }
             key = encrypt(target, key, suffix).second;
         }
-        Bytes decoded = split ? image->cb_section.cb_B->serialize() : image->cb_section.cb_or_A.serialize();
+        Bytes decoded =
+            split ? image->cb_section.cb_B->serialize() : image->cb_section.cb_or_A.serialize();
         ExCryptRc4(key.data(), 16, decoded.data() + 0x20, decoded.size() - 0x20);
         const auto expected = authenticate(decoded, key, input.metadata.cpu_key, smc);
-        bool ok = require(decoded == expected, "retail digest: split=" + std::to_string(split) + " flags=" + std::to_string(flags) + " change=" + std::to_string(change));
+        bool ok = require(decoded == expected, "retail digest: split=" + std::to_string(split) +
+                                                   " flags=" + std::to_string(flags) +
+                                                   " change=" + std::to_string(change));
         auto extracted = ExtractAll(*built, input.metadata.cpu_key);
-        if (!require(bool(extracted), "retail BB extracts")) return false;
-        if (change != 0) return ok;
+        if (!require(bool(extracted), "retail BB extracts"))
+            return false;
+        if (change != 0)
+            return ok;
         input.bootloaders = extracted->bootloaders;
         const auto rebuilt = RunBuild(input);
-        if (!require(bool(rebuilt), "retail BB rebuilds")) return false;
+        if (!require(bool(rebuilt), "retail BB rebuilds"))
+            return false;
         auto again = FlashImage::read(*rebuilt);
-        if (!require(again && again->parse(), "rebuilt retail BB parses")) return false;
-        return require((split ? again->cb_section.cb_B->serialize() : again->cb_section.cb_or_A.serialize()) ==
-                       (split ? image->cb_section.cb_B->serialize() : image->cb_section.cb_or_A.serialize()),
-                       "unchanged retail inputs preserve authenticated CB bytes") && ok;
+        if (!require(again && again->parse(), "rebuilt retail BB parses"))
+            return false;
+        return require((split ? again->cb_section.cb_B->serialize()
+                              : again->cb_section.cb_or_A.serialize()) ==
+                           (split ? image->cb_section.cb_B->serialize()
+                                  : image->cb_section.cb_or_A.serialize()),
+                       "unchanged retail inputs preserve authenticated CB bytes") &&
+               ok;
     }
 
     bool check_chain(const Input& input, const Bytes& bytes, const std::string& label) {
@@ -325,19 +350,23 @@ namespace {
         input.metadata.pairing_data = {1, 2, 3};
         (*input.bootloaders.cb_b)[0x3B1] = 12;
         const auto donor = RunBuild(input);
-        if (!require(bool(donor), "distinct per-box/display LDV donor builds")) return false;
+        if (!require(bool(donor), "distinct per-box/display LDV donor builds"))
+            return false;
 
         const auto metadata = ExtractMetadata(*donor, input.metadata.cpu_key);
         const auto extracted = ExtractAll(*donor, input.metadata.cpu_key);
         const auto info = ExtractAllInfo(*donor, input.metadata.cpu_key);
         if (!require(metadata && extracted && info && info->bootloaders.cb_b,
-                     "distinct LDV donor extracts through all APIs")) return false;
+                     "distinct LDV donor extracts through all APIs"))
+            return false;
         bool ok = require(metadata->cb_ldv == perbox_ldv,
                           "ExtractMetadata preserves CB_B +0x23 instead of display +0x3B1");
         ok = require(extracted->metadata.cb_ldv == perbox_ldv,
-                     "ExtractAll preserves CB_B +0x23 instead of display +0x3B1") && ok;
+                     "ExtractAll preserves CB_B +0x23 instead of display +0x3B1") &&
+             ok;
         ok = require(info->bootloaders.cb_b->ldv == 12 && info->bootloaders.cb_ldv == 12,
-                     "inspection still reports the independent display LDV") && ok;
+                     "inspection still reports the independent display LDV") &&
+             ok;
 
         // Exercise both donor-metadata builds and full extract/rebuild workflows.
         for (bool full_extract : {false, true}) {
@@ -348,14 +377,18 @@ namespace {
                 rebuild_input.metadata.smc = input.metadata.smc;
             }
             const auto rebuilt = RunBuild(rebuild_input);
-            if (!require(bool(rebuilt), "extracted LDV donor rebuilds")) return false;
+            if (!require(bool(rebuilt), "extracted LDV donor rebuilds"))
+                return false;
             const auto decoded = ExtractAll(*rebuilt, input.metadata.cpu_key);
-            if (!require(decoded && decoded->bootloaders.cb_b, "rebuilt CB_B decrypts")) return false;
+            if (!require(decoded && decoded->bootloaders.cb_b, "rebuilt CB_B decrypts"))
+                return false;
             ok = require((*decoded->bootloaders.cb_b)[0x23] == perbox_ldv &&
                              (*decoded->bootloaders.cb_b)[0x3B1] == 12,
-                         "rebuild preserves per-box and display LDV independently") && ok;
+                         "rebuild preserves per-box and display LDV independently") &&
+                 ok;
             ok = require(decoded->bootloaders.cb_b == extracted->bootloaders.cb_b,
-                         "unchanged CB_B rebuild preserves its authenticated plaintext") && ok;
+                         "unchanged CB_B rebuild preserves its authenticated plaintext") &&
+                 ok;
         }
         return ok;
     }
@@ -420,6 +453,99 @@ namespace {
         const auto built = RunBuild(input);
         return require(built.has_value(), "encrypted glitch3 replacements build") &&
                check_chain(expected, *built, "encrypted replacement handoff");
+    }
+
+    void put_word(Bytes& bytes, size_t offset, uint32_t value) {
+        for (size_t i = 0; i < 4; ++i)
+            bytes[offset + i] = static_cast<uint8_t>(value >> (24 - 8 * i));
+    }
+
+    // RGH2to3 (2to3.py) rewrites four words of a plaintext v1 RGH3 CB_X, the one with
+    // 0x646A0002 at +0x354, and leaves every other CB_X as it is.
+    bool test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words() {
+        auto v1 = cb(15432, 0x800, 0);
+        put_word(v1, 0x354, 0x646A0002);
+        put_word(v1, 0x368, 0x7D8C502A);
+        put_word(v1, 0x370, 0x646A0006);
+        put_word(v1, 0x37C, 0xF84A1010);
+        auto expected = v1;
+        put_word(expected, 0x354, 0x64690002);
+        put_word(expected, 0x368, 0x7D8C482A);
+        put_word(expected, 0x370, 0x64690006);
+        put_word(expected, 0x37C, 0xF8491010);
+
+        auto loader = BootloaderCb::parse(v1);
+        loader.decrypted = true;
+        bool ok = require(loader.patch_rgh3_v1_cb_x(), "a v1 CB_X is patched") &&
+                  require(loader.serialize() == expected, "the v1 fix rewrites exactly four words");
+        ok = require(!loader.patch_rgh3_v1_cb_x() && loader.serialize() == expected,
+                     "a patched CB_X is not patched again") &&
+             ok;
+
+        auto v2 = cb(15432, 0x800, 0);
+        put_word(v2, 0x368, 0x7D8C502A);
+        auto v2_loader = BootloaderCb::parse(v2);
+        v2_loader.decrypted = true;
+        ok = require(!v2_loader.patch_rgh3_v1_cb_x() && v2_loader.serialize() == v2,
+                     "a v2 CB_X (zero at +0x354) is left unchanged") &&
+             ok;
+
+        auto sealed = BootloaderCb::parse(v1);
+        sealed.decrypted = false;
+        ok = require(!sealed.patch_rgh3_v1_cb_x() && sealed.serialize() == v1,
+                     "a sealed CB_X is never patched") &&
+             ok;
+
+        auto short_loader = BootloaderCb::parse(Bytes(v1.begin(), v1.begin() + 0x37C));
+        short_loader.decrypted = true;
+        return require(!short_loader.patch_rgh3_v1_cb_x(),
+                       "a CB_X too short for the fix is left unchanged") &&
+               ok;
+    }
+
+    // A glitch3 build seals the fixed v1 CB_X, or a v2 CB_X unchanged, under
+    // HMAC(K_cba, its own nonce || 16 zero bytes), keeping the nonce as supplied.
+    bool test_glitch3_seals_cb_x_with_the_v1_fix(bool v1) {
+        auto input = fixture(BuildType::Glitch3);
+        auto& cb_x = *input.bootloaders.cb_x;
+        if (v1) {
+            // The v1 templates RGH2to3 handles carry an all-zero nonce.
+            std::fill_n(cb_x.begin() + 0x10, 16, 0);
+            put_word(cb_x, 0x354, 0x646A0002);
+            put_word(cb_x, 0x368, 0x7D8C502A);
+            put_word(cb_x, 0x370, 0x646A0006);
+            put_word(cb_x, 0x37C, 0xF84A1010);
+        } else {
+            put_word(cb_x, 0x354, 0);
+        }
+        auto expected = cb_x;
+        if (v1) {
+            put_word(expected, 0x354, 0x64690002);
+            put_word(expected, 0x368, 0x7D8C482A);
+            put_word(expected, 0x370, 0x64690006);
+            put_word(expected, 0x37C, 0xF8491010);
+        }
+        const std::string label = v1 ? "glitch3 v1 CB_X" : "glitch3 v2 CB_X";
+
+        const auto built = RunBuild(input);
+        if (!require(built.has_value(), label + " builds"))
+            return false;
+        auto image = FlashImage::read(*built);
+        if (!require(image && image->parse() && image->cb_section.cb_x, label + " parses"))
+            return false;
+        const Key onebl{0xDD, 0x88, 0xAD, 0x0C, 0x9E, 0xD6, 0x69, 0xE7,
+                        0xB5, 0x67, 0x94, 0xFB, 0x68, 0x56, 0x3E, 0xFA};
+        const auto cba_key = encrypt(input.bootloaders.cb_or_a, onebl).second;
+        const auto sealed = image->cb_section.cb_x->serialize();
+        bool ok = require(sealed == encrypt(expected, cba_key, Bytes(16, 0)).first,
+                          label + " is sealed under CB_A's key, its nonce and a zero CPU key");
+        ok = require(std::equal(sealed.begin() + 0x10, sealed.begin() + 0x20, cb_x.begin() + 0x10),
+                     label + " keeps its nonce as supplied") &&
+             ok;
+        const auto extracted = ExtractAll(*built, input.metadata.cpu_key);
+        return require(extracted && extracted->bootloaders.cb_x == expected,
+                       label + " extracts as the sealed plaintext") &&
+               ok;
     }
 
     // Opens a stage sealed under `key` (RC4 from +0x20) and compares it with its plaintext.
@@ -604,6 +730,9 @@ int main() {
     ok = test_patched_stages_are_encrypted_for_their_parent(BuildType::Glitch2) && ok;
     ok = test_patched_stages_are_encrypted_for_their_parent(BuildType::Glitch3) && ok;
     ok = test_glitch3_encrypted_replacement_preserves_handoff_key() && ok;
+    ok = test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words() && ok;
+    ok = test_glitch3_seals_cb_x_with_the_v1_fix(true) && ok;
+    ok = test_glitch3_seals_cb_x_with_the_v1_fix(false) && ok;
     ok = test_cg_decrypts_with_cf_payload_nonce() && ok;
     for (int change = 0; change < 5; ++change) {
         ok = test_retail_digest(false, 0, change) && ok;

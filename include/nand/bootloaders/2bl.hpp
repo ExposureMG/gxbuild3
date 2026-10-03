@@ -52,6 +52,11 @@ class BootloaderCb {
                         std::span<const uint8_t> encrypted_smc,
                         const cb_header* cb_a_header = nullptr);
 
+    // A plaintext v1 RGH3 CB_X (big-endian word 0x646A0002, "oris r10,r3,2", at +0x354)
+    // gets the four-word fix RGH2to3 applies, which moves that sequence from r10 to r9.
+    // Returns true when it patched; any other CB_X, v2 included, is left untouched.
+    bool patch_rgh3_v1_cb_x();
+
     bool is_decrypted() const;
     bool verify_decrypted() const;
     bool requires_cpu_key_for_cd() const;

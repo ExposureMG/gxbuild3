@@ -7,6 +7,7 @@
 #include "nand/objects/Keyvault.hpp"
 #include "utils/FileManager.hpp"
 #include "utils/FusesetGenerator.hpp"
+#include "utils/Log.hpp"
 #include "utils/Utils.hpp"
 
 #include <algorithm>
@@ -662,11 +663,11 @@ namespace gxbuild3::cli {
                     return std::unexpected(found.error());
                 }
                 if (!*found) {
-                    return std::unexpected(error(
-                        ResolutionErrorCode::AssetNotFound,
-                        "Required INI bootloader '" + entry.key + "' from '" + ini_path.string() +
-                            "' was not found",
-                        ini_path, entry.key));
+                    return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
+                                                 "Required INI bootloader '" + entry.key +
+                                                     "' from '" + ini_path.string() +
+                                                     "' was not found",
+                                                 ini_path, entry.key));
                 }
             }
             for (const auto section_name : {"security", "flashfs"}) {
@@ -848,10 +849,15 @@ namespace gxbuild3::cli {
                     }
                 }
                 if (!*automatic) {
-                    return std::unexpected(error(ResolutionErrorCode::PatchsetNotFound,
-                                                 "Required automatic patchset was not found", {},
-                                                 selected_name));
+                    const std::string message =
+                        args.build_type == BuildType::Glitch3
+                            ? "Required automatic patchset was not found (neither " +
+                                  *automatic_name + " nor " + selected_name + ")"
+                            : "Required automatic patchset was not found";
+                    return std::unexpected(
+                        error(ResolutionErrorCode::PatchsetNotFound, message, {}, selected_name));
                 }
+                Log::Info("Using patchset {}", (**automatic).path.string());
                 patches.automatic = InputPatchFile{selected_name, std::move((**automatic).data)};
                 has_patches = true;
             }
@@ -875,8 +881,9 @@ namespace gxbuild3::cli {
                 input.patches.reset();
             }
 
-            // JTAG and glitch builds have xell; JTAG also has a rebooter and payload, locked to freeboot for now
-            // JTAG and g2m have generated vfuses
+            // JTAG and glitch builds have xell; JTAG also has a rebooter and payload, locked to
+            // freeboot for now.
+            // JTAG and g2m have generated vfuses.
             const bool is_jtag = args.build_type == BuildType::Jtag;
             const bool is_glitch_family =
                 args.build_type == BuildType::Glitch || args.build_type == BuildType::Glitch2 ||

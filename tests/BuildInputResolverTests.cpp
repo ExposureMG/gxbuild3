@@ -732,7 +732,7 @@ namespace {
                            wrong_section.error().code == ResolutionErrorCode::SectionNotFound &&
                            wrong_section.error().path == fixture.path("working/build.ini") &&
                            wrong_section.error().item == "falconbl",
-                        "the resolver requires exactly [<section stem>bl] without inference");
+                       "the resolver requires exactly [<section stem>bl] without inference");
     }
 
     bool test_ini_sc_bootloader_reaches_resolved_input() {
@@ -1321,6 +1321,40 @@ namespace {
                        "glitch3 falls back only after every g3 root is exhausted");
     }
 
+    bool test_glitch3_prefers_g3_then_g2_and_fails_cleanly_without_either() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Glitch3);
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
+
+        const auto neither = fixture.resolve(args);
+        if (!require(!neither && neither.error().code == ResolutionErrorCode::PatchsetNotFound &&
+                         neither.error().item == "patches_g2falcon.bin" &&
+                         neither.error().message.find("patches_g3falcon.bin") !=
+                             std::string::npos &&
+                         neither.error().message.find("patches_g2falcon.bin") != std::string::npos,
+                     "glitch3 without a g3 or g2 patchset fails naming both files")) {
+            return false;
+        }
+
+        fixture.write_binary("first/bin/patches_g2falcon.bin", valid_glitch_patchset(0x22));
+        const auto g2_only = fixture.resolve(args);
+        if (!require_resolved(g2_only, "glitch3 with only a g2 patchset resolves") ||
+            !require(g2_only->input.patches && g2_only->input.patches->automatic &&
+                         g2_only->input.patches->automatic->name == "patches_g2falcon.bin" &&
+                         g2_only->input.patches->automatic->data.back() == 0x22,
+                     "glitch3 uses the g2 patchset when no g3 patchset exists")) {
+            return false;
+        }
+
+        fixture.write_binary("first/bin/patches_g3falcon.bin", valid_glitch_patchset(0x33));
+        const auto both = fixture.resolve(args);
+        return require_resolved(both, "glitch3 with both patchsets resolves") &&
+               require(both->input.patches && both->input.patches->automatic &&
+                           both->input.patches->automatic->name == "patches_g3falcon.bin" &&
+                           both->input.patches->automatic->data.back() == 0x33,
+                       "glitch3 prefers the g3 patchset over a g2 one in the same root");
+    }
+
     bool test_missing_patchset_and_addon_errors_are_precise() {
         ResolverFixture fixture;
         auto args = fixture.complete_loose_args(BuildType::Glitch2);
@@ -1545,6 +1579,7 @@ int main() {
     passed = test_glitch2m_without_cb_b_is_refused() && passed;
     passed = test_glitch_resolve_fails_without_xell() && passed;
     passed = test_glitch3_searches_all_g3_roots_before_g2_fallback() && passed;
+    passed = test_glitch3_prefers_g3_then_g2_and_fails_cleanly_without_either() && passed;
     passed = test_missing_patchset_and_addon_errors_are_precise() && passed;
     passed = test_addons_resolve_from_root_bin_in_cli_order() && passed;
     passed = test_retail_and_devkit_reject_addons_without_automatic_patchset() && passed;
