@@ -170,8 +170,27 @@ namespace {
         return {};
     }
 
+    // A zero-paired CB states no pairing, no LDV and no digest: its whole per-box block is
+    // zero, and the CB then keys CD without the CPU key.
+    std::expected<void, BuildError> zero_pair_cb(BootloaderCb& bootloader, std::string_view name) {
+        if (!bootloader.perbox.has_value() && !bootloader.parse_perbox()) {
+            return std::unexpected(
+                BuildError{BuildErrorCode::InvalidBootloader,
+                           std::string(name) + " has no writable per-box metadata"});
+        }
+        *bootloader.perbox = cb_perbox{};
+        if (!bootloader.serialize_perbox()) {
+            return std::unexpected(
+                BuildError{BuildErrorCode::InvalidBootloader,
+                           std::string(name) + " could not serialize per-box metadata"});
+        }
+        return {};
+    }
+
+    // A paired CF takes the console's pairing; an unpaired one states zero there. Either
+    // keeps the LDV resolved for the console.
     std::expected<void, BuildError> apply_cf_metadata(BootloaderCf& bootloader,
-                                                      const InputMetadata& metadata,
+                                                      const InputMetadata& metadata, bool paired,
                                                       std::string_view name) {
         if (!bootloader.perbox.has_value()) {
             return std::unexpected(
@@ -181,7 +200,8 @@ namespace {
         if (metadata.cf_ldv) {
             bootloader.perbox->lockdown_value = *metadata.cf_ldv;
         }
-        const auto& pairing = metadata.cf_pairing_data.value_or(metadata.pairing_data);
+        const auto pairing = paired ? metadata.cf_pairing_data.value_or(metadata.pairing_data)
+                                    : std::array<uint8_t, 3>{};
         std::memcpy(bootloader.perbox->pairing_data, pairing.data(), pairing.size());
         if (!bootloader.serialize_perbox()) {
             return std::unexpected(
@@ -191,8 +211,13 @@ namespace {
         return {};
     }
 
+    // A glitch (RGH1) image boots a single zero-paired CB, so its CD is keyed without the
+    // CPU key, and its CFs state no pairing (xeBuild 1.21 glitch Jasper and Falcon). Every
+    // other chain carries the console's pairing and CB LDV.
     std::expected<void, BuildError> apply_bootloader_metadata(FlashImage& flash_image,
-                                                              const InputMetadata& metadata) {
+                                                              const InputMetadata& metadata,
+                                                              BuildType build_type) {
+        const bool paired = build_type != BuildType::Glitch;
         auto& cb_a = flash_image.cb_section.cb_or_A;
         try {
             if (flash_image.cb_section.cb_B.has_value()) {
@@ -216,7 +241,9 @@ namespace {
                 if (!cb_a.decrypted) {
                     cb_a.decrypt(key_1bl);
                 }
-                if (auto applied = apply_cb_metadata(cb_a, metadata, "CB/A"); !applied) {
+                auto applied =
+                    paired ? apply_cb_metadata(cb_a, metadata, "CB/A") : zero_pair_cb(cb_a, "CB/A");
+                if (!applied) {
                     return std::unexpected(applied.error());
                 }
             }
@@ -226,7 +253,7 @@ namespace {
                 if (!cf.is_decrypted()) {
                     cf.decrypt(key_1bl);
                 }
-                if (auto applied = apply_cf_metadata(cf, metadata, "CF_0"); !applied) {
+                if (auto applied = apply_cf_metadata(cf, metadata, paired, "CF_0"); !applied) {
                     return std::unexpected(applied.error());
                 }
             }
@@ -235,7 +262,7 @@ namespace {
                 if (!cf.is_decrypted()) {
                     cf.decrypt(key_1bl);
                 }
-                if (auto applied = apply_cf_metadata(cf, metadata, "CF_1"); !applied) {
+                if (auto applied = apply_cf_metadata(cf, metadata, paired, "CF_1"); !applied) {
                     return std::unexpected(applied.error());
                 }
             }
@@ -825,7 +852,9 @@ BuildResult RunBuild(const Input& input) {
     // Patching reparses its targets. Apply the resolved metadata only after that
     // replacement step so the final CB/CF objects, rather than a discarded parse,
     // are serialized and encrypted below.
-    if (const auto metadata = apply_bootloader_metadata(flash_image, input.metadata); !metadata) {
+    if (const auto metadata =
+            apply_bootloader_metadata(flash_image, input.metadata, input.build_type);
+        !metadata) {
         return std::unexpected(metadata.error());
     }
     apply_nonces(flash_image, donor_nonces);

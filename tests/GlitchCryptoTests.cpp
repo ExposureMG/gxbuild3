@@ -422,6 +422,95 @@ namespace {
                check_chain(expected, *built, "encrypted replacement handoff");
     }
 
+    // Opens a stage sealed under `key` (RC4 from +0x20) and compares it with its plaintext.
+    bool opens_to(Bytes sealed, const Key& key, const Bytes& plain) {
+        ExCryptRc4(key.data(), key.size(), sealed.data() + 0x20, sealed.size() - 0x20);
+        return sealed == plain;
+    }
+
+    // Glitch (RGH1) seals one zero-paired CB: whatever pairing and LDV the console has, the CB
+    // per-box block (+0x20..+0x3F) is zero, CD is keyed HMAC(K_cb, nonce) alone, and every CF
+    // states no pairing but keeps its LDV and a valid MAC. A retail single CB with the same
+    // metadata stays paired and keys CD with the CPU-key second pass.
+    bool test_single_cb_pairing(BuildType type, const std::string& name) {
+        auto input = fixture(type);
+        input.bootloaders.cb_or_a = cb(6750, 0, 0x11);
+        input.bootloaders.cb_b.reset();
+        input.metadata.pairing_data = {1, 2, 3};
+        input.metadata.cb_ldv = 4;
+        input.metadata.cf_ldv = 9;
+        input.metadata.cf_pairing_data = std::array<uint8_t, 3>{5, 6, 7};
+        // A per-box block left in the CB template; zero-pairing clears all of it.
+        std::fill(input.bootloaders.cb_or_a.begin() + 0x20,
+                  input.bootloaders.cb_or_a.begin() + 0x40, 0xCC);
+        BootloaderCf cf{};
+        cf.header.header = {NANDBootloaderMagic::CF, 17559, 0, 0, 0, sizeof(cf_header) + 0x340};
+        cf.data.assign(0x340, 0);
+        cf.decrypted = true;
+        input.bootloaders.cf0 = cf.serialize();
+
+        const auto built = RunBuild(input);
+        if (!require(built.has_value(), name + " single-CB image builds"))
+            return false;
+        auto image = FlashImage::read(*built);
+        if (!require(image && image->parse() && image->kernel_section.ce &&
+                         image->system_update_0.cf,
+                     name + " single-CB image parses"))
+            return false;
+
+        const Key onebl{0xDD, 0x88, 0xAD, 0x0C, 0x9E, 0xD6, 0x69, 0xE7,
+                        0xB5, 0x67, 0x94, 0xFB, 0x68, 0x56, 0x3E, 0xFA};
+        const bool zero_paired = type == BuildType::Glitch;
+        auto cb = image->cb_section.cb_or_A.serialize();
+        const Key cb_key = hmac(onebl, Bytes(cb.begin() + 0x10, cb.begin() + 0x20));
+        ExCryptRc4(cb_key.data(), cb_key.size(), cb.data() + 0x20, cb.size() - 0x20);
+        const Bytes perbox(cb.begin() + 0x20, cb.begin() + 0x40);
+        bool ok = true;
+        if (zero_paired) {
+            ok =
+                require(std::all_of(perbox.begin(), perbox.end(), [](uint8_t b) { return b == 0; }),
+                        name + " CB per-box block is zero") &&
+                ok;
+        } else {
+            ok = require(perbox[0] == 1 && perbox[1] == 2 && perbox[2] == 3 && perbox[3] == 4,
+                         name + " CB states the console pairing and LDV") &&
+                 ok;
+        }
+
+        const auto cd = image->kernel_section.cd.serialize();
+        Key cd_key = hmac(cb_key, Bytes(cd.begin() + 0x10, cd.begin() + 0x20));
+        if (!zero_paired) {
+            Key cpu{};
+            std::copy_n(input.metadata.cpu_key.begin(), cpu.size(), cpu.begin());
+            cd_key = hmac(cpu, Bytes(cd_key.begin(), cd_key.end()));
+        }
+        ok = require(opens_to(cd, cd_key, input.bootloaders.cd),
+                     name + (zero_paired ? " CD opens under HMAC(K_cb, nonce) alone"
+                                         : " CD opens under the CPU-key second pass")) &&
+             ok;
+        const auto ce = image->kernel_section.ce->serialize();
+        ok = require(opens_to(ce, hmac(cd_key, Bytes(ce.begin() + 0x10, ce.begin() + 0x20)),
+                              *input.bootloaders.ce),
+                     name + " CE opens under CD's key") &&
+             ok;
+
+        auto sealed_cf = BootloaderCf::parse(image->system_update_0.cf->serialize());
+        sealed_cf.decrypt(onebl.data());
+        if (!require(sealed_cf.parse_perbox(), name + " CF per-box parses"))
+            return false;
+        const auto& cf_perbox = *sealed_cf.perbox;
+        const std::array<uint8_t, 3> expected_pairing =
+            zero_paired ? std::array<uint8_t, 3>{} : std::array<uint8_t, 3>{5, 6, 7};
+        ok = require(std::equal(expected_pairing.begin(), expected_pairing.end(),
+                                std::begin(cf_perbox.pairing_data)),
+                     name + (zero_paired ? " CF states no pairing" : " CF states the pairing")) &&
+             ok;
+        ok = require(cf_perbox.lockdown_value == 9, name + " CF keeps the console's LDV") && ok;
+        auto remac = sealed_cf;
+        remac.calc_mac(onebl.data(), input.metadata.cpu_key.data());
+        return require(remac.data == sealed_cf.data, name + " CF MAC covers what it states") && ok;
+    }
+
     // The CG RC4 key is HMAC-SHA1(CF_dec[0x330:0x340], CG[0x10:0x20]): the 7BL nonce
     // inside the decrypted CF payload, not the CF header fixpoint at +0x20. A
     // gxbuild3-only round-trip cannot catch a wrong key source because encrypt and
@@ -509,6 +598,8 @@ int main() {
     ok = test_build_policy(BuildType::Retail, "retail manufacturing", 0x0801) && ok;
     ok = test_build_policy(BuildType::Glitch3, "glitch3") && ok;
     ok = test_build_policy(BuildType::Glitch3, "glitch3 v2", 0x1800) && ok;
+    ok = test_single_cb_pairing(BuildType::Glitch, "glitch1") && ok;
+    ok = test_single_cb_pairing(BuildType::Retail, "retail") && ok;
     ok = test_glitch3_requires_cb_x_and_cb_b() && ok;
     ok = test_patched_stages_are_encrypted_for_their_parent(BuildType::Glitch2) && ok;
     ok = test_patched_stages_are_encrypted_for_their_parent(BuildType::Glitch3) && ok;
