@@ -125,8 +125,11 @@ namespace {
                 PatchError{std::string(stage_name) + " patch exceeds its boot-chain capacity"});
         }
 
+        // A patched stage is as long as its greatest patched end rounded up to 0x10, the
+        // rounding zero, and its header states that length (xeBuild: glitch2m CD 9452 0x52A8
+        // of patched bytes states 0x52B0). The padding is sealed with the stage.
         try {
-            bytes.resize(*required_end, 0);
+            bytes.resize(align_16(*required_end), 0);
             XePatchSection xe_section{section.identifier, section.entries};
             if (!XePatch::ApplyPatchSection(bytes.data(), static_cast<uint32_t>(bytes.size()),
                                             xe_section)) {
@@ -573,10 +576,10 @@ BuildResult RunBuild(const Input& input) {
     }
     flash_image.smc = *smc;
 
-    // Auto-apply the glitch reboot patch for Glitch/Glitch2 builds
-    // when the SMC is still clean retail.
-    if ((input.build_type == BuildType::Glitch ||
-         input.build_type == BuildType::Glitch2) &&
+    // A clean retail SMC gets the glitch reboot patch on every glitch type whose SMC it
+    // suits: glitch, glitch2 and glitch2m. Glitch3 needs an RGH3 SMC instead.
+    if ((input.build_type == BuildType::Glitch || input.build_type == BuildType::Glitch2 ||
+         input.build_type == BuildType::Glitch2m) &&
         flash_image.smc->variant == SmcType::Retail) {
 
         flash_image.smc->decrypt();

@@ -217,6 +217,17 @@ namespace {
                static_cast<uint32_t>(bytes[offset + 3]);
     }
 
+    uint32_t align_16(uint32_t value) {
+        return (value + 0x0F) & ~uint32_t{0x0F};
+    }
+
+    bool zero_between(std::span<const uint8_t> bytes, size_t begin, size_t end) {
+        return end <= bytes.size() &&
+               std::all_of(bytes.begin() + static_cast<std::ptrdiff_t>(begin),
+                           bytes.begin() + static_cast<std::ptrdiff_t>(end),
+                           [](uint8_t byte) { return byte == 0; });
+    }
+
     uint16_t read_be16(std::span<const uint8_t> bytes, size_t offset) {
         return static_cast<uint16_t>((static_cast<uint16_t>(bytes[offset]) << 8) |
                                      static_cast<uint16_t>(bytes[offset + 1]));
@@ -289,16 +300,50 @@ namespace {
 
         const auto& cb = extracted->bootloaders.cb_or_a;
         const auto& cd = extracted->bootloaders.cd;
+        const uint32_t cb_end = align_16(cb_patch_address + 4);
+        const uint32_t cd_end = align_16(cd_patch_address + 4);
         return require(cb.size() >= cb_patch_address + 4 &&
                            read_be32(cb, cb_patch_address) == 0xA1B2C3D4,
                        "CB grows to and contains the greatest patched end") &&
-               require(read_be32(cb, 0x0C) == cb_patch_address + 4,
-                       "CB big-endian declared size follows patched bytes") &&
+               require(read_be32(cb, 0x0C) == cb_end,
+                       "CB declared size is the patched end rounded up to 0x10") &&
+               require(zero_between(cb, cb_patch_address + 4, cb_end),
+                       "CB padding after the patched end is zero") &&
                require(cd.size() >= cd_patch_address + 4 &&
                            read_be32(cd, cd_patch_address) == 0x10203040,
                        "CD grows to and contains the greatest patched end") &&
-               require(read_be32(cd, 0x0C) == cd_patch_address + 4,
-                       "CD big-endian declared size follows patched bytes");
+               require(read_be32(cd, 0x0C) == cd_end,
+                       "CD declared size is the patched end rounded up to 0x10") &&
+               require(zero_between(cd, cd_patch_address + 4, cd_end),
+                       "CD padding after the patched end is zero");
+    }
+
+    // Glitch2m CD 9452: 0x5290 bytes, patched to 0x52A8, states 0x52B0 (xeBuild 1.21).
+    bool test_glitch2m_cd_patch_states_the_16_byte_aligned_size() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.build_type = BuildType::Glitch2m;
+        input.bootloaders.cb_b = input.bootloaders.cb_or_a;
+        const uint32_t cd_size = static_cast<uint32_t>(input.bootloaders.cd.size());
+        const uint32_t cd_patch_address = cd_size + 0x14;
+        InputPatches patches{};
+        patches.automatic = InputPatchFile{
+            "automatic", glitch_patchset(0x20, 0, cd_patch_address, 0x5A5A5A5A, Bytes{0x93})};
+        input.patches = std::move(patches);
+
+        const auto built = RunBuild(input);
+        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        if (!require(extracted.has_value(), "patched glitch2m image builds and extracts")) {
+            return false;
+        }
+        const auto& cd = extracted->bootloaders.cd;
+        const uint32_t cd_end = align_16(cd_patch_address + 4);
+        return require(cd_end != cd_patch_address + 4, "fixture patch ends off a 0x10 boundary") &&
+               require(read_be32(cd, 0x0C) == cd_end && cd.size() == cd_end,
+                       "glitch2m CD states and carries the 16-byte-aligned patched size") &&
+               require(read_be32(cd, cd_patch_address) == 0x5A5A5A5A,
+                       "glitch2m CD carries the patched word") &&
+               require(zero_between(cd, cd_patch_address + 4, cd_end),
+                       "glitch2m CD padding inside the stated size is zero");
     }
 
     bool test_glitch2_targets_cbb() {
@@ -321,8 +366,58 @@ namespace {
         return require(extracted->bootloaders.cb_b->size() >= cbb_patch_address + 4 &&
                            read_be32(*extracted->bootloaders.cb_b, cbb_patch_address) == 0xCAFEBABE,
                        "Glitch2 applies section one to CBB") &&
-               require(read_be32(*extracted->bootloaders.cb_b, 0x0C) == cbb_patch_address + 4,
-                       "CBB big-endian declared size follows patched bytes");
+               require(read_be32(*extracted->bootloaders.cb_b, 0x0C) ==
+                           align_16(cbb_patch_address + 4),
+                       "CBB declared size is the patched end rounded up to 0x10");
+    }
+
+    // A clean retail SMC: motherboard nibble at 0x100, the reboot site "05 ?? E5 ?? B4 05"
+    // at 0x180, and the four zero bytes every plaintext SMC ends in.
+    constexpr size_t kSmcRebootSite = 0x180;
+
+    Bytes clean_retail_smc() {
+        Bytes smc(0x300, 0x11);
+        smc[0x100] = 0x40;
+        const std::array<uint8_t, 6> site{0x05, 0x6C, 0xE5, 0x2A, 0xB4, 0x05};
+        std::copy(site.begin(), site.end(), smc.begin() + kSmcRebootSite);
+        std::fill(smc.end() - 4, smc.end(), uint8_t{0});
+        return smc;
+    }
+
+    // Glitch, glitch2 and glitch2m take the reboot patch on a clean retail SMC: the two bytes
+    // at the site become zero and nothing else changes.
+    bool test_glitch_types_patch_a_clean_retail_smc() {
+        for (const auto& [build_type, name] :
+             {std::pair{BuildType::Glitch, "glitch"}, std::pair{BuildType::Glitch2, "glitch2"},
+              std::pair{BuildType::Glitch2m, "glitch2m"}}) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            input.build_type = build_type;
+            input.metadata.smc = clean_retail_smc();
+            if (build_type != BuildType::Glitch) {
+                input.bootloaders.cb_b = input.bootloaders.cb_or_a;
+            }
+            InputPatches patches{};
+            patches.automatic =
+                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0x94})};
+            input.patches = std::move(patches);
+
+            const auto built = RunBuild(input);
+            auto image = built ? FlashImage::read(*built) : std::nullopt;
+            if (!require(image && image->parse() && image->smc,
+                         std::string(name) + " image builds with an SMC")) {
+                return false;
+            }
+            image->smc->decrypt();
+            auto expected = clean_retail_smc();
+            expected[kSmcRebootSite] = 0x00;
+            expected[kSmcRebootSite + 1] = 0x00;
+            if (!require(image->smc->data == expected,
+                         std::string(name) +
+                             " zeroes the two reboot-site bytes and nothing else")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     bool test_noblpatch_skips_bootloader_mutation_but_writes_khv() {
@@ -3145,6 +3240,8 @@ int main() {
     bool passed = true;
     passed = test_glitch_patches_resize_cb_and_cd_and_update_declared_sizes() && passed;
     passed = test_glitch2_targets_cbb() && passed;
+    passed = test_glitch2m_cd_patch_states_the_16_byte_aligned_size() && passed;
+    passed = test_glitch_types_patch_a_clean_retail_smc() && passed;
     passed = test_noblpatch_skips_bootloader_mutation_but_writes_khv() && passed;
     passed = test_jtag_patchset_is_serialized_at_fixed_region() && passed;
     passed = test_jtag_flows_payload_and_extra_bootloaders() && passed;
