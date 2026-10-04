@@ -1711,7 +1711,12 @@ namespace gxbuild3::NAND {
             // Glitch3 emits CB_B plaintext, so it binds nothing here.
             const bool bind_cb_b = cb_section.cb_B.has_value() && !plaintext_cb_b;
             const bool bind_single_cb = build_type == BuildType::Retail && cd_requires_cpu_key;
-            if (bind_cb_b || bind_single_cb) {
+            // A JTAG image's second CB carries the console's block itself, bound to the SMC
+            // under its own 1BL-derived key (xerunner build.py `_wears_console`).
+            const bool bind_extra_cb = payloads.extra_cb.has_value() &&
+                                       !payloads.extra_cb->data.empty() &&
+                                       payloads.extra_cb->decrypted;
+            if (bind_cb_b || bind_single_cb || bind_extra_cb) {
                 if (cpu_key.size() != 16 || !smc || smc->data.empty() || smc->data.size() % 4 != 0) {
                     Log::Error("CB authentication requires a CPU key and an aligned SMC");
                     return false;
@@ -1799,6 +1804,21 @@ namespace gxbuild3::NAND {
                     return false;
                 }
                 kernel_section.ce->encrypt(kernel_section.cd.derived_key->data());
+            }
+
+            // The JTAG second chain: its CB sealed under HMAC(1BL key, nonce) with the
+            // console's block bound to the SMC, and its CD under HMAC(CB key, nonce) with no
+            // CPU-key pass, which only a retail single-CB chain takes.
+            if (bind_extra_cb) {
+                payloads.extra_cb->encrypt_retail(key_1bl, cpu_key, smc->data);
+            }
+            if (payloads.extra_cd && !payloads.extra_cd->data.empty() &&
+                payloads.extra_cd->is_decrypted()) {
+                if (!payloads.extra_cb || !payloads.extra_cb->derived_key) {
+                    Log::Error("Cannot encrypt the JTAG second CD: its CB key is missing");
+                    return false;
+                }
+                payloads.extra_cd->encrypt(payloads.extra_cb->derived_key->data());
             }
 
             const bool glitch_layout = build_type == BuildType::Glitch || build_type == BuildType::Glitch2 ||

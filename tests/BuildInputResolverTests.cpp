@@ -6,6 +6,7 @@
 #include "nand/bootloaders/4bl.hpp"
 #include "nand/bootloaders/6bl.hpp"
 #include "nand/bootloaders/7bl.hpp"
+#include "nand/objects/Freeboot.hpp"
 #include "nand/objects/Keyvault.hpp"
 #include "nand/objects/Patchset.hpp"
 
@@ -286,7 +287,8 @@ namespace {
             write_binary("first/cd.bin", Bytes{0xCD, 0x01});
             // Virtual fuses read their CB's word at 0x3B0: CB_B for glitch2m, the second CB
             // for JTAG.
-            std::string ini = "[falconbl]\ncb_1.bin\n";
+            std::string ini = build_type == BuildType::Jtag ? "[version]\n17559\n\n" : "";
+            ini += "[falconbl]\ncb_1.bin\n";
             if (build_type == BuildType::Glitch2m) {
                 write_binary("first/cbb_1.bin", cb_with_word(kFuseCbWord));
                 ini += "cbb_1.bin\n";
@@ -1212,8 +1214,12 @@ namespace {
                        "xell-2f.bin is loaded verbatim") &&
                require(payloads->rebooter && payloads->rebooter->size() == 0xd40,
                        "the embedded freeBOOT rebooter is loaded at 0xd40 bytes") &&
+               require(*payloads->rebooter == gxbuild3::NAND::freeboot_rebooter_for("17559"),
+                       "the rebooter states the INI's kernel version") &&
                require(payloads->payload && payloads->payload->size() == 0x200,
                        "the embedded SMC payload is loaded at 0x200 bytes") &&
+               require(*payloads->payload == gxbuild3::NAND::freeboot_payload_for(0xd40),
+                       "the payload loads exactly the rebooter") &&
                require(payloads->fuses && payloads->fuses->size() == 0x60,
                        "generated virtual fuses fill the 0x60-byte region") &&
                require_fuse_lines_from_cb_word(*payloads->fuses, "JTAG second CB");

@@ -263,6 +263,21 @@ SmcType smc_get_type(std::span<const uint8_t> data) {
     return (ret == SmcType::Unknown && retail) ? SmcType::Retail : ret;
 }
 
+bool smc_has_jtag_mark(std::span<const uint8_t> data) {
+    std::vector<uint8_t> decrypted_data;
+    std::span<const uint8_t> plain = data;
+    if (smc_is_encrypted(data)) {
+        decrypted_data = smc_decrypt(data);
+        plain = decrypted_data;
+    }
+    static constexpr uint8_t cygnos_mark[] = {0x78, 0xBA, 0xB6};
+    static constexpr uint8_t jtag_mark[] = {0xD0, 0x00, 0x00, 0x1B};
+    const auto contains = [plain](std::span<const uint8_t> mark) {
+        return std::search(plain.begin(), plain.end(), mark.begin(), mark.end()) != plain.end();
+    };
+    return contains(cygnos_mark) || contains(jtag_mark);
+}
+
 std::optional<Smc> Smc::parse(std::span<const uint8_t> bytes) {
     if (bytes.size() < 0x108 || bytes.size() > 0x4000) {
         return std::nullopt;

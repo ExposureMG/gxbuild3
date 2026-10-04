@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <utility>
 
 using gxbuild3::NAND::FlashImage;
 using gxbuild3::NAND::Keyvault;
@@ -637,6 +638,97 @@ namespace {
         return require(remac.data == sealed_cf.data, name + " CF MAC covers what it states") && ok;
     }
 
+    // JTAG seals two chains (xeBuild 1.21). The main chain's single CB is zero-paired, so
+    // its CD is keyed HMAC(K_cb, nonce) alone. The second chain's CB carries the console's
+    // pairing and CB LDV, bound to the sealed SMC, under HMAC(1BL key, nonce), and its CD is
+    // keyed HMAC(K_cb2, nonce) without the CPU key. Both chains take the donor's first CB and
+    // CD nonces.
+    bool test_jtag_chains() {
+        auto input = fixture(BuildType::Jtag);
+        input.bootloaders.cb_or_a = cb(6723, 0, 0x11);
+        input.bootloaders.cb_b.reset();
+        input.metadata.pairing_data = {1, 2, 3};
+        input.metadata.cb_ldv = 4;
+        Bytes smc(0x300, 0);
+        const Bytes jtag_mark{0xD0, 0x00, 0x00, 0x1B};
+        std::copy(jtag_mark.begin(), jtag_mark.end(), smc.begin() + 0x200);
+        input.metadata.smc = smc;
+        Bytes patch(4, 0x10);
+        for (const uint8_t fill : {0x11, 0x12}) {
+            patch.insert(patch.end(), 4, 0xFF);
+            patch.insert(patch.end(), 4, fill);
+        }
+        patch.insert(patch.end(), 4, 0xFF);
+        patch.push_back(0x13);
+        input.patches = InputPatches{.automatic = InputPatchFile{"automatic", patch}};
+
+        const Bytes extra_cb = cb(6750, 0, 0x66);
+        BootloaderCd cd{};
+        cd.header.header = {NANDBootloaderMagic::CD, 8453, 0, 0, 0, sizeof(cd_header) + 0x20};
+        std::fill_n(cd.header.key, 16, 0x88);
+        cd.header.ce_hash[0] = 1;
+        cd.data.assign(0x20, 0xDC);
+        cd.decrypted = true;
+        const Bytes extra_cd = cd.serialize();
+        input.bootloaders.extra_cb = extra_cb;
+        input.bootloaders.extra_cd = extra_cd;
+
+        const auto built = RunBuild(input);
+        if (!require(built.has_value(), "JTAG image builds"))
+            return false;
+        auto image = FlashImage::read(*built);
+        if (!require(image && image->parse() && image->smc && image->smc->encrypted,
+                     "JTAG image parses with a sealed SMC"))
+            return false;
+
+        const Key onebl{0xDD, 0x88, 0xAD, 0x0C, 0x9E, 0xD6, 0x69, 0xE7,
+                        0xB5, 0x67, 0x94, 0xFB, 0x68, 0x56, 0x3E, 0xFA};
+        auto main_cb = image->cb_section.cb_or_A.serialize();
+        const Key cb_key = hmac(onebl, Bytes(main_cb.begin() + 0x10, main_cb.begin() + 0x20));
+        ExCryptRc4(cb_key.data(), cb_key.size(), main_cb.data() + 0x20, main_cb.size() - 0x20);
+        bool ok = require(std::all_of(main_cb.begin() + 0x20, main_cb.begin() + 0x40,
+                                      [](uint8_t b) { return b == 0; }),
+                          "JTAG main CB per-box block is zero");
+        const auto main_cd = image->kernel_section.cd.serialize();
+        const Key cd_key = hmac(cb_key, Bytes(main_cd.begin() + 0x10, main_cd.begin() + 0x20));
+        ok = require(opens_to(main_cd, cd_key, input.bootloaders.cd),
+                     "JTAG main CD opens under HMAC(K_cb, nonce) alone") &&
+             ok;
+
+        const auto read = [&image](size_t offset, size_t length) {
+            const auto bytes = std::as_const(image->flash_driver).read_offset(offset, length);
+            return Bytes(bytes.begin(), bytes.end());
+        };
+        constexpr size_t kSecondChain = 0xD5060;
+        const Bytes second_cb = read(kSecondChain, extra_cb.size());
+        const Bytes second_cd =
+            read(kSecondChain + ((extra_cb.size() + 0x0F) & ~size_t{0x0F}), extra_cd.size());
+
+        // The donor's first CB nonce (0x11) and CD nonce (0x44) replace the templates'.
+        Bytes expected_cb = extra_cb;
+        std::fill_n(expected_cb.begin() + 0x10, 0x10, 0x11);
+        const Key second_cb_key =
+            hmac(onebl, Bytes(expected_cb.begin() + 0x10, expected_cb.begin() + 0x20));
+        const Bytes head{1, 2, 3, 4};
+        std::copy(head.begin(), head.end(), expected_cb.begin() + 0x20);
+        expected_cb =
+            authenticate(expected_cb, second_cb_key, input.metadata.cpu_key, image->smc->data);
+        ok = require(opens_to(second_cb, second_cb_key, expected_cb),
+                     "JTAG second CB opens under HMAC(1BL, nonce), paired and bound to the SMC") &&
+             ok;
+        ok = require(std::any_of(expected_cb.begin() + 0x30, expected_cb.begin() + 0x40,
+                                 [](uint8_t b) { return b != 0; }),
+                     "JTAG second CB digest is not zero") &&
+             ok;
+        Bytes expected_cd = extra_cd;
+        std::fill_n(expected_cd.begin() + 0x10, 0x10, 0x44);
+        const Key second_cd_key =
+            hmac(second_cb_key, Bytes(expected_cd.begin() + 0x10, expected_cd.begin() + 0x20));
+        return require(opens_to(second_cd, second_cd_key, expected_cd),
+                       "JTAG second CD opens under HMAC(K_cb2, nonce) without the CPU key") &&
+               ok;
+    }
+
     // The CG RC4 key is HMAC-SHA1(CF_dec[0x330:0x340], CG[0x10:0x20]): the 7BL nonce
     // inside the decrypted CF payload, not the CF header fixpoint at +0x20. A
     // gxbuild3-only round-trip cannot catch a wrong key source because encrypt and
@@ -726,6 +818,7 @@ int main() {
     ok = test_build_policy(BuildType::Glitch3, "glitch3 v2", 0x1800) && ok;
     ok = test_single_cb_pairing(BuildType::Glitch, "glitch1") && ok;
     ok = test_single_cb_pairing(BuildType::Retail, "retail") && ok;
+    ok = test_jtag_chains() && ok;
     ok = test_glitch3_requires_cb_x_and_cb_b() && ok;
     ok = test_patched_stages_are_encrypted_for_their_parent(BuildType::Glitch2) && ok;
     ok = test_patched_stages_are_encrypted_for_their_parent(BuildType::Glitch3) && ok;

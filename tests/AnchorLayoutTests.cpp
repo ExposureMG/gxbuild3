@@ -182,6 +182,43 @@ static bool freeboot_provider() {
     ok = check(freeboot_payload().size() == 0x200, "embedded payload is 0x200 bytes") && ok;
     ok = check(freeboot_rebooter()[0] == 0x3c, "embedded rebooter starts with 0x3c") && ok;
     ok = check(freeboot_payload()[0] == 0x80, "embedded payload starts with 0x80") && ok;
+
+    // The core carries thirty-two X's at 0xD0B for the kernel version, and the payload's
+    // `li r4, 0xFFFF` at 0x50 for the words it loads; a built image states both.
+    const Bytes blank(0x20, 'X');
+    const auto core = freeboot_rebooter();
+    ok = check(std::equal(blank.begin(), blank.end(), core.begin() + 0xD0B),
+               "embedded rebooter carries the version placeholder at 0xD0B") &&
+         ok;
+    Bytes version(0x20, 0);
+    std::copy_n("17559", 5, version.begin());
+    const auto stated = freeboot_rebooter_for("17559");
+    ok = check(stated.size() == core.size() &&
+                   std::equal(version.begin(), version.end(), stated.begin() + 0xD0B),
+               "the rebooter states the kernel version, zero-padded, at 0xD0B") &&
+         ok;
+    Bytes rest(stated.begin(), stated.end());
+    std::copy(blank.begin(), blank.end(), rest.begin() + 0xD0B);
+    ok = check(std::equal(rest.begin(), rest.end(), core.begin()),
+               "the version string is the only change to the rebooter") &&
+         ok;
+    const Bytes hold{0x80, 0x00, 0x00, 0x00, 0x01, 0x00, 0x30, 0x78};
+    const Bytes old_hold{0x80, 0x00, 0x00, 0x00, 0x00, 0x1F, 0xFF, 0xF8};
+    const auto old = freeboot_rebooter_for("9199");
+    ok = check(std::search(core.begin(), core.end(), hold.begin(), hold.end()) != core.end() &&
+                   std::search(old.begin(), old.end(), hold.begin(), hold.end()) == old.end() &&
+                   std::search(old.begin(), old.end(), old_hold.begin(), old_hold.end()) !=
+                       old.end(),
+               "a 9199 rebooter takes the old hold address") &&
+         ok;
+    ok = check(freeboot_payload()[0x52] == 0xFF && freeboot_payload()[0x53] == 0xFF,
+               "embedded payload loads 0xFFFF words") &&
+         ok;
+    const auto payload = freeboot_payload_for(stated.size());
+    ok = check(payload.size() == 0x200 && payload[0x52] == 0x03 && payload[0x53] == 0x50,
+               "the payload loads the 0xD40-byte core as 0x350 words") &&
+         ok;
+    ok = check(freeboot_payload_for(0xD2B)[0x53] == 0x4B, "a partial word rounds up") && ok;
     return ok;
 }
 static BootloaderCb synthetic_cb(uint8_t fill) {

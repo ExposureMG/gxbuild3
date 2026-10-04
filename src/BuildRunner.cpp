@@ -218,13 +218,16 @@ namespace {
     }
 
     // A glitch (RGH1) image boots a single zero-paired CB, so its CD is keyed without the
-    // CPU key, and its CFs state no pairing (xeBuild 1.21 glitch Jasper and Falcon). Every
-    // other chain carries the console's pairing and CB LDV. A JTAG image's first update pair
-    // carries nothing of the console and keeps its CF's per-box block as supplied.
+    // CPU key, and its CFs state no pairing (xeBuild 1.21 glitch Jasper and Falcon). A JTAG
+    // image's main chain is zero-paired the same way; its second chain's CB carries the
+    // console's pairing and CB LDV instead, and its second CF is paired. Every other chain
+    // carries the console's pairing and CB LDV. A JTAG image's first update pair carries
+    // nothing of the console and keeps its CF's per-box block as supplied.
     std::expected<void, BuildError> apply_bootloader_metadata(FlashImage& flash_image,
                                                               const InputMetadata& metadata,
                                                               BuildType build_type) {
         const bool paired = build_type != BuildType::Glitch;
+        const bool main_cb_paired = paired && build_type != BuildType::Jtag;
         auto& cb_a = flash_image.cb_section.cb_or_A;
         try {
             if (flash_image.cb_section.cb_B.has_value()) {
@@ -248,9 +251,19 @@ namespace {
                 if (!cb_a.decrypted) {
                     cb_a.decrypt(key_1bl);
                 }
-                auto applied =
-                    paired ? apply_cb_metadata(cb_a, metadata, "CB/A") : zero_pair_cb(cb_a, "CB/A");
+                auto applied = main_cb_paired ? apply_cb_metadata(cb_a, metadata, "CB/A")
+                                              : zero_pair_cb(cb_a, "CB/A");
                 if (!applied) {
+                    return std::unexpected(applied.error());
+                }
+            }
+
+            if (auto& extra_cb = flash_image.payloads.extra_cb; extra_cb) {
+                if (!extra_cb->decrypted) {
+                    extra_cb->decrypt(key_1bl);
+                }
+                if (auto applied = apply_cb_metadata(*extra_cb, metadata, "JTAG second CB");
+                    !applied) {
                     return std::unexpected(applied.error());
                 }
             }
@@ -384,7 +397,9 @@ namespace {
     // Sets the nonce of every stage RunBuild seals, before any key is derived from it. Each
     // boot-chain key derives from its parent's, so a chain with any stage supplied already
     // sealed keeps all its nonces. A CB_X chain keeps its CB_X and the handoff key its
-    // plaintext CB_B holds at +0x10. SC is written as supplied.
+    // plaintext CB_B holds at +0x10. SC is written as supplied. A JTAG image's second chain
+    // takes the first CB's and the CD's nonces again (xeBuild 1.21, xerunner build.py
+    // `_nonces`).
     void apply_nonces(FlashImage& image, const std::optional<DonorNonces>& donor) {
         const auto stage = [&donor](size_t index) {
             return donor ? donor->stages[index] : std::optional<BootloaderNonce>{};
@@ -409,17 +424,35 @@ namespace {
             cb_a.decrypted && cb_a.data.size() >= 0x10 && (!cb_x || cb_x->decrypted) &&
             (!cb_b || (cb_b->decrypted && cb_b->data.size() >= 0x10)) && !sc_sealed &&
             cd.decrypted && !cd.data.empty() && (!ce || ce->decrypted);
+        std::optional<BootloaderNonce> cb_nonce;
+        std::optional<BootloaderNonce> cd_nonce;
         if (chain_plaintext) {
-            set_cb(cb_a, donor_or_random(stage(0)));
+            cb_nonce = donor_or_random(stage(0));
+            set_cb(cb_a, *cb_nonce);
             if (!cb_x && cb_b) {
                 set_cb(*cb_b, donor_or_random(stage(1)));
             }
-            const auto cd_nonce = donor_or_random(stage(2));
-            std::copy(cd_nonce.begin(), cd_nonce.end(), std::begin(cd.header.key));
+            cd_nonce = donor_or_random(stage(2));
+            std::copy(cd_nonce->begin(), cd_nonce->end(), std::begin(cd.header.key));
             if (ce) {
                 const auto ce_nonce = donor_or_random(stage(3));
                 std::copy(ce_nonce.begin(), ce_nonce.end(), std::begin(ce->header.key));
             }
+        }
+
+        auto& extra_cb = image.payloads.extra_cb;
+        auto& extra_cd = image.payloads.extra_cd;
+        if (extra_cb && extra_cb->decrypted && extra_cb->data.size() >= 0x10) {
+            if (!cb_nonce) {
+                cb_nonce = donor_or_random(stage(0));
+            }
+            set_cb(*extra_cb, *cb_nonce);
+        }
+        if (extra_cd && extra_cd->decrypted && !extra_cd->data.empty()) {
+            if (!cd_nonce) {
+                cd_nonce = donor_or_random(stage(2));
+            }
+            std::copy(cd_nonce->begin(), cd_nonce->end(), std::begin(extra_cd->header.key));
         }
 
         for (auto* slot : {&image.system_update_0, &image.system_update_1}) {
@@ -615,6 +648,16 @@ BuildResult RunBuild(const Input& input) {
         return build_error(BuildErrorCode::InvalidSmc, "Failed to parse input SMC");
     }
     flash_image.smc = *smc;
+
+    // A JTAG image boots through its SMC's hack, so an SMC carrying no JTAG mark is refused
+    // unless smcnocheck waives the check, as xeBuild 1.21 does.
+    if (input.build_type == BuildType::Jtag && !input.options.smcnocheck.value_or(false) &&
+        !smc_has_jtag_mark(flash_image.smc->data)) {
+        Log::Error("Clean SMC binary found: a JTAG image needs a hacked SMC");
+        return build_error(BuildErrorCode::InvalidSmc,
+                           "Clean SMC binary found: a JTAG image needs a hacked SMC "
+                           "(the smcnocheck option builds with this one anyway)");
+    }
 
     // A clean retail SMC gets the glitch reboot patch on every glitch type whose SMC it
     // suits: glitch, glitch2 and glitch2m. Glitch3 writes the donor's or smc.bin's SMC as
@@ -865,6 +908,25 @@ BuildResult RunBuild(const Input& input) {
         }
     }
 
+    // The JTAG second CB/CD are captured by the INI reader and placed in the window tail. They
+    // are sealed with the main chain, so they are parsed before its metadata and nonces.
+    if (input.bootloaders.extra_cb) {
+        try {
+            flash_image.payloads.extra_cb = BootloaderCb::parse(*input.bootloaders.extra_cb);
+        } catch (const std::exception& exception) {
+            return build_error(BuildErrorCode::InvalidBootloader,
+                               std::string("Failed to parse JTAG extra CB: ") + exception.what());
+        }
+    }
+    if (input.bootloaders.extra_cd) {
+        try {
+            flash_image.payloads.extra_cd = BootloaderCd::parse(*input.bootloaders.extra_cd);
+        } catch (const std::exception& exception) {
+            return build_error(BuildErrorCode::InvalidBootloader,
+                               std::string("Failed to parse JTAG extra CD: ") + exception.what());
+        }
+    }
+
     // Patching reparses its targets. Apply the resolved metadata only after that
     // replacement step so the final CB/CF objects, rather than a discarded parse,
     // are serialized and encrypted below.
@@ -927,24 +989,6 @@ BuildResult RunBuild(const Input& input) {
         if (input.payloads->payload) {
             flash_image.payloads.payload = input.payloads->payload;
             Log::Info("Adding SMC payload (size=0x{:X})", flash_image.payloads.payload->size());
-        }
-    }
-
-    // The JTAG second CB/CD are captured by the INI reader and placed in the window tail.
-    if (input.bootloaders.extra_cb) {
-        try {
-            flash_image.payloads.extra_cb = BootloaderCb::parse(*input.bootloaders.extra_cb);
-        } catch (const std::exception& exception) {
-            return build_error(BuildErrorCode::InvalidBootloader,
-                               std::string("Failed to parse JTAG extra CB: ") + exception.what());
-        }
-    }
-    if (input.bootloaders.extra_cd) {
-        try {
-            flash_image.payloads.extra_cd = BootloaderCd::parse(*input.bootloaders.extra_cd);
-        } catch (const std::exception& exception) {
-            return build_error(BuildErrorCode::InvalidBootloader,
-                               std::string("Failed to parse JTAG extra CD: ") + exception.what());
         }
     }
 

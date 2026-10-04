@@ -78,6 +78,18 @@ namespace {
         return smc;
     }
 
+    // The JTAG hack mark D0 00 00 1B, which a JTAG image requires of its SMC.
+    void mark_jtag_smc(Bytes& smc) {
+        const Bytes mark{0xD0, 0x00, 0x00, 0x1B};
+        std::copy(mark.begin(), mark.end(), smc.begin() + 0x200);
+    }
+
+    Bytes make_jtag_smc(uint8_t marker) {
+        auto smc = make_smc(marker);
+        mark_jtag_smc(smc);
+        return smc;
+    }
+
     Bytes canonical_keyvault(std::span<const uint8_t> cpu_key, Bytes plaintext) {
         return keyvault_decrypt(cpu_key, keyvault_encrypt(cpu_key, plaintext));
     }
@@ -445,6 +457,7 @@ namespace {
     bool test_jtag_patchset_is_serialized_at_fixed_region() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Jtag;
+        input.metadata.smc = make_jtag_smc(0x11);
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13, 0x13})};
         patches.addons = {{"first", {0x20}}, {"second", {0x30}}};
@@ -465,15 +478,19 @@ namespace {
     }
 
     bool test_jtag_flows_payload_and_extra_bootloaders() {
+        // Plaintext stages, as the release ships them: a CB whose 0x260..0x380 is zero and a
+        // CD stating a CE hash with no 6BL nonce.
         BootloaderCb extra_cb{};
         extra_cb.header.header.magic = NANDBootloaderMagic::CB;
         extra_cb.header.header.version = 4579;
-        extra_cb.data.resize(0x100, 0x71);
+        extra_cb.data.resize(0x380, 0);
+        extra_cb.data.resize(0x400, 0x71);
         extra_cb.header.header.size =
             static_cast<uint32_t>(sizeof(generic_header) + extra_cb.data.size());
         BootloaderCd extra_cd{};
         extra_cd.header.header.magic = NANDBootloaderMagic::CD;
         extra_cd.header.header.version = 8453;
+        extra_cd.header.ce_hash[0] = 1;
         extra_cd.data.resize(0x100, 0x72);
         extra_cd.header.header.size =
             static_cast<uint32_t>(sizeof(cd_header) + extra_cd.data.size());
@@ -482,6 +499,7 @@ namespace {
 
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Jtag;
+        input.metadata.smc = make_jtag_smc(0x11);
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13, 0x13})};
         input.patches = std::move(patches);
@@ -498,16 +516,68 @@ namespace {
         const auto placed_payload = built ? read_logical(*built, 0x200, 0x200) : std::nullopt;
         const auto placed_cb = built ? read_logical(*built, cb_at, cb_bytes.size()) : std::nullopt;
         const auto placed_cd = built ? read_logical(*built, cd_at, cd_bytes.size()) : std::nullopt;
+        const auto main_cb = built ? read_logical(*built, 0x8000, 0x20) : std::nullopt;
+        // The second chain is sealed: each stage keeps its clear header and takes the main
+        // chain's CB or CD nonce, and its body no longer reads as the plaintext supplied.
+        const auto same = [](const std::optional<Bytes>& left, size_t left_at, const Bytes& right,
+                             size_t right_at, size_t length) {
+            return left && left->size() >= left_at + length && right.size() >= right_at + length &&
+                   std::equal(left->begin() + left_at, left->begin() + left_at + length,
+                              right.begin() + right_at);
+        };
         return require(built.has_value(),
                        "JTAG image carrying payload and extra bootloaders builds") &&
                require(placed_payload == Bytes(0x200, 0x73), "SMC payload is placed at 0x200") &&
-               require(placed_cb == cb_bytes, "extra CB is placed in the JTAG window tail") &&
-               require(placed_cd == cd_bytes, "extra CD follows the 16-byte-aligned extra CB");
+               require(same(placed_cb, 0, cb_bytes, 0, 0x10),
+                       "extra CB is placed in the JTAG window tail with its clear header") &&
+               require(main_cb && same(placed_cb, 0x10, *main_cb, 0x10, 0x10),
+                       "extra CB takes the main CB's nonce") &&
+               require(!same(placed_cb, 0x380, cb_bytes, 0x380, 0x80),
+                       "extra CB is sealed, not written as supplied") &&
+               require(same(placed_cd, 0, cd_bytes, 0, 0x10),
+                       "extra CD follows the 16-byte-aligned extra CB") &&
+               require(!same(placed_cd, 0x20, cd_bytes, 0x20, 0x100),
+                       "extra CD is sealed, not written as supplied");
+    }
+
+    // A JTAG image boots through its SMC's hack: an SMC with no JTAG mark is refused, unless
+    // smcnocheck waives the check. A marked SMC, sealed or plaintext, builds.
+    bool test_jtag_refuses_a_clean_smc() {
+        const auto jtag_input = [](Bytes smc) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            input.build_type = BuildType::Jtag;
+            input.metadata.smc = std::move(smc);
+            InputPatches patches{};
+            patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13, 0x13})};
+            input.patches = std::move(patches);
+            return input;
+        };
+        const auto clean = RunBuild(jtag_input(make_smc(0x11)));
+        auto waived_input = jtag_input(make_smc(0x11));
+        waived_input.options.smcnocheck = true;
+        const auto waived = RunBuild(waived_input);
+        const auto marked = RunBuild(jtag_input(make_jtag_smc(0x11)));
+        auto cygnos_smc = make_smc(0x11);
+        const Bytes cygnos_mark{0x78, 0xBA, 0xB6};
+        std::copy(cygnos_mark.begin(), cygnos_mark.end(), cygnos_smc.begin() + 0x180);
+        const auto sealed = RunBuild(jtag_input(gxbuild3::NAND::smc_encrypt(cygnos_smc)));
+        auto retail_input = fresh_input(ImageType::SmallBlock);
+        retail_input.build_type = BuildType::Retail;
+        const auto retail = RunBuild(retail_input);
+        return require(!clean && clean.error().code == BuildErrorCode::InvalidSmc &&
+                           clean.error().message.find("Clean SMC") != std::string::npos,
+                       "JTAG over an SMC with no JTAG mark is refused as a clean SMC") &&
+               require(waived.has_value(), "smcnocheck builds JTAG over a clean SMC") &&
+               require(marked.has_value(), "JTAG builds over a JTAG-marked SMC") &&
+               require(sealed.has_value(),
+                       "JTAG builds over a sealed SMC carrying the Cygnos mark") &&
+               require(retail.has_value(), "the check leaves retail images alone");
     }
 
     bool test_patch_regions_reject_overflow() {
         auto jtag = fresh_input(ImageType::SmallBlock);
         jtag.build_type = BuildType::Jtag;
+        jtag.metadata.smc = make_jtag_smc(0x11);
         InputPatches jtag_patches{};
         jtag_patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes(0x4001, 0x44))};
         jtag.patches = std::move(jtag_patches);
@@ -630,6 +700,7 @@ namespace {
     bool test_jtag_xell_without_rebooter_preserves_patches_and_uses_fixed_offset() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Jtag;
+        mark_jtag_smc(*input.metadata.smc);
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13, 0x14})};
         input.patches = patches;
@@ -732,6 +803,7 @@ namespace {
     bool test_donor_transition_rejects_retained_glitch_xell_collision() {
         auto donor_input = fresh_input(ImageType::SmallBlock);
         donor_input.build_type = BuildType::Jtag;
+        mark_jtag_smc(*donor_input.metadata.smc);
         InputPatches donor_patches{};
         donor_patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0xA1})};
         donor_input.patches = std::move(donor_patches);
@@ -779,6 +851,9 @@ namespace {
                 test_case.build_type == BuildType::Jtag ? "JTAG" : "big-block Glitch";
             auto input = fresh_input(test_case.image_type);
             input.build_type = test_case.build_type;
+            if (input.build_type == BuildType::Jtag) {
+                mark_jtag_smc(*input.metadata.smc);
+            }
             InputPatches patches{};
             patches.automatic = test_case.automatic;
             input.patches = std::move(patches);
@@ -950,6 +1025,7 @@ namespace {
     bool test_unambiguous_jtag_xell_preserves_fixed_payload_extraction() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Jtag;
+        mark_jtag_smc(*input.metadata.smc);
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0xA8})};
         input.patches = std::move(patches);
@@ -983,6 +1059,9 @@ namespace {
         for (const auto& test_case : cases) {
             auto input = fresh_input(ImageType::SmallBlock);
             input.build_type = test_case.build_type;
+            if (input.build_type == BuildType::Jtag) {
+                mark_jtag_smc(*input.metadata.smc);
+            }
             input.options.noblpatch = test_case.noblpatch;
             input.bootloaders.cb_or_a.resize(test_case.xell_offset - 0x8000 + 0x10, 0xA9);
             const uint32_t cb_size =
@@ -2268,6 +2347,9 @@ namespace {
             auto input = fresh_input(ImageType::SmallBlock);
             input.metadata.nand_image = *donor;
             input.build_type = test_case.type;
+            if (input.build_type == BuildType::Jtag) {
+                mark_jtag_smc(*input.metadata.smc);
+            }
             const auto [cf, cg] =
                 valid_system_update(static_cast<uint8_t>(0x60 + test_case.expected_slot / 0x10000));
             input.bootloaders.cf0 = cf;
@@ -2370,6 +2452,7 @@ namespace {
     bool test_jtag_first_update_pair_stays_unbound() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Jtag;
+        mark_jtag_smc(*input.metadata.smc);
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0xA1})};
         input.patches = std::move(patches);
@@ -2983,6 +3066,7 @@ namespace {
         const auto kept_jasper = RunBuild(jasper);
         auto jtag = jasper;
         jtag.build_type = BuildType::Jtag;
+        mark_jtag_smc(*jtag.metadata.smc);
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13})};
         jtag.patches = std::move(patches);
@@ -3012,6 +3096,7 @@ namespace {
         const auto jtag = [](OptionsArgs options) {
             auto input = fresh_input(ImageType::SmallBlock);
             input.build_type = BuildType::Jtag;
+            mark_jtag_smc(*input.metadata.smc);
             InputPatches patches{};
             patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13})};
             input.patches = std::move(patches);
@@ -3296,6 +3381,7 @@ int main() {
     passed = test_noblpatch_skips_bootloader_mutation_but_writes_khv() && passed;
     passed = test_jtag_patchset_is_serialized_at_fixed_region() && passed;
     passed = test_jtag_flows_payload_and_extra_bootloaders() && passed;
+    passed = test_jtag_refuses_a_clean_smc() && passed;
     passed = test_patch_regions_reject_overflow() && passed;
     passed = test_runbuild_rejects_retail_and_devkit_addon_patch_data() && passed;
     passed = test_glitch_patch_region_does_not_overwrite_mobile_data() && passed;

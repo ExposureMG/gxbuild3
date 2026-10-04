@@ -905,10 +905,16 @@ namespace gxbuild3::cli {
                 payloads.xell = std::move((**xell).data);
 
                 if (is_jtag) {
-                    const auto rebooter = gxbuild3::NAND::freeboot_rebooter();
-                    payloads.rebooter = std::vector<uint8_t>(rebooter.begin(), rebooter.end());
-                    const auto smc_payload = gxbuild3::NAND::freeboot_payload();
-                    payloads.payload = std::vector<uint8_t>(smc_payload.begin(), smc_payload.end());
+                    // The core states the release's kernel version, the INI's [version], and
+                    // the payload loads exactly the core.
+                    std::string firmware_version;
+                    if (const auto* version_section = ini_document->get("version");
+                        version_section && !version_section->empty()) {
+                        firmware_version = version_section->front().key;
+                    }
+                    payloads.rebooter = gxbuild3::NAND::freeboot_rebooter_for(firmware_version);
+                    payloads.payload =
+                        gxbuild3::NAND::freeboot_payload_for(payloads.rebooter->size());
                 }
 
                 if (needs_fuses) {
