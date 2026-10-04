@@ -7,6 +7,7 @@
 #include "utils/Utils.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <stdexcept>
 
@@ -159,6 +160,80 @@ void BootloaderCb::decrypt_v2(const cb_header& cb_a_hdr, const uint8_t cb_a_key[
         populate_metadata();
 }
 
+void BootloaderCb::encrypt_retail(const uint8_t parent_key[16], std::span<const uint8_t> cpu_key,
+                                  std::span<const uint8_t> encrypted_smc,
+                                  const cb_header* cb_a_header) {
+    if (!decrypted || cpu_key.size() != 16 || encrypted_smc.empty() ||
+        encrypted_smc.size() % 4 != 0 || !parse_perbox()) {
+        throw std::runtime_error("Retail CB authentication requires plaintext per-box data, a CPU "
+                                 "key, and an aligned encrypted SMC");
+    }
+
+    // A CB_B under a manufacturing CB_A, or bound to an all-zero CPU key, binds no SMC:
+    // its digest slot is sixteen zeros (xeBuild "zeropairing CB_B").
+    const bool unbound_cb_b = cb_a_header && (manufacturing_chain(*cb_a_header) ||
+                                              std::all_of(cpu_key.begin(), cpu_key.end(),
+                                                          [](uint8_t b) { return b == 0; }));
+    if (unbound_cb_b) {
+        std::fill(std::begin(perbox->per_box_digest), std::end(perbox->per_box_digest), 0);
+        if (!serialize_perbox())
+            throw std::runtime_error("Could not serialize retail CB authentication digest");
+        encrypt_cb_b(*cb_a_header, parent_key, cpu_key.data());
+        return;
+    }
+
+    // Match the existing CB/CB_B encryption derivation, including the v2 CB_A header.
+    uint8_t rc4_key[16];
+    EXCRYPT_HMACSHA_STATE state;
+    ExCryptHmacShaInit(&state, parent_key, 16);
+    ExCryptHmacShaUpdate(&state, data.data(), 16);
+    if (cb_a_header) {
+        ExCryptHmacShaUpdate(&state, cpu_key.data(), 16);
+        if ((cb_a_header->header.flags & 0x1000) != 0) {
+            auto header = cb_a_header->header;
+            header.flags = 0;
+            byteswap_generic_header(header);
+            ExCryptHmacShaUpdate(&state, reinterpret_cast<const uint8_t*>(&header), 16);
+        }
+    }
+    ExCryptHmacShaFinal(&state, rc4_key, 16);
+
+    // The SMC checksum is two wrapping 64-bit accumulators over big-endian words.
+    uint64_t sum = 0, difference = 0;
+    for (size_t offset = 0; offset < encrypted_smc.size(); offset += 4) {
+        const uint32_t word =
+            (uint32_t(encrypted_smc[offset]) << 24) | (uint32_t(encrypted_smc[offset + 1]) << 16) |
+            (uint32_t(encrypted_smc[offset + 2]) << 8) | encrypted_smc[offset + 3];
+        sum = std::rotl(sum + word, 29);
+        difference = std::rotl(difference - word, 31);
+    }
+    uint8_t checksum[16];
+    for (size_t i = 0; i < 8; ++i) {
+        checksum[i] = static_cast<uint8_t>(sum >> (56 - 8 * i));
+        checksum[8 + i] = static_cast<uint8_t>(difference >> (56 - 8 * i));
+    }
+    ExCryptHmacSha(cpu_key.data(), 16, rc4_key, 16, data.data() + 0x10, 16, checksum, 16,
+                   perbox->per_box_digest, 16);
+    if (!serialize_perbox())
+        throw std::runtime_error("Could not serialize retail CB authentication digest");
+
+    if (!cb_a_header)
+        encrypt(parent_key);
+    else
+        encrypt_cb_b(*cb_a_header, parent_key, cpu_key.data());
+}
+
+void BootloaderCb::decrypt_cb_b(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
+                                const uint8_t cpu_key[16]) {
+    static constexpr uint8_t zero_key[16] = {};
+    if (manufacturing_chain(cb_a_hdr))
+        decrypt_v1(cb_a_key, zero_key);
+    else if ((cb_a_hdr.header.flags & 0x1000) != 0)
+        decrypt_v2(cb_a_hdr, cb_a_key, cpu_key);
+    else
+        decrypt_v1(cb_a_key, cpu_key);
+}
+
 void BootloaderCb::decrypt_mfg(const uint8_t cb_a_key[16]) {
     uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
     size_t payload_len = size_aligned - sizeof(generic_header);
@@ -186,6 +261,39 @@ void BootloaderCb::decrypt_mfg(const uint8_t cb_a_key[16]) {
     decrypted = !decrypted;
     if (decrypted)
         populate_metadata();
+}
+
+bool BootloaderCb::patch_rgh3_v1_cb_x() {
+    struct Word {
+        size_t offset;
+        uint32_t value;
+    };
+    // Offsets are from the start of the stage, header included.
+    static constexpr Word kV1Marker{0x354, 0x646A0002};
+    static constexpr std::array<Word, 4> kV1Fix{{
+        {0x354, 0x64690002}, // oris r9, r3, 2
+        {0x368, 0x7D8C482A}, // ldx r12, r12, r9
+        {0x370, 0x64690006}, // oris r9, r3, 6
+        {0x37C, 0xF8491010}, // std r2, 0x1010(r9)
+    }};
+    constexpr size_t kHeaderSize = sizeof(generic_header);
+
+    const auto word_at = [this](size_t offset) -> uint8_t* {
+        return data.data() + (offset - kHeaderSize);
+    };
+    if (!decrypted || data.size() < 0x380 - kHeaderSize)
+        return false;
+
+    uint32_t marker = 0;
+    for (size_t i = 0; i < 4; ++i)
+        marker = (marker << 8) | word_at(kV1Marker.offset)[i];
+    if (marker != kV1Marker.value)
+        return false;
+
+    for (const auto& word : kV1Fix)
+        for (size_t i = 0; i < 4; ++i)
+            word_at(word.offset)[i] = static_cast<uint8_t>(word.value >> (24 - 8 * i));
+    return true;
 }
 
 void BootloaderCb::populate_metadata() {

@@ -42,7 +42,7 @@ namespace stfs {
                 throw std::runtime_error("Block " + std::to_string(data_block) +
                                          " has invalid hash entry status (0x" +
                                          std::to_string(static_cast<int>(entry.status)) +
-                                         ") — expected used or newly allocated");
+                                         ") - expected used or newly allocated");
             }
 
             return entry;

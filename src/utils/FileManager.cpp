@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -25,6 +26,94 @@ namespace gxbuild3::utils {
             std::transform(key.begin(), key.end(), key.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             return key;
+        }
+
+        // Basename with the caller's original casing preserved. normalize_file_key
+        // lowercases for case-insensitive lookup keys, but the FlashFS stores entry
+        // names case-sensitively and the dashboard looks up resources (e.g. fonts) by
+        // their exact mixed-case name, so the on-disk name must keep the INI casing.
+        std::string display_basename(std::string_view key) {
+            std::string result{key};
+            std::replace(result.begin(), result.end(), '\\', '/');
+            if (auto pos = result.rfind('/'); pos != std::string::npos)
+                result.erase(0, pos + 1);
+            return result;
+        }
+
+        // Xbox dashboard patch payloads live in the flash filesystem with a numeric
+        // update-slot suffix. Firmware packs ship them unsuffixed ("aac.xexp",
+        // "xenonclatin.xttp") but the dash only loads "<name>.xexpN" and ignores an
+        // unsuffixed copy. The suffix is the number of update slots the build type has:
+        // '2' on a JTAG image, which carries two update pairs, and '1' on every other
+        // (xeBuild 1.21 JTAG writes aac.xexp2; RGBuild and build360 write '1'). It is
+        // appended when the name does not already end in a digit and either ends in "xexp"
+        // or "xttp", or ends in 'p' and the INI states a checksum for it: xeBuild 1.21 writes
+        // 17489's "rrbkgnd.bmp" as "rrbkgnd.bmp1". ".xtt" fonts are not suffixed.
+        std::string flashfs_patch_suffix(std::string name, BuildType build_type,
+                                         bool has_checksum) {
+            const std::string_view view{name};
+            const bool trailing_digit = !name.empty() && name.back() >= '0' && name.back() <= '9';
+            const bool ends_in_p = !name.empty() && (name.back() == 'p' || name.back() == 'P');
+            if (!trailing_digit &&
+                (view.ends_with("xexp") || view.ends_with("xttp") || (ends_in_p && has_checksum)))
+                name += build_type == BuildType::Jtag ? '2' : '1';
+            return name;
+        }
+
+        // A checksum an INI entry states: anything but nothing or zero.
+        bool states_checksum(std::string_view value) {
+            return std::any_of(value.begin(), value.end(), [](char c) {
+                return std::isxdigit(static_cast<unsigned char>(c)) != 0 && c != '0';
+            });
+        }
+
+        std::string lowercase(std::string value) {
+            std::transform(value.begin(), value.end(), value.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return value;
+        }
+
+        // The version a CF/CG request names after its stage prefix: 4532 for "cf_4532.bin"
+        // or "cg4532.bin". Empty when the name states none ("cf.bin", "6bl.bin").
+        std::optional<uint32_t> requested_bootloader_version(std::string_view stem) {
+            if (!stem.starts_with("cf") && !stem.starts_with("cg"))
+                return std::nullopt;
+            stem.remove_prefix(2);
+            if (stem.starts_with('_') || stem.starts_with('.'))
+                stem.remove_prefix(1);
+            uint32_t version = 0;
+            size_t digits = 0;
+            while (digits < stem.size() && digits < 6 && stem[digits] >= '0' &&
+                   stem[digits] <= '9') {
+                version = version * 10 + static_cast<uint32_t>(stem[digits] - '0');
+                ++digits;
+            }
+            if (digits == 0)
+                return std::nullopt;
+            return version;
+        }
+
+        // The CF or CG an update package's xboxupd.bin supplies for a request, or null when
+        // the request names another stage, or a version other than the one the package
+        // carries: "cf_4532.bin" is never answered with the CF of a 17559 package. A request
+        // naming no version takes the package's.
+        const std::vector<uint8_t>* xboxupd_part_for(const bootloaders::XboxupdParts& parts,
+                                                     std::string_view key, std::string_view stem) {
+            const std::vector<uint8_t>* part = nullptr;
+            if (key.starts_with("cf") || stem == "6bl")
+                part = &parts.cf_raw;
+            else if (key.starts_with("cg") || stem == "7bl")
+                part = &parts.cg_raw;
+            // The stage version is the big-endian word at +2 of its clear header.
+            if (!part || part->size() < 4)
+                return nullptr;
+            if (const auto requested = requested_bootloader_version(stem)) {
+                const uint32_t supplied =
+                    (static_cast<uint32_t>((*part)[2]) << 8) | static_cast<uint32_t>((*part)[3]);
+                if (*requested != supplied)
+                    return nullptr;
+            }
+            return part;
         }
 
         std::filesystem::path entry_to_lookup_path(std::string_view name) {
@@ -56,6 +145,43 @@ namespace gxbuild3::utils {
             return !within.empty() && !within.has_root_path() &&
                    std::none_of(within.begin(), within.end(),
                                 [](const auto& component) { return component == ".."; });
+        }
+
+        // The loose file `relative` names under `root`: the exact path when it exists,
+        // otherwise the entry matching each missing component without regard to case. A
+        // release INI may name "sc_17489.bin" for the file "SC_17489.bin", which a
+        // case-sensitive filesystem does not find. Of several such entries the first in
+        // name order is taken. Without a match, or for a match outside the root, the exact
+        // path is returned.
+        std::filesystem::path loose_candidate(const std::filesystem::path& root,
+                                              const std::filesystem::path& relative) {
+            const auto exact = root / relative;
+            std::error_code error;
+            if (std::filesystem::exists(exact, error) || error)
+                return exact;
+            std::filesystem::path current = root;
+            for (const auto& component : relative) {
+                auto next = current / component;
+                error.clear();
+                if (!std::filesystem::exists(next, error)) {
+                    if (error)
+                        return exact;
+                    const auto wanted = lowercase(component.string());
+                    std::optional<std::filesystem::path> match;
+                    for (const auto& entry : std::filesystem::directory_iterator(current, error)) {
+                        const auto name = entry.path().filename();
+                        if (lowercase(name.string()) == wanted && (!match || name < *match))
+                            match = name;
+                    }
+                    if (error || !match)
+                        return exact;
+                    next = current / *match;
+                }
+                current = std::move(next);
+            }
+            if (!contained_asset_path(root, current.lexically_relative(root)))
+                return exact;
+            return current;
         }
 
         std::vector<uint8_t> to_u8(std::span<const std::byte> data) {
@@ -342,11 +468,7 @@ namespace gxbuild3::utils {
                                     pkg->container->containsFileByName("xboxupd.bin")) {
                                     const auto* parts = get_xboxupd_parts(*pkg);
                                     if (parts) {
-                                        const std::vector<uint8_t>* part = nullptr;
-                                        if (key.starts_with("cf") || stem == "6bl")
-                                            part = &parts->cf_raw;
-                                        else if (key.starts_with("cg") || stem == "7bl")
-                                            part = &parts->cg_raw;
+                                        const auto* part = xboxupd_part_for(*parts, key, stem);
                                         if (part && !part->empty()) {
                                             return LocatedFile{{},
                                                                contents ? *part
@@ -376,7 +498,7 @@ namespace gxbuild3::utils {
                         invalid_path_ = true;
                         return std::nullopt;
                     }
-                    const auto candidate = root.path / relative;
+                    const auto candidate = loose_candidate(root.path, relative);
                     if (std::filesystem::is_regular_file(candidate)) {
                         if (!contents)
                             return LocatedFile{
@@ -419,11 +541,7 @@ namespace gxbuild3::utils {
                                 pkg->container->containsFileByName("xboxupd.bin")) {
                                 const auto* parts = get_xboxupd_parts(*pkg);
                                 if (parts) {
-                                    const std::vector<uint8_t>* part = nullptr;
-                                    if (key.starts_with("cf") || stem == "6bl")
-                                        part = &parts->cf_raw;
-                                    else if (key.starts_with("cg") || stem == "7bl")
-                                        part = &parts->cg_raw;
+                                    const auto* part = xboxupd_part_for(*parts, key, stem);
                                     if (part && !part->empty()) {
                                         return LocatedFile{*package,
                                                            contents ? *part : std::vector<uint8_t>{},
@@ -457,6 +575,19 @@ namespace gxbuild3::utils {
         };
 
     } // namespace
+
+    std::string IniAssetName(std::string_view entry) {
+        std::string name{entry};
+        std::replace(name.begin(), name.end(), '\\', '/');
+        std::string_view rest{name};
+        while (rest.starts_with("../") || rest.starts_with("./"))
+            rest.remove_prefix(rest.find('/') + 1);
+        return std::string(rest);
+    }
+
+    bool IniAssetIsOutside(std::string_view entry) {
+        return entry.starts_with("..\\") || entry.starts_with("../");
+    }
 
     std::unordered_map<std::string, std::filesystem::path>
     FindFiles(const std::vector<std::string>& filenames,
@@ -521,12 +652,7 @@ namespace gxbuild3::utils {
                             pkg->container->containsFileByName("xboxupd.bin")) {
                             const auto* parts = get_xboxupd_parts(*pkg);
                             if (parts) {
-                                const std::vector<uint8_t>* part = nullptr;
-                                if (key.starts_with("cf") || stem == "6bl") {
-                                    part = &parts->cf_raw;
-                                } else if (key.starts_with("cg") || stem == "7bl") {
-                                    part = &parts->cg_raw;
-                                }
+                                const auto* part = xboxupd_part_for(*parts, key, stem);
                                 if (part && !part->empty()) {
                                     return ResolvedFile{std::string(filename), {}, *part,
                                                         mem_idx, AssetSource::Xboxupd};
@@ -552,7 +678,7 @@ namespace gxbuild3::utils {
 
             if (!contained_asset_path(root, relative))
                 return std::nullopt;
-            const auto candidate = root / relative;
+            const auto candidate = loose_candidate(root, relative);
             status_error.clear();
             if (std::filesystem::is_regular_file(candidate, status_error)) {
                 if (auto data = read_file(candidate)) {
@@ -602,12 +728,7 @@ namespace gxbuild3::utils {
                                   filename, package->string(), pkg->xboxupd_error);
                         continue;
                     }
-                    const std::vector<uint8_t>* part = nullptr;
-                    if (key.starts_with("cf") || stem == "6bl") {
-                        part = &parts->cf_raw;
-                    } else if (key.starts_with("cg") || stem == "7bl") {
-                        part = &parts->cg_raw;
-                    }
+                    const auto* part = xboxupd_part_for(*parts, key, stem);
                     if (part && !part->empty()) {
                         return ResolvedFile{std::string(filename), *package, *part, root_index,
                                             AssetSource::Xboxupd};
@@ -718,12 +839,7 @@ namespace gxbuild3::utils {
                                     .root_index = mem_idx,
                                     .source = AssetSource::Xboxupd});
                             }
-                            const std::vector<uint8_t>* part = nullptr;
-                            if (key.starts_with("cf") || stem == "6bl") {
-                                part = &parts->cf_raw;
-                            } else if (key.starts_with("cg") || stem == "7bl") {
-                                part = &parts->cg_raw;
-                            }
+                            const auto* part = xboxupd_part_for(*parts, key, stem);
                             if (part && !part->empty()) {
                                 return std::optional<ResolvedFile>{ResolvedFile{
                                     std::string(filename), {}, *part, mem_idx,
@@ -774,7 +890,7 @@ namespace gxbuild3::utils {
                     continue;
                 }
 
-                const auto candidate = root / relative;
+                const auto candidate = loose_candidate(root, relative);
                 if (!contained_asset_path(root, relative)) {
                     return std::unexpected(FileLookupError{
                         .code = FileLookupErrorCode::InspectionFailed,
@@ -897,12 +1013,7 @@ namespace gxbuild3::utils {
                             .root_index = root_index,
                             .source = AssetSource::Xboxupd});
                     }
-                    const std::vector<uint8_t>* part = nullptr;
-                    if (key.starts_with("cf") || stem == "6bl") {
-                        part = &parts->cf_raw;
-                    } else if (key.starts_with("cg") || stem == "7bl") {
-                        part = &parts->cg_raw;
-                    }
+                    const auto* part = xboxupd_part_for(*parts, key, stem);
                     if (part && !part->empty()) {
                         return std::optional<ResolvedFile>{ResolvedFile{std::string(filename),
                                                                         *package, *part, root_index,
@@ -950,17 +1061,18 @@ namespace gxbuild3::utils {
     std::optional<IniFilesResult> ReadIniFiles(std::string_view version, std::string_view type,
                                                std::string_view target_section,
                                                const std::filesystem::path& fw_dir,
-                                               ScanOptions options) {
+                                               ScanOptions options, BuildType build_type) {
         const auto cwd = std::filesystem::current_path();
         const auto version_dir = cwd / version;
         return ReadIniFiles(version_dir / ("_" + std::string(type) + ".ini"), target_section,
                             {fw_dir.empty() ? cwd / "mydata" : fw_dir, version_dir, cwd / "common"},
-                            options);
+                            options, build_type);
     }
 
     std::optional<IniFilesResult>
     ReadIniFiles(const std::filesystem::path& ini_path, std::string_view target_section,
-                 const std::vector<std::filesystem::path>& search_paths, ScanOptions options) {
+                 const std::vector<std::filesystem::path>& search_paths, ScanOptions options,
+                 BuildType build_type) {
         auto doc_res = Ini::ParseFile(ini_path);
         if (!doc_res) {
             Log::Error("Could not parse INI file at '{}'", ini_path.string());
@@ -985,13 +1097,16 @@ namespace gxbuild3::utils {
 
         // Validate all names before loading anything, including optional payloads.
         // An unsafe name must never become a basename-only STFS lookup.
-        for (const auto* section : {bl_sec, doc.get("security"), doc.get("flashfs")}) {
+        // A payload may name a file outside its release ("..\\data\\x.bin"); a bootloader may
+        // not.
+        for (const auto* section :
+             {bl_sec, doc.get("security"), doc.get("flashfs"), doc.get("rawpatch")}) {
             if (!section)
                 continue;
             for (const auto& entry : *section) {
                 if (entry.key.empty() || normalize_file_key(entry.key) == "none")
                     continue;
-                if (!safe_asset_name(entry.key)) {
+                if (!safe_asset_name(section == bl_sec ? entry.key : IniAssetName(entry.key))) {
                     Log::Error("INI asset '{}' is not confined to its source roots", entry.key);
                     return std::nullopt;
                 }
@@ -1003,8 +1118,13 @@ namespace gxbuild3::utils {
             for (const auto& entry : *security)
                 security_names.push_back(normalize_file_key(entry.key));
         }
+        // A file from outside the release is only ever a loose one.
+        ScanOptions loose_options = options;
+        loose_options.nosu = true;
+        AssetSearch loose_search(search_paths, loose_options, security_names);
         AssetSearch search(search_paths, options, std::move(security_names));
         IniFilesResult result{};
+        const bool is_jtag = build_type == BuildType::Jtag;
         std::unordered_map<std::string, size_t> chain_counters;
         for (const auto& entry : *bl_sec) {
             const auto key = normalize_file_key(entry.key);
@@ -1035,12 +1155,24 @@ namespace gxbuild3::utils {
             } else if (key.starts_with("cb_") || key == "cb") {
                 if (chain == 0 || result.bootloaders.cb_or_a.empty())
                     result.bootloaders.cb_or_a = std::move(data);
+                else if (is_jtag)
+                    result.bootloaders.extra_cb = std::move(data);
                 else
                     result.bootloaders.cb_b = std::move(data);
             } else if (key.starts_with("sc") || stem == "3bl") {
                 result.bootloaders.sc = std::move(data);
-            } else if (key.starts_with("cd") || key == "4bl") {
+            } else if (key.starts_with("sd")) {
+                // A devkit chain's SD and SE take the CD and CE positions.
                 result.bootloaders.cd = std::move(data);
+            } else if (key.starts_with("se")) {
+                result.bootloaders.ce = std::move(data);
+            } else if (key.starts_with("cd") || key == "4bl") {
+                if (chain == 0 || result.bootloaders.cd.empty())
+                    result.bootloaders.cd = std::move(data);
+                else if (is_jtag)
+                    result.bootloaders.extra_cd = std::move(data);
+                else
+                    result.bootloaders.cd = std::move(data);
             } else if (key.starts_with("ce") || key == "5bl") {
                 result.bootloaders.ce = std::move(data);
             } else if (key.starts_with("cf") || stem == "6bl") {
@@ -1059,19 +1191,35 @@ namespace gxbuild3::utils {
         // Preserve INI order for unique payloads, replacing only when a better
         // source is found for an alias of an already selected basename.
         std::unordered_map<std::string, std::pair<size_t, SourceRank>> payloads;
+        // An entry from outside the release is found under its path in the roots, then by its
+        // basename, and only as a loose file.
+        const auto find_listed = [&search, &loose_search](std::string_view entry) {
+            if (!IniAssetIsOutside(entry))
+                return search.find(entry);
+            const auto name = IniAssetName(entry);
+            auto found = loose_search.find(name);
+            if (!found)
+                found = loose_search.find(display_basename(name));
+            return found;
+        };
         auto process_payload_entry = [&](const Ini::Entry& entry, bool optional) {
             const auto key = normalize_file_key(entry.key);
             if (key.empty() || key == "none")
                 return;
-            if (auto found = search.find(entry.key)) {
+            if (auto found = find_listed(entry.key)) {
+                std::string stored = flashfs_patch_suffix(display_basename(entry.key), build_type,
+                                                          states_checksum(entry.value));
                 const auto [it, inserted] =
-                    payloads.emplace(key, std::pair{result.flashfs_sec.size(), found->rank});
+                    payloads.emplace(normalize_file_key(stored),
+                                     std::pair{result.flashfs_sec.size(), found->rank});
                 if (inserted) {
-                    result.flashfs_sec.emplace_back(key, std::move(found->data));
+                    result.flashfs_sec.emplace_back(std::move(stored), std::move(found->data));
                 } else if (found->rank < it->second.second) {
                     result.flashfs_sec[it->second.first].second = std::move(found->data);
                     it->second.second = found->rank;
                 }
+            } else if (IniAssetIsOutside(entry.key)) {
+                Log::Warn("Could not read file '{}', skipping", entry.key);
             } else if (optional) {
                 Log::Debug("Optional asset '{}' not present", entry.key);
             } else {
@@ -1079,15 +1227,48 @@ namespace gxbuild3::utils {
                           entry.key);
             }
         };
-        if (const auto* security = doc.get("security")) {
-            for (const auto& entry : *security)
-                process_payload_entry(entry, normalize_file_key(entry.key) == "fcrt.bin");
-        }
+        // The FlashFS lists the [flashfs] files and then the [security] files, each in the order
+        // the INI names them (xeBuild 1.21).
         if (const auto* flashfs = doc.get("flashfs")) {
             for (const auto& entry : *flashfs)
                 process_payload_entry(entry, false);
         }
-        if (search.invalid_path())
+        if (const auto* security = doc.get("security")) {
+            for (const auto& entry : *security)
+                process_payload_entry(entry, normalize_file_key(entry.key) == "fcrt.bin");
+        }
+        // [rawpatch] lists "file,offset": the file goes into the image as it is at that clean
+        // offset. A file no root supplies is skipped with a warning.
+        if (const auto* rawpatch = doc.get("rawpatch")) {
+            for (const auto& entry : *rawpatch) {
+                const auto key = normalize_file_key(entry.key);
+                if (key.empty() || key == "none")
+                    continue;
+                std::string_view digits = entry.value;
+                int base = 10;
+                if (digits.starts_with("0x") || digits.starts_with("0X")) {
+                    digits.remove_prefix(2);
+                    base = 16;
+                }
+                uint32_t offset = 0;
+                const auto parsed =
+                    std::from_chars(digits.data(), digits.data() + digits.size(), offset, base);
+                if (digits.empty() || parsed.ec != std::errc{} ||
+                    parsed.ptr != digits.data() + digits.size()) {
+                    Log::Error("[rawpatch] entry '{}' states no usable offset ('{}')", entry.key,
+                               entry.value);
+                    return std::nullopt;
+                }
+                auto found = find_listed(entry.key);
+                if (!found) {
+                    Log::Warn("[rawpatch] file '{}' was not found; it is skipped", entry.key);
+                    continue;
+                }
+                result.raw_patches.push_back(
+                    InputRawPatch{display_basename(entry.key), offset, std::move(found->data)});
+            }
+        }
+        if (search.invalid_path() || loose_search.invalid_path())
             return std::nullopt;
         return result;
     }

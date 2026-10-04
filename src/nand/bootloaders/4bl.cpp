@@ -52,6 +52,8 @@ void BootloaderCd::decrypt(const uint8_t parent_key[16], const uint8_t cpu_key[1
     const auto hmac_type = cpu_key ? gxbuild3::bootloaders::HmacType::Hmac1920
                                    : gxbuild3::bootloaders::HmacType::Default;
     gxbuild3::bootloaders::crypt_single_bl(buffer, hmac_type, cur_key, cpu_key, nullptr, 0x20);
+    derived_key.emplace();
+    std::copy_n(cur_key, derived_key->size(), derived_key->begin());
 
     std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
                 sizeof(cd_header) - 0x20);
@@ -94,6 +96,8 @@ void BootloaderCd::encrypt(const uint8_t parent_key[16], const uint8_t cpu_key[1
     const auto hmac_type = cpu_key ? gxbuild3::bootloaders::HmacType::Hmac1920
                                    : gxbuild3::bootloaders::HmacType::Default;
     gxbuild3::bootloaders::crypt_single_bl(buffer, hmac_type, cur_key, cpu_key, nullptr, 0x20);
+    derived_key.emplace();
+    std::copy_n(cur_key, derived_key->size(), derived_key->begin());
 
     std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
                 sizeof(cd_header) - 0x20);

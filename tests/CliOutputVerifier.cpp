@@ -77,17 +77,17 @@ namespace {
     }
 
     bool verify_cf_plaintext(std::string_view name, const BootloaderCf* stage,
-                             uint8_t expected_cg_key_byte, uint8_t expected_marker) {
+                             uint8_t expected_fixpoint_byte, uint8_t expected_marker) {
         if (stage == nullptr) {
             return false;
         }
-        return require(std::all_of(std::begin(stage->header.cg_key),
-                                   std::end(stage->header.cg_key),
-                                   [expected_cg_key_byte](uint8_t byte) {
-                                       return byte == expected_cg_key_byte;
+        return require(std::all_of(std::begin(stage->header.fixpoint_nonce),
+                                   std::end(stage->header.fixpoint_nonce),
+                                   [expected_fixpoint_byte](uint8_t byte) {
+                                       return byte == expected_fixpoint_byte;
                                    }),
-                       std::string(name) + " has the wrong CG key") &&
-               require(stage->data.size() == 0x200,
+                       std::string(name) + " has the wrong CF fixpoint nonce") &&
+               require(stage->data.size() == 0x340,
                        std::string(name) + " has the wrong plaintext payload size") &&
                require(stage->data[0] == 0x00 && stage->data[1] == 0x00 &&
                            stage->data[2] == expected_marker &&

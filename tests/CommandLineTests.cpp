@@ -231,6 +231,24 @@ namespace {
         return true;
     }
 
+    bool test_section_resolves_console() {
+        const std::vector<std::string_view> known{
+            "gxbuild", "-b", "_jtag.ini", "-s", "Jasper", "-t", "jtag:psb", "-d", "firmware"};
+        const auto known_result = gxbuild3::cli::ParseCommandLine(known);
+        const auto* known_args = known_result ? build_args(*known_result) : nullptr;
+        const std::vector<std::string_view> unknown{
+            "gxbuild", "-b", "_jtag.ini", "-s", "notaconsole", "-t", "jtag:psb", "-d", "firmware"};
+        const auto unknown_result = gxbuild3::cli::ParseCommandLine(unknown);
+        const auto* unknown_args = unknown_result ? build_args(*unknown_result) : nullptr;
+        return require(known_args != nullptr, "-s jasper parses") &&
+               require(known_args->section == "Jasper", "section text is preserved verbatim") &&
+               require(known_args->console == ConsoleType::Jasper,
+                       "known section resolves to ConsoleType::Jasper case-insensitively") &&
+               require(unknown_args != nullptr, "unknown section still parses") &&
+               require(!unknown_args->console.has_value(),
+                       "unknown section leaves the console unresolved");
+    }
+
 } // namespace
 
 int main() {
@@ -241,5 +259,6 @@ int main() {
     passed = test_patch_extension_allows_internal_underscore_only() && passed;
     passed = test_help_and_version_bypass_build_validation() && passed;
     passed = test_errors_are_structured() && passed;
+    passed = test_section_resolves_console() && passed;
     return passed ? 0 : 1;
 }

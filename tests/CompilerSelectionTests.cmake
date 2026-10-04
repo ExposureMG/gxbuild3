@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.29)
 
 # Exercise discovery without depending on which compilers the host has installed.
 if(NOT DEFINED CASE)

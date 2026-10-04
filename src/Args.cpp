@@ -2,7 +2,9 @@
 #include "ini/IniParser.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <utility>
 
 namespace {
 
@@ -48,7 +50,43 @@ namespace {
         return std::nullopt;
     }
 
+    // The stage list after `nopatch=<stage>` joins the stages already named. The stored text is
+    // the stages in canonical order, joined with '+'.
+    std::optional<std::string> add_nopatch_stage(const std::optional<std::string>& current,
+                                                 std::string_view value) {
+        const std::string stage = normalize_key(value);
+        const bool is_cb = stage == "cb" || stage == "cbb";
+        if (!is_cb && stage != "cd" && stage != "khv") {
+            return std::nullopt;
+        }
+        const std::string name = is_cb ? "cb" : stage;
+        const std::string existing = current.value_or("");
+        const auto named = [&existing](std::string_view candidate) {
+            return existing.find(candidate) != std::string::npos;
+        };
+        std::string canonical;
+        for (const std::string_view candidate : {"cb", "cd", "khv"}) {
+            if (named(candidate) || candidate == name) {
+                canonical += canonical.empty() ? "" : "+";
+                canonical += candidate;
+            }
+        }
+        return canonical;
+    }
+
 } // namespace
+
+NoPatch ResolveNoPatch(const OptionsArgs& options) {
+    const std::string named = options.nopatch.value_or("");
+    NoPatch stages;
+    stages.cb = named.find("cb") != std::string::npos;
+    stages.cd = named.find("cd") != std::string::npos;
+    stages.khv = named.find("khv") != std::string::npos;
+    if (options.noblpatch.value_or(false)) {
+        stages.cb = stages.cd = true;
+    }
+    return stages;
+}
 
 OptionsManager::OptionsManager(OptionsArgs args) : m_args(std::move(args)) {}
 
@@ -62,7 +100,8 @@ bool OptionsManager::is_known_option(std::string_view name) {
            key == "nomobile" || key == "nofcrt" || key == "noremap" || key == "noecdremap" ||
            key == "nandmu" || key == "nosecurity" || key == "nosusecurity" ||
            key == "smcnocheck" || key == "nochecksmc" || key == "noblpatch" ||
-           key == "cbldv" || key == "pairing_data" || key == "pairingdata" || key == "pd" ||
+           key == "nopatch" || key == "cbldv" || key == "pairing_data" ||
+           key == "pairingdata" || key == "pd" ||
            key == "cfldv" || key == "xellbutton" || key == "xellbutton2" ||
            key == "dualboot" || key == "cputemp" || key == "gputemp" ||
            key == "edramtemp" || key == "overcputemp" || key == "overgputemp" ||
@@ -77,6 +116,34 @@ bool OptionsManager::is_bool_option(std::string_view name) {
            key == "nomobile" || key == "nofcrt" || key == "noremap" || key == "noecdremap" ||
            key == "nandmu" || key == "nosecurity" || key == "nosusecurity" ||
            key == "smcnocheck" || key == "nochecksmc" || key == "noblpatch";
+}
+
+std::optional<uint8_t> OptionsManager::power_on_reason(std::string_view name) {
+    // `wiredx` is xeBuild's own spelling of `wiredxb3`.
+    static constexpr std::array<std::pair<std::string_view, uint8_t>, 13> kReasons{{
+        {"power", 0x11},
+        {"eject", 0x12},
+        {"remopower", 0x20},
+        {"remox", 0x22},
+        {"winbutton", 0x24},
+        {"kiosk", 0x41},
+        {"wirelessx", 0x55},
+        {"wiredxf1", 0x56},
+        {"wiredxf2", 0x57},
+        {"wiredxb2", 0x58},
+        {"wiredxb1", 0x59},
+        {"wiredx", 0x5A},
+        {"wiredxb3", 0x5A},
+    }};
+    std::string key = trim_str(name);
+    std::transform(key.begin(), key.end(), key.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const auto found = std::find_if(kReasons.begin(), kReasons.end(),
+                                    [&key](const auto& reason) { return reason.first == key; });
+    if (found == kReasons.end()) {
+        return std::nullopt;
+    }
+    return found->second;
 }
 
 bool OptionsManager::has(std::string_view name) const {
@@ -94,6 +161,7 @@ bool OptionsManager::has(std::string_view name) const {
     if (key == "nosusecurity") return m_args.nosusecurity.has_value();
     if (key == "smcnocheck" || key == "nochecksmc") return m_args.smcnocheck.has_value();
     if (key == "noblpatch") return m_args.noblpatch.has_value();
+    if (key == "nopatch") return m_args.nopatch.has_value();
 
     if (key == "cbldv") return m_args.cbldv.has_value();
     if (key == "pairing_data" || key == "pairingdata" || key == "pd") return m_args.pairing_data.has_value();
@@ -149,12 +217,38 @@ bool OptionsManager::set(std::string_view name, std::string_view value) {
         return false;
     }
 
+    if (key == "nopatch") {
+        // A blank value clears the list; a stage joins it, so `nopatch=cb,nopatch=cd` skips both.
+        if (val.empty()) {
+            m_args.nopatch.reset();
+            return true;
+        }
+        const auto stages = add_nopatch_stage(m_args.nopatch, val);
+        if (!stages) {
+            return false;
+        }
+        m_args.nopatch = *stages;
+        return true;
+    }
+
     if (key == "cbldv") { m_args.cbldv = val; return true; }
     if (key == "pairing_data" || key == "pairingdata" || key == "pd") { m_args.pairing_data = val; return true; }
     if (key == "cfldv") { m_args.cfldv = val; return true; }
-    if (key == "xellbutton") { m_args.xellbutton = val; return true; }
-    if (key == "xellbutton2") { m_args.xellbutton2 = val; return true; }
-    if (key == "dualboot") { m_args.dualboot = val; return true; }
+    if (key == "xellbutton" || key == "xellbutton2" || key == "dualboot") {
+        // A blank button names none, as in xeBuild's options.ini.
+        auto& button = key == "xellbutton"    ? m_args.xellbutton
+                       : key == "xellbutton2" ? m_args.xellbutton2
+                                              : m_args.dualboot;
+        if (val.empty()) {
+            button.reset();
+            return true;
+        }
+        if (!power_on_reason(val)) {
+            return false;
+        }
+        button = val;
+        return true;
+    }
     if (key == "cputemp") { m_args.cputemp = val; return true; }
     if (key == "gputemp") { m_args.gputemp = val; return true; }
     if (key == "edramtemp") { m_args.edramtemp = val; return true; }
@@ -187,6 +281,7 @@ bool OptionsManager::unset(std::string_view name) {
     if (key == "nosusecurity") { m_args.nosusecurity.reset(); return true; }
     if (key == "smcnocheck" || key == "nochecksmc") { m_args.smcnocheck.reset(); return true; }
     if (key == "noblpatch") { m_args.noblpatch.reset(); return true; }
+    if (key == "nopatch") { m_args.nopatch.reset(); return true; }
 
     if (key == "cbldv") { m_args.cbldv.reset(); return true; }
     if (key == "pairing_data" || key == "pairingdata" || key == "pd") { m_args.pairing_data.reset(); return true; }
@@ -243,6 +338,7 @@ std::optional<bool> OptionsManager::get_bool(std::string_view name) const {
 
 std::optional<std::string> OptionsManager::get_string(std::string_view name) const {
     const std::string key = normalize_key(name);
+    if (key == "nopatch") return m_args.nopatch;
     if (key == "cbldv") return m_args.cbldv;
     if (key == "pairing_data" || key == "pairingdata" || key == "pd") return m_args.pairing_data;
     if (key == "cfldv") return m_args.cfldv;
@@ -301,14 +397,14 @@ bool OptionsManager::parse(std::string_view raw_args) {
                     all_ok = false;
                 }
             } else if (is_bool_option(token)) {
-                // Bare flag with no "=value" — implicit "true", valid only
+                // Bare flag with no "=value" - implicit "true", valid only
                 // for boolean-typed options.
                 if (!set(token, "true")) {
                     all_ok = false;
                 }
             } else {
                 // A string-valued option given with no value is a missing
-                // argument, not an implicit "true" — don't silently store
+                // argument, not an implicit "true" - don't silently store
                 // the literal string "true" into it.
                 all_ok = false;
             }

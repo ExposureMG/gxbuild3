@@ -1,4 +1,6 @@
 #include "BuildRunner.hpp"
+#include "ScopedTimeZone.hpp"
+#include "XeRsaTestKey.hpp"
 #include "excrypt.h"
 #include "nand/FlashDriver.hpp"
 #include "nand/FlashImage.hpp"
@@ -11,6 +13,8 @@
 #include "nand/objects/Keyvault.hpp"
 #include "nand/objects/Patchset.hpp"
 #include "nand/objects/SMC.hpp"
+#include "nand/objects/SecuredFiles.hpp"
+#include "utils/XeRsa.hpp"
 
 #include <algorithm>
 #include <array>
@@ -45,6 +49,7 @@ namespace {
         return true;
     }
 
+    // A console's key: the all-zero key, which binds an image to no console, does not count.
     std::array<uint8_t, 16> valid_cpu_key() {
         for (size_t bit_count = 0; bit_count <= 106; ++bit_count) {
             std::array<uint8_t, 16> candidate{};
@@ -52,7 +57,8 @@ namespace {
                 candidate[bit / 8] |= static_cast<uint8_t>(1U << (bit % 8));
             }
             XeCryptUidEccEncode(candidate.data());
-            if (gxbuild3::NAND::cpukey_valid(candidate)) {
+            if (!gxbuild3::NAND::is_zero_cpu_key(candidate) &&
+                gxbuild3::NAND::cpukey_valid(candidate)) {
                 return candidate;
             }
         }
@@ -75,6 +81,18 @@ namespace {
     Bytes make_smc(uint8_t marker) {
         Bytes smc(0x300, marker);
         smc[0x100] = 0x10;
+        return smc;
+    }
+
+    // The JTAG hack mark D0 00 00 1B, which a JTAG image requires of its SMC.
+    void mark_jtag_smc(Bytes& smc) {
+        const Bytes mark{0xD0, 0x00, 0x00, 0x1B};
+        std::copy(mark.begin(), mark.end(), smc.begin() + 0x200);
+    }
+
+    Bytes make_jtag_smc(uint8_t marker) {
+        auto smc = make_smc(marker);
+        mark_jtag_smc(smc);
         return smc;
     }
 
@@ -136,10 +154,10 @@ namespace {
         BootloaderCf cf{};
         cf.header.header.magic = NANDBootloaderMagic::CF;
         cf.header.header.version = 1;
-        cf.data.assign(0x200, marker);
+        cf.data.assign(0x340, marker);
         cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
         cf.decrypted = false;
-        std::fill(std::begin(cf.header.cg_key), std::end(cf.header.cg_key),
+        std::fill(std::begin(cf.header.fixpoint_nonce), std::end(cf.header.fixpoint_nonce),
                   static_cast<uint8_t>(marker + 1));
 
         BootloaderCg cg{};
@@ -150,6 +168,26 @@ namespace {
         cg.header.header.size = static_cast<uint32_t>(sizeof(cg_header) + cg.data.size());
         cg.decrypted = false;
         return {cf.serialize(), cg.serialize()};
+    }
+
+    // RunBuild opens a supplied sealed CG and seals it again under a new nonce, so a CG is
+    // compared by what it carries: its plaintext, with the nonce at +0x10 cleared.
+    std::optional<Bytes> opened_cg(const Bytes& cf_bytes, const Bytes& cg_bytes) {
+        auto cf = BootloaderCf::parse(cf_bytes);
+        if (!cf.is_decrypted()) {
+            cf.decrypt(key_1bl);
+        }
+        const auto key = cf.cg_key();
+        if (!key || cg_bytes.size() < sizeof(cg_header)) {
+            return std::nullopt;
+        }
+        auto cg = BootloaderCg::parse(cg_bytes);
+        if (!cg.decrypted) {
+            cg.decrypt(key->data());
+        }
+        auto opened = cg.serialize();
+        std::fill(opened.begin() + 0x10, opened.begin() + 0x20, 0);
+        return opened;
     }
 
     Bytes decrypted_cf(uint8_t lockdown_value, std::array<uint8_t, 3> pairing_data,
@@ -165,7 +203,7 @@ namespace {
         cf.header.target_qfe = target_qfe;
         cf.header.reserved = reserved;
         cf.header.cg_size = cg_size;
-        cf.data.assign(0x200, 0);
+        cf.data.assign(0x340, 0);
         cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
         cf.decrypted = true;
         if (!cf.parse_perbox()) {
@@ -195,6 +233,17 @@ namespace {
                (static_cast<uint32_t>(bytes[offset + 1]) << 16) |
                (static_cast<uint32_t>(bytes[offset + 2]) << 8) |
                static_cast<uint32_t>(bytes[offset + 3]);
+    }
+
+    uint32_t align_16(uint32_t value) {
+        return (value + 0x0F) & ~uint32_t{0x0F};
+    }
+
+    bool zero_between(std::span<const uint8_t> bytes, size_t begin, size_t end) {
+        return end <= bytes.size() &&
+               std::all_of(bytes.begin() + static_cast<std::ptrdiff_t>(begin),
+                           bytes.begin() + static_cast<std::ptrdiff_t>(end),
+                           [](uint8_t byte) { return byte == 0; });
     }
 
     uint16_t read_be16(std::span<const uint8_t> bytes, size_t offset) {
@@ -269,16 +318,50 @@ namespace {
 
         const auto& cb = extracted->bootloaders.cb_or_a;
         const auto& cd = extracted->bootloaders.cd;
+        const uint32_t cb_end = align_16(cb_patch_address + 4);
+        const uint32_t cd_end = align_16(cd_patch_address + 4);
         return require(cb.size() >= cb_patch_address + 4 &&
                            read_be32(cb, cb_patch_address) == 0xA1B2C3D4,
                        "CB grows to and contains the greatest patched end") &&
-               require(read_be32(cb, 0x0C) == cb_patch_address + 4,
-                       "CB big-endian declared size follows patched bytes") &&
+               require(read_be32(cb, 0x0C) == cb_end,
+                       "CB declared size is the patched end rounded up to 0x10") &&
+               require(zero_between(cb, cb_patch_address + 4, cb_end),
+                       "CB padding after the patched end is zero") &&
                require(cd.size() >= cd_patch_address + 4 &&
                            read_be32(cd, cd_patch_address) == 0x10203040,
                        "CD grows to and contains the greatest patched end") &&
-               require(read_be32(cd, 0x0C) == cd_patch_address + 4,
-                       "CD big-endian declared size follows patched bytes");
+               require(read_be32(cd, 0x0C) == cd_end,
+                       "CD declared size is the patched end rounded up to 0x10") &&
+               require(zero_between(cd, cd_patch_address + 4, cd_end),
+                       "CD padding after the patched end is zero");
+    }
+
+    // Glitch2m CD 9452: 0x5290 bytes, patched to 0x52A8, states 0x52B0 (xeBuild 1.21).
+    bool test_glitch2m_cd_patch_states_the_16_byte_aligned_size() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.build_type = BuildType::Glitch2m;
+        input.bootloaders.cb_b = input.bootloaders.cb_or_a;
+        const uint32_t cd_size = static_cast<uint32_t>(input.bootloaders.cd.size());
+        const uint32_t cd_patch_address = cd_size + 0x14;
+        InputPatches patches{};
+        patches.automatic = InputPatchFile{
+            "automatic", glitch_patchset(0x20, 0, cd_patch_address, 0x5A5A5A5A, Bytes{0x93})};
+        input.patches = std::move(patches);
+
+        const auto built = RunBuild(input);
+        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        if (!require(extracted.has_value(), "patched glitch2m image builds and extracts")) {
+            return false;
+        }
+        const auto& cd = extracted->bootloaders.cd;
+        const uint32_t cd_end = align_16(cd_patch_address + 4);
+        return require(cd_end != cd_patch_address + 4, "fixture patch ends off a 0x10 boundary") &&
+               require(read_be32(cd, 0x0C) == cd_end && cd.size() == cd_end,
+                       "glitch2m CD states and carries the 16-byte-aligned patched size") &&
+               require(read_be32(cd, cd_patch_address) == 0x5A5A5A5A,
+                       "glitch2m CD carries the patched word") &&
+               require(zero_between(cd, cd_patch_address + 4, cd_end),
+                       "glitch2m CD padding inside the stated size is zero");
     }
 
     bool test_glitch2_targets_cbb() {
@@ -301,8 +384,58 @@ namespace {
         return require(extracted->bootloaders.cb_b->size() >= cbb_patch_address + 4 &&
                            read_be32(*extracted->bootloaders.cb_b, cbb_patch_address) == 0xCAFEBABE,
                        "Glitch2 applies section one to CBB") &&
-               require(read_be32(*extracted->bootloaders.cb_b, 0x0C) == cbb_patch_address + 4,
-                       "CBB big-endian declared size follows patched bytes");
+               require(read_be32(*extracted->bootloaders.cb_b, 0x0C) ==
+                           align_16(cbb_patch_address + 4),
+                       "CBB declared size is the patched end rounded up to 0x10");
+    }
+
+    // A clean retail SMC: motherboard nibble at 0x100, the reboot site "05 ?? E5 ?? B4 05"
+    // at 0x180, and the four zero bytes every plaintext SMC ends in.
+    constexpr size_t kSmcRebootSite = 0x180;
+
+    Bytes clean_retail_smc() {
+        Bytes smc(0x300, 0x11);
+        smc[0x100] = 0x40;
+        const std::array<uint8_t, 6> site{0x05, 0x6C, 0xE5, 0x2A, 0xB4, 0x05};
+        std::copy(site.begin(), site.end(), smc.begin() + kSmcRebootSite);
+        std::fill(smc.end() - 4, smc.end(), uint8_t{0});
+        return smc;
+    }
+
+    // Glitch, glitch2 and glitch2m take the reboot patch on a clean retail SMC: the two bytes
+    // at the site become zero and nothing else changes.
+    bool test_glitch_types_patch_a_clean_retail_smc() {
+        for (const auto& [build_type, name] :
+             {std::pair{BuildType::Glitch, "glitch"}, std::pair{BuildType::Glitch2, "glitch2"},
+              std::pair{BuildType::Glitch2m, "glitch2m"}}) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            input.build_type = build_type;
+            input.metadata.smc = clean_retail_smc();
+            if (build_type != BuildType::Glitch) {
+                input.bootloaders.cb_b = input.bootloaders.cb_or_a;
+            }
+            InputPatches patches{};
+            patches.automatic =
+                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0x94})};
+            input.patches = std::move(patches);
+
+            const auto built = RunBuild(input);
+            auto image = built ? FlashImage::read(*built) : std::nullopt;
+            if (!require(image && image->parse() && image->smc,
+                         std::string(name) + " image builds with an SMC")) {
+                return false;
+            }
+            image->smc->decrypt();
+            auto expected = clean_retail_smc();
+            expected[kSmcRebootSite] = 0x00;
+            expected[kSmcRebootSite + 1] = 0x00;
+            if (!require(image->smc->data == expected,
+                         std::string(name) +
+                             " zeroes the two reboot-site bytes and nothing else")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     bool test_noblpatch_skips_bootloader_mutation_but_writes_khv() {
@@ -319,17 +452,71 @@ namespace {
 
         const auto built = RunBuild(input);
         const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
-        const auto khv = built ? read_logical(*built, 0x90000, 3) : std::nullopt;
+        const auto khv = built ? read_logical(*built, 0x80010, 3) : std::nullopt;
         return require(extracted.has_value() &&
                            extracted->bootloaders.cb_or_a.size() == original_cb_size,
                        "noblpatch leaves CB size unchanged") &&
                require(khv == Bytes({0xA0, 0xA1, 0xA2}),
-                       "noblpatch still writes merged KHV bytes after both patch slots");
+                       "noblpatch still writes merged KHV at the runtime anchor");
+    }
+
+    // nopatch names the stages left unpatched: cb keeps the CB, cd the CD, khv the KHV payload.
+    bool test_nopatch_skips_only_the_named_stages() {
+        struct Case {
+            const char* options;
+            bool cb_patched;
+            bool cd_patched;
+            bool khv_written;
+        };
+        for (const auto& test_case :
+             {Case{"nopatch=cb", false, true, true}, Case{"nopatch=cd", true, false, true},
+              Case{"nopatch=khv", true, true, false},
+              Case{"nopatch=cb,nopatch=khv", false, true, false}}) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            input.build_type = BuildType::Glitch;
+            OptionsManager options;
+            if (!require(options.parse(test_case.options), "nopatch options parse")) {
+                return false;
+            }
+            input.options = options.data();
+            const uint32_t cb_patch_address =
+                static_cast<uint32_t>(input.bootloaders.cb_or_a.size() + 0x10);
+            const uint32_t cd_patch_address =
+                static_cast<uint32_t>(input.bootloaders.cd.size() + 0x10);
+            const auto original_cb_size = input.bootloaders.cb_or_a.size();
+            const auto original_cd_size = input.bootloaders.cd.size();
+            InputPatches patches{};
+            patches.automatic = InputPatchFile{
+                "automatic", glitch_patchset(cb_patch_address, 0xA1B2C3D4, cd_patch_address,
+                                             0x10203040, Bytes{0xA0, 0xA1})};
+            patches.addons = {{"addon", {0xA2}}};
+            input.patches = std::move(patches);
+
+            const auto built = RunBuild(input);
+            const auto extracted =
+                built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+            const auto khv = built ? read_logical(*built, 0x80010, 3) : std::nullopt;
+            if (!require(extracted.has_value(),
+                         std::string(test_case.options) + " image builds and extracts") ||
+                !require((extracted->bootloaders.cb_or_a.size() != original_cb_size) ==
+                             test_case.cb_patched,
+                         std::string(test_case.options) + " leaves exactly the named CB alone") ||
+                !require((extracted->bootloaders.cd.size() != original_cd_size) ==
+                             test_case.cd_patched,
+                         std::string(test_case.options) + " leaves exactly the named CD alone") ||
+                !require((khv == Bytes({0xA0, 0xA1, 0xA2})) == test_case.khv_written,
+                         std::string(test_case.options) +
+                             " writes the KHV payload only if unnamed")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     bool test_jtag_patchset_is_serialized_at_fixed_region() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Jtag;
+        input.metadata.smc = make_jtag_smc(0x11);
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13, 0x13})};
         patches.addons = {{"first", {0x20}}, {"second", {0x30}}};
@@ -349,9 +536,178 @@ namespace {
                require(raw == expected, "merged JTAG patchset is byte-exact at 0x91000");
     }
 
+    bool test_jtag_flows_payload_and_extra_bootloaders() {
+        // Plaintext stages, as the release ships them: a CB whose 0x260..0x380 is zero and a
+        // CD stating a CE hash with no 6BL nonce.
+        BootloaderCb extra_cb{};
+        extra_cb.header.header.magic = NANDBootloaderMagic::CB;
+        extra_cb.header.header.version = 4579;
+        extra_cb.data.resize(0x380, 0);
+        extra_cb.data.resize(0x400, 0x71);
+        extra_cb.header.header.size =
+            static_cast<uint32_t>(sizeof(generic_header) + extra_cb.data.size());
+        BootloaderCd extra_cd{};
+        extra_cd.header.header.magic = NANDBootloaderMagic::CD;
+        extra_cd.header.header.version = 8453;
+        extra_cd.header.ce_hash[0] = 1;
+        extra_cd.data.resize(0x100, 0x72);
+        extra_cd.header.header.size =
+            static_cast<uint32_t>(sizeof(cd_header) + extra_cd.data.size());
+        const Bytes cb_bytes = extra_cb.serialize();
+        const Bytes cd_bytes = extra_cd.serialize();
+
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.build_type = BuildType::Jtag;
+        input.metadata.smc = make_jtag_smc(0x11);
+        InputPatches patches{};
+        patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13, 0x13})};
+        input.patches = std::move(patches);
+        input.bootloaders.extra_cb = cb_bytes;
+        input.bootloaders.extra_cd = cd_bytes;
+        InputPayloads payloads{};
+        payloads.payload = Bytes(0x200, 0x73);
+        input.payloads = std::move(payloads);
+
+        // Small-block window base is 0x90000, so the window tail starts at 0x90000 + 0x45060.
+        const size_t cb_at = 0xD5060;
+        const size_t cd_at = cb_at + ((cb_bytes.size() + 0x0F) & ~size_t{0x0F});
+        const auto built = RunBuild(input);
+        const auto placed_payload = built ? read_logical(*built, 0x200, 0x200) : std::nullopt;
+        const auto placed_cb = built ? read_logical(*built, cb_at, cb_bytes.size()) : std::nullopt;
+        const auto placed_cd = built ? read_logical(*built, cd_at, cd_bytes.size()) : std::nullopt;
+        const auto main_cb = built ? read_logical(*built, 0x8000, 0x20) : std::nullopt;
+        // The second chain is sealed: each stage keeps its clear header and takes the main
+        // chain's CB or CD nonce, and its body no longer reads as the plaintext supplied.
+        const auto same = [](const std::optional<Bytes>& left, size_t left_at, const Bytes& right,
+                             size_t right_at, size_t length) {
+            return left && left->size() >= left_at + length && right.size() >= right_at + length &&
+                   std::equal(left->begin() + left_at, left->begin() + left_at + length,
+                              right.begin() + right_at);
+        };
+        return require(built.has_value(),
+                       "JTAG image carrying payload and extra bootloaders builds") &&
+               require(placed_payload == Bytes(0x200, 0x73), "SMC payload is placed at 0x200") &&
+               require(same(placed_cb, 0, cb_bytes, 0, 0x10),
+                       "extra CB is placed in the JTAG window tail with its clear header") &&
+               require(main_cb && same(placed_cb, 0x10, *main_cb, 0x10, 0x10),
+                       "extra CB takes the main CB's nonce") &&
+               require(!same(placed_cb, 0x380, cb_bytes, 0x380, 0x80),
+                       "extra CB is sealed, not written as supplied") &&
+               require(same(placed_cd, 0, cd_bytes, 0, 0x10),
+                       "extra CD follows the 16-byte-aligned extra CB") &&
+               require(!same(placed_cd, 0x20, cd_bytes, 0x20, 0x100),
+                       "extra CD is sealed, not written as supplied");
+    }
+
+    // xeBuild programs the bytes after each JTAG window item zero up to the next item or the end
+    // of the 16 KiB block holding the item's end. The patch buffer is programmed whole, so its
+    // erased tail is written as pages that carry a spare stamp.
+    bool test_jtag_window_padding_is_programmed_like_xebuild() {
+        BootloaderCb extra_cb{};
+        extra_cb.header.header.magic = NANDBootloaderMagic::CB;
+        extra_cb.header.header.version = 4579;
+        extra_cb.data.resize(0x380, 0);
+        extra_cb.data.resize(0x400, 0x71);
+        extra_cb.header.header.size =
+            static_cast<uint32_t>(sizeof(generic_header) + extra_cb.data.size());
+        BootloaderCd extra_cd{};
+        extra_cd.header.header.magic = NANDBootloaderMagic::CD;
+        extra_cd.header.header.version = 8453;
+        extra_cd.header.ce_hash[0] = 1;
+        extra_cd.data.resize(0x100, 0x72);
+        extra_cd.header.header.size =
+            static_cast<uint32_t>(sizeof(cd_header) + extra_cd.data.size());
+        const Bytes cb_bytes = extra_cb.serialize();
+        const Bytes cd_bytes = extra_cd.serialize();
+
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.build_type = BuildType::Jtag;
+        input.metadata.smc = make_jtag_smc(0x11);
+        InputPatches patches{};
+        patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13, 0x13})};
+        input.patches = std::move(patches);
+        input.bootloaders.extra_cb = cb_bytes;
+        input.bootloaders.extra_cd = cd_bytes;
+        InputPayloads payloads{};
+        payloads.rebooter = Bytes(0x40, 0x74);
+        payloads.payload = Bytes(0x200, 0x73);
+        input.payloads = std::move(payloads);
+
+        const size_t cd_at = 0xD5060 + ((cb_bytes.size() + 0x0F) & ~size_t{0x0F});
+        const size_t chain_end = cd_at + cd_bytes.size();
+        const size_t pad_end = (chain_end + 0x3FFF) & ~size_t{0x3FFF};
+        const auto built = RunBuild(input);
+        auto image = built ? FlashImage::read(*built) : std::nullopt;
+        if (!require(built.has_value(), "JTAG image with a rebooter and a payload builds") ||
+            !require(image.has_value(), "JTAG image with a rebooter reads back") ||
+            !require(image->parse(), "JTAG image with a rebooter parses")) {
+            return false;
+        }
+        const auto all_equal = [&image](size_t offset, size_t length, uint8_t value) {
+            const auto bytes = std::as_const(image->flash_driver).read_offset(offset, length);
+            return bytes.size() == length && std::all_of(bytes.begin(), bytes.end(),
+                                                         [value](uint8_t b) { return b == value; });
+        };
+        const auto spare_stamped = [&image](size_t offset) {
+            const auto spare = std::as_const(image->flash_driver).read_page_spare(offset / 0x200);
+            return std::any_of(spare.begin(), spare.end(), [](uint8_t b) { return b != 0xFF; });
+        };
+        const auto payload_spare = std::as_const(image->flash_driver).read_page_spare(1);
+        return require(all_equal(0x90040, 0x1000 - 0x40, 0),
+                       "the bytes after the rebooter are zero up to the patch list") &&
+               require(all_equal(0x91100, 0x94000 - 0x91100, 0),
+                       "the bytes after the patch list are zero to the end of its block") &&
+               require(all_equal(0x94000, 0x1000, 0xFF),
+                       "the patch buffer's tail stays erased data") &&
+               require(spare_stamped(0x94000) && spare_stamped(0x94E00),
+                       "the patch buffer's erased tail is programmed as pages") &&
+               require(!spare_stamped(0x95200),
+                       "pages past the patch buffer that nothing writes stay unprogrammed") &&
+               require(chain_end < pad_end && all_equal(chain_end, pad_end - chain_end, 0),
+                       "the bytes after the second chain are zero to the end of its block") &&
+               require(payload_spare.size() == 16 && payload_spare[10] == 0x03 &&
+                           payload_spare[11] == 0x50,
+                       "the payload page's spare carries xeBuild's 0x03 0x50 at bytes 10 and 11");
+    }
+
+    // A JTAG image boots through its SMC's hack: an SMC with no JTAG mark is refused, unless
+    // smcnocheck waives the check. A marked SMC, sealed or plaintext, builds.
+    bool test_jtag_refuses_a_clean_smc() {
+        const auto jtag_input = [](Bytes smc) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            input.build_type = BuildType::Jtag;
+            input.metadata.smc = std::move(smc);
+            InputPatches patches{};
+            patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13, 0x13})};
+            input.patches = std::move(patches);
+            return input;
+        };
+        const auto clean = RunBuild(jtag_input(make_smc(0x11)));
+        auto waived_input = jtag_input(make_smc(0x11));
+        waived_input.options.smcnocheck = true;
+        const auto waived = RunBuild(waived_input);
+        const auto marked = RunBuild(jtag_input(make_jtag_smc(0x11)));
+        auto cygnos_smc = make_smc(0x11);
+        const Bytes cygnos_mark{0x78, 0xBA, 0xB6};
+        std::copy(cygnos_mark.begin(), cygnos_mark.end(), cygnos_smc.begin() + 0x180);
+        const auto sealed = RunBuild(jtag_input(gxbuild3::NAND::smc_encrypt(cygnos_smc)));
+        auto retail_input = fresh_input(ImageType::SmallBlock);
+        retail_input.build_type = BuildType::Retail;
+        const auto retail = RunBuild(retail_input);
+        return require(!clean && clean.error().code == BuildErrorCode::InvalidSmc &&
+                           clean.error().message.find("Clean SMC") != std::string::npos,
+                       "JTAG over an SMC with no JTAG mark is refused as a clean SMC") &&
+               require(waived.has_value(), "smcnocheck builds JTAG over a clean SMC") &&
+               require(marked.has_value(), "JTAG builds over a JTAG-marked SMC") &&
+               require(sealed.has_value(),
+                       "JTAG builds over a sealed SMC carrying the Cygnos mark") &&
+               require(retail.has_value(), "the check leaves retail images alone");
+    }
+
     bool test_patch_regions_reject_overflow() {
         auto jtag = fresh_input(ImageType::SmallBlock);
         jtag.build_type = BuildType::Jtag;
+        jtag.metadata.smc = make_jtag_smc(0x11);
         InputPatches jtag_patches{};
         jtag_patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes(0x4001, 0x44))};
         jtag.patches = std::move(jtag_patches);
@@ -367,7 +723,7 @@ namespace {
 
         return require(!jtag_result && jtag_result.error().code == BuildErrorCode::PatchFailure,
                        "JTAG patch overflow returns PatchFailure") &&
-                require(!glitch_result && glitch_result.error().code == BuildErrorCode::PatchFailure,
+               require(!glitch_result && glitch_result.error().code == BuildErrorCode::PatchFailure,
                        "glitch patch overflow returns PatchFailure");
     }
 
@@ -394,19 +750,30 @@ namespace {
             InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xA0, 0xA1, 0xA2})};
         input.patches = std::move(patches);
 
-        Bytes expected_mobile(33 * 0x4000);
-        for (size_t index = 0; index < expected_mobile.size(); ++index) {
-            expected_mobile[index] = static_cast<uint8_t>((index * 17U + 0x39U) & 0xFFU);
+        // Every blob type, each a full block, laid from the first free block.
+        for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
+            Bytes expected_mobile(0x4000);
+            for (size_t index = 0; index < expected_mobile.size(); ++index) {
+                expected_mobile[index] = static_cast<uint8_t>((index * 17U + block_type) & 0xFFU);
+            }
+            *input.mobiles.slot(block_type) = std::move(expected_mobile);
         }
-        *input.mobiles.slot(0x31) = expected_mobile;
 
         const auto built = RunBuild(input);
         const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
-        return require(extracted.has_value() && *extracted->mobiles.slot(0x31) == expected_mobile,
-                       "glitch patch reservation prevents overwriting mobile data");
+        if (!require(extracted.has_value(), "glitch image with mobile data extracts")) {
+            return false;
+        }
+        for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
+            if (!require(*extracted->mobiles.slot(block_type) == *input.mobiles.slot(block_type),
+                         "glitch patch reservation prevents overwriting mobile data")) {
+                return false;
+            }
+        }
+        return true;
     }
 
-    bool test_glitch_patch_follows_xell_and_patch_slots() {
+    bool test_glitch_patch_uses_header_overlay_anchor() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Glitch;
         InputPatches patches{};
@@ -418,11 +785,11 @@ namespace {
         input.payloads = std::move(payloads);
 
         const auto built = RunBuild(input);
-        const auto khv = built ? read_logical(*built, 0xD0000, 1) : std::nullopt;
+        const auto khv = built ? read_logical(*built, 0xC0010, 1) : std::nullopt;
         const auto xell_magic = built ? read_logical(*built, 0x70000, 4) : std::nullopt;
         return require(built.has_value(), "glitch patch and XeLL image builds") &&
                require(khv == Bytes({0xA0}),
-                       "glitch KHV follows the XeLL reservation and both patch slots") &&
+                       "glitch KHV starts at header update base plus stride plus 0x10") &&
                require(xell_magic == Bytes({0x7F, 'E', 'L', 'F'}),
                        "glitch patch placement preserves XeLL");
     }
@@ -436,13 +803,14 @@ namespace {
         input.patches = std::move(patches);
 
         const auto built = RunBuild(input);
-        const auto first = built ? read_logical(*built, 0x100000, 1) : std::nullopt;
+        // With no XeLL the first slot is the chain's end rounded up by 0x20000, which is 0x80000,
+        // and the overlay one 0x20000 stride above it.
+        const auto first = built ? read_logical(*built, 0xA0010, 1) : std::nullopt;
         return require(built.has_value(), "big-block glitch accepts payload above small stride") &&
-               require(first == Bytes({0xB4}),
-                       "big-block KHV follows two 0x20000-byte patch slots");
+               require(first == Bytes({0xB4}), "big-block KHV uses the second-slot overlay");
     }
 
-    bool test_glitch_patch_rejects_rebooter_overlap() {
+    bool test_glitch_patch_is_disjoint_from_rebooter_without_xell() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Glitch;
         InputPatches patches{};
@@ -454,13 +822,15 @@ namespace {
         input.payloads = std::move(payloads);
 
         const auto built = RunBuild(input);
-        return require(!built && built.error().code == BuildErrorCode::PatchFailure,
-                       "glitch KHV cannot overwrite the reserved rebooter payload");
+        return require(built.has_value(), "fixed KHV anchor is disjoint from the rebooter") &&
+               require(read_logical(*built, 0x80010, 1) == Bytes{0xA0},
+                       "KHV stays at runtime anchor");
     }
 
     bool test_jtag_xell_without_rebooter_preserves_patches_and_uses_fixed_offset() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Jtag;
+        mark_jtag_smc(*input.metadata.smc);
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13, 0x14})};
         input.patches = patches;
@@ -481,76 +851,51 @@ namespace {
     }
 
     bool test_glitch_xell_shifts_patchslots_on_small_and_big_layouts() {
-        struct Case {
-            ImageType image_type;
-            size_t slot0;
-            size_t slot1;
-            size_t khv;
-        };
-        const std::array cases{
-            Case{ImageType::SmallBlock, 0xB0000, 0xC0000, 0xD0000},
-            Case{ImageType::BigBlock, 0x100000, 0x120000, 0x140000},
-        };
-
-        for (const auto& test_case : cases) {
-            auto input = fresh_input(test_case.image_type);
+        for (auto image_type : {ImageType::SmallBlock, ImageType::BigBlock, ImageType::Emmc}) {
+            auto input = fresh_input(image_type);
             input.build_type = BuildType::Glitch;
             InputPatches patches{};
             patches.automatic =
-                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xA5})};
-            input.patches = std::move(patches);
-            InputPayloads payloads{};
-            payloads.xell = valid_xell();
-            input.payloads = std::move(payloads);
-            const auto [cf0, cg0] = valid_system_update(0x61);
-            const auto [cf1, cg1] = valid_system_update(0x71);
-            input.bootloaders.cf0 = cf0;
-            input.bootloaders.cg0 = cg0;
-            input.bootloaders.cf1 = cf1;
-            input.bootloaders.cg1 = cg1;
-
-            const auto built = RunBuild(input);
-            const auto slot0_cf =
-                built ? read_logical(*built, test_case.slot0, cf0.size()) : std::nullopt;
-            const auto slot0_cg =
-                built ? read_logical(*built, test_case.slot0 + ((cf0.size() + 0x0F) & ~0x0F),
-                                     cg0.size())
-                      : std::nullopt;
-            const auto slot1_cf =
-                built ? read_logical(*built, test_case.slot1, cf1.size()) : std::nullopt;
-            const auto slot1_cg =
-                built ? read_logical(*built, test_case.slot1 + ((cf1.size() + 0x0F) & ~0x0F),
-                                     cg1.size())
-                      : std::nullopt;
-            const auto khv = built ? read_logical(*built, test_case.khv, 1) : std::nullopt;
-            const auto xell_magic =
-                built
-                    ? read_logical(*built,
-                                   test_case.image_type == ImageType::BigBlock ? 0xC0000 : 0x70000,
-                                   4)
-                    : std::nullopt;
-            std::optional<FlashImage> parsed;
-            if (built) {
-                parsed = FlashImage::read(*built);
-                if (parsed && !parsed->parse()) {
-                    parsed.reset();
-                }
-            }
-            if (!require(built.has_value(), "glitch XeLL and patch slots build") ||
-                !require(slot0_cf.has_value() && slot0_cg == cg0,
-                         "shifted slot zero serializes CF and preserves CG bytes") ||
-                !require(slot1_cf.has_value() && slot1_cg == cg1,
-                         "shifted slot one serializes CF and preserves CG bytes") ||
-                !require(khv == Bytes({0xA5}), "KHV follows both shifted patch slots") ||
-                !require(xell_magic == Bytes({0x7F, 'E', 'L', 'F'}), "XeLL remains intact") ||
-                !require(parsed.has_value() && parsed->system_update_0.cf.has_value() &&
-                             parsed->system_update_0.cg.has_value() &&
-                             parsed->system_update_1.cf.has_value() &&
-                             parsed->system_update_1.cg.has_value() &&
-                             parsed->header.cf_offset == test_case.slot0,
-                         "shifted CF/CG slots parse from the serialized header")) {
+                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0,
+                                                            Bytes{0, 0, 0x10, 0, 0, 0, 0, 1, 0x60,
+                                                                  0, 0, 0, 255, 255, 255, 255})};
+            input.patches = patches;
+            input.payloads = InputPayloads{};
+            input.payloads->xell = valid_xell();
+            auto [cf, cg] = valid_system_update(0x61);
+            input.bootloaders.cf0 = cf;
+            input.bootloaders.cg0 = cg;
+            auto built = RunBuild(input);
+            // XeLL sits at 0x70000 on every shape and the slots follow it, rounded up by the
+            // erase block: 0xB0000, or 0xC0000 on big block, whose slot is 0x20000 long.
+            const size_t base = image_type == ImageType::BigBlock ? 0xC0000 : 0xB0000;
+            const size_t stride = image_type == ImageType::BigBlock ? 0x20000 : 0x10000;
+            const size_t xell_at = 0x70000;
+            if (!require(built.has_value(), "one update slot and runtime overlay build") ||
+                !require(read_logical(*built, base + stride + 0x10, 4) == Bytes({0, 0, 0x10, 0}),
+                         "KHV matches CD header anchor") ||
+                !require(read_logical(*built, xell_at, 0x40000) == input.payloads->xell,
+                         "XeLL sits at 0x70000"))
                 return false;
-            }
+            auto extracted = ExtractAll(*built, input.metadata.cpu_key);
+            if (!require(extracted && extracted->patches &&
+                             extracted->build_type == BuildType::Glitch,
+                         "extraction preserves the runtime patch stream and build type"))
+                return false;
+            auto rebuilt = RunBuild(*extracted);
+            if (!require(rebuilt &&
+                             read_logical(*rebuilt, base + stride + 0x10, 4) ==
+                                 Bytes({0, 0, 0x10, 0}) &&
+                             read_logical(*rebuilt, xell_at, 0x40000) == input.payloads->xell,
+                         "extract/rebuild preserves XeLL and the KHV anchor"))
+                return false;
+            input.bootloaders.cf1 = cf;
+            input.bootloaders.cg1 = cg;
+            auto conflict = RunBuild(input);
+            if (!require(!conflict && conflict.error().message.find("second update slot") !=
+                                          std::string::npos,
+                         "CF1 cannot occupy the glitch overlay"))
+                return false;
         }
         return true;
     }
@@ -597,6 +942,7 @@ namespace {
     bool test_donor_transition_rejects_retained_glitch_xell_collision() {
         auto donor_input = fresh_input(ImageType::SmallBlock);
         donor_input.build_type = BuildType::Jtag;
+        mark_jtag_smc(*donor_input.metadata.smc);
         InputPatches donor_patches{};
         donor_patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0xA1})};
         donor_input.patches = std::move(donor_patches);
@@ -626,7 +972,7 @@ namespace {
                        "donor transition reports the retained XeLL and rebooter collision");
     }
 
-    bool test_fixed_payloads_roundtrip_in_valid_jtag_and_bigblock_glitch_layouts() {
+    bool test_fixed_payloads_roundtrip_in_valid_jtag_layout() {
         struct Case {
             ImageType image_type;
             BuildType build_type;
@@ -636,9 +982,7 @@ namespace {
         const std::array cases{
             Case{ImageType::SmallBlock, BuildType::Jtag,
                  InputPatchFile{"automatic", jtag_patchset(Bytes{0xA3})}, 0x95060},
-            Case{ImageType::BigBlock, BuildType::Glitch,
-                 InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xA4})},
-                 0xC0000},
+
         };
 
         for (const auto& test_case : cases) {
@@ -646,6 +990,9 @@ namespace {
                 test_case.build_type == BuildType::Jtag ? "JTAG" : "big-block Glitch";
             auto input = fresh_input(test_case.image_type);
             input.build_type = test_case.build_type;
+            if (input.build_type == BuildType::Jtag) {
+                mark_jtag_smc(*input.metadata.smc);
+            }
             InputPatches patches{};
             patches.automatic = test_case.automatic;
             input.patches = std::move(patches);
@@ -668,64 +1015,6 @@ namespace {
                          layout_name + " keeps XeLL at its historical offset") ||
                 !require(rebooter == input.payloads->rebooter && fuses == input.payloads->fuses,
                          layout_name + " fixed payload layout roundtrips every payload")) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool test_bigblock_and_emmc_glitch_retain_disjoint_fixed_payloads() {
-        struct Case {
-            ImageType image_type;
-            std::string_view name;
-        };
-        const std::array cases{Case{ImageType::BigBlock, "big-block"},
-                               Case{ImageType::Emmc, "eMMC"}};
-
-        for (const auto& test_case : cases) {
-            auto input = fresh_input(test_case.image_type);
-            input.build_type = BuildType::Glitch;
-            InputPatches patches{};
-            patches.automatic =
-                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xA6})};
-            input.patches = std::move(patches);
-            InputPayloads payloads{};
-            payloads.xell = valid_xell();
-            payloads.xell->at(0x3FFFF) = 0xD7;
-            payloads.rebooter = Bytes(0x1000, 0xD8);
-            payloads.fuses = Bytes(0x60, 0xD9);
-            input.payloads = std::move(payloads);
-
-            const auto built = RunBuild(input);
-            auto parsed = built ? FlashImage::read(*built) : std::nullopt;
-            const bool parsed_ok = parsed && parsed->parse();
-            const auto extracted =
-                built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
-            const auto rebuilt = extracted ? RunBuild(*extracted) : BuildResult{};
-            const auto rebuilt_xell =
-                rebuilt ? read_logical(*rebuilt, 0xC0000, input.payloads->xell->size())
-                        : std::nullopt;
-            const auto rebuilt_rebooter =
-                rebuilt ? read_logical(*rebuilt, 0x90000, input.payloads->rebooter->size())
-                        : std::nullopt;
-            const auto rebuilt_fuses =
-                rebuilt ? read_logical(*rebuilt, 0x95000, input.payloads->fuses->size())
-                        : std::nullopt;
-
-            if (!require(built.has_value() && parsed_ok,
-                         std::string(test_case.name) + " Glitch fixture builds and parses") ||
-                !require(
-                    extracted.has_value() && extracted->payloads &&
-                        extracted->payloads->xell == input.payloads->xell &&
-                        extracted->payloads->rebooter == input.payloads->rebooter &&
-                        extracted->payloads->fuses == input.payloads->fuses,
-                    std::string(test_case.name) +
-                        " Glitch ExtractAll retains patch-base XeLL and disjoint fixed payloads") ||
-                !require(rebuilt_xell == input.payloads->xell &&
-                             rebuilt_rebooter == input.payloads->rebooter &&
-                             rebuilt_fuses == input.payloads->fuses,
-                         std::string(test_case.name) +
-                             " Glitch ExtractAll rebuild preserves every retained payload")) {
                 return false;
             }
         }
@@ -796,34 +1085,82 @@ namespace {
         return true;
     }
 
-    bool test_big_and_emmc_shifted_patch_base_allow_disjoint_jtag_xell_fallback() {
-        const std::array image_types{ImageType::BigBlock, ImageType::Emmc};
-        for (const auto image_type : image_types) {
+    bool test_big_and_emmc_glitch_do_not_infer_jtag_inside_xell() {
+        for (auto image_type : {ImageType::BigBlock, ImageType::Emmc}) {
             auto input = fresh_input(image_type);
             input.build_type = BuildType::Glitch;
+            input.patches = InputPatches{};
+            const Bytes khv{0, 0, 0x10, 0, 0, 0, 0, 1, 0x60, 0, 0, 0, 255, 255, 255, 255};
+            input.patches->automatic =
+                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, khv)};
+            input.payloads = InputPayloads{};
+            input.payloads->xell = valid_xell();
+            auto built = RunBuild(input);
+            auto image = built ? FlashImage::read(*built) : std::nullopt;
+            if (!require(image && image->parse(), "glitch donor with runtime KHV parses"))
+                return false;
+            image->flash_driver.write_offset(0x70000, Bytes{0, 0, 0, 0});
+            image->flash_driver.write_offset(0x95060, valid_xell());
+            auto extracted = ExtractAll(image->flash_driver.serialize(), input.metadata.cpu_key);
+            if (!require(extracted && (!extracted->payloads || !extracted->payloads->xell),
+                         "known glitch image cannot infer JTAG XeLL inside its damaged payload"))
+                return false;
+        }
+        return true;
+    }
+
+    bool test_bigblock_glitch_xell_anchors_at_patch_base_and_shifts_cf() {
+        for (const auto image_type : {ImageType::BigBlock, ImageType::Emmc}) {
+            auto input = fresh_input(image_type);
+            input.build_type = BuildType::Glitch2;
+            input.bootloaders.cb_b = input.bootloaders.cb_or_a;
+            const auto [cf, cg] = valid_system_update(0x61);
+            input.bootloaders.cf0 = cf;
+            input.bootloaders.cg0 = cg;
             InputPatches patches{};
             patches.automatic =
-                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xAB})};
+                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xA5})};
             input.patches = std::move(patches);
             InputPayloads payloads{};
             payloads.xell = valid_xell();
             input.payloads = std::move(payloads);
 
             const auto built = RunBuild(input);
-            auto image = built ? FlashImage::read(*built) : std::nullopt;
-            const Bytes invalid_patch_base{0, 0, 0, 0};
-            const auto jtag_xell = valid_xell();
-            const bool modified = image && image->parse() &&
-                                  image->flash_driver.write_offset(0xC0000, invalid_patch_base) &&
-                                  image->flash_driver.write_offset(0x95060, jtag_xell);
-            const auto extracted =
-                modified ? ExtractAll(image->flash_driver.serialize(), input.metadata.cpu_key)
-                         : std::nullopt;
-            if (!require(modified,
-                         "big/eMMC shifted patch-base fixture is modified successfully") ||
-                !require(extracted && extracted->payloads && extracted->payloads->xell &&
-                             (*extracted->payloads->xell)[0] == 0x7F,
-                         "a disjoint Big/eMMC JTAG XeLL remains independently recoverable")) {
+            if (!require(built.has_value(),
+                         "big-geometry glitch carrying a XeLL builds without a collision")) {
+                return false;
+            }
+            auto image = FlashImage::read(*built);
+            const bool parsed = image && image->parse();
+            constexpr size_t xell_at = 0x70000;
+            const bool big = image_type == ImageType::BigBlock;
+            const size_t stride = big ? 0x20000 : 0x10000;
+            const size_t shifted_slot = big ? 0xC0000 : 0xB0000;
+            const auto xell_magic = read_logical(*built, xell_at, 4);
+            const auto khv = read_logical(*built, shifted_slot + stride + 0x10, 1);
+            const auto cg_bytes =
+                read_logical(*built, shifted_slot + ((cf.size() + 0x0F) & ~0x0F), cg.size());
+            if (!require(parsed && image->system_update_0.cf.has_value() &&
+                             image->system_update_0.cg.has_value(),
+                         "big-geometry glitch parses CF and CG out of the shifted patch slot") ||
+                !require(image->header.cf_offset == shifted_slot,
+                         "the XeLL pushes the first slot to the next erase-block boundary") ||
+                !require(xell_magic == Bytes({0x7F, 'E', 'L', 'F'}),
+                         "big-geometry glitch XeLL sits at 0x70000") ||
+                !require(khv == Bytes({0xA5}),
+                         "glitch KHV follows the shifted slot plus one stride plus 0x10") ||
+                !require(cg_bytes &&
+                             opened_cg(cf, cg) ==
+                                 opened_cg(image->system_update_0.cf->serialize(), *cg_bytes),
+                         "CG survives beside the anchored XeLL")) {
+                return false;
+            }
+
+            const auto extracted = ExtractAll(*built, input.metadata.cpu_key);
+            if (!require(extracted.has_value() && extracted->bootloaders.cf0.has_value(),
+                         "the shifted CF0 is recovered by ExtractAll") ||
+                !require(extracted->payloads && extracted->payloads->xell == input.payloads->xell,
+                         "the anchored XeLL round-trips byte for byte")) {
                 return false;
             }
         }
@@ -833,6 +1170,7 @@ namespace {
     bool test_unambiguous_jtag_xell_preserves_fixed_payload_extraction() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Jtag;
+        mark_jtag_smc(*input.metadata.smc);
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0xA8})};
         input.patches = std::move(patches);
@@ -866,6 +1204,9 @@ namespace {
         for (const auto& test_case : cases) {
             auto input = fresh_input(ImageType::SmallBlock);
             input.build_type = test_case.build_type;
+            if (input.build_type == BuildType::Jtag) {
+                mark_jtag_smc(*input.metadata.smc);
+            }
             input.options.noblpatch = test_case.noblpatch;
             input.bootloaders.cb_or_a.resize(test_case.xell_offset - 0x8000 + 0x10, 0xA9);
             const uint32_t cb_size =
@@ -964,36 +1305,48 @@ namespace {
                        "invalid input has an InvalidInput build error");
     }
 
-    bool test_emmc_rejects_mobile_slots_without_corona_metadata_fields() {
-        auto input = fresh_input(ImageType::Emmc);
-        *input.mobiles.slot(0x33) = Bytes{3};
+    // An eMMC anchor names four blobs, types 0x31-0x34. Those are laid; 0x35-0x39 are left
+    // out with a warning and the build goes on.
+    bool emmc_keeps_anchor_mobiles_only(const Input& input, std::string_view what) {
         const auto built = RunBuild(input);
-        return require(!built.has_value(), "eMMC rejects unsupported mobile slots") &&
-               require(built.error().code == BuildErrorCode::InvalidInput,
-                       "unsupported eMMC mobile has an input error");
-    }
-
-    bool test_emmc_donor_rejects_each_high_mobile_when_requested_type_is_mismatched() {
-        const auto donor = RunBuild(fresh_input(ImageType::Emmc));
-        if (!require(donor.has_value(), "eMMC donor fixture builds")) {
+        const auto parsed = built ? parse_image(*built) : std::nullopt;
+        if (!require(built.has_value() && parsed.has_value() && parsed->mobile_data.has_value(),
+                     std::string(what) + ": eMMC build with mobile data succeeds")) {
             return false;
         }
-
-        for (uint8_t block_type = 0x33; block_type <= 0x39; ++block_type) {
-            auto input = fresh_input(ImageType::SmallBlock);
-            input.metadata.nand_image = *donor;
-            *input.mobiles.slot(block_type) = Bytes{block_type};
-            const auto built = RunBuild(input);
-            if (!require(!built.has_value(), "effective eMMC geometry rejects high mobile slot") ||
-                !require(built.error().code == BuildErrorCode::InvalidInput,
-                         "effective eMMC geometry returns InvalidInput") ||
-                !require(built.error().message ==
-                             "eMMC Corona metadata supports mobile slots 0x31 and 0x32 only",
-                         "effective eMMC geometry reports the ruled Corona limitation")) {
+        for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
+            const auto* given = input.mobiles.slot(block_type);
+            const auto* laid = parsed->mobile_data->get_slot(block_type);
+            const bool expected = block_type <= 0x34 && given && *given;
+            if (!require(expected ? *laid == *given : !laid->has_value(),
+                         std::string(what) + ": eMMC lays mobiles 0x31-0x34 and drops the rest")) {
                 return false;
             }
         }
         return true;
+    }
+
+    bool test_emmc_lays_four_anchor_mobiles_and_drops_the_rest() {
+        auto input = fresh_input(ImageType::Emmc);
+        for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
+            *input.mobiles.slot(block_type) = Bytes(0x800, block_type);
+        }
+        *input.mobiles.slot(0x32) = Bytes(0x200, 0x32);
+        return emmc_keeps_anchor_mobiles_only(input, "fresh eMMC");
+    }
+
+    bool test_emmc_donor_lays_four_anchor_mobiles_and_drops_the_rest() {
+        const auto donor = RunBuild(fresh_input(ImageType::Emmc));
+        if (!require(donor.has_value(), "eMMC donor fixture builds")) {
+            return false;
+        }
+        // The donor's eMMC geometry wins over the requested small block.
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.metadata.nand_image = *donor;
+        for (uint8_t block_type = 0x33; block_type <= 0x39; ++block_type) {
+            *input.mobiles.slot(block_type) = Bytes{block_type};
+        }
+        return emmc_keeps_anchor_mobiles_only(input, "eMMC donor");
     }
 
     bool test_nand_donor_accepts_high_mobile_when_requested_type_is_emmc() {
@@ -1049,8 +1402,8 @@ namespace {
 
     bool test_mobile_overlay_replaces_longer_donor_mobile_without_stale_tail() {
         auto input = fresh_input(ImageType::SmallBlock);
-        input.metadata.nand_image = make_donor(input, {{0x32, Bytes(0x20000, 2)}});
-        *input.mobiles.slot(0x32) = Bytes(0x10000, 9);
+        input.metadata.nand_image = make_donor(input, {{0x32, Bytes(0x800, 2)}});
+        *input.mobiles.slot(0x32) = Bytes(0x200, 9);
 
         const auto built = RunBuild(input);
         if (!require(built.has_value(), "long mobile overlay build succeeds")) {
@@ -1068,19 +1421,16 @@ namespace {
                        "shorter replacement mobile does not retain the donor tail");
     }
 
-    bool test_mobile_overlay_clears_donor_size_when_replacement_exceeds_uint16() {
+    // One copy of a blob fills at most its block on small block; nothing longer can be laid.
+    bool test_mobile_overlay_longer_than_one_block_is_refused() {
         auto input = fresh_input(ImageType::SmallBlock);
-        input.metadata.nand_image = make_donor(input, {{0x32, Bytes(0x8000, 2)}});
-        *input.mobiles.slot(0x32) = Bytes(0x14000, 9);
+        input.metadata.nand_image = make_donor(input, {{0x32, Bytes(0x800, 2)}});
+        *input.mobiles.slot(0x32) = Bytes(0x4001, 9);
 
         const auto built = RunBuild(input);
-        const auto parsed = built ? parse_image(*built) : std::nullopt;
-        return require(built.has_value(), "large mobile overlay build succeeds") &&
-               require(parsed.has_value() && parsed->mobile_data.has_value() &&
-                           parsed->mobile_data->x32.has_value(),
-                       "large mobile overlay reparses") &&
-               require(parsed->mobile_data->x32 == *input.mobiles.slot(0x32),
-                       "large mobile replacement clears the donor size metadata");
+        return require(!built.has_value(), "a mobile overlay longer than a block is refused") &&
+               require(built.error().code == BuildErrorCode::SerializationFailure,
+                       "an over-long mobile reports SerializationFailure");
     }
 
     bool test_extracted_plaintext_keyvault_reencrypts_for_a_fresh_layout() {
@@ -1128,19 +1478,17 @@ namespace {
                        "wrong valid CPU key maps to InvalidDonor");
     }
 
-    bool test_custom_payload_is_rejected_without_an_on_disk_format_contract() {
+    bool test_payload_must_match_its_0x200_size_contract() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.payloads = InputPayloads{};
         input.payloads->payload = Bytes{0xC0, 0xDE};
 
         const auto built = RunBuild(input);
-        return require(!built.has_value(), "custom payload is rejected") &&
+        return require(!built.has_value(), "mis-sized payload is rejected") &&
                require(built.error().code == BuildErrorCode::InvalidInput,
-                       "custom payload returns InvalidInput") &&
-               require(
-                   built.error().message ==
-                       "Custom payload is unsupported because no on-disk format contract exists",
-                   "custom payload explains the missing format contract");
+                       "mis-sized payload returns InvalidInput") &&
+               require(built.error().message == "Payload must contain exactly 0x200 bytes",
+                       "mis-sized payload explains the 0x200-byte contract");
     }
 
     bool test_extract_all_preserves_complete_donor_baseline() {
@@ -1183,10 +1531,8 @@ namespace {
                        "public NAND metadata reports the detected block type") &&
                require(info->smc.present && !info->smc.version.empty(),
                        "public NAND metadata reports the SMC version") &&
-               require(!info->smc.type_name.empty(),
-                       "public NAND metadata reports the SMC type") &&
-               require(info->bootloaders.cb_a.has_value() &&
-                           info->bootloaders.cb_a->version == 1,
+               require(!info->smc.type_name.empty(), "public NAND metadata reports the SMC type") &&
+               require(info->bootloaders.cb_a.has_value() && info->bootloaders.cb_a->version == 1,
                        "public NAND metadata reports the bootloader version") &&
                require(info->bootloaders.sc.has_value() && info->bootloaders.sc->version == 1,
                        "public NAND metadata reports the SC version") &&
@@ -1194,8 +1540,7 @@ namespace {
                        "public NAND metadata reports the kernel version") &&
                require(info->bootloaders.ce.has_value() && info->bootloaders.ce->version == 5,
                        "public NAND metadata reports the hypervisor version") &&
-               require(info->bootloaders.cf_0.has_value() &&
-                           info->bootloaders.cg_0.has_value(),
+               require(info->bootloaders.cf_0.has_value() && info->bootloaders.cg_0.has_value(),
                        "public NAND metadata reports the update versions") &&
                require(info->cpu_key.empty() && !info->raw_keyvault.has_value() &&
                            !info->keyvault.present,
@@ -1209,6 +1554,29 @@ namespace {
         return require(info.has_value(), "full NAND metadata extracts") &&
                require(info->block_type == ImageType::NewSmallBlock,
                        "full NAND metadata reports the detected block type");
+    }
+
+    // The keyvault's fcrt.bin flag is read as xeBuild 1.21 reads it: bits 0x0320 of the big-endian
+    // OddFeatures word at 0x1C.
+    bool test_extract_all_info_reads_the_fcrt_flag_big_endian() {
+        bool passed = true;
+        for (const auto& [features, required] : {std::pair<uint16_t, bool>{0x0020, true},
+                                                 {0x0200, true},
+                                                 {0x2000, false},
+                                                 {0x0000, false}}) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            Bytes plain(Keyvault::kSize, 0x00);
+            plain[0x1C] = static_cast<uint8_t>(features >> 8);
+            plain[0x1D] = static_cast<uint8_t>(features);
+            input.metadata.keyvault = canonical_keyvault(input.metadata.cpu_key, plain);
+            const auto built = RunBuild(input);
+            const auto info = built ? ExtractAllInfo(*built, input.metadata.cpu_key) : std::nullopt;
+            passed = require(info.has_value() && info->keyvault.present &&
+                                 info->keyvault.fcrt_required == required,
+                             "full NAND metadata reports the keyvault's fcrt.bin flag") &&
+                     passed;
+        }
+        return passed;
     }
 
     bool test_sc_survives_extraction_and_backing_cleared_layout_override() {
@@ -1227,14 +1595,13 @@ namespace {
                        "SC survives backing-cleared layout override");
     }
 
+    // An SC is sealed under HMAC(16 zero bytes, nonce), whatever its parent.
     bool test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() {
         auto encrypted_source = fresh_input(ImageType::SmallBlock);
-        auto cb_for_key = BootloaderCb::parse(encrypted_source.bootloaders.cb_or_a);
-        cb_for_key.encrypt(key_1bl);
         auto encrypted_sc = BootloaderSc::parse(*encrypted_source.bootloaders.sc);
         const auto expected_encrypted_sc_data = encrypted_sc.data;
         encrypted_sc.decrypted = true;
-        encrypted_sc.encrypt(cb_for_key.derived_key->data());
+        encrypted_sc.encrypt(BootloaderSc::kZeroSecret);
         encrypted_source.bootloaders.sc = encrypted_sc.serialize();
 
         const auto encrypted_build = RunBuild(encrypted_source);
@@ -1283,6 +1650,30 @@ namespace {
         return true;
     }
 
+    // xeBuild leaves header 0x74 zero (xerunner build.py `header`), as do the console
+    // dumps measured; a rewrite must not carry a donor's value forward either.
+    bool test_header_0x74_stays_zero_on_fresh_and_rewritten_images() {
+        const auto zero_at_0x74 = [](const Bytes& image) {
+            return image.size() >= 0x78 && std::all_of(image.begin() + 0x74, image.begin() + 0x78,
+                                                       [](uint8_t b) { return b == 0; });
+        };
+        for (const auto image_type :
+             {ImageType::SmallBlock, ImageType::BigBlock, ImageType::Emmc}) {
+            const auto built = RunBuild(fresh_input(image_type));
+            if (!require(built.has_value(), "header 0x74 fixture builds") ||
+                !require(zero_at_0x74(*built), "fresh image leaves header 0x74 zero"))
+                return false;
+            auto parsed = parse_image(*built);
+            if (!require(parsed.has_value(), "header 0x74 fixture parses"))
+                return false;
+            parsed->header.smc_config_offset = 0xF7C000;
+            if (!require(zero_at_0x74(parsed->write()),
+                         "rewrite does not carry a donor's header 0x74"))
+                return false;
+        }
+        return true;
+    }
+
     bool test_bigblock_flashfs_formats_and_roundtrips_an_empty_overlay() {
         auto input = fresh_input(ImageType::BigBlock);
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{};
@@ -1323,27 +1714,74 @@ namespace {
         const Bytes expected(0x4003, 0x52);
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"data.bin", expected}};
         const auto built = RunBuild(input);
-        if (!require(built.has_value(), "big-block filesystem donor builds")) return false;
+        if (!require(built.has_value(), "big-block filesystem donor builds"))
+            return false;
 
         input.metadata.nand_image = *built;
         input.flashfs_sec.reset();
         const auto rebuilt = RunBuild(input);
         const auto parsed = rebuilt ? parse_image(*rebuilt) : std::nullopt;
-        return require(parsed && parsed->filesystem &&
-                           parsed->filesystem->get_file("data.bin") == expected,
-                       "moved donor filesystem uses the current driver geometry without an overlay");
+        return require(
+            parsed && parsed->filesystem && parsed->filesystem->get_file("data.bin") == expected,
+            "moved donor filesystem uses the current driver geometry without an overlay");
+    }
+
+    // An extended.bin in the clear behind the nonce its plaintext derives, its head the
+    // keyvault's.
+    Bytes clear_extended(const Input& input, uint8_t fill) {
+        const auto& cpu_key = input.metadata.cpu_key;
+        Bytes plain(gxbuild3::NAND::kExtendedSize - 0x10, fill);
+        std::copy_n(input.metadata.keyvault->begin() + 0x10, 8, plain.begin());
+        const uint8_t tail[2] = {0x07, 0x12};
+        uint8_t digest[20]{};
+        ExCryptHmacSha(cpu_key.data(), 16, plain.data(), static_cast<uint32_t>(plain.size()), tail,
+                       2, nullptr, 0, digest, sizeof(digest));
+        Bytes out(digest, digest + 0x10);
+        out.insert(out.end(), plain.begin(), plain.end());
+        return out;
+    }
+
+    // A secdata.bin in the clear behind the nonce its plaintext derives.
+    Bytes clear_secdata(const Input& input, uint8_t fill) {
+        const auto& cpu_key = input.metadata.cpu_key;
+        Bytes plain(gxbuild3::NAND::kSecdataSize - 0x10, fill);
+        uint8_t digest[20]{};
+        ExCryptHmacSha(cpu_key.data(), 16, plain.data(), static_cast<uint32_t>(plain.size()),
+                       nullptr, 0, nullptr, 0, digest, sizeof(digest));
+        Bytes out(digest, digest + 0x10);
+        out.insert(out.end(), plain.begin(), plain.end());
+        return out;
     }
 
     bool test_secure_flashfs_files_roundtrip_through_extract_and_rebuild() {
         auto input = fresh_input(ImageType::SmallBlock);
-        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
-            {"secdata.bin", Bytes(0x20, 0x31)}, {"extended.bin", Bytes(0x20, 0x42)}};
+        const auto& cpu_key = input.metadata.cpu_key;
+        const auto extended = clear_extended(input, 0x42);
+        const auto secdata = clear_secdata(input, 0x31);
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"secdata.bin", secdata},
+                                                                       {"extended.bin", extended}};
         const auto built = RunBuild(input);
         if (!require(built.has_value(), "secure FlashFS build succeeds")) {
             return false;
         }
-        auto extracted = ExtractAll(*built, input.metadata.cpu_key);
-        if (!require(extracted.has_value() && extracted->flashfs_sec == input.flashfs_sec,
+        auto extracted = ExtractAll(*built, cpu_key);
+        const auto file = [](const Input& from, std::string_view name) -> const Bytes* {
+            if (!from.flashfs_sec) {
+                return nullptr;
+            }
+            for (const auto& [file_name, data] : *from.flashfs_sec) {
+                if (file_name == name) {
+                    return &data;
+                }
+            }
+            return nullptr;
+        };
+        const auto* first_secdata = extracted ? file(*extracted, "secdata.bin") : nullptr;
+        if (!require(extracted && file(*extracted, "extended.bin") &&
+                         *file(*extracted, "extended.bin") == extended && first_secdata &&
+                         gxbuild3::NAND::secdata_opened(*first_secdata, cpu_key) &&
+                         std::equal(secdata.begin() + 0x10, secdata.begin() + 0x18,
+                                    first_secdata->begin() + 0x10),
                      "extraction returns plaintext secure FlashFS files")) {
             return false;
         }
@@ -1352,9 +1790,161 @@ namespace {
         if (!require(rebuilt.has_value(), "secure FlashFS rebuild succeeds")) {
             return false;
         }
-        const auto roundtrip = ExtractAll(*rebuilt, input.metadata.cpu_key);
-        return require(roundtrip.has_value() && roundtrip->flashfs_sec == input.flashfs_sec,
-                       "secure FlashFS files survive extract and rebuild");
+        const auto roundtrip = ExtractAll(*rebuilt, cpu_key);
+        const auto* second_secdata = roundtrip ? file(*roundtrip, "secdata.bin") : nullptr;
+        return require(
+            roundtrip && file(*roundtrip, "extended.bin") &&
+                *file(*roundtrip, "extended.bin") == extended && second_secdata &&
+                gxbuild3::NAND::secdata_opened(*second_secdata, cpu_key) &&
+                std::equal(secdata.begin() + 0x10, secdata.begin() + 0x18,
+                           second_secdata->begin() + 0x10) &&
+                std::equal(secdata.begin() + 0x28, secdata.end(), second_secdata->begin() + 0x28),
+            "secure FlashFS files survive extract and rebuild");
+    }
+
+    // A signed record in the clear: magic, length and the SHA-1 of everything from 0x150 on.
+    Bytes clear_signed_record(std::string_view magic, size_t length) {
+        Bytes out(length);
+        std::copy(magic.begin(), magic.end(), out.begin());
+        out[4] = static_cast<uint8_t>(length >> 8);
+        out[5] = static_cast<uint8_t>(length);
+        for (size_t at = 0x150; at < length; ++at) {
+            out[at] = static_cast<uint8_t>(at * 5 + 1);
+        }
+        ExCryptSha(out.data() + 0x150, static_cast<uint32_t>(length - 0x150), nullptr, 0, nullptr,
+                   0, out.data() + 0x0C, 20);
+        return out;
+    }
+
+    bool test_secured_flashfs_files_are_sealed_for_the_console() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        const auto& cpu_key = input.metadata.cpu_key;
+        input.metadata.cf_ldv = 9;
+        const auto clear_crl = clear_signed_record("CRLP", 0xA00);
+        const gxbuild3::NAND::CrlSealing own_sealing{
+            {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD,
+             0xAE, 0xAF},
+            {0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+             0x11, 0x12}};
+        const auto own_crl = gxbuild3::NAND::reseal_crl(clear_crl, cpu_key, own_sealing, {0, 3});
+        if (!require(own_crl.has_value(), "the console's crl.bin fixture seals")) {
+            return false;
+        }
+        const auto extended = clear_extended(input, 0x5A);
+
+        // fcrt.bin in the clear: the vector at 0x100, the sealed part from 0x140 and its SHA-1 at
+        // 0x12C.
+        Bytes fcrt(0x4000);
+        std::fill(fcrt.begin() + 0x100, fcrt.begin() + 0x110, uint8_t{0x6C});
+        fcrt[0x11E] = 0x01;
+        fcrt[0x11F] = 0x40;
+        for (size_t at = 0x140; at < fcrt.size(); ++at) {
+            fcrt[at] = static_cast<uint8_t>(at * 3 + 1);
+        }
+        ExCryptSha(fcrt.data() + 0x140, static_cast<uint32_t>(fcrt.size() - 0x140), nullptr, 0,
+                   nullptr, 0, fcrt.data() + 0x12C, 20);
+
+        input.metadata.console_secured_files = {{"crl.bin", *own_crl}};
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
+            {"crl.bin", clear_crl}, {"extended.bin", extended}, {"fcrt.bin", fcrt}};
+        const auto built = RunBuild(input);
+        const auto extracted = built ? ExtractAll(*built, cpu_key) : std::nullopt;
+        if (!require(extracted.has_value() && extracted->flashfs_sec.has_value(),
+                     "a build with secured files extracts")) {
+            return false;
+        }
+        const auto find = [&](std::string_view name) -> const Bytes* {
+            for (const auto& [file, data] : *extracted->flashfs_sec) {
+                if (file == name) {
+                    return &data;
+                }
+            }
+            return nullptr;
+        };
+        const auto* crl = find("crl.bin");
+        const auto* opened_extended = find("extended.bin");
+        const auto* sealed_fcrt = find("fcrt.bin");
+        if (!require(crl && opened_extended && sealed_fcrt, "the three files are in the image")) {
+            return false;
+        }
+        const auto sealing = gxbuild3::NAND::crl_sealing(*crl, cpu_key);
+        alignas(16) EXCRYPT_AES_STATE state{};
+        ExCryptAesKey(&state, own_sealing.file_key.data());
+        auto feed = own_sealing.iv;
+        Bytes body(crl->size() - 0x140);
+        ExCryptAesCbc(&state, crl->data() + 0x140, static_cast<uint32_t>(body.size()), body.data(),
+                      feed.data(), 0);
+        ExCryptAesKey(&state, cpu_key.data());
+        std::array<uint8_t, 16> fcrt_feed{};
+        std::copy_n(fcrt.begin() + 0x100, fcrt_feed.size(), fcrt_feed.begin());
+        Bytes fcrt_body(fcrt.size() - 0x140);
+        ExCryptAesCbc(&state, sealed_fcrt->data() + 0x140, static_cast<uint32_t>(fcrt_body.size()),
+                      fcrt_body.data(), fcrt_feed.data(), 0);
+        const auto& keyvault = *input.metadata.keyvault;
+        return require(sealing && sealing->iv == own_sealing.iv &&
+                           sealing->file_key == own_sealing.file_key,
+                       "crl.bin is sealed under the console's own vector and file key") &&
+               require(body[0x0F] == 9, "crl.bin states the CF lockdown value") &&
+               require(std::equal(body.begin() + 0x10, body.end(), clear_crl.begin() + 0x150),
+                       "crl.bin keeps the supplied content") &&
+               require(extracted->metadata.console_secured_files.size() == 1 &&
+                           extracted->metadata.console_secured_files.front().second == *crl,
+                       "extraction keeps the console's own crl.bin") &&
+               require(gxbuild3::NAND::extended_opened(*opened_extended, cpu_key),
+                       "extended.bin carries the nonce its plaintext derives") &&
+               require(std::equal(keyvault.begin() + 0x10, keyvault.begin() + 0x18,
+                                  opened_extended->begin() + 0x10),
+                       "extended.bin's head is the keyvault's") &&
+               require(std::equal(fcrt.begin(), fcrt.begin() + 0x140, sealed_fcrt->begin()) &&
+                           *sealed_fcrt != fcrt &&
+                           std::equal(fcrt_body.begin(), fcrt_body.end(), fcrt.begin() + 0x140),
+                       "fcrt.bin in the clear is sealed under the CPU key and its own vector");
+    }
+
+    // An fcrt.bin that is neither in the clear nor opens under the CPU key is written as xeBuild
+    // 1.21 writes it: its header as supplied and its sealed part as the failed opening left it.
+    // The console's own copy is carried as it stands.
+    bool test_a_damaged_fcrt_is_written_as_its_failed_opening() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        const auto& cpu_key = input.metadata.cpu_key;
+        Bytes damaged(0x4000);
+        std::fill(damaged.begin() + 0x100, damaged.begin() + 0x110, uint8_t{0x6C});
+        damaged[0x11E] = 0x01;
+        damaged[0x11F] = 0x40;
+        for (size_t at = 0x140; at < damaged.size(); ++at) {
+            damaged[at] = static_cast<uint8_t>(at * 3 + 1);
+        }
+        // No hash at 0x12C holds, in the clear or opened.
+        std::fill(damaged.begin() + 0x12C, damaged.begin() + 0x140, uint8_t{0xEE});
+        alignas(16) EXCRYPT_AES_STATE state{};
+        ExCryptAesKey(&state, cpu_key.data());
+        std::array<uint8_t, 16> feed{};
+        std::copy_n(damaged.begin() + 0x100, feed.size(), feed.begin());
+        Bytes failed_opening = damaged;
+        ExCryptAesCbc(&state, damaged.data() + 0x140, static_cast<uint32_t>(damaged.size() - 0x140),
+                      failed_opening.data() + 0x140, feed.data(), 0);
+
+        const auto image_fcrt = [&](const Input& build) -> std::optional<Bytes> {
+            const auto built = RunBuild(build);
+            const auto extracted = built ? ExtractAll(*built, cpu_key) : std::nullopt;
+            if (!extracted || !extracted->flashfs_sec) {
+                return std::nullopt;
+            }
+            for (const auto& [file, data] : *extracted->flashfs_sec) {
+                if (file == "fcrt.bin") {
+                    return data;
+                }
+            }
+            return std::nullopt;
+        };
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"fcrt.bin", damaged}};
+        const auto supplied = image_fcrt(input);
+        input.metadata.console_secured_files = {{"fcrt.bin", damaged}};
+        const auto own = image_fcrt(input);
+        return require(supplied && *supplied == failed_opening && *supplied != damaged,
+                       "a supplied damaged fcrt.bin is written as its failed opening") &&
+               require(own && *own == damaged,
+                       "the console's own fcrt.bin that does not open is carried as it stands");
     }
 
     bool test_flashfs_overlay_outranks_a_higher_sequence_donor_root() {
@@ -1369,16 +1959,30 @@ namespace {
         higher_sequence_donor.metadata.nand_image = *first_build;
         higher_sequence_donor.flashfs_sec =
             std::vector<std::pair<std::string, Bytes>>{{"donor-old.bin", Bytes{2}}};
-        const auto donor_bytes = RunBuild(higher_sequence_donor);
-        const auto parsed_donor = donor_bytes ? parse_image(*donor_bytes) : std::nullopt;
+        const auto donor_build = RunBuild(higher_sequence_donor);
+        auto donor_image = donor_build ? parse_image(*donor_build) : std::nullopt;
+        if (!require(donor_image.has_value() && donor_image->filesystem.has_value() &&
+                         donor_image->filesystem->version() == 1,
+                     "a rebuilt FlashFS starts at root sequence 1")) {
+            return false;
+        }
+        // Raise the donor root above the sequence a new build writes.
+        const uint16_t donor_root = donor_image->filesystem->root_block();
+        BlockMetadata raised = donor_image->flash_driver.interpret_cluster(donor_root);
+        raised.sequence = 0x125;
+        donor_image->flash_driver.write_cluster_metadata(donor_root, raised);
+        // The bytes as they stand: a driver with no layout of its own would stamp its low
+        // blocks, the root among them, as system area.
+        const auto donor_bytes = std::as_const(donor_image->flash_driver).serialize();
+        const auto parsed_donor = parse_image(donor_bytes);
         if (!require(parsed_donor.has_value() && parsed_donor->filesystem.has_value() &&
-                         parsed_donor->filesystem->version() > 1,
-                     "serialized donor FlashFS has a version higher than the fresh default")) {
+                         parsed_donor->filesystem->version() == 0x125,
+                     "donor FlashFS root carries a sequence above the fresh default")) {
             return false;
         }
 
         auto overlay = fresh_input(ImageType::SmallBlock);
-        overlay.metadata.nand_image = *donor_bytes;
+        overlay.metadata.nand_image = donor_bytes;
         overlay.flashfs_sec =
             std::vector<std::pair<std::string, Bytes>>{{"replacement.bin", Bytes{7, 8, 9}}};
         const auto built = RunBuild(overlay);
@@ -1388,7 +1992,9 @@ namespace {
             return false;
         }
         const auto replacement = parsed->filesystem->get_file("replacement.bin");
-        return require(replacement == Bytes({7, 8, 9}),
+        return require(parsed->filesystem->version() == 1,
+                       "the overlay root is written at sequence 1") &&
+               require(replacement == Bytes({7, 8, 9}),
                        "FlashFS overlay selects the exact replacement contents") &&
                require(!parsed->filesystem->get_file("donor-old.bin").has_value(),
                        "stale donor FlashFS root cannot win selection");
@@ -1422,20 +2028,44 @@ namespace {
     }
 
     bool test_mobile_allocation_rejects_smc_tail_overlap() {
-        auto input = fresh_input(ImageType::SmallBlock);
-        constexpr size_t first_mobile_block = 4;
-        constexpr size_t smc_tail_start = 0x3DC;
-        *input.mobiles.slot(0x31) = Bytes((smc_tail_start - first_mobile_block + 1) * 0x4000, 0x31);
+        FlashImage image{};
+        image.flash_driver = Driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
+        const size_t limit = image.flash_driver.data_block_limit();
+        gxbuild3::NAND::FlashFileSystem filesystem{};
+        filesystem.set_driver(&image.flash_driver);
+        if (!require(filesystem.format(image.flash_driver.block_count(),
+                                       gxbuild3::NAND::FlashFileSystem::kDeferRoot) &&
+                         filesystem.reserve_blocks(0, limit),
+                     "a FlashFS holding every data block formats")) {
+            return false;
+        }
+        image.filesystem = std::move(filesystem);
+        image.mobile_data = MobileData{};
+        image.mobile_data->x31 = Bytes(0x800, 0x31);
 
-        const auto built = RunBuild(input);
-        return require(!built.has_value(), "mobile allocation cannot enter the SMC tail") &&
-               require(built.error().code == BuildErrorCode::SerializationFailure,
-                       "SMC-tail mobile allocation reports SerializationFailure");
+        if (!require(image.write().empty(), "mobile allocation cannot enter the SMC tail")) {
+            return false;
+        }
+        for (size_t block = limit; block < image.flash_driver.block_count(); ++block) {
+            if (!require(image.flash_driver.interpret_block(block).block_type != 0x31,
+                         "no tail block is given the mobile")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     bool test_flashfs_allocation_reports_exhaustion_before_the_smc_tail() {
         auto input = fresh_input(ImageType::SmallBlock);
-        constexpr size_t first_flashfs_block = 0x50;
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"probe.bin", Bytes{1}}};
+        const auto probe = RunBuild(input);
+        const auto probed = probe ? parse_image(*probe) : std::nullopt;
+        const auto probe_entry =
+            probed && probed->filesystem ? probed->filesystem->stat("probe.bin") : std::nullopt;
+        if (!require(probe_entry.has_value(), "a one-file FlashFS builds and lists its file")) {
+            return false;
+        }
+        const size_t first_flashfs_block = probe_entry->block_number;
         constexpr size_t smc_tail_start = 0x3DC;
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
             {"fills-tail.bin", Bytes((smc_tail_start - first_flashfs_block + 1) * 0x4000, 0xA5)}};
@@ -1467,15 +2097,21 @@ namespace {
         payloads.xell = valid_xell();
         input.payloads = std::move(payloads);
 
-        // The unreserved range begins at block 4; 50 blocks would formerly cover every
-        // payload block from the rebooter at 0x90000 through XeLL at 0x95060.
-        *input.mobiles.slot(0x31) = Bytes(50 * 0x4000, 0x31);
+        // The unreserved range begins at block 4. Nine one-block blobs are laid from there,
+        // past the payload blocks from the rebooter at 0x90000 through XeLL at 0x95060.
+        for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
+            *input.mobiles.slot(block_type) = Bytes(0x4000, block_type);
+        }
         const auto built = RunBuild(input);
         const auto parsed = built ? parse_image(*built) : std::nullopt;
+        bool mobiles_intact = parsed.has_value() && parsed->mobile_data.has_value();
+        for (uint8_t block_type = 0x31; mobiles_intact && block_type <= 0x39; ++block_type) {
+            mobiles_intact =
+                *parsed->mobile_data->get_slot(block_type) == *input.mobiles.slot(block_type);
+        }
 
         return require(built.has_value(), "mobile and fixed payload image builds") &&
-               require(parsed.has_value() && parsed->mobile_data.has_value() &&
-                           parsed->mobile_data->x31 == *input.mobiles.slot(0x31),
+               require(mobiles_intact,
                        "serialized mobile bytes are not overwritten by fixed payloads") &&
                require(parsed->payloads.rebooter == input.payloads->rebooter,
                        "serialized rebooter bytes survive mobile allocation") &&
@@ -1512,16 +2148,29 @@ namespace {
     }
 
     bool test_fixed_payloads_reject_noncanonical_sizes() {
-        const std::array<size_t, 4> invalid_rebooter_sizes{{0x0FFF, 0x1001, 0, 0x2000}};
+        // The rebooter only has to fit its 0x1000-byte window region; the embedded freeBOOT
+        // rebooter is 0xd40 bytes and is deliberately not padded.
+        const std::array<size_t, 2> valid_rebooter_sizes{{0xd40, 0x1000}};
+        for (const auto size : valid_rebooter_sizes) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            InputPayloads payloads{};
+            payloads.rebooter = Bytes(size, 0x71);
+            input.payloads = std::move(payloads);
+            if (!require(RunBuild(input).has_value(), "rebooter fitting its region is accepted")) {
+                return false;
+            }
+        }
+
+        const std::array<size_t, 2> invalid_rebooter_sizes{{0x1001, 0x2000}};
         for (const auto size : invalid_rebooter_sizes) {
             auto input = fresh_input(ImageType::SmallBlock);
             InputPayloads payloads{};
             payloads.rebooter = Bytes(size, 0x71);
             input.payloads = std::move(payloads);
             const auto built = RunBuild(input);
-            if (!require(!built.has_value(), "noncanonical rebooter size is rejected") ||
+            if (!require(!built.has_value(), "oversized rebooter is rejected") ||
                 !require(built.error().code == BuildErrorCode::InvalidInput,
-                         "noncanonical rebooter size is an input error")) {
+                         "oversized rebooter is an input error")) {
                 return false;
             }
         }
@@ -1640,17 +2289,12 @@ namespace {
                        "eMMC absent 0x32 preserves donor data");
     }
 
-    bool test_emmc_rejects_each_mobile_slot_without_corona_metadata() {
+    bool test_emmc_takes_each_anchor_mobile_alone_and_drops_each_other_type() {
         for (uint8_t block_type = 0x33; block_type <= 0x39; ++block_type) {
             auto input = fresh_input(ImageType::Emmc);
+            *input.mobiles.slot(0x31) = Bytes{0x31};
             *input.mobiles.slot(block_type) = Bytes{block_type};
-            const auto built = RunBuild(input);
-            if (!require(!built.has_value(), "eMMC rejects unsupported mobile input") ||
-                !require(built.error().code == BuildErrorCode::InvalidInput,
-                         "unsupported eMMC mobile returns InvalidInput") ||
-                !require(built.error().message ==
-                             "eMMC Corona metadata supports mobile slots 0x31 and 0x32 only",
-                         "unsupported eMMC mobile explains Corona metadata limitation")) {
+            if (!emmc_keeps_anchor_mobiles_only(input, "single eMMC mobile")) {
                 return false;
             }
         }
@@ -1686,6 +2330,80 @@ namespace {
         return true;
     }
 
+    // A settings block as a console holds it: 0x400 bytes whose head is the one's complement
+    // of the byte sum over [0x10, 0x10C), little-endian.
+    Bytes sound_smc_config() {
+        Bytes block(0x400);
+        for (size_t i = 2; i < block.size(); ++i) {
+            block[i] = static_cast<uint8_t>(i * 5 + 1);
+        }
+        uint32_t sum = 0;
+        for (size_t i = 0x10; i < 0x10C; ++i) {
+            sum += block[i];
+        }
+        const uint16_t head = static_cast<uint16_t>(~sum);
+        block[0] = static_cast<uint8_t>(head);
+        block[1] = static_cast<uint8_t>(head >> 8);
+        return block;
+    }
+
+    // A donor of one layout rebuilt as another keeps its settings, statistics and
+    // manufacturing blocks, each at the offsets of the layout built.
+    bool test_settings_blocks_follow_the_console_into_another_layout() {
+        auto donor_input = fresh_input(ImageType::NewSmallBlock);
+        donor_input.metadata.smc_config = sound_smc_config();
+        donor_input.metadata.statistics = Bytes(0x1000, 0x5A);
+        Bytes manufacturing(0x1000, 0xFF);
+        std::fill_n(manufacturing.begin(), 0x40, uint8_t{0x4D});
+        donor_input.metadata.manufacturing = manufacturing;
+        const auto donor = RunBuild(donor_input);
+        if (!require(donor.has_value(), "settings donor builds")) {
+            return false;
+        }
+
+        const struct {
+            ImageType type;
+            size_t settings;
+            size_t step;
+        } targets[] = {
+            {ImageType::SmallBlock, 0xF7C000, 0x4000},
+            {ImageType::BigBlock, 0x3BE0000, 0x20000},
+            {ImageType::Emmc, 0x2FFC000, 0x4000},
+        };
+        for (const auto& target : targets) {
+            auto extracted = ExtractAll(*donor, donor_input.metadata.cpu_key);
+            if (!require(extracted.has_value() &&
+                             extracted->metadata.smc_config == donor_input.metadata.smc_config &&
+                             extracted->metadata.statistics == donor_input.metadata.statistics &&
+                             extracted->metadata.manufacturing == manufacturing,
+                         "extraction takes the donor's settings blocks")) {
+                return false;
+            }
+            extracted->metadata.nand_image.reset();
+            extracted->image_type = target.type;
+            const auto built = RunBuild(*extracted);
+            const auto parsed = built ? parse_image(*built) : std::nullopt;
+            if (!require(parsed.has_value(), "cross-layout build with settings blocks parses")) {
+                return false;
+            }
+            const auto& driver = std::as_const(parsed->flash_driver);
+            Bytes settings(0x1000, 0xFF);
+            std::copy(donor_input.metadata.smc_config->begin(),
+                      donor_input.metadata.smc_config->end(), settings.begin());
+            if (!require(driver.read_clean(target.settings, 0x1000) == settings,
+                         "the settings block lands at the target layout's offset") ||
+                !require(driver.read_clean(target.settings - target.step, 0x1000) ==
+                             *donor_input.metadata.statistics,
+                         "the statistics block lands one erase block below it") ||
+                !require(driver.read_clean(target.settings - 2 * target.step, 0x1000) ==
+                             manufacturing,
+                         "the manufacturing block lands two erase blocks below it")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool test_extraction_roundtrips_serialized_bootloaders_and_payloads() {
         auto source = fresh_input(ImageType::SmallBlock);
         const auto bootloader_donor = make_donor(source, {});
@@ -1712,9 +2430,16 @@ namespace {
         const auto roundtrip_cd = bootloader_roundtrip
                                       ? BootloaderCd::parse(bootloader_roundtrip->bootloaders.cd)
                                       : BootloaderCd{};
+        // The donor chain stops before CE, so the rebuild seals CB/A under a fresh nonce.
+        const auto same_outside_nonce = [](const Bytes& left, const Bytes& right) {
+            return left.size() == right.size() && left.size() >= 0x20 &&
+                   std::equal(left.begin(), left.begin() + 0x10, right.begin()) &&
+                   std::equal(left.begin() + 0x20, left.end(), right.begin() + 0x20);
+        };
         if (!require(bootloader_roundtrip.has_value() &&
-                         bootloader_roundtrip->bootloaders.cb_or_a == source.bootloaders.cb_or_a,
-                     "rebuilt CB/A remains serialized-identical") ||
+                         same_outside_nonce(bootloader_roundtrip->bootloaders.cb_or_a,
+                                            source.bootloaders.cb_or_a),
+                     "rebuilt CB/A remains serialized-identical outside its nonce") ||
             !require(roundtrip_cd.header.header.magic == NANDBootloaderMagic::CD &&
                          roundtrip_cd.header.header.version == 1 &&
                          roundtrip_cd.data == Bytes(0x20, 0x42),
@@ -1757,7 +2482,7 @@ namespace {
                        "rebuilt virtual fuses remain serialized-identical");
     }
 
-    bool test_metadata_overrides_reach_final_patched_cb_b_and_all_cf_slots() {
+    bool test_metadata_overrides_reach_final_patched_cb_b_and_cf0() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Glitch2;
         auto cb_a = BootloaderCb::parse(input.bootloaders.cb_or_a);
@@ -1782,11 +2507,9 @@ namespace {
         cb_b.serialize_perbox();
         input.bootloaders.cb_b = cb_b.serialize();
         input.bootloaders.cf0 = decrypted_cf(0x31, {0x32, 0x33, 0x34});
-        input.bootloaders.cf1 = decrypted_cf(0x41, {0x42, 0x43, 0x44});
         const auto update0 = valid_system_update(0x51);
         const auto update1 = valid_system_update(0x61);
         input.bootloaders.cg0 = update0.second;
-        input.bootloaders.cg1 = update1.second;
         input.metadata.cb_ldv = 9;
         input.metadata.cf_ldv = 10;
         input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
@@ -1810,7 +2533,7 @@ namespace {
                        "metadata override output CB per-box metadata parses") &&
                require(image->cb_section.cb_B.has_value() &&
                            image->system_update_0.cf.has_value() &&
-                           image->system_update_1.cf.has_value(),
+                           !image->system_update_1.cf.has_value(),
                        "metadata override output contains all replacement bootloaders") &&
                require(image->cb_section.cb_or_A.perbox->lockdown_value == 0x11 &&
                            std::equal(std::begin(image->cb_section.cb_or_A.perbox->pairing_data),
@@ -1823,14 +2546,98 @@ namespace {
                                       input.metadata.pairing_data.begin()),
                        "patched CB_B receives the winning LDV and all pairing bytes") &&
                require(image->system_update_0.cf->perbox->lockdown_value == 10 &&
-                           image->system_update_1.cf->perbox->lockdown_value == 10 &&
                            std::equal(std::begin(image->system_update_0.cf->perbox->pairing_data),
                                       std::end(image->system_update_0.cf->perbox->pairing_data),
-                                      input.metadata.pairing_data.begin()) &&
-                           std::equal(std::begin(image->system_update_1.cf->perbox->pairing_data),
-                                      std::end(image->system_update_1.cf->perbox->pairing_data),
                                       input.metadata.pairing_data.begin()),
                        "every supplied CF receives the winning LDV and pairing bytes");
+    }
+
+    // Under the all-zero CPU key a chain with a CB_B is bound to no console (xeBuild 1.21
+    // "zeropairing CB_B"): the CB_B per-box block is zero, the CFs state no pairing and LDV 0,
+    // and the secured files state LDV 0, whatever the console's metadata says.
+    bool test_zero_cpu_key_zero_pairs_a_cb_b_chain() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.build_type = BuildType::Glitch2;
+        input.metadata.cpu_key.assign(16, 0);
+        input.metadata.keyvault =
+            canonical_keyvault(input.metadata.cpu_key, Bytes(Keyvault::kSize, 0x22));
+        input.bootloaders.cb_b = input.bootloaders.cb_or_a;
+        input.bootloaders.cf0 = decrypted_cf(0x31, {0x32, 0x33, 0x34});
+        input.bootloaders.cg0 = valid_system_update(0x51).second;
+        input.metadata.cb_ldv = 9;
+        input.metadata.cf_ldv = 10;
+        input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
+        input.metadata.cf_pairing_data = std::array<uint8_t, 3>{0xA4, 0xB5, 0xC6};
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"secdata.bin", Bytes{}}};
+        InputPatches patches{};
+        patches.automatic =
+            InputPatchFile{"automatic", glitch_patchset(0x100, 0x11223344, 0x30, 0, Bytes{0x91})};
+        input.patches = std::move(patches);
+
+        const auto built = RunBuild(input);
+        auto image = built ? FlashImage::read(*built) : std::nullopt;
+        const bool decrypted =
+            image && image->parse() && image->decrypt_all(input.metadata.cpu_key);
+        const bool cb_b_perbox = decrypted && image->cb_section.cb_B.has_value() &&
+                                 image->cb_section.cb_B->parse_perbox();
+        const auto* perbox = cb_b_perbox ? &*image->cb_section.cb_B->perbox : nullptr;
+        const auto* perbox_bytes = reinterpret_cast<const uint8_t*>(perbox);
+        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        const Bytes* secdata = nullptr;
+        if (extracted && extracted->flashfs_sec) {
+            for (const auto& [name, data] : *extracted->flashfs_sec) {
+                if (name == "secdata.bin") {
+                    secdata = &data;
+                }
+            }
+        }
+        return require(built.has_value() && decrypted && cb_b_perbox,
+                       "a zero-key CB_B chain builds and opens under the zero key") &&
+               require(std::all_of(perbox_bytes, perbox_bytes + sizeof(cb_perbox),
+                                   [](uint8_t byte) { return byte == 0; }),
+                       "the zero-key CB_B states no pairing, no LDV and no digest") &&
+               require(image->system_update_0.cf.has_value() &&
+                           image->system_update_0.cf->perbox->lockdown_value == 0 &&
+                           std::all_of(std::begin(image->system_update_0.cf->perbox->pairing_data),
+                                       std::end(image->system_update_0.cf->perbox->pairing_data),
+                                       [](uint8_t byte) { return byte == 0; }),
+                       "the zero-key CF states no pairing and LDV 0") &&
+               require(extracted && extracted->metadata.keyvault == input.metadata.keyvault,
+                       "the keyvault is sealed under the zero key") &&
+               require(secdata && secdata->size() == gxbuild3::NAND::kSecdataSize &&
+                           gxbuild3::NAND::secdata_opened(*secdata, input.metadata.cpu_key) &&
+                           (*secdata)[0x19] == 0,
+                       "the made-up secdata.bin states LDV 0");
+    }
+
+    // A console's keyvault does not open under the all-zero CPU key: its donor still extracts
+    // and builds, with no keyvault of its own, and the keyvault the build is given is sealed
+    // under the zero key.
+    bool test_zero_cpu_key_leaves_the_donor_keyvault_sealed() {
+        auto source = fresh_input(ImageType::SmallBlock);
+        const auto donor = make_donor(source, {});
+        const Bytes zero_key(16, 0);
+        const auto extracted = ExtractAll(donor, zero_key);
+        if (!require(extracted.has_value() && !extracted->metadata.keyvault.has_value(),
+                     "a donor extracts under the zero key without a keyvault") ||
+            !require(!ExtractMetadata(donor, zero_key).has_value(),
+                     "metadata extraction needs a keyvault that opens")) {
+            return false;
+        }
+
+        auto input = source;
+        input.metadata.cpu_key = zero_key;
+        input.metadata.nand_image = donor;
+        const auto built = RunBuild(input);
+        auto image = built ? parse_image(*built) : std::nullopt;
+        const bool opened =
+            image && image->decrypt_all(zero_key) && image->keyvault && !image->keyvault->encrypted;
+        const auto sealed_body = opened ? image->keyvault->serialize() : Bytes{};
+        return require(built.has_value(), "a zero-key build over a console's donor succeeds") &&
+               require(opened && sealed_body.size() == Keyvault::kSize &&
+                           std::equal(sealed_body.begin() + 0x10, sealed_body.end(),
+                                      input.metadata.keyvault->begin() + 0x10),
+                       "the supplied keyvault is sealed under the zero key");
     }
 
     bool test_metadata_override_requires_writable_cb_perbox() {
@@ -1994,13 +2801,17 @@ namespace {
             size_t expected_slot;
             size_t expected_xell;
         };
+        // A devkit image is 64 MB, so it is laid fresh beside this 16 MB donor (see
+        // test_devkit_image_takes_its_own_shape_beside_a_16_mb_donor).
         const std::array cases{Case{BuildType::Retail, 0xB0000, 0x70000},
-                               Case{BuildType::Devkit, 0xB0000, 0x70000},
                                Case{BuildType::Jtag, 0x70000, 0x95060}};
         for (const auto& test_case : cases) {
             auto input = fresh_input(ImageType::SmallBlock);
             input.metadata.nand_image = *donor;
             input.build_type = test_case.type;
+            if (input.build_type == BuildType::Jtag) {
+                mark_jtag_smc(*input.metadata.smc);
+            }
             const auto [cf, cg] =
                 valid_system_update(static_cast<uint8_t>(0x60 + test_case.expected_slot / 0x10000));
             input.bootloaders.cf0 = cf;
@@ -2025,7 +2836,10 @@ namespace {
                          "rebuilt donor parses requested CF and CG") ||
                 !require(image->header.cf_offset == test_case.expected_slot,
                          "serialized header names the actual replacement CF slot") ||
-                !require(cg_bytes == cg, "replacement CG remains intact beside fixed payloads") ||
+                !require(cg_bytes &&
+                             opened_cg(cf, cg) ==
+                                 opened_cg(image->system_update_0.cf->serialize(), *cg_bytes),
+                         "replacement CG remains intact beside fixed payloads") ||
                 !require(xell_magic == Bytes({0x7F, 'E', 'L', 'F'}),
                          "retained XeLL remains intact without CF collision")) {
                 return false;
@@ -2092,6 +2906,58 @@ namespace {
                                       std::end(image->system_update_1.cf->perbox->pairing_data),
                                       input.metadata.pairing_data.begin()),
                        "pairing-only metadata writes all three bytes to every CF");
+    }
+
+    // A JTAG image's first update pair carries nothing of the console: its CF keeps the
+    // per-box block it was supplied with (slot 0, no pairing, no LDV, no binding). The second
+    // pair states slot 1, the console's pairing and LDV, and the CPU-key binding at 0x220.
+    bool test_jtag_first_update_pair_stays_unbound() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.build_type = BuildType::Jtag;
+        mark_jtag_smc(*input.metadata.smc);
+        InputPatches patches{};
+        patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0xA1})};
+        input.patches = std::move(patches);
+        input.bootloaders.cf0 = decrypted_cf(0, {0, 0, 0});
+        input.bootloaders.cf1 = decrypted_cf(0x41, {0x42, 0x43, 0x44});
+        input.bootloaders.cg0 = valid_system_update(0x51).second;
+        input.bootloaders.cg1 = valid_system_update(0x61).second;
+        input.metadata.cf_ldv = 9;
+        input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
+
+        const auto built = RunBuild(input);
+        auto image = built ? FlashImage::read(*built) : std::nullopt;
+        const bool parsed = image && image->parse();
+        const bool decrypted = parsed && image->decrypt_all(input.metadata.cpu_key);
+        if (!require(built.has_value(), "two-pair JTAG fixture builds") ||
+            !require(decrypted && image->system_update_0.cf && image->system_update_1.cf &&
+                         image->system_update_0.cf->perbox && image->system_update_1.cf->perbox,
+                     "two-pair JTAG output parses and decrypts both CF per-boxes")) {
+            return false;
+        }
+        const auto binding = [&input](const BootloaderCf& cf) {
+            auto copy = cf;
+            copy.calc_mac(key_1bl, input.metadata.cpu_key.data());
+            return std::to_array(copy.perbox->per_box_digest);
+        };
+        const auto& first = *image->system_update_0.cf->perbox;
+        const auto& second = *image->system_update_1.cf->perbox;
+        const std::array<uint8_t, 3> no_pairing{};
+        const std::array<uint8_t, 16> no_binding{};
+        return require(first.update_slot == 0 && first.lockdown_value == 0 &&
+                           std::equal(std::begin(first.pairing_data), std::end(first.pairing_data),
+                                      no_pairing.begin()),
+                       "first JTAG CF states slot 0, no pairing and no LDV") &&
+               require(std::equal(std::begin(first.per_box_digest), std::end(first.per_box_digest),
+                                  no_binding.begin()),
+                       "first JTAG CF carries no CPU-key binding") &&
+               require(second.update_slot == 1 && second.lockdown_value == 9 &&
+                           std::equal(std::begin(second.pairing_data),
+                                      std::end(second.pairing_data),
+                                      input.metadata.pairing_data.begin()),
+                       "second JTAG CF states slot 1, the console pairing and its LDV") &&
+               require(std::to_array(second.per_box_digest) == binding(*image->system_update_1.cf),
+                       "second JTAG CF is bound to the CPU key");
     }
 
     bool test_pairing_only_metadata_rejects_unwritable_cf_perbox() {
@@ -2357,7 +3223,184 @@ namespace {
                        "CG1 without CF1 is rejected structurally");
     }
 
-    bool test_system_update_slot_zero_overflow_rejects_a_supplied_slot_one() {
+    void set_source_date_epoch(const char* value) {
+#ifdef _WIN32
+        _putenv_s("SOURCE_DATE_EPOCH", value ? value : "");
+#else
+        if (value) {
+            setenv("SOURCE_DATE_EPOCH", value, 1);
+        } else {
+            unsetenv("SOURCE_DATE_EPOCH");
+        }
+#endif
+    }
+
+    // An extended.bin or secdata.bin of the wrong length or that nothing supplied, an
+    // extended.bin that opens under no key and the console's own secdata.bin when it does not
+    // open are made up clean, as xeBuild 1.21 makes them up: zero but the keyvault's head in
+    // extended.bin, and the console's head (or a drawn one), 1, the lockdown value and the stamp
+    // in secdata.bin. A supplied secdata.bin of the right length that does not open is written
+    // as it stands.
+    bool test_unusable_extended_and_secdata_are_made_up_clean() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        const auto cpu_key = input.metadata.cpu_key;
+        const auto keyvault = *input.metadata.keyvault;
+        input.metadata.cf_ldv = 9;
+        constexpr int64_t kSeconds = 1791105722;
+        const auto stamp = gxbuild3::NAND::secured_file_stamp(kSeconds);
+        const auto build_and_open = [&](const Input& build) -> std::optional<Input> {
+            set_source_date_epoch("1791105722");
+            const auto image = RunBuild(build);
+            set_source_date_epoch(nullptr);
+            return image ? ExtractAll(*image, cpu_key) : std::nullopt;
+        };
+        const auto file = [](const std::optional<Input>& from,
+                             std::string_view name) -> const Bytes* {
+            if (!from || !from->flashfs_sec) {
+                return nullptr;
+            }
+            for (const auto& [file_name, data] : *from->flashfs_sec) {
+                if (file_name == name) {
+                    return &data;
+                }
+            }
+            return nullptr;
+        };
+        const auto zero_from = [](const Bytes& data, size_t from) {
+            return std::all_of(data.begin() + static_cast<std::ptrdiff_t>(from), data.end(),
+                               [](uint8_t value) { return value == 0; });
+        };
+        const auto clean_extended_file = [&](const Bytes* data) {
+            return data && data->size() == gxbuild3::NAND::kExtendedSize &&
+                   gxbuild3::NAND::extended_opened(*data, cpu_key) &&
+                   std::equal(keyvault.begin() + 0x10, keyvault.begin() + 0x18,
+                              data->begin() + 0x10) &&
+                   zero_from(*data, 0x18);
+        };
+        const auto clean_secdata_file = [&](const Bytes* data) {
+            return data && data->size() == gxbuild3::NAND::kSecdataSize &&
+                   gxbuild3::NAND::secdata_opened(*data, cpu_key) && (*data)[0x18] == 0x01 &&
+                   (*data)[0x19] == 9 &&
+                   std::all_of(data->begin() + 0x1A, data->begin() + 0x20,
+                               [](uint8_t value) { return value == 0; }) &&
+                   std::equal(stamp.begin(), stamp.end(), data->begin() + 0x20) &&
+                   zero_from(*data, 0x28);
+        };
+
+        // Wrong lengths: the console's own secdata.bin opens, so its head is taken.
+        const auto own_secdata = clear_secdata(input, 0x66);
+        input.metadata.console_secured_files = {{"secdata.bin", own_secdata}};
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
+            {"extended.bin", Bytes(0x10, 0x42)}, {"secdata.bin", Bytes(0x3FF, 0x31)}};
+        const auto wrong_length = build_and_open(input);
+        const auto* short_secdata = file(wrong_length, "secdata.bin");
+
+        // Nothing supplied: no console copy, so the head is drawn.
+        input.metadata.console_secured_files.clear();
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"extended.bin", Bytes{}},
+                                                                       {"secdata.bin", Bytes{}}};
+        const auto unsupplied = build_and_open(input);
+
+        // An extended.bin that opens under no key and the console's own secdata.bin that does
+        // not open are made up clean; another secdata.bin that does not open stands.
+        const Bytes unopened_secdata(gxbuild3::NAND::kSecdataSize, 0x31);
+        input.metadata.console_secured_files = {{"secdata.bin", unopened_secdata}};
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
+            {"extended.bin", Bytes(gxbuild3::NAND::kExtendedSize, 0x42)},
+            {"secdata.bin", unopened_secdata}};
+        const auto unopened = build_and_open(input);
+        input.flashfs_sec->back().second = Bytes(gxbuild3::NAND::kSecdataSize, 0x32);
+        const auto supplied_unopened = build_and_open(input);
+
+        return require(clean_extended_file(file(wrong_length, "extended.bin")) &&
+                           clean_secdata_file(short_secdata) &&
+                           std::equal(own_secdata.begin() + 0x10, own_secdata.begin() + 0x18,
+                                      short_secdata->begin() + 0x10),
+                       "copies of the wrong length are made up clean, secdata.bin under the "
+                       "console's head") &&
+               require(clean_extended_file(file(unsupplied, "extended.bin")) &&
+                           clean_secdata_file(file(unsupplied, "secdata.bin")),
+                       "files nothing supplied are made up clean") &&
+               require(clean_extended_file(file(unopened, "extended.bin")) &&
+                           clean_secdata_file(file(unopened, "secdata.bin")),
+                       "an extended.bin and the console's secdata.bin that do not open are made "
+                       "up clean") &&
+               require(file(supplied_unopened, "secdata.bin") &&
+                           *file(supplied_unopened, "secdata.bin") ==
+                               Bytes(gxbuild3::NAND::kSecdataSize, 0x32),
+                       "a supplied secdata.bin that does not open is written as it stands");
+    }
+
+    // A built FlashFS is laid as xeBuild 1.21 lays it: the CG tail first, directly past the
+    // update slots, then the listed files back to back in their order, the settings blobs and
+    // the root behind them, every entry stamped with the build's time plus two seconds. Its
+    // table states the root as itself, the blobs free, the four settings blocks reserved and
+    // the remap pool after them as nothing.
+    bool test_flashfs_is_laid_as_xebuild_lays_it() {
+        namespace BlockMapStatus = gxbuild3::NAND::BlockMapStatus;
+        auto input = fresh_input(ImageType::SmallBlock);
+        const auto [cf0, ignored_cg0] = valid_system_update(0x51);
+        BootloaderCg cg0{};
+        cg0.header.header.magic = NANDBootloaderMagic::CG;
+        cg0.header.header.version = 1;
+        cg0.data.assign(0x10000, 0x7A);
+        cg0.header.header.size = static_cast<uint32_t>(sizeof(cg_header) + cg0.data.size());
+        input.bootloaders.cf0 = cf0;
+        input.bootloaders.cg0 = cg0.serialize();
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
+            {"zeta.bin", Bytes(0x4001, 0x5A)}, {"alpha.bin", Bytes(0x10, 0x41)}};
+        *input.mobiles.slot(0x31) = Bytes(0x800, 0x31);
+
+        // 2026-10-04 09:22:02 UTC: in UTC the entries say 09:22:04, 0x5D444AC2.
+        const auto built = [&] {
+            const ScopedTimeZone utc{"UTC0"};
+            set_source_date_epoch("1791105722");
+            auto result = RunBuild(input);
+            set_source_date_epoch(nullptr);
+            return result;
+        }();
+        const auto image = built ? parse_image(*built) : std::nullopt;
+        if (!require(image.has_value() && image->filesystem.has_value(),
+                     "a FlashFS build with a CG tail parses")) {
+            return false;
+        }
+        const auto& fs = *image->filesystem;
+        const auto& entries = fs.entries();
+        const std::array<std::string_view, 3> names{"sysupdate.xexp1", "zeta.bin", "alpha.bin"};
+        bool listed = entries.size() == names.size();
+        for (size_t i = 0; listed && i < names.size(); ++i) {
+            listed = std::string_view(entries[i].filename) == names[i] &&
+                     entries[i].timestamp == 0x5D444AC2;
+        }
+        if (!require(listed, "the CG tail is listed first, then the files in their order, each "
+                             "stamped with the build's time")) {
+            return false;
+        }
+        const size_t first = (image->header.cf_offset + 2 * 0x10000) / 0x4000;
+        const auto tail = fs.get_chain(entries[0].block_number);
+        const size_t root = fs.root_block();
+        const auto& map = fs.blockmap();
+        return require(entries[0].block_number == first &&
+                           map[first - 1] == BlockMapStatus::Reserved,
+                       "the CG tail starts on the first block past the update slots") &&
+               require(image->system_update_0.cg_spill_blocks == tail,
+                       "the CF names the CG tail's blocks") &&
+               require(entries[1].block_number == first + tail.size() &&
+                           entries[2].block_number == entries[1].block_number + 2,
+                       "the files follow back to back") &&
+               require(map[entries[2].block_number + 1] == BlockMapStatus::Free &&
+                           root == entries[2].block_number + 2u,
+                       "the settings blob follows the files, stated free, and the root it") &&
+               require(map[root] == BlockMapStatus::Table, "the root states itself") &&
+               require(map[0x3DB] == BlockMapStatus::Free &&
+                           map[0x3DC] == BlockMapStatus::Reserved &&
+                           map[0x3DF] == BlockMapStatus::Reserved &&
+                           map[0x3E0] == BlockMapStatus::Unnamed &&
+                           map[0x3FF] == BlockMapStatus::Unnamed,
+                       "the settings blocks are reserved and the remap pool never named");
+    }
+
+    bool test_system_update_slot_zero_spills_and_preserves_slot_one() {
         auto input = fresh_input(ImageType::SmallBlock);
         const auto [cf0, ignored_cg0] = valid_system_update(0x51);
         const auto [cf1, cg1] = valid_system_update(0x61);
@@ -2371,9 +3414,18 @@ namespace {
         input.bootloaders.cf1 = cf1;
         input.bootloaders.cg1 = cg1;
 
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{};
         const auto built = RunBuild(input);
-        return require(!built && built.error().code == BuildErrorCode::InvalidInput,
-                       "slot-zero overflow does not silently discard a supplied slot one");
+        auto image = built ? FlashImage::read(*built) : std::nullopt;
+        return require(image && image->parse() && image->header.patch_slots == 2 &&
+                           !image->system_update_0.cg_spill_blocks.empty() &&
+                           image->system_update_1.cf && image->system_update_1.cg &&
+                           opened_cg(image->system_update_0.cf->serialize(),
+                                     image->system_update_0.cg->serialize()) ==
+                               opened_cg(cf0, cg0.serialize()) &&
+                           opened_cg(image->system_update_1.cf->serialize(),
+                                     image->system_update_1.cg->serialize()) == opened_cg(cf1, cg1),
+                       "slot-zero CG spills while both supplied update slots survive");
     }
 
     bool test_replacement_layout_overrides_a_one_slot_donor_header() {
@@ -2412,6 +3464,356 @@ namespace {
                            image->system_update_1.cf.has_value() &&
                            image->system_update_1.cg.has_value(),
                        "both replacement CF/CG slots parse from the advertised two-slot layout");
+    }
+
+    Bytes valid_ce() {
+        BootloaderCe ce{};
+        ce.header.header.magic = NANDBootloaderMagic::CE;
+        ce.header.header.version = 1;
+        ce.header.header.size = static_cast<uint32_t>(sizeof(ce_header) + 0x20);
+        std::fill(std::begin(ce.header.key), std::end(ce.header.key), uint8_t{0x55});
+        ce.data.assign(0x20, 0xCE);
+        ce.decrypted = true;
+        return ce.serialize();
+    }
+
+    BootloaderNonce filled_nonce(uint8_t value) {
+        BootloaderNonce nonce{};
+        nonce.fill(value);
+        return nonce;
+    }
+
+    Bytes nonce_bytes(std::span<const uint8_t> bytes) {
+        return Bytes(bytes.begin(), bytes.begin() + 0x10);
+    }
+
+    bool test_fresh_build_seals_stages_under_random_nonces() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.bootloaders.ce = valid_ce();
+        const auto first = RunBuild(input);
+        const auto second = RunBuild(input);
+        auto one = first ? parse_image(*first) : std::nullopt;
+        auto two = second ? parse_image(*second) : std::nullopt;
+        if (!require(one && two && one->kernel_section.ce && two->kernel_section.ce,
+                     "fresh nonce fixtures build and parse")) {
+            return false;
+        }
+        const auto nonces = [](const FlashImage& image) {
+            return std::array<Bytes, 3>{nonce_bytes(image.cb_section.cb_or_A.data),
+                                        nonce_bytes(image.kernel_section.cd.header.key),
+                                        nonce_bytes(image.kernel_section.ce->header.key)};
+        };
+        const auto first_nonces = nonces(*one);
+        const auto second_nonces = nonces(*two);
+        bool distinct = true;
+        bool non_zero = true;
+        for (size_t index = 0; index < first_nonces.size(); ++index) {
+            distinct = distinct && first_nonces[index] != second_nonces[index];
+            non_zero = non_zero && first_nonces[index] != Bytes(0x10, 0);
+        }
+        const bool decrypted = one->decrypt_all(input.metadata.cpu_key);
+        return require(non_zero, "fresh CB, CD and CE take non-zero nonces") &&
+               require(first_nonces[2] != Bytes(0x10, 0x55),
+                       "a fresh CE does not keep its template's nonce") &&
+               require(distinct, "each fresh build draws new nonces") &&
+               require(decrypted && one->kernel_section.cd.data == Bytes(0x20, 0x42) &&
+                           one->kernel_section.ce->data == Bytes(0x20, 0xCE),
+                       "stages sealed under fresh nonces decrypt to their payloads");
+    }
+
+    bool test_donor_nonces_seal_stages_by_position_and_every_slot_alike() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.bootloaders.ce = valid_ce();
+        input.bootloaders.cf0 = decrypted_cf(3, {0x11, 0x12, 0x13});
+        input.bootloaders.cg0 = valid_system_update(0x51).second;
+        input.bootloaders.cf1 = decrypted_cf(4, {0x11, 0x12, 0x13});
+        input.bootloaders.cg1 = valid_system_update(0x61).second;
+        DonorNonces nonces{};
+        nonces.stages = {filled_nonce(0xA1), filled_nonce(0xA2), filled_nonce(0xA3),
+                         filled_nonce(0xA4)};
+        nonces.cf = filled_nonce(0xB1);
+        nonces.cg = filled_nonce(0xC1);
+        input.metadata.donor_nonces = nonces;
+
+        const auto built = RunBuild(input);
+        auto image = built ? parse_image(*built) : std::nullopt;
+        if (!require(image && image->kernel_section.ce && image->system_update_0.cf &&
+                         image->system_update_0.cg && image->system_update_1.cf &&
+                         image->system_update_1.cg,
+                     "donor nonce fixture builds and parses")) {
+            return false;
+        }
+        const auto is = [](std::span<const uint8_t> bytes, uint8_t value) {
+            return nonce_bytes(bytes) == Bytes(0x10, value);
+        };
+        const bool decrypted = image->decrypt_all(input.metadata.cpu_key);
+        return require(is(image->cb_section.cb_or_A.data, 0xA1) &&
+                           is(image->kernel_section.cd.header.key, 0xA3) &&
+                           is(image->kernel_section.ce->header.key, 0xA4),
+                       "first CB, CD and CE take the donor nonces of their positions") &&
+               require(is(image->system_update_0.cf->header.fixpoint_nonce, 0xB1) &&
+                           is(image->system_update_1.cf->header.fixpoint_nonce, 0xB1) &&
+                           is(image->system_update_0.cg->header.key, 0xC1) &&
+                           is(image->system_update_1.cg->header.key, 0xC1),
+                       "every update slot takes the donor CF and CG nonces") &&
+               require(decrypted && image->kernel_section.cd.data == Bytes(0x20, 0x42) &&
+                           image->kernel_section.ce->data == Bytes(0x20, 0xCE),
+                       "stages sealed under donor nonces decrypt to their payloads");
+    }
+
+    bool test_extraction_takes_cf_metadata_and_nonces_from_the_max_ldv_slot() {
+        auto source = fresh_input(ImageType::SmallBlock);
+        source.bootloaders.ce = valid_ce();
+        source.bootloaders.cf0 = decrypted_cf(3, {0x11, 0x12, 0x13});
+        source.bootloaders.cg0 = valid_system_update(0x51).second;
+        source.bootloaders.cf1 = decrypted_cf(7, {0x11, 0x12, 0x13});
+        source.bootloaders.cg1 = valid_system_update(0x61).second;
+        source.metadata.pairing_data = {0x21, 0x22, 0x23};
+        const auto built = RunBuild(source);
+
+        // Slot 1 states its own pairing, as after an update installed under other pairing.
+        auto staged = built ? parse_image(*built) : std::nullopt;
+        if (!require(staged && staged->decrypt_all(source.metadata.cpu_key) &&
+                         staged->system_update_1.cf && staged->system_update_1.cf->perbox,
+                     "max-LDV donor fixture builds and decrypts")) {
+            return false;
+        }
+        const std::array<uint8_t, 3> slot_one_pairing{0x31, 0x32, 0x33};
+        std::copy(slot_one_pairing.begin(), slot_one_pairing.end(),
+                  staged->system_update_1.cf->perbox->pairing_data);
+        if (!require(staged->encrypt_all(source.metadata.cpu_key),
+                     "max-LDV donor fixture re-encrypts")) {
+            return false;
+        }
+        const auto donor = staged->write();
+        auto donor_image = parse_image(donor);
+        const auto extracted = ExtractAll(donor, source.metadata.cpu_key);
+        const auto metadata = ExtractMetadata(donor, source.metadata.cpu_key);
+        if (!require(donor_image && extracted && metadata && extracted->metadata.donor_nonces &&
+                         metadata->donor_nonces,
+                     "max-LDV donor fixture extracts")) {
+            return false;
+        }
+        const auto& nonces = *extracted->metadata.donor_nonces;
+        const auto equal = [](const std::optional<BootloaderNonce>& nonce,
+                              std::span<const uint8_t> bytes) {
+            return nonce && Bytes(nonce->begin(), nonce->end()) == nonce_bytes(bytes);
+        };
+        const bool cf_metadata = extracted->metadata.cf_ldv == 7 &&
+                                 extracted->metadata.cf_pairing_data == slot_one_pairing &&
+                                 metadata->cf_ldv == 7 &&
+                                 metadata->cf_pairing_data == slot_one_pairing;
+        const bool slot_nonces =
+            equal(nonces.cf, donor_image->system_update_1.cf->header.fixpoint_nonce) &&
+            equal(nonces.cg, donor_image->system_update_1.cg->header.key);
+        const bool stage_order =
+            equal(nonces.stages[0], donor_image->cb_section.cb_or_A.data) && !nonces.stages[1] &&
+            equal(nonces.stages[2], donor_image->kernel_section.cd.header.key) &&
+            equal(nonces.stages[3], donor_image->kernel_section.ce->header.key);
+
+        auto rebuild = *extracted;
+        rebuild.bootloaders = source.bootloaders;
+        const auto rebuilt = RunBuild(rebuild);
+        auto image = rebuilt ? parse_image(*rebuilt) : std::nullopt;
+        const bool rebuilt_decrypts = image && image->decrypt_all(source.metadata.cpu_key);
+        return require(cf_metadata, "CF LDV and pairing come from the max-LDV donor slot") &&
+               require(slot_nonces, "donor CF and CG nonces come from the max-LDV slot") &&
+               require(stage_order, "donor stage nonces are read by chain position") &&
+               require(
+                   rebuilt_decrypts &&
+                       nonce_bytes(image->cb_section.cb_or_A.data) ==
+                           nonce_bytes(donor_image->cb_section.cb_or_A.data) &&
+                       nonce_bytes(image->system_update_0.cf->header.fixpoint_nonce) ==
+                           nonce_bytes(donor_image->system_update_1.cf->header.fixpoint_nonce) &&
+                       nonce_bytes(image->system_update_1.cf->header.fixpoint_nonce) ==
+                           nonce_bytes(donor_image->system_update_1.cf->header.fixpoint_nonce) &&
+                       nonce_bytes(image->system_update_0.cg->header.key) ==
+                           nonce_bytes(donor_image->system_update_1.cg->header.key) &&
+                       nonce_bytes(image->system_update_1.cg->header.key) ==
+                           nonce_bytes(donor_image->system_update_1.cg->header.key),
+                   "a rebuild over the donor reuses its CB and max-LDV CF and CG nonces") &&
+               require(image->system_update_0.cf->perbox &&
+                           image->system_update_0.cf->perbox->lockdown_value == 7 &&
+                           std::equal(slot_one_pairing.begin(), slot_one_pairing.end(),
+                                      image->system_update_0.cf->perbox->pairing_data),
+                       "the rebuilt CF states the max-LDV slot's LDV and pairing");
+    }
+
+    bool test_header_states_zero_pairing_and_the_board_copyright() {
+        const auto copyright = [](std::string_view year) {
+            const std::string text =
+                "\xA9 2004-" + std::string(year) + " Microsoft Corporation. All rights reserved.";
+            Bytes bytes(0x38, 0);
+            std::copy(text.begin(), text.end(), bytes.begin());
+            return bytes;
+        };
+        const auto header_copyright = [](const Bytes& image) {
+            return Bytes(image.begin() + 0x10, image.begin() + 0x48);
+        };
+
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.metadata.pairing_data = {0x63, 0xDB, 0x01};
+        input.console = ConsoleType::Trinity;
+        const auto trinity = RunBuild(input);
+        if (!require(trinity.has_value(), "header fixture builds") ||
+            !require((*trinity)[4] == 0 && (*trinity)[5] == 0, "header 0x04 states no pairing") ||
+            !require(header_copyright(*trinity) == copyright("2010"),
+                     "a fresh Trinity image states 2004-2010")) {
+            return false;
+        }
+
+        // The fixture SMC names a Xenon board, so a Xenon donor is the same board.
+        const auto smc = Smc::parse(*input.metadata.smc);
+        input.console = ConsoleType::Xenon;
+        const auto xenon = RunBuild(input);
+        auto custom = xenon ? parse_image(*xenon) : std::nullopt;
+        if (!require(smc && smc->motherboard == gxbuild3::NAND::SmcMotherboard::Xenon,
+                     "header fixture SMC names a Xenon board") ||
+            !require(xenon && header_copyright(*xenon) == copyright("2005"),
+                     "a fresh Xenon image states 2004-2005") ||
+            !require(custom.has_value(), "header donor parses")) {
+            return false;
+        }
+        const auto donor_copyright = copyright("2006");
+        std::copy(donor_copyright.begin(), donor_copyright.end(), custom->header.copyright);
+        const auto donor = custom->write();
+
+        auto same_board = input;
+        same_board.metadata.nand_image = donor;
+        const auto kept = RunBuild(same_board);
+        auto other_board = same_board;
+        other_board.console = ConsoleType::Falcon;
+        const auto replaced = RunBuild(other_board);
+        if (!require(kept && header_copyright(*kept) == donor_copyright,
+                     "a donor of the same board keeps its own notice") ||
+            !require(replaced && header_copyright(*replaced) == copyright("2007"),
+                     "a donor of another board takes the target's notice")) {
+            return false;
+        }
+
+        // A JTAG Jasper states 2008 even over a Jasper donor.
+        auto jasper = fresh_input(ImageType::SmallBlock);
+        (*jasper.metadata.smc)[0x100] = 0x40;
+        jasper.console = ConsoleType::Jasper;
+        const auto retail_jasper = RunBuild(jasper);
+        auto jasper_donor = retail_jasper ? parse_image(*retail_jasper) : std::nullopt;
+        if (!require(jasper_donor.has_value(), "Jasper header donor builds and parses")) {
+            return false;
+        }
+        std::copy(donor_copyright.begin(), donor_copyright.end(), jasper_donor->header.copyright);
+        jasper.metadata.nand_image = jasper_donor->write();
+        const auto kept_jasper = RunBuild(jasper);
+        auto jtag = jasper;
+        jtag.build_type = BuildType::Jtag;
+        mark_jtag_smc(*jtag.metadata.smc);
+        InputPatches patches{};
+        patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13})};
+        jtag.patches = std::move(patches);
+        const auto jtag_jasper = RunBuild(jtag);
+        return require(kept_jasper && header_copyright(*kept_jasper) == donor_copyright,
+                       "a retail Jasper keeps its Jasper donor's notice") &&
+               require(jtag_jasper && header_copyright(*jtag_jasper) == copyright("2008"),
+                       "a JTAG Jasper over a Jasper donor states 2004-2008");
+    }
+
+    bool test_hacked_header_states_boot_flags_two_slots_and_a_zeroed_khv_tail() {
+        const auto header_words = [](const BuildResult& image) {
+            return image ? std::pair{read_be32(*image, 0x48), read_be32(*image, 0x4C)}
+                         : std::pair{~0u, ~0u};
+        };
+        const auto glitch2 = [](OptionsArgs options) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            input.build_type = BuildType::Glitch2;
+            input.bootloaders.cb_b = input.bootloaders.cb_or_a;
+            InputPatches patches{};
+            patches.automatic =
+                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0x92})};
+            input.patches = std::move(patches);
+            input.options = std::move(options);
+            return RunBuild(input);
+        };
+        const auto jtag = [](OptionsArgs options) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            input.build_type = BuildType::Jtag;
+            mark_jtag_smc(*input.metadata.smc);
+            InputPatches patches{};
+            patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13})};
+            input.patches = std::move(patches);
+            input.options = std::move(options);
+            return RunBuild(input);
+        };
+
+        // Glitch2 with no options: XeLL on eject, two slots, and the KHV patch slot (0x80000,
+        // behind slot zero at 0x70000) zero after its terminator up to 0x84000, erased after.
+        const auto plain = glitch2({});
+        const auto khv = plain ? read_logical(*plain, 0x80010, 5) : std::nullopt;
+        const auto tail = plain ? read_logical(*plain, 0x80015, 0x4000 - 0x15) : std::nullopt;
+        const auto past = plain ? read_logical(*plain, 0x84000, 0x10) : std::nullopt;
+        if (!require(header_words(plain) == std::pair{1u, 0x12u},
+                     "a glitch2 image states 0x48 = 1 and XeLL on eject at 0x4C") ||
+            !require(read_be16(*plain, 0x68) == 2, "a glitch2 image states two update slots") ||
+            !require(khv == Bytes({0x92, 0xFF, 0xFF, 0xFF, 0xFF}),
+                     "the KHV and its terminator open the patch slot") ||
+            !require(tail && std::all_of(tail->begin(), tail->end(),
+                                         [](uint8_t byte) { return byte == 0; }),
+                     "the patch slot is zero from the KHV terminator to 0x4000") ||
+            !require(past == Bytes(0x10, 0xFF), "the patch slot past 0x4000 stays erased")) {
+            return false;
+        }
+
+        OptionsArgs buttons{};
+        buttons.xellbutton = "Power";
+        buttons.xellbutton2 = "eject";
+        buttons.cygnos = true;
+        buttons.dualboot = "kiosk";
+        OptionsArgs same_button{};
+        same_button.xellbutton = "power";
+        same_button.xellbutton2 = "power";
+        OptionsArgs nodvd{};
+        nodvd.nodvd = true;
+        OptionsArgs olddvd{};
+        olddvd.olddvd = true;
+        olddvd.demon = true;
+        OptionsArgs dualboot{};
+        dualboot.dualboot = "wiredx";
+        OptionsArgs dualboot_on_xell{};
+        dualboot_on_xell.dualboot = "eject";
+        if (!require(header_words(glitch2(buttons)) == std::pair{1u, 0x00011211u},
+                     "glitch2 takes both XeLL buttons and cygnos, and no dualboot") ||
+            !require(header_words(glitch2(same_button)) == std::pair{1u, 0x00000011u},
+                     "a second XeLL button equal to the first is dropped") ||
+            !require(header_words(glitch2(nodvd)) == std::pair{1u, 0u},
+                     "nodvd leaves a glitch2 image without a XeLL button") ||
+            !require(header_words(jtag({})) == std::pair{1u, 0x00040012u},
+                     "a JTAG image states the DVD bit and XeLL on eject") ||
+            !require(header_words(jtag(nodvd)) == std::pair{1u, 0x00020000u},
+                     "nodvd on JTAG states bit 2 and no XeLL button") ||
+            !require(header_words(jtag(olddvd)) == std::pair{1u, 0x00010000u},
+                     "olddvd on JTAG clears the DVD bits; demon states bit 1") ||
+            !require(header_words(jtag(dualboot)) == std::pair{1u, 0x5A040012u},
+                     "a JTAG dualboot button lands at 0x4C") ||
+            !require(header_words(jtag(dualboot_on_xell)) == std::pair{1u, 0x00040012u},
+                     "a dualboot button that starts XeLL is ignored")) {
+            return false;
+        }
+
+        // Retail states neither word, whatever the options and whatever its donor held.
+        auto donor_input = fresh_input(ImageType::SmallBlock);
+        const auto donor = RunBuild(donor_input);
+        auto donor_image = donor ? FlashImage::read(*donor) : std::nullopt;
+        const std::array<uint8_t, 8> hacked{{0, 0, 0, 1, 0x11, 0x04, 0x00, 0x12}};
+        const bool donor_patched =
+            donor_image && donor_image->parse() &&
+            donor_image->flash_driver.write_offset(offsetof(nand_header, hack_flags), hacked);
+        auto retail = fresh_input(ImageType::SmallBlock);
+        retail.metadata.nand_image =
+            donor_patched ? donor_image->flash_driver.serialize() : Bytes{};
+        retail.options = buttons;
+        const auto rebuilt = RunBuild(retail);
+        return require(donor_patched, "hacked-header donor fixture is created") &&
+               require(header_words(rebuilt) == std::pair{0u, 0u},
+                       "a retail image over a hacked donor states 0x48 and 0x4C zero") &&
+               require(read_be16(*rebuilt, 0x68) == 2, "a retail image states two update slots");
     }
 
     bool test_clear_bootloader_chain_clears_header_only_cb_and_cd_records() {
@@ -2463,51 +3865,593 @@ namespace {
                        "a replacement header-only required CD remains structurally invalid");
     }
 
+    bool all_bytes(std::span<const uint8_t> bytes, uint8_t value) {
+        return !bytes.empty() &&
+               std::all_of(bytes.begin(), bytes.end(), [value](uint8_t b) { return b == value; });
+    }
+
+    // Every page from `first_page` on: 0xFF data and an erased spare.
+    bool pages_are_erased(const Driver& driver, size_t first_page, size_t page_count) {
+        for (size_t page = first_page; page < first_page + page_count; ++page) {
+            if (!all_bytes(driver.read_page(page), 0xFF) ||
+                !all_bytes(driver.read_page_spare(page), 0xFF)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool test_donor_build_leaves_unlaid_space_erased() {
+        const auto initial = RunBuild(fresh_input(ImageType::SmallBlock));
+        auto donor = initial ? FlashImage::read(*initial) : std::nullopt;
+        if (!require(donor.has_value(), "erased-fill donor image opens")) {
+            return false;
+        }
+
+        // A donor's old data in update slot 1, in a free filesystem block and in the remap
+        // pool, each block programmed with a data spare; and one block the chip marked bad.
+        constexpr size_t kSlotOneBlock = 0x80000 / 0x4000;
+        constexpr size_t kStaleBlock = 0x3B0;
+        constexpr size_t kPoolBlock = 0x3F0;
+        constexpr size_t kBadBlock = 0x3C0;
+        for (const size_t block : {kSlotOneBlock, kStaleBlock, kPoolBlock}) {
+            BlockMetadata stale{};
+            stale.logical_block_id = static_cast<uint16_t>(block);
+            stale.block_type = 0x28;
+            donor->flash_driver.write_block(block, Bytes(0x4000, 0x5A));
+            donor->flash_driver.write_block_metadata(block, stale);
+        }
+        donor->flash_driver.mark_bad_block(kBadBlock);
+
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.metadata.nand_image = donor->flash_driver.serialize();
+        const auto built = RunBuild(input);
+        const auto image = built ? parse_image(*built) : std::nullopt;
+        if (!require(image.has_value(), "a build over a donor with old data parses")) {
+            return false;
+        }
+        const auto& driver = image->flash_driver;
+        const size_t pages = driver.pages_per_block();
+
+        // The header block is zero from the header to the SMC; the boot chain's last 16 KiB
+        // block is zero past its end; the rest up to the first update slot is erased.
+        const auto smc_offset = driver.read_clean(0x7C, 4);
+        const size_t smc_at = smc_offset.size() == 4
+                                  ? (size_t(smc_offset[0]) << 24) | (size_t(smc_offset[1]) << 16) |
+                                        (size_t(smc_offset[2]) << 8) | smc_offset[3]
+                                  : 0;
+        size_t chain_end = 0x8000;
+        const auto account = [&chain_end](const auto& bootloader) {
+            chain_end += (bootloader.serialize().size() + 0xF) & ~size_t{0xF};
+        };
+        account(image->cb_section.cb_or_A);
+        if (image->cb_section.cb_x) {
+            account(*image->cb_section.cb_x);
+        }
+        if (image->cb_section.cb_B) {
+            account(*image->cb_section.cb_B);
+        }
+        if (image->cb_section.sc) {
+            account(*image->cb_section.sc);
+        }
+        account(image->kernel_section.cd);
+        if (image->kernel_section.ce) {
+            account(*image->kernel_section.ce);
+        }
+        const size_t pad_end = (chain_end + 0x3FFF) / 0x4000 * 0x4000;
+
+        return require(smc_at > 0x80 && all_bytes(driver.read_clean(0x80, smc_at - 0x80), 0),
+                       "the header block is zero from the header to the SMC") &&
+               require(pad_end < 0x70000 &&
+                           all_bytes(driver.read_clean(chain_end, pad_end - chain_end), 0),
+                       "the boot chain's last block is zero past the chain") &&
+               require(pages_are_erased(driver, pad_end / 512, (0x70000 - pad_end) / 512),
+                       "the blocks between the chain and the first update slot stay erased") &&
+               require(pages_are_erased(driver, kSlotOneBlock * pages, 4 * pages),
+                       "an unused update slot 1 is erased, not zeroed or left to the donor") &&
+               require(pages_are_erased(driver, kStaleBlock * pages, pages),
+                       "a donor's old filesystem block is erased") &&
+               require(pages_are_erased(driver, kPoolBlock * pages, pages),
+                       "a donor's remap-pool block is erased") &&
+               require(driver.is_bad_block(kBadBlock), "a block marked bad keeps its mark");
+    }
+
+    bool test_emmc_build_leaves_anchor_tails_and_unused_blocks_erased() {
+        using gxbuild3::NAND::CoronaConfig;
+        const auto built = RunBuild(fresh_input(ImageType::Emmc));
+        if (!require(built.has_value() && built->size() == 0x3000000, "an eMMC image builds")) {
+            return false;
+        }
+        const std::span<const uint8_t> bytes(*built);
+        bool ok = true;
+        for (const size_t anchor : CoronaConfig::kOffsets) {
+            ok = require(all_bytes(bytes.subspan(anchor + CoronaConfig::kSize,
+                                                 CoronaConfig::kSpan - CoronaConfig::kSize),
+                                   0),
+                         "an anchor's span is zero after its structure") &&
+                 require(all_bytes(bytes.subspan(anchor + CoronaConfig::kSpan,
+                                                 CoronaConfig::kBlockSize - CoronaConfig::kSpan),
+                                   0xFF),
+                         "an anchor's block is erased past its span") &&
+                 ok;
+        }
+        return require(all_bytes(bytes.subspan(0x80000, 0x10000), 0xFF),
+                       "an unused eMMC update slot 1 is erased") &&
+               require(all_bytes(bytes.subspan(0xB00 * 0x4000, 0x4000), 0xFF),
+                       "an unused eMMC block is erased") &&
+               ok;
+    }
+
+    bool test_bigblock_flashfs_stamps_only_the_clusters_it_fills() {
+        auto input = fresh_input(ImageType::BigBlock);
+        input.flashfs_sec =
+            std::vector<std::pair<std::string, Bytes>>{{"small.bin", Bytes(0x100, 0x6B)}};
+        const auto built = RunBuild(input);
+        const auto image = built ? parse_image(*built) : std::nullopt;
+        const auto entry =
+            image && image->filesystem ? image->filesystem->stat("small.bin") : std::nullopt;
+        if (!require(entry.has_value(), "a big-block image with one small file parses")) {
+            return false;
+        }
+        const auto& driver = image->flash_driver;
+        const size_t clusters_per_block = driver.block_size_clean() / 0x4000;
+        const size_t file_cluster = entry->block_number;
+        const size_t first_cluster = file_cluster / clusters_per_block * clusters_per_block;
+        bool rest_erased = true;
+        for (size_t cluster = first_cluster; cluster < first_cluster + clusters_per_block;
+             ++cluster) {
+            if (cluster != file_cluster && !pages_are_erased(driver, cluster * 32, 32)) {
+                rest_erased = false;
+            }
+        }
+        return require(driver.interpret_cluster(file_cluster).block_type == 0x2A,
+                       "the file's cluster carries the big-block data stamp") &&
+               require(rest_erased, "the rest of the file's big block stays erased");
+    }
+
+    // A plaintext devkit chain as a release ships it: SB, SC, SD and SE with zero nonces and
+    // a recognizable body each. SE states build 17489.
+    InputBootloaders devkit_bootloaders() {
+        BootloaderCb sb{};
+        sb.header.header.magic = NANDBootloaderMagic::SB;
+        sb.header.header.version = 10375;
+        // Long enough to hold a whole CB header, so its per-box block reads back.
+        sb.data.assign(0x400, 0);
+        std::fill(sb.data.begin() + 0x100, sb.data.end(), 0x5B);
+        sb.header.header.size = static_cast<uint32_t>(sizeof(generic_header) + sb.data.size());
+        sb.decrypted = true;
+
+        BootloaderSc sc{};
+        sc.header.header.magic = NANDBootloaderMagic::SC;
+        sc.header.header.version = 17489;
+        sc.data.assign(0x48, 0x5C);
+        sc.header.header.size = static_cast<uint32_t>(sizeof(sc_header) + sc.data.size());
+        sc.decrypted = true;
+
+        BootloaderCd sd{};
+        sd.header.header.magic = NANDBootloaderMagic::SD;
+        sd.header.header.version = 17489;
+        sd.data.assign(0x30, 0x5D);
+        sd.header.header.size = static_cast<uint32_t>(sizeof(cd_header) + sd.data.size());
+        sd.decrypted = true;
+
+        BootloaderCe se{};
+        se.header.header.magic = NANDBootloaderMagic::SE;
+        se.header.header.version = 17489;
+        se.data.assign(0x42, 0x5E);
+        se.header.header.size = static_cast<uint32_t>(sizeof(ce_header) + se.data.size());
+        se.decrypted = true;
+
+        InputBootloaders bootloaders{};
+        bootloaders.cb_or_a = sb.serialize();
+        bootloaders.sc = sc.serialize();
+        bootloaders.cd = sd.serialize();
+        bootloaders.ce = se.serialize();
+        return bootloaders;
+    }
+
+    Input devkit_input(ImageType image_type) {
+        auto input = fresh_input(image_type);
+        input.build_type = BuildType::Devkit;
+        input.console = ConsoleType::Jasper;
+        input.bootloaders = devkit_bootloaders();
+        input.metadata.pairing_data = {0x12, 0x34, 0x56};
+        return input;
+    }
+
+    std::array<uint8_t, 16> hmac_key(std::span<const uint8_t> parent,
+                                     std::span<const uint8_t> nonce) {
+        uint8_t digest[20];
+        ExCryptHmacSha(parent.data(), static_cast<uint32_t>(parent.size()), nonce.data(),
+                       static_cast<uint32_t>(nonce.size()), nullptr, 0, nullptr, 0, digest, 20);
+        std::array<uint8_t, 16> key{};
+        std::copy_n(digest, key.size(), key.begin());
+        return key;
+    }
+
+    // A stage opened by hand: its nonce at 0x10 keys RC4 over everything from 0x20.
+    Bytes open_stage(Bytes stage, std::span<const uint8_t> key) {
+        ExCryptRc4(key.data(), static_cast<uint32_t>(key.size()), stage.data() + 0x20,
+                   static_cast<uint32_t>(stage.size() - 0x20));
+        return stage;
+    }
+
+    bool test_devkit_chain_is_sealed_from_the_zero_secret() {
+        const auto input = devkit_input(ImageType::NewSmallBlock);
+        const auto built = RunBuild(input);
+        if (!require(built.has_value() && built->size() == 0x4200000,
+                     "a small-block devkit image is 64 MB with spare")) {
+            return false;
+        }
+
+        const auto header = read_logical(*built, 0, 0x80);
+        const uint32_t chain_end = 0x8000 + align_16(uint32_t(input.bootloaders.cb_or_a.size())) +
+                                   align_16(uint32_t(input.bootloaders.sc->size())) +
+                                   align_16(uint32_t(input.bootloaders.cd.size())) +
+                                   align_16(uint32_t(input.bootloaders.ce->size()));
+        const uint32_t slot = (chain_end + 0x3FFF) & ~uint32_t{0x3FFF};
+        const std::string_view copyright =
+            header ? std::string_view(reinterpret_cast<const char*>(header->data() + 0x10), 0x37)
+                   : std::string_view{};
+        if (!require(header && read_be16(*header, 0x02) == 17489,
+                     "the devkit header states the SE build") ||
+            !require(read_be16(*header, 0x04) == 0x8000,
+                     "the devkit header states 0x8000 at 0x04") ||
+            !require(copyright.find("2004-2010") != std::string_view::npos,
+                     "the devkit header states 2010 on a Jasper") ||
+            !require(read_be32(*header, 0x0C) == slot && read_be32(*header, 0x64) == slot,
+                     "the first slot follows the chain at the next erase block") ||
+            !require(read_be16(*header, 0x68) == 2 && read_be32(*header, 0x70) == 0x10000,
+                     "the devkit header states two slots of 0x10000") ||
+            !require(read_be32(*header, 0x48) == 0 && read_be32(*header, 0x4C) == 0,
+                     "a devkit image states no hack or boot flags")) {
+            return false;
+        }
+
+        size_t at = 0x8000;
+        const auto stored = [&](const Bytes& supplied) {
+            auto bytes = read_logical(*built, at, supplied.size());
+            at += align_16(static_cast<uint32_t>(supplied.size()));
+            return bytes.value_or(Bytes{});
+        };
+        const auto sb = stored(input.bootloaders.cb_or_a);
+        const auto sc = stored(*input.bootloaders.sc);
+        const auto sd = stored(input.bootloaders.cd);
+        const auto se = stored(*input.bootloaders.ce);
+        const auto nonce = [](const Bytes& stage) {
+            return std::span<const uint8_t>(stage).subspan(0x10, 0x10);
+        };
+        const std::array<uint8_t, 16> zero{};
+        const auto k_sb = hmac_key(std::span(key_1bl), nonce(sb));
+        const auto k_sc = hmac_key(zero, nonce(sc));
+        const auto k_sd = hmac_key(k_sc, nonce(sd));
+        const auto k_se = hmac_key(k_sd, nonce(se));
+        const auto sb_plain = open_stage(sb, k_sb);
+        const auto body_equal = [](const Bytes& opened, const Bytes& supplied, size_t from) {
+            return opened.size() == supplied.size() &&
+                   std::equal(opened.begin() + from, opened.end(), supplied.begin() + from);
+        };
+        return require(body_equal(sb_plain, input.bootloaders.cb_or_a, 0x40),
+                       "SB opens under HMAC(1BL key, nonce)") &&
+               require(std::equal(sb_plain.begin() + 0x20, sb_plain.begin() + 0x23,
+                                  input.metadata.pairing_data.begin()),
+                       "SB carries the console's pairing") &&
+               require(!zero_between(sb_plain, 0x30, 0x40),
+                       "SB binds the SMC in its per-box digest") &&
+               require(body_equal(open_stage(sc, k_sc), *input.bootloaders.sc, 0x20),
+                       "SC opens under HMAC(16 zero bytes, nonce)") &&
+               require(body_equal(open_stage(sd, k_sd), input.bootloaders.cd, 0x20),
+                       "SD opens under HMAC(SC key, nonce)") &&
+               require(body_equal(open_stage(se, k_se), *input.bootloaders.ce, 0x20),
+                       "SE opens under HMAC(SD key, nonce)");
+    }
+
+    bool test_devkit_image_reads_back_and_rebuilds_its_chain() {
+        const auto input = devkit_input(ImageType::NewSmallBlock);
+        const auto built = RunBuild(input);
+        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        if (!require(extracted.has_value(), "a devkit image parses and opens") ||
+            !require(extracted->build_type == BuildType::Devkit &&
+                         extracted->image_type == ImageType::NewSmallBlock,
+                     "a devkit image reads back as a small-block devkit image") ||
+            !require(extracted->bootloaders.sc && extracted->bootloaders.ce,
+                     "the whole SB/SC/SD/SE chain reads back")) {
+            return false;
+        }
+        // An opened stage runs to its 16-byte boundary; the rounding reads back zero.
+        const auto tail_equal = [](const Bytes& opened, const Bytes& supplied) {
+            return opened.size() == align_16(static_cast<uint32_t>(supplied.size())) &&
+                   std::equal(supplied.begin() + 0x40, supplied.end(), opened.begin() + 0x40) &&
+                   zero_between(opened, supplied.size(), opened.size());
+        };
+        if (!require(tail_equal(extracted->bootloaders.cb_or_a, input.bootloaders.cb_or_a) &&
+                         tail_equal(*extracted->bootloaders.sc, *input.bootloaders.sc) &&
+                         tail_equal(extracted->bootloaders.cd, input.bootloaders.cd) &&
+                         tail_equal(*extracted->bootloaders.ce, *input.bootloaders.ce),
+                     "every stage reads back as the plaintext it was built from") ||
+            !require(extracted->metadata.pairing_data == input.metadata.pairing_data,
+                     "the SB's pairing reads back")) {
+            return false;
+        }
+
+        // Rebuilt over itself, every stage keeps the nonce at its position, so the sealed chain
+        // comes out byte for byte.
+        const auto rebuilt = RunBuild(*extracted);
+        const auto header = read_logical(*built, 0, 0x80);
+        const uint32_t slot = header ? read_be32(*header, 0x64) : 0;
+        const auto chain = read_logical(*built, 0, slot);
+        const auto rebuilt_chain = rebuilt ? read_logical(*rebuilt, 0, slot) : std::nullopt;
+        return require(rebuilt.has_value() && rebuilt->size() == built->size(),
+                       "an extracted devkit image builds again in its own shape") &&
+               require(chain && rebuilt_chain && chain == rebuilt_chain,
+                       "the header, SMC, keyvault and sealed chain rebuild byte for byte");
+    }
+
+    bool test_devkit_nonces_come_from_donor_positions() {
+        auto input = devkit_input(ImageType::BigBlock);
+        DonorNonces donor{};
+        for (size_t index = 0; index < donor.stages.size(); ++index) {
+            BootloaderNonce nonce{};
+            nonce.fill(static_cast<uint8_t>(0xA0 + index));
+            donor.stages[index] = nonce;
+        }
+        input.metadata.donor_nonces = donor;
+        const auto built = RunBuild(input);
+        if (!require(built.has_value() && built->size() == 0x4200000,
+                     "a big-block devkit image builds")) {
+            return false;
+        }
+        size_t at = 0x8000;
+        bool ok = true;
+        const std::array<const Bytes*, 4> stages{&input.bootloaders.cb_or_a, &*input.bootloaders.sc,
+                                                 &input.bootloaders.cd, &*input.bootloaders.ce};
+        for (size_t index = 0; index < stages.size(); ++index) {
+            const auto nonce = read_logical(*built, at + 0x10, 0x10);
+            ok = ok && nonce && std::all_of(nonce->begin(), nonce->end(), [index](uint8_t b) {
+                     return b == 0xA0 + index;
+                 });
+            at += align_16(static_cast<uint32_t>(stages[index]->size()));
+        }
+        const auto header = read_logical(*built, 0, 0x80);
+        return require(ok, "SB, SC, SD and SE take the donor's CB_A, CB_B, CD and CE nonces") &&
+               require(header && read_be32(*header, 0x64) == 0x20000 &&
+                           read_be32(*header, 0x70) == 0x20000,
+                       "a big-block devkit slot follows the chain at the next 0x20000 block");
+    }
+
+    // A 16 MB donor gives a devkit image its nonces and console data; the image itself is the
+    // 64 MB shape the console's spare layout takes.
+    bool test_devkit_image_takes_its_own_shape_beside_a_16_mb_donor() {
+        auto donor_input = fresh_input(ImageType::NewSmallBlock);
+        // A donor's nonces are read off a chain that reaches CE.
+        BootloaderCe ce{};
+        ce.header.header.magic = NANDBootloaderMagic::CE;
+        ce.header.header.version = 1;
+        ce.data.assign(0x20, 0x45);
+        ce.header.header.size = static_cast<uint32_t>(sizeof(ce_header) + ce.data.size());
+        ce.decrypted = true;
+        donor_input.bootloaders.ce = ce.serialize();
+        const auto donor = RunBuild(donor_input);
+        if (!require(donor.has_value() && donor->size() == 0x1080000, "16 MB donor builds")) {
+            return false;
+        }
+        auto input = devkit_input(ImageType::NewSmallBlock);
+        input.metadata.nand_image = *donor;
+        const auto built = RunBuild(input);
+        auto image = built ? parse_image(*built) : std::nullopt;
+        const auto donor_cb = read_logical(*donor, 0x8010, 0x10);
+        const auto sb_nonce = built ? read_logical(*built, 0x8010, 0x10) : std::nullopt;
+        return require(built.has_value() && built->size() == 0x4200000 && image.has_value(),
+                       "the devkit image is 64 MB beside a 16 MB donor") &&
+               require(image->flash_driver.driver_mode() == Driver::DriverMode::NewSmall,
+                       "it keeps the donor's spare layout") &&
+               require(image->build_type == BuildType::Devkit, "it reads back as devkit") &&
+               require(donor_cb && sb_nonce && donor_cb == sb_nonce,
+                       "its SB takes the donor's first CB nonce");
+    }
+
+    bool test_raw_patches_are_written_last_and_bounded() {
+        auto input = devkit_input(ImageType::NewSmallBlock);
+        input.raw_patches.push_back(InputRawPatch{"reason.bin", 0x4E, Bytes{0x12}});
+        input.raw_patches.push_back(InputRawPatch{"khv.bin", 0xE4000, Bytes(0x20, 0x77)});
+        const auto built = RunBuild(input);
+        const auto reason = built ? read_logical(*built, 0x4E, 1) : std::nullopt;
+        const auto khv = built ? read_logical(*built, 0xE4000, 0x20) : std::nullopt;
+        if (!require(reason == Bytes{0x12}, "a raw patch overwrites the header byte it names") ||
+            !require(khv == Bytes(0x20, 0x77), "a raw patch lands at its clean offset")) {
+            return false;
+        }
+        auto outside = devkit_input(ImageType::NewSmallBlock);
+        outside.raw_patches.push_back(InputRawPatch{"far.bin", 0x3FFFFFF, Bytes{1, 2}});
+        const auto refused = RunBuild(outside);
+        return require(!refused && refused.error().code == BuildErrorCode::SerializationFailure,
+                       "a raw patch running past the image is refused");
+    }
+
+    // A devgl image: the devkit chain with the glitch2m patch file's CD section on its SD, the SD
+    // signed again with a throwaway SB key, and fuses and KHV patches in the second slot.
+    Bytes devgl_khv() {
+        Bytes khv;
+        append_be32(khv, 0x00001000);
+        append_be32(khv, 2);
+        append_be32(khv, 0x60000000);
+        append_be32(khv, 0x4E800020);
+        return khv;
+    }
+
+    uint32_t devgl_sd_patch_address(const Input& input) {
+        return static_cast<uint32_t>(input.bootloaders.cd.size() + 0x10);
+    }
+
+    Input devgl_input(ImageType image_type) {
+        auto input = devkit_input(image_type);
+        input.build_type = BuildType::Devgl;
+        InputPatches patches{};
+        patches.automatic =
+            InputPatchFile{"patches_g2mjasper.bin",
+                           glitch_patchset(0x20, 0xA1B2C3D4, devgl_sd_patch_address(input),
+                                           0x10203040, devgl_khv())};
+        input.patches = std::move(patches);
+        InputPayloads payloads{};
+        payloads.fuses = Bytes(0x60, 0xF5);
+        input.payloads = std::move(payloads);
+        input.sb_private_key = xe_rsa_test::shared_private_key();
+        return input;
+    }
+
+    bool test_devgl_image_patches_and_signs_its_sd() {
+        const auto input = devgl_input(ImageType::NewSmallBlock);
+        const auto built = RunBuild(input);
+        if (!require(built.has_value() && built->size() == 0x1080000,
+                     "a Jasper devgl image keeps the console's 16 MB shape")) {
+            return false;
+        }
+        const auto header = read_logical(*built, 0, 0x80);
+        const std::string_view copyright =
+            header ? std::string_view(reinterpret_cast<const char*>(header->data() + 0x10), 0x37)
+                   : std::string_view{};
+        if (!require(header && read_be16(*header, 0x02) == 0x0760 && read_be16(*header, 0x04) == 0,
+                     "the devgl header states 0x0760 and no 0x8000") ||
+            !require(read_be32(*header, 0x48) == 1 && read_be32(*header, 0x4C) == 0x12,
+                     "a devgl image states the hack flag and the eject XeLL button") ||
+            !require(read_be32(*header, 0x0C) == 0xD0000 && read_be32(*header, 0x64) == 0xD0000,
+                     "the first slot is stated at 0xD0000") ||
+            !require(read_be16(*header, 0x68) == 2 && read_be32(*header, 0x70) == 0x10000,
+                     "two slots of 0x10000") ||
+            !require(copyright.find("2004-2009") != std::string_view::npos,
+                     "a Jasper devgl image states the Jasper year")) {
+            return false;
+        }
+
+        const uint32_t sd_size = align_16(devgl_sd_patch_address(input) + 4);
+        size_t at = 0x8000;
+        const auto stored = [&](size_t size) {
+            auto bytes = read_logical(*built, at, size);
+            at += align_16(static_cast<uint32_t>(size));
+            return bytes.value_or(Bytes{});
+        };
+        const auto sb = stored(input.bootloaders.cb_or_a.size());
+        const auto sc = stored(input.bootloaders.sc->size());
+        const auto sd = stored(sd_size);
+        const auto nonce = [](const Bytes& stage) {
+            return std::span<const uint8_t>(stage).subspan(0x10, 0x10);
+        };
+        const std::array<uint8_t, 16> zero{};
+        const auto k_sc = hmac_key(zero, nonce(sc));
+        const auto sb_plain = open_stage(sb, hmac_key(std::span(key_1bl), nonce(sb)));
+        const auto sd_plain = open_stage(sd, hmac_key(k_sc, nonce(sd)));
+        const auto key = gxbuild3::utils::XeRsaPrivateKey::parse(*input.sb_private_key);
+        const auto slot = read_logical(*built, 0xE0000, 0x60 + devgl_khv().size() + 4);
+        auto expected_slot = Bytes(0x60, 0xF5);
+        const auto khv = devgl_khv();
+        expected_slot.insert(expected_slot.end(), khv.begin(), khv.end());
+        append_be32(expected_slot, 0xFFFFFFFF);
+        const auto image = parse_image(*built);
+        return require(zero_between(sb_plain, 0x20, 0x40) &&
+                           std::equal(sb_plain.begin() + 0x40, sb_plain.end(),
+                                      input.bootloaders.cb_or_a.begin() + 0x40),
+                       "the SB is zero-paired and carries no patch") &&
+               require(read_be32(sd_plain, 0x0C) == sd_size &&
+                           read_be32(sd_plain, devgl_sd_patch_address(input)) == 0x10203040,
+                       "the SD carries the CD patch section and states its patched size") &&
+               require(key && gxbuild3::utils::verify_sd_signature(sd_plain, key->public_key()),
+                       "the patched SD is signed with the SB private key") &&
+               require(slot == expected_slot,
+                       "the fuses and KHV patches fill the second slot at 0xE0000") &&
+               require(image && image->build_type == BuildType::Devgl,
+                       "the image reads back as devgl");
+    }
+
+    bool test_big_block_devgl_slots_follow_the_big_block_step() {
+        const auto built = RunBuild(devgl_input(ImageType::BigBlock));
+        const auto header = built ? read_logical(*built, 0, 0x80) : std::nullopt;
+        const auto fuses = built ? read_logical(*built, 0x100000, 0x60) : std::nullopt;
+        return require(header && read_be32(*header, 0x64) == 0xE0000 &&
+                           read_be32(*header, 0x70) == 0x20000,
+                       "a big-block devgl image states its first slot at 0xE0000") &&
+               require(fuses == Bytes(0x60, 0xF5), "its fuses go to 0x100000");
+    }
+
+    bool test_devgl_needs_a_well_formed_sb_private_key() {
+        auto missing = devgl_input(ImageType::NewSmallBlock);
+        missing.sb_private_key.reset();
+        auto malformed = devgl_input(ImageType::NewSmallBlock);
+        malformed.sb_private_key = Bytes(gxbuild3::utils::kXeRsa2048PrivateKeySize, 0);
+        const auto refused_missing = RunBuild(missing);
+        const auto refused_malformed = RunBuild(malformed);
+        return require(!refused_missing &&
+                           refused_missing.error().code == BuildErrorCode::InvalidInput &&
+                           refused_missing.error().message.find("SB private key") !=
+                               std::string::npos,
+                       "a devgl build without the SB private key is refused") &&
+               require(!refused_malformed &&
+                           refused_malformed.error().code == BuildErrorCode::InvalidInput,
+                       "a devgl build with a malformed key is refused");
+    }
 } // namespace
 
 int main() {
     bool passed = true;
     passed = test_glitch_patches_resize_cb_and_cd_and_update_declared_sizes() && passed;
     passed = test_glitch2_targets_cbb() && passed;
+    passed = test_glitch2m_cd_patch_states_the_16_byte_aligned_size() && passed;
+    passed = test_glitch_types_patch_a_clean_retail_smc() && passed;
     passed = test_noblpatch_skips_bootloader_mutation_but_writes_khv() && passed;
+    passed = test_nopatch_skips_only_the_named_stages() && passed;
     passed = test_jtag_patchset_is_serialized_at_fixed_region() && passed;
+    passed = test_jtag_flows_payload_and_extra_bootloaders() && passed;
+    passed = test_jtag_window_padding_is_programmed_like_xebuild() && passed;
+    passed = test_jtag_refuses_a_clean_smc() && passed;
     passed = test_patch_regions_reject_overflow() && passed;
     passed = test_runbuild_rejects_retail_and_devkit_addon_patch_data() && passed;
+    passed = test_devkit_chain_is_sealed_from_the_zero_secret() && passed;
+    passed = test_devkit_image_reads_back_and_rebuilds_its_chain() && passed;
+    passed = test_devkit_nonces_come_from_donor_positions() && passed;
+    passed = test_devkit_image_takes_its_own_shape_beside_a_16_mb_donor() && passed;
+    passed = test_raw_patches_are_written_last_and_bounded() && passed;
+    passed = test_devgl_image_patches_and_signs_its_sd() && passed;
+    passed = test_big_block_devgl_slots_follow_the_big_block_step() && passed;
+    passed = test_devgl_needs_a_well_formed_sb_private_key() && passed;
     passed = test_glitch_patch_region_does_not_overwrite_mobile_data() && passed;
-    passed = test_glitch_patch_follows_xell_and_patch_slots() && passed;
+    passed = test_glitch_patch_uses_header_overlay_anchor() && passed;
     passed = test_bigblock_glitch_uses_big_patch_stride() && passed;
-    passed = test_glitch_patch_rejects_rebooter_overlap() && passed;
+    passed = test_glitch_patch_is_disjoint_from_rebooter_without_xell() && passed;
     passed = test_jtag_xell_without_rebooter_preserves_patches_and_uses_fixed_offset() && passed;
     passed = test_glitch_xell_shifts_patchslots_on_small_and_big_layouts() && passed;
     passed = test_small_glitch_xell_rejects_fixed_payload_collisions() && passed;
     passed = test_donor_transition_rejects_retained_glitch_xell_collision() && passed;
-    passed = test_fixed_payloads_roundtrip_in_valid_jtag_and_bigblock_glitch_layouts() && passed;
-    passed = test_bigblock_and_emmc_glitch_retain_disjoint_fixed_payloads() && passed;
+    passed = test_fixed_payloads_roundtrip_in_valid_jtag_layout() && passed;
     passed = test_small_glitch_patch_base_xell_owns_overlapping_fixed_payload_offsets() && passed;
     passed = test_patch_base_xell_ownership_never_falls_back_to_an_internal_jtag_elf() && passed;
-    passed = test_big_and_emmc_shifted_patch_base_allow_disjoint_jtag_xell_fallback() && passed;
+    passed = test_big_and_emmc_glitch_do_not_infer_jtag_inside_xell() && passed;
+    passed = test_bigblock_glitch_xell_anchors_at_patch_base_and_shifts_cf() && passed;
     passed = test_unambiguous_jtag_xell_preserves_fixed_payload_extraction() && passed;
     passed = test_boot_chain_collision_is_rejected_for_unpatched_payload_layouts() && passed;
     passed = test_bootloader_patch_end_is_bounded_by_boot_chain_layout() && passed;
     passed = test_invalid_input_returns_structured_error() && passed;
-    passed = test_emmc_rejects_mobile_slots_without_corona_metadata_fields() && passed;
-    passed = test_emmc_donor_rejects_each_high_mobile_when_requested_type_is_mismatched() && passed;
+    passed = test_emmc_lays_four_anchor_mobiles_and_drops_the_rest() && passed;
+    passed = test_emmc_donor_lays_four_anchor_mobiles_and_drops_the_rest() && passed;
     passed = test_nand_donor_accepts_high_mobile_when_requested_type_is_emmc() && passed;
     passed = test_donor_overlays_replace_explicit_values_and_preserve_mobile_slots() && passed;
     passed = test_mobile_overlay_replaces_longer_donor_mobile_without_stale_tail() && passed;
-    passed = test_mobile_overlay_clears_donor_size_when_replacement_exceeds_uint16() && passed;
+    passed = test_mobile_overlay_longer_than_one_block_is_refused() && passed;
     passed = test_extracted_plaintext_keyvault_reencrypts_for_a_fresh_layout() && passed;
     passed = test_donor_rejects_a_different_structurally_valid_cpu_key() && passed;
-    passed = test_custom_payload_is_rejected_without_an_on_disk_format_contract() && passed;
+    passed = test_payload_must_match_its_0x200_size_contract() && passed;
     passed = test_extract_all_preserves_complete_donor_baseline() && passed;
     passed = test_extract_some_info_reads_public_nand_metadata_without_cpu_key() && passed;
     passed = test_extract_all_info_reports_the_detected_block_type() && passed;
+    passed = test_extract_all_info_reads_the_fcrt_flag_big_endian() && passed;
     passed = test_sc_survives_extraction_and_backing_cleared_layout_override() && passed;
     passed = test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() && passed;
     passed = test_fresh_layouts_match_requested_image_types() && passed;
+    passed = test_header_0x74_stays_zero_on_fresh_and_rewritten_images() && passed;
     passed = test_bigblock_flashfs_formats_and_roundtrips_an_empty_overlay() && passed;
     passed = test_bigblock_flashfs_roundtrips_a_file_larger_than_16_kib() && passed;
     passed = test_secure_flashfs_files_roundtrip_through_extract_and_rebuild() && passed;
+    passed = test_secured_flashfs_files_are_sealed_for_the_console() && passed;
+    passed = test_a_damaged_fcrt_is_written_as_its_failed_opening() && passed;
+    passed = test_unusable_extended_and_secdata_are_made_up_clean() && passed;
     passed = test_big_block_donor_retains_flashfs_without_replacement() && passed;
     passed = test_flashfs_overlay_outranks_a_higher_sequence_donor_root() && passed;
     passed = test_serialized_mobile_overlay_skips_a_bad_donor_block() && passed;
@@ -2520,10 +4464,11 @@ int main() {
     passed = test_flashfs_directory_serialization_capacity() && passed;
     passed = test_bigblock_flashfs_overlay_handles_the_24_bit_sequence_limit() && passed;
     passed = test_emmc_mobile_slots_roundtrip_and_an_empty_input_removes_donor_data() && passed;
-    passed = test_emmc_rejects_each_mobile_slot_without_corona_metadata() && passed;
+    passed = test_emmc_takes_each_anchor_mobile_alone_and_drops_each_other_type() && passed;
+    passed = test_settings_blocks_follow_the_console_into_another_layout() && passed;
     passed = test_serialized_mobile_overlays_preserve_absent_slots_for_nand_layouts() && passed;
     passed = test_extraction_roundtrips_serialized_bootloaders_and_payloads() && passed;
-    passed = test_metadata_overrides_reach_final_patched_cb_b_and_all_cf_slots() && passed;
+    passed = test_metadata_overrides_reach_final_patched_cb_b_and_cf0() && passed;
     passed = test_metadata_override_requires_writable_cb_perbox() && passed;
     passed = test_present_unwritable_cb_b_remains_metadata_authoritative() && passed;
     passed = test_donor_bootloader_chain_is_replaced_by_input_presence() && passed;
@@ -2532,6 +4477,7 @@ int main() {
     passed = test_rebuilt_donor_uses_actual_cf_slot_base_for_each_build_type() && passed;
     passed = test_metadata_cf_roundtrip_preserves_extended_header_fields() && passed;
     passed = test_pairing_only_metadata_updates_every_cf_without_changing_ldv() && passed;
+    passed = test_jtag_first_update_pair_stays_unbound() && passed;
     passed = test_pairing_only_metadata_rejects_unwritable_cf_perbox() && passed;
     passed = test_generic_header_pairing_roundtrips_for_every_bootloader() && passed;
     passed = test_stage_specific_numeric_headers_are_host_order_and_wire_big_endian() && passed;
@@ -2539,8 +4485,19 @@ int main() {
     passed = test_cb_console_allow_host_value_encrypts_and_roundtrips_asymmetrically() && passed;
     passed = test_direct_payload_layout_rejects_header_only_required_records() && passed;
     passed = test_required_chain_relationships_reject_before_serialization() && passed;
-    passed = test_system_update_slot_zero_overflow_rejects_a_supplied_slot_one() && passed;
+    passed = test_system_update_slot_zero_spills_and_preserves_slot_one() && passed;
+    passed = test_flashfs_is_laid_as_xebuild_lays_it() && passed;
     passed = test_replacement_layout_overrides_a_one_slot_donor_header() && passed;
     passed = test_clear_bootloader_chain_clears_header_only_cb_and_cd_records() && passed;
+    passed = test_fresh_build_seals_stages_under_random_nonces() && passed;
+    passed = test_donor_nonces_seal_stages_by_position_and_every_slot_alike() && passed;
+    passed = test_extraction_takes_cf_metadata_and_nonces_from_the_max_ldv_slot() && passed;
+    passed = test_header_states_zero_pairing_and_the_board_copyright() && passed;
+    passed = test_hacked_header_states_boot_flags_two_slots_and_a_zeroed_khv_tail() && passed;
+    passed = test_donor_build_leaves_unlaid_space_erased() && passed;
+    passed = test_emmc_build_leaves_anchor_tails_and_unused_blocks_erased() && passed;
+    passed = test_bigblock_flashfs_stamps_only_the_clusters_it_fills() && passed;
+    passed = test_zero_cpu_key_zero_pairs_a_cb_b_chain() && passed;
+    passed = test_zero_cpu_key_leaves_the_donor_keyvault_sealed() && passed;
     return passed ? 0 : 1;
 }

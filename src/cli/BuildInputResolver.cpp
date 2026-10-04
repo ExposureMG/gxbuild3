@@ -3,11 +3,17 @@
 #include "BuildRunner.hpp"
 #include "InputValidator.hpp"
 #include "ini/IniParser.hpp"
+#include "nand/objects/Freeboot.hpp"
 #include "nand/objects/Keyvault.hpp"
+#include "nand/objects/SecuredFiles.hpp"
 #include "utils/FileManager.hpp"
+#include "utils/FusesetGenerator.hpp"
+#include "utils/Log.hpp"
 #include "utils/Utils.hpp"
+#include "utils/XeRsa.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <charconv>
 #include <fstream>
@@ -266,8 +272,7 @@ namespace gxbuild3::cli {
         apply_winning_metadata(InputMetadata& metadata, const OptionsArgs& file_options,
                                const OptionsArgs& cli_overrides, bool has_donor,
                                const std::filesystem::path& options_path) {
-            // Select a source before decoding it. In particular, malformed
-            // options.ini text must be irrelevant when donor or CLI data wins.
+            // select a source before decoding it
             if (cli_overrides.cbldv) {
                 auto value = parse_ldv(*cli_overrides.cbldv, "cbldv", {});
                 if (!value) {
@@ -302,12 +307,14 @@ namespace gxbuild3::cli {
                     return std::unexpected(value.error());
                 }
                 metadata.pairing_data = *value;
+                metadata.cf_pairing_data.reset();
             } else if (!has_donor && file_options.pairing_data) {
                 auto value = parse_pairing_data(*file_options.pairing_data, options_path);
                 if (!value) {
                     return std::unexpected(value.error());
                 }
                 metadata.pairing_data = *value;
+                metadata.cf_pairing_data.reset();
             }
             return {};
         }
@@ -383,12 +390,13 @@ namespace gxbuild3::cli {
                 case BuildType::Devkit:
                     return std::nullopt;
                 case BuildType::Jtag:
-                    return patch_name("fat", args.patch_extension);
-                case BuildType::Glitch:
                     return patch_name(args.section, args.patch_extension);
+                case BuildType::Glitch:
+                    return patch_name("fat", args.patch_extension);
                 case BuildType::Glitch2:
                     return patch_name("g2" + args.section, args.patch_extension);
                 case BuildType::Glitch2m:
+                case BuildType::Devgl:
                     return patch_name("g2m" + args.section, args.patch_extension);
                 case BuildType::Glitch3:
                     return patch_name((glitch3_fallback ? "g2" : "g3") + args.section,
@@ -442,6 +450,65 @@ namespace gxbuild3::cli {
             return std::optional<DirectFile>{};
         }
 
+        // Console-bound FlashFS files a build carries from the donor even when the INI
+        // does not list them.
+        bool is_donor_secured_file(std::string_view lowercase_name) {
+            static constexpr std::array<std::string_view, 5> kNames{
+                "crl.bin", "dae.bin", "extended.bin", "secdata.bin", "fcrt.bin"};
+            return std::find(kNames.begin(), kNames.end(), lowercase_name) != kNames.end();
+        }
+
+        // The SB private key a devgl build signs its SD with: SB_priv.bin, or SB_prv.bin as
+        // Xbox-360-Crypto names it, in any case, in each source root and then in a keys folder
+        // inside it, in root order. The first candidate of the key's size and CRC-32 is taken;
+        // any other is passed over with a warning naming it. The key's bytes are never logged.
+        std::expected<std::vector<uint8_t>, ResolutionError>
+        find_sb_private_key(const std::vector<std::filesystem::path>& roots) {
+            static constexpr std::array<std::string_view, 2> kNames{"sb_priv.bin", "sb_prv.bin"};
+            bool passed_over = false;
+            for (const auto& root : roots) {
+                for (const auto& directory : {root, root / "keys"}) {
+                    std::error_code status_error;
+                    if (!std::filesystem::is_directory(directory, status_error)) {
+                        continue;
+                    }
+                    std::vector<std::filesystem::path> entries;
+                    for (const auto& entry :
+                         std::filesystem::directory_iterator(directory, status_error)) {
+                        entries.push_back(entry.path());
+                    }
+                    std::sort(entries.begin(), entries.end());
+                    for (const auto name : kNames) {
+                        for (const auto& path : entries) {
+                            if (lowercase_basename(path.filename().string()) != name ||
+                                !std::filesystem::is_regular_file(path, status_error)) {
+                                continue;
+                            }
+                            auto data = Utils::read_file(
+                                path, gxbuild3::utils::kXeRsa2048PrivateKeySize + 1);
+                            if (data && data->size() == gxbuild3::utils::kXeRsa2048PrivateKeySize &&
+                                gxbuild3::utils::crc32(*data) ==
+                                    gxbuild3::utils::kSbPrivateKeyCrc32) {
+                                Log::Info("Using the SB private key {}", path.string());
+                                return std::move(*data);
+                            }
+                            Log::Warn("{} is not the SB private key (size or CRC-32 differs); it "
+                                      "is passed over",
+                                      path.string());
+                            passed_over = true;
+                        }
+                    }
+                }
+            }
+            return std::unexpected(error(
+                ResolutionErrorCode::SigningKeyNotFound,
+                std::string(passed_over ? "No candidate SB_priv.bin is the SB private key"
+                                        : "No SB_priv.bin (or SB_prv.bin) was found") +
+                    ": a devgl image's patched SD is signed again with the SB private key. Put "
+                    "SB_priv.bin in a source root or a keys folder inside one",
+                {}, "SB_priv.bin"));
+        }
+
         void overlay_flashfs(std::vector<std::pair<std::string, std::vector<uint8_t>>>& destination,
                              std::pair<std::string, std::vector<uint8_t>> file,
                              std::unordered_map<std::string, size_t>& positions) {
@@ -451,6 +518,88 @@ namespace gxbuild3::cli {
                 destination.push_back(std::move(file));
             } else {
                 destination[position->second] = std::move(file);
+            }
+        }
+
+        // Lists the FlashFS files as xeBuild 1.21 does: the INI's [flashfs] files and then its
+        // [security] files, each in the order the INI names them, then any secured file of the
+        // console's the INI does not name. A patch file stored with its slot suffix
+        // ("aac.xexp1") takes the place of the INI entry it came from ("aac.xexp").
+        void order_flashfs(std::vector<std::pair<std::string, std::vector<uint8_t>>>& files,
+                           const Ini::Document& ini) {
+            std::unordered_map<std::string, size_t> ranks;
+            for (const auto section_name : {"flashfs", "security"}) {
+                if (const auto* section = ini.get(section_name)) {
+                    for (const auto& entry : *section) {
+                        const auto key = lowercase_basename(FileManager::IniAssetName(entry.key));
+                        if (!key.empty() && key != "none") {
+                            ranks.emplace(key, ranks.size());
+                        }
+                    }
+                }
+            }
+            static constexpr std::array<std::string_view, 5> kSecured{
+                "crl.bin", "dae.bin", "extended.bin", "secdata.bin", "fcrt.bin"};
+            const auto rank = [&ranks](const std::string& name) {
+                auto key = lowercase_basename(name);
+                if (const auto it = ranks.find(key); it != ranks.end()) {
+                    return it->second;
+                }
+                if (!key.empty() && key.back() >= '0' && key.back() <= '9') {
+                    key.pop_back();
+                    if (const auto it = ranks.find(key); it != ranks.end()) {
+                        return it->second;
+                    }
+                }
+                const auto secured = std::find(kSecured.begin(), kSecured.end(), key);
+                return ranks.size() + static_cast<size_t>(secured - kSecured.begin());
+            };
+            std::stable_sort(files.begin(), files.end(),
+                             [&rank](const auto& left, const auto& right) {
+                                 return rank(left.first) < rank(right.first);
+                             });
+        }
+
+        // fcrt.bin is in the image as xeBuild 1.21 puts it there: when the INI's [security] lists
+        // it and a source supplies it, or (gxbuild3's carry-over) when the donor holds its own.
+        // The keyvault's flag adds nothing and drops nothing, and neither does nofcrt, which in
+        // xeBuild is a kernel patch (-a nofcrt). The flag only weighs an fcrt.bin the image
+        // lacks: for a listed one xeBuild reports an error when the keyvault requires it, with a
+        // note for hacked images on what a nofcrt patch can do, and passes over it otherwise. A
+        // required fcrt.bin the INI does not list is warned about here; xeBuild says nothing.
+        void weigh_missing_fcrt(const Ini::Document& ini,
+                                const std::optional<std::vector<uint8_t>>& keyvault,
+                                BuildType build_type) {
+            bool listed = false;
+            if (const auto* security = ini.get("security")) {
+                listed = std::any_of(security->begin(), security->end(), [](const auto& entry) {
+                    return lowercase_basename(FileManager::IniAssetName(entry.key)) == "fcrt.bin";
+                });
+            }
+            const auto requirement = keyvault ? gxbuild3::NAND::fcrt_requirement(*keyvault)
+                                              : gxbuild3::NAND::FcrtRequirement::NotRequired;
+            if (requirement == gxbuild3::NAND::FcrtRequirement::NotRequired) {
+                if (listed) {
+                    Log::Info("fcrt.bin was not found and the keyvault does not require it; it "
+                              "is left out");
+                }
+                return;
+            }
+            if (!listed) {
+                Log::Warn("The keyvault flags fcrt.bin as required, but the INI's [security] does "
+                          "not list it; it is left out");
+                return;
+            }
+            Log::Error("fcrt.bin was not found; the keyvault flags it as required, and it is left "
+                       "out");
+            if (build_type != BuildType::Retail && build_type != BuildType::Devkit) {
+                if (requirement == gxbuild3::NAND::FcrtRequirement::Required) {
+                    Log::Warn("On a hacked image a nofcrt patch (-a nofcrt) should let the drive "
+                              "and the console work");
+                } else {
+                    Log::Warn("On a hacked image a nofcrt patch (-a nofcrt) will not let the "
+                              "drive work, but should let the console boot");
+                }
             }
         }
 
@@ -650,11 +799,11 @@ namespace gxbuild3::cli {
                     return std::unexpected(found.error());
                 }
                 if (!*found) {
-                    return std::unexpected(error(
-                        ResolutionErrorCode::AssetNotFound,
-                        "Required INI bootloader '" + entry.key + "' from '" + ini_path.string() +
-                            "' was not found",
-                        ini_path, entry.key));
+                    return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
+                                                 "Required INI bootloader '" + entry.key +
+                                                     "' from '" + ini_path.string() +
+                                                     "' was not found",
+                                                 ini_path, entry.key));
                 }
             }
             for (const auto section_name : {"security", "flashfs"}) {
@@ -667,11 +816,29 @@ namespace gxbuild3::cli {
                     if (key.empty() || key == "none") {
                         continue;
                     }
-                    auto found = find_asset(entry.key, roots, scan_options);
+                    // A file from outside the release is looked up as the INI reader looks it
+                    // up: as a loose file under its path in the roots, then by its basename.
+                    const bool outside = FileManager::IniAssetIsOutside(entry.key);
+                    auto loose_options = scan_options;
+                    loose_options.nosu = true;
+                    const auto name = FileManager::IniAssetName(entry.key);
+                    auto found = outside ? find_asset(name, roots, loose_options)
+                                         : find_asset(entry.key, roots, scan_options);
+                    if (outside && found && !*found) {
+                        found = find_asset(std::filesystem::path(name).filename().string(), roots,
+                                           loose_options);
+                    }
                     if (!found) {
                         return std::unexpected(found.error());
                     }
-                    if (!*found && !donor_flashfs_names.contains(key)) {
+                    // A missing file from outside the release is skipped, as xeBuild skips it,
+                    // and so is a missing fcrt.bin, which the INI reader treats as optional. A
+                    // missing [security] extended.bin or secdata.bin is made up clean.
+                    const bool made_up = std::string_view(section_name) == "security" &&
+                                         !scan_options.nosusecurity &&
+                                         (key == "extended.bin" || key == "secdata.bin");
+                    const bool optional = outside || key == "fcrt.bin" || made_up;
+                    if (!*found && !optional && !donor_flashfs_names.contains(key)) {
                         return std::unexpected(error(
                             ResolutionErrorCode::AssetNotFound,
                             "Required INI payload '" + entry.key + "' from '" + ini_path.string() +
@@ -681,8 +848,8 @@ namespace gxbuild3::cli {
                 }
             }
 
-            const auto ini_files =
-                FileManager::ReadIniFiles(ini_path, target_section, roots, scan_options);
+            const auto ini_files = FileManager::ReadIniFiles(ini_path, target_section, roots,
+                                                             scan_options, args.build_type);
             if (!ini_files) {
                 return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
                                              "Could not resolve build INI assets", ini_path,
@@ -692,6 +859,7 @@ namespace gxbuild3::cli {
             Input input = foundations->donor.value_or(Input{});
             input.build_type = args.build_type;
             input.image_type = foundations->image_type;
+            input.console = args.console;
             input.options = foundations->options;
             input.metadata.cpu_key = foundations->cpu_key;
 
@@ -736,20 +904,35 @@ namespace gxbuild3::cli {
                 }
             }
 
+            // A kv.bin sealed under the CPU key is opened; one that does not open is taken as
+            // the console's keyvault in the clear (what J-Runner supplies for a console whose
+            // CPU key is unknown), as xeBuild 1.21 takes it, and sealed by the build under the
+            // CPU key. xeBuild warns of one in the clear under a stale nonce and reports one that
+            // looks sealed (most likely for another console) as an error, and so does this.
             if (*keyvault) {
-                try {
-                    input.metadata.keyvault =
-                        keyvault_decrypt(foundations->cpu_key, (**keyvault).data);
-                } catch (const std::exception& exception) {
+                auto opened =
+                    gxbuild3::NAND::open_loose_keyvault(foundations->cpu_key, (**keyvault).data);
+                if (!opened) {
                     return std::unexpected(
                         error(ResolutionErrorCode::InvalidInput,
-                              "Could not decrypt kv.bin: " + std::string(exception.what()),
+                              "kv.bin is not 0x4000 bytes, nor 0x3FF0 without its nonce",
                               (**keyvault).source_path, "kv.bin"));
-                } catch (...) {
-                    return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                                 "Could not decrypt kv.bin",
-                                                 (**keyvault).source_path, "kv.bin"));
                 }
+                using Form = gxbuild3::NAND::LooseKeyvault::Form;
+                if (opened->form == Form::StaleNonce) {
+                    Log::Warn("kv.bin is in the clear, but its nonce is not one the CPU key "
+                              "derives; it is taken as it stands. Make sure it is this console's");
+                } else if (opened->form == Form::Unopened) {
+                    Log::Error("kv.bin looks sealed but does not open under the CPU key; it is "
+                               "taken as the keyvault in the clear, as xeBuild takes it, and the "
+                               "image will not boot unless it is this console's keyvault");
+                }
+                input.metadata.keyvault = std::move(opened->plain);
+            } else if (foundations->donor && !input.metadata.keyvault) {
+                return std::unexpected(error(ResolutionErrorCode::InvalidInput,
+                                             "The donor's keyvault does not open under the CPU "
+                                             "key; supply the console's kv.bin",
+                                             {}, "kv.bin"));
             }
             if (*smc) {
                 input.metadata.smc = std::move((**smc).data);
@@ -768,25 +951,69 @@ namespace gxbuild3::cli {
             }
 
             input.bootloaders = ini_files->bootloaders;
+            input.raw_patches = ini_files->raw_patches;
 
+            // The FlashFS holds the INI [security] and [flashfs] files plus the console's
+            // secured files. From the donor it takes only those secured files and the
+            // INI-listed names that no source root supplies; its firmware, its patch files
+            // (*.xexpN, *.xttpN) and its CG tails (sysupdate.xexpN) are dropped. The image
+            // writer adds the CG tail of each slot it fills.
+            std::unordered_set<std::string> ini_flashfs_names;
+            for (const auto section_name : {"security", "flashfs"}) {
+                if (const auto* payload_section = ini_document->get(section_name)) {
+                    for (const auto& entry : *payload_section) {
+                        const auto key = lowercase_basename(entry.key);
+                        if (!key.empty() && key != "none") {
+                            ini_flashfs_names.insert(key);
+                        }
+                    }
+                }
+            }
             std::vector<std::pair<std::string, std::vector<uint8_t>>> flashfs;
-            if (input.flashfs_sec) {
-                flashfs = std::move(*input.flashfs_sec);
-            }
             std::unordered_map<std::string, size_t> flashfs_positions;
-            for (size_t index = 0; index < flashfs.size(); ++index) {
-                flashfs_positions.try_emplace(lowercase_basename(flashfs[index].first), index);
+            if (input.flashfs_sec) {
+                for (auto& file : *input.flashfs_sec) {
+                    const auto key = lowercase_basename(file.first);
+                    if (is_donor_secured_file(key) || ini_flashfs_names.contains(key)) {
+                        overlay_flashfs(flashfs, std::move(file), flashfs_positions);
+                    }
+                }
             }
+            // A loose extended.bin or secdata.bin too short to hold its nonce is passed as
+            // supplied: RunBuild makes up a clean one for any copy of the wrong length.
             for (auto file : ini_files->flashfs_sec) {
                 const auto key = lowercase_basename(file.first);
-                if ((key == "secdata.bin" || key == "extended.bin") &&
-                    !gxbuild3::NAND::crypt_secfile(foundations->cpu_key, file.second)) {
-                    return std::unexpected(
-                        error(ResolutionErrorCode::InvalidInput,
-                              "Could not decrypt secure INI file at the Input boundary", ini_path,
-                              file.first));
+                if ((key == "secdata.bin" || key == "extended.bin") && file.second.size() >= 0x10) {
+                    auto opened =
+                        key == "extended.bin"
+                            ? gxbuild3::NAND::open_loose_extended(file.second, foundations->cpu_key)
+                            : gxbuild3::NAND::open_loose_secdata(file.second, foundations->cpu_key);
+                    if (!opened) {
+                        return std::unexpected(
+                            error(ResolutionErrorCode::InvalidInput,
+                                  "Could not decrypt secure INI file at the Input boundary",
+                                  ini_path, file.first));
+                    }
+                    file.second = std::move(*opened);
                 }
                 overlay_flashfs(flashfs, std::move(file), flashfs_positions);
+            }
+            // An extended.bin or secdata.bin the INI's [security] names and nothing supplies is
+            // carried empty, and RunBuild makes up a clean one for it as xeBuild 1.21 does.
+            if (!scan_options.nosusecurity) {
+                if (const auto* security = ini_document->get("security")) {
+                    for (const auto& entry : *security) {
+                        const auto key = lowercase_basename(FileManager::IniAssetName(entry.key));
+                        if ((key == "extended.bin" || key == "secdata.bin") &&
+                            !flashfs_positions.contains(key)) {
+                            overlay_flashfs(flashfs, {key, {}}, flashfs_positions);
+                        }
+                    }
+                }
+            }
+            order_flashfs(flashfs, *ini_document);
+            if (!flashfs_positions.contains("fcrt.bin")) {
+                weigh_missing_fcrt(*ini_document, input.metadata.keyvault, args.build_type);
             }
             input.flashfs_sec = std::move(flashfs);
 
@@ -817,10 +1044,15 @@ namespace gxbuild3::cli {
                     }
                 }
                 if (!*automatic) {
-                    return std::unexpected(error(ResolutionErrorCode::PatchsetNotFound,
-                                                 "Required automatic patchset was not found", {},
-                                                 selected_name));
+                    const std::string message =
+                        args.build_type == BuildType::Glitch3
+                            ? "Required automatic patchset was not found (neither " +
+                                  *automatic_name + " nor " + selected_name + ")"
+                            : "Required automatic patchset was not found";
+                    return std::unexpected(
+                        error(ResolutionErrorCode::PatchsetNotFound, message, {}, selected_name));
                 }
+                Log::Info("Using patchset {}", (**automatic).path.string());
                 patches.automatic = InputPatchFile{selected_name, std::move((**automatic).data)};
                 has_patches = true;
             }
@@ -842,6 +1074,96 @@ namespace gxbuild3::cli {
                 input.patches = std::move(patches);
             } else {
                 input.patches.reset();
+            }
+
+            // JTAG and glitch builds have xell; JTAG also has a rebooter and payload, locked to
+            // freeboot for now.
+            // JTAG and g2m have generated vfuses.
+            const bool is_jtag = args.build_type == BuildType::Jtag;
+            const bool is_glitch_family =
+                args.build_type == BuildType::Glitch || args.build_type == BuildType::Glitch2 ||
+                args.build_type == BuildType::Glitch2m || args.build_type == BuildType::Glitch3;
+            const bool needs_fuses = is_jtag || args.build_type == BuildType::Glitch2m;
+            if (args.build_type == BuildType::Devgl) {
+                // A devgl image leaves XeLL to its FlashFS: its SE runs past where XeLL would
+                // go. Its fuses state the retail type and no allow bits, which no stage of its
+                // chain states, and the console's CPU key and CF LDV (xeBuild 1.21 devgl).
+                constexpr uint32_t kRetailConsoleWord = 0x01000000;
+                auto fuses = gxbuild3::utils::generate_fuseset(
+                    kRetailConsoleWord, foundations->cpu_key, input.metadata.cf_ldv.value_or(0));
+                if (!fuses) {
+                    return std::unexpected(error(ResolutionErrorCode::InvalidInput,
+                                                 "Could not generate the virtual fuseset", {},
+                                                 "fuses"));
+                }
+                InputPayloads payloads{};
+                payloads.fuses = std::move(*fuses);
+                input.payloads = std::move(payloads);
+
+                auto key = find_sb_private_key(roots);
+                if (!key) {
+                    return std::unexpected(key.error());
+                }
+                input.sb_private_key = std::move(*key);
+            } else if (is_jtag || is_glitch_family) {
+                InputPayloads payloads{};
+                const std::string xell_name = is_jtag ? "xell-2f.bin" : "xell-gggggg.bin";
+                auto xell = find_asset(xell_name, roots, scan_options);
+                if (!xell) {
+                    return std::unexpected(xell.error());
+                }
+                if (!*xell) {
+                    return std::unexpected(
+                        error(ResolutionErrorCode::AssetNotFound,
+                              "JTAG and glitch builds require a XeLL payload (" + xell_name + ")",
+                              {}, xell_name));
+                }
+                payloads.xell = std::move((**xell).data);
+
+                if (is_jtag) {
+                    // The core states the release's kernel version, the INI's [version], and
+                    // the payload loads exactly the core.
+                    std::string firmware_version;
+                    if (const auto* version_section = ini_document->get("version");
+                        version_section && !version_section->empty()) {
+                        firmware_version = version_section->front().key;
+                    }
+                    payloads.rebooter = gxbuild3::NAND::freeboot_rebooter_for(firmware_version);
+                    payloads.payload =
+                        gxbuild3::NAND::freeboot_payload_for(payloads.rebooter->size());
+                }
+
+                if (needs_fuses) {
+                    // Lines 1-2 come from the word at 0x3B0 of the CB the fuses are bound to:
+                    // a manufacturing chain's CB_B, or a JTAG image's second CB.
+                    const auto& fuse_cb =
+                        is_jtag ? input.bootloaders.extra_cb : input.bootloaders.cb_b;
+                    if (!fuse_cb) {
+                        return std::unexpected(error(
+                            ResolutionErrorCode::InvalidInput,
+                            is_jtag ? "Virtual fuses are built from the second CB, and section '" +
+                                          args.section + "' names none"
+                                    : "Virtual fuses are built from the CB_B, and section '" +
+                                          args.section + "' names none",
+                            {}, "fuses"));
+                    }
+                    const auto cb_word = gxbuild3::utils::read_cb_word(*fuse_cb);
+                    if (!cb_word) {
+                        return std::unexpected(error(ResolutionErrorCode::InvalidInput,
+                                                     "Could not read the console word of the CB "
+                                                     "the virtual fuses are built from",
+                                                     {}, "fuses"));
+                    }
+                    auto fuses = gxbuild3::utils::generate_fuseset(
+                        *cb_word, foundations->cpu_key, input.metadata.cf_ldv.value_or(0));
+                    if (!fuses) {
+                        return std::unexpected(error(ResolutionErrorCode::InvalidInput,
+                                                     "Could not generate the virtual fuseset", {},
+                                                     "fuses"));
+                    }
+                    payloads.fuses = std::move(*fuses);
+                }
+                input.payloads = std::move(payloads);
             }
 
             if (const auto validation = ValidateInput(input); !validation) {

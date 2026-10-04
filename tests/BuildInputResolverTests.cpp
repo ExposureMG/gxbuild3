@@ -1,4 +1,5 @@
 #include "BuildRunner.hpp"
+#include "XeRsaTestKey.hpp"
 #include "cli/BuildInputResolver.hpp"
 #include "excrypt.h"
 #include "nand/bootloaders/2bl.hpp"
@@ -6,6 +7,7 @@
 #include "nand/bootloaders/4bl.hpp"
 #include "nand/bootloaders/6bl.hpp"
 #include "nand/bootloaders/7bl.hpp"
+#include "nand/objects/Freeboot.hpp"
 #include "nand/objects/Keyvault.hpp"
 #include "nand/objects/Patchset.hpp"
 
@@ -47,6 +49,20 @@ namespace {
                       << result.error().item << "' message='" << result.error().message << "'\n";
         }
         return require(result.has_value(), message);
+    }
+
+    // xerunner test_build.py: a retail slim CB_B word, type 3 and allow bit 0.
+    constexpr uint32_t kFuseCbWord = 0x03010001;
+
+    Bytes cb_with_word(uint32_t word) {
+        Bytes cb(0x400, 0x00);
+        cb[0] = 0x43;
+        cb[1] = 0x42;
+        cb[0x3B0] = static_cast<uint8_t>(word >> 24);
+        cb[0x3B1] = static_cast<uint8_t>(word >> 16);
+        cb[0x3B2] = static_cast<uint8_t>(word >> 8);
+        cb[0x3B3] = static_cast<uint8_t>(word);
+        return cb;
     }
 
     Bytes valid_cpu_key(bool alternate = false) {
@@ -181,7 +197,7 @@ namespace {
         BootloaderCf cf{};
         cf.header.header.magic = NANDBootloaderMagic::CF;
         cf.header.header.version = 1;
-        cf.data.assign(0x200, 0);
+        cf.data.assign(0x340, 0);
         cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
         cf.decrypted = true;
         cf.parse_perbox();
@@ -270,12 +286,26 @@ namespace {
             write_binary("first/smc.bin", make_smc(0x61));
             write_binary("first/cb_1.bin", Bytes{0xCB, 0x01});
             write_binary("first/cd.bin", Bytes{0xCD, 0x01});
-            write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+            // Virtual fuses read their CB's word at 0x3B0: CB_B for glitch2m, the second CB
+            // for JTAG.
+            std::string ini = build_type == BuildType::Jtag ? "[version]\n17559\n\n" : "";
+            ini += "[falconbl]\ncb_1.bin\n";
+            if (build_type == BuildType::Glitch2m) {
+                write_binary("first/cbb_1.bin", cb_with_word(kFuseCbWord));
+                ini += "cbb_1.bin\n";
+            }
+            ini += "cd.bin\n";
+            if (build_type == BuildType::Jtag) {
+                write_binary("first/cb_2.bin", cb_with_word(kFuseCbWord));
+                ini += "cb_2.bin\n";
+            }
+            write_text("working/build.ini", ini);
             write_text("working/options.ini", "cbldv=2\ncfldv=3\npairing_data=010203\n");
 
             auto args = minimum_args();
             args.build_ini = "build.ini";
             args.section = "falcon";
+            args.console = ConsoleType::Falcon;
             args.build_type = build_type;
             args.image_type = image_type;
             return args;
@@ -705,7 +735,7 @@ namespace {
                            wrong_section.error().code == ResolutionErrorCode::SectionNotFound &&
                            wrong_section.error().path == fixture.path("working/build.ini") &&
                            wrong_section.error().item == "falconbl",
-                        "the resolver requires exactly [<section stem>bl] without inference");
+                       "the resolver requires exactly [<section stem>bl] without inference");
     }
 
     bool test_ini_sc_bootloader_reaches_resolved_input() {
@@ -779,6 +809,83 @@ namespace {
                        "the exact INI section supplies the bootloader chain");
     }
 
+    // A kv.bin that does not open under the CPU key is the console's keyvault in the clear, as
+    // J-Runner supplies it for a console whose key is unknown; one of 0x3FF0 bytes lacks its
+    // nonce. Any other length is refused.
+    bool test_loose_keyvault_in_the_clear_is_taken_as_it_stands() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args();
+        const auto key = valid_cpu_key();
+        const auto clear = canonical_keyvault(key, 0x5A);
+        fixture.write_binary("first/kv.bin", clear);
+        const auto whole = fixture.resolve(args);
+        if (!require_resolved(whole, "a kv.bin in the clear resolves") ||
+            !require(whole->input.metadata.keyvault == clear,
+                     "a kv.bin in the clear is the build's keyvault as it stands")) {
+            return false;
+        }
+
+        fixture.write_binary("first/kv.bin", Bytes(clear.begin() + 0x10, clear.end()));
+        const auto bare = fixture.resolve(args);
+        Bytes zero_nonce = clear;
+        std::fill(zero_nonce.begin(), zero_nonce.begin() + 0x10, 0);
+        if (!require_resolved(bare, "a kv.bin without its nonce resolves") ||
+            !require(bare->input.metadata.keyvault == zero_nonce,
+                     "a kv.bin without its nonce gets sixteen zero bytes in front")) {
+            return false;
+        }
+
+        // Sealed for another console, it opens under no key: xeBuild 1.21 reports it and still
+        // takes it as the keyvault in the clear, and so does this.
+        const auto foreign = encrypted_keyvault(valid_cpu_key(true), 0x5A);
+        fixture.write_binary("first/kv.bin", foreign);
+        const auto other = fixture.resolve(args);
+        if (!require_resolved(other, "a kv.bin sealed under another key resolves") ||
+            !require(other->input.metadata.keyvault == foreign,
+                     "a kv.bin sealed under another key is taken as it stands")) {
+            return false;
+        }
+
+        fixture.write_binary("first/kv.bin", Bytes(0x100, 0x5A));
+        const auto wrong_length = fixture.resolve(args);
+        return require(!wrong_length &&
+                           wrong_length.error().code == ResolutionErrorCode::InvalidInput &&
+                           wrong_length.error().item == "kv.bin",
+                       "a kv.bin of another length is refused");
+    }
+
+    // Under the all-zero CPU key the donor's keyvault does not open; the donor still resolves,
+    // and the console's kv.bin supplies the keyvault. Without one the build is refused.
+    bool test_zero_cpu_key_donor_takes_the_keyvault_from_kv_bin() {
+        ResolverFixture fixture;
+        const auto key = valid_cpu_key();
+        fixture.write_binary("first/nanddump.bin", donor_image(ImageType::SmallBlock, key));
+        fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
+        fixture.write_binary("first/cd.bin", Bytes{0xCD});
+        fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+        auto args = fixture.minimum_args();
+        args.build_ini = "build.ini";
+        args.section = "falcon";
+        args.image_type.reset();
+        args.cpu_key = std::string(32, '0');
+
+        const auto without = fixture.resolve(args);
+        if (!require(!without && without.error().code == ResolutionErrorCode::InvalidInput &&
+                         without.error().item == "kv.bin",
+                     "a zero-key donor without kv.bin is refused for want of a keyvault")) {
+            return false;
+        }
+
+        const auto clear = canonical_keyvault(key, 0x72);
+        fixture.write_binary("first/kv.bin", clear);
+        const auto with = fixture.resolve(args);
+        return require_resolved(with, "a zero-key donor with kv.bin resolves") &&
+               require(with->input.metadata.keyvault == clear &&
+                           with->input.metadata.cpu_key == Bytes(16, 0) &&
+                           with->input.metadata.nand_image.has_value(),
+                       "the zero-key build carries the donor and the kv.bin's keyvault");
+    }
+
     bool test_metadata_precedence_and_user_file_overrides() {
         ResolverFixture fixture;
         const auto key = valid_cpu_key();
@@ -824,7 +931,7 @@ namespace {
                        "an explicit false CLI value remains present and wins");
     }
 
-    bool test_ini_flashfs_overlays_donor_by_lowercase_basename() {
+    bool test_flashfs_holds_ini_files_and_donor_secured_files_only() {
         ResolverFixture fixture;
         const auto key = valid_cpu_key();
         Input donor{};
@@ -833,14 +940,26 @@ namespace {
         donor.metadata.smc = make_smc(0x61);
         donor.metadata.keyvault = canonical_keyvault(key, 0x62);
         donor.bootloaders = valid_bootloaders();
-        donor.flashfs_sec =
-            std::vector<std::pair<std::string, Bytes>>{{"Launch.ini", Bytes{0x10}},
-                                                       {"launch.INI", Bytes{0x11}},
-                                                       {"SECDATA.BIN", Bytes(0x20, 0x20)},
-                                                       {"donor.bin", Bytes{0x30}}};
+        donor.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
+            {"Launch.ini", Bytes{0x10}},        {"launch.INI", Bytes{0x11}},
+            {"SECDATA.BIN", Bytes(0x20, 0x20)}, {"extended.bin", Bytes(0x20, 0x22)},
+            {"crl.bin", Bytes{0x23}},           {"fcrt.bin", Bytes{0x24}},
+            {"listed.bin", Bytes{0x25}},        {"donor.bin", Bytes{0x30}},
+            {"aac.xexp2", Bytes{0x31}},         {"aac.xexp1", Bytes{0x32}},
+            {"sysupdate.xexp2", Bytes{0x33}}};
         const auto image = RunBuild(donor);
         if (!image) {
             return require(false, "FlashFS donor fixture builds");
+        }
+        // The donor's extended.bin was the wrong length, so its image carries a clean one.
+        const auto donor_files = ExtractAll(*image, key);
+        Bytes donor_extended;
+        for (const auto& [name, data] : donor_files
+                                            ? *donor_files->flashfs_sec
+                                            : std::vector<std::pair<std::string, Bytes>>{}) {
+            if (name == "extended.bin") {
+                donor_extended = data;
+            }
         }
         fixture.write_binary("first/nanddump.bin", *image);
         fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
@@ -853,9 +972,10 @@ namespace {
         }
         fixture.write_binary("first/secdata.bin", encrypted_secdata);
         fixture.write_binary("first/new.bin", Bytes{0x61});
+        fixture.write_binary("first/aac.xexp", Bytes{0x62});
         fixture.write_text("working/build.ini",
-                           "[falconbl]\ncb_1.bin\ncd.bin\n[security]\nsecdata.bin\n"
-                           "[flashfs]\nlaunch.ini\nnew.bin\n");
+                           "[falconbl]\ncb_1.bin\ncd.bin\n[security]\nsecdata.bin\nextended.bin\n"
+                           "[flashfs]\nlaunch.ini\nnew.bin\nlisted.bin\naac.xexp\n");
 
         auto args = fixture.minimum_args();
         args.build_ini = "build.ini";
@@ -875,16 +995,113 @@ namespace {
                 return lower == name;
             });
         };
-        return require(files.size() == 4,
-                       "case-insensitive overlays do not duplicate donor files") &&
-               require(find("launch.ini") != files.end() &&
-                           find("launch.ini")->second == Bytes{0x41},
-                       "INI FlashFS replaces the donor basename") &&
-               require(find("secdata.bin") != files.end() &&
-                           find("secdata.bin")->second == plaintext_secdata,
-                       "secure Input boundary contains plaintext") &&
-               require(find("donor.bin") != files.end() && find("new.bin") != files.end(),
-                       "unreplaced donor and new INI files are retained");
+        const auto has = [&](std::string_view name, const Bytes& contents) {
+            const auto file = find(name);
+            return file != files.end() && file->second == contents;
+        };
+        // xeBuild 1.21 order: [flashfs] in INI order, then [security] in INI order, then the
+        // console's secured files the INI does not name.
+        const std::array<std::string_view, 8> order{"launch.ini", "new.bin",     "listed.bin",
+                                                    "aac.xexp1",  "secdata.bin", "extended.bin",
+                                                    "crl.bin",    "fcrt.bin"};
+        bool ordered = files.size() == order.size();
+        for (size_t i = 0; ordered && i < order.size(); ++i) {
+            ordered = find(order[i]) == files.begin() + static_cast<std::ptrdiff_t>(i);
+        }
+        return require(files.size() == 8, "the FlashFS holds exactly the expected files") &&
+               require(ordered, "the FlashFS lists [flashfs], then [security], then the "
+                                "console's other secured files") &&
+               require(has("launch.ini", Bytes{0x41}),
+                       "an INI file from the source roots replaces the donor basename") &&
+               require(has("secdata.bin", plaintext_secdata),
+                       "a secure INI file from the source roots arrives as plaintext") &&
+               require(donor_extended.size() == 0x4000 && has("extended.bin", donor_extended),
+                       "an INI security file missing from the roots comes from the donor") &&
+               require(has("crl.bin", Bytes{0x23}) && has("fcrt.bin", Bytes{0x24}),
+                       "donor secured files are carried without an INI entry") &&
+               require(has("listed.bin", Bytes{0x25}),
+                       "an INI file missing from the roots comes from the donor") &&
+               require(has("new.bin", Bytes{0x61}), "a new INI file is added") &&
+               require(has("aac.xexp1", Bytes{0x62}),
+                       "an INI patch file is suffixed and replaces the donor copy") &&
+               require(find("donor.bin") == files.end() && find("aac.xexp2") == files.end() &&
+                           find("sysupdate.xexp2") == files.end(),
+                       "unlisted donor files, patch files and CG tails are dropped");
+    }
+
+    // An extended.bin or secdata.bin the INI's [security] names reaches RunBuild even when
+    // nothing supplies it (empty) or it is too short to hold a nonce (as supplied); RunBuild makes
+    // up a clean one for each.
+    bool test_unsupplied_security_files_reach_the_build() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args();
+        fixture.write_text("working/build.ini",
+                           "[falconbl]\ncb_1.bin\ncd.bin\n[security]\nextended.bin\nsecdata.bin\n");
+        fixture.write_binary("first/extended.bin", Bytes(5, 0x45));
+        const auto result = fixture.resolve(args);
+        if (!require_resolved(result, "a build whose security files are missing resolves") ||
+            !require(result->input.flashfs_sec.has_value(), "resolved input has FlashFS files")) {
+            return false;
+        }
+        const auto& files = *result->input.flashfs_sec;
+        return require(files.size() == 2 && files[0].first == "extended.bin" &&
+                           files[0].second == Bytes(5, 0x45),
+                       "a short extended.bin is carried as supplied") &&
+               require(files[1].first == "secdata.bin" && files[1].second.empty(),
+                       "a missing secdata.bin is carried empty");
+    }
+
+    // fcrt.bin is in the FlashFS when the INI's [security] lists it and a source supplies it, as
+    // xeBuild 1.21 puts it there. The keyvault's flag (none, 0x0020, 0x0200) and nofcrt neither
+    // add it nor drop it; they only change what is said about a missing one.
+    bool test_fcrt_follows_the_ini_not_the_keyvault() {
+        const auto key = valid_cpu_key();
+        bool passed = true;
+        for (const uint16_t features : {0x0000, 0x0020, 0x0200}) {
+            Bytes plain(Keyvault::kSize, 0x00);
+            plain[0x1C] = static_cast<uint8_t>(features >> 8);
+            plain[0x1D] = static_cast<uint8_t>(features);
+            for (const bool listed : {true, false}) {
+                for (const bool supplied : {true, false}) {
+                    for (const bool nofcrt : {false, true}) {
+                        ResolverFixture fixture;
+                        auto args = fixture.complete_loose_args();
+                        fixture.write_binary("first/kv.bin", keyvault_encrypt(key, plain));
+                        fixture.write_text(
+                            "working/build.ini",
+                            std::string("[falconbl]\ncb_1.bin\ncd.bin\n[security]\n") +
+                                (listed ? "fcrt.bin\n" : ";fcrt.bin,\n"));
+                        const Bytes fcrt(0x4000, 0x46);
+                        if (supplied) {
+                            fixture.write_binary("first/fcrt.bin", fcrt);
+                        }
+                        if (nofcrt) {
+                            args.config = {"nofcrt"};
+                        }
+                        const auto result = fixture.resolve(args);
+                        if (!require_resolved(result,
+                                              "a build with or without fcrt.bin resolves")) {
+                            passed = false;
+                            continue;
+                        }
+                        const auto& files = result->input.flashfs_sec;
+                        const bool held =
+                            files && std::any_of(files->begin(), files->end(), [&](const auto& f) {
+                                return f.first == "fcrt.bin" && f.second == fcrt;
+                            });
+                        const bool any =
+                            files && std::any_of(files->begin(), files->end(), [](const auto& f) {
+                                return f.first == "fcrt.bin";
+                            });
+                        passed = require(held == (listed && supplied) && any == held,
+                                         "fcrt.bin is in the FlashFS exactly when the INI lists it "
+                                         "and a source supplies it") &&
+                                 passed;
+                    }
+                }
+            }
+        }
+        return passed;
     }
 
     bool test_metadata_values_require_full_valid_strings() {
@@ -938,6 +1155,38 @@ namespace {
                            cli->input.metadata.pairing_data ==
                                std::array<uint8_t, 3>{0xA1, 0xB2, 0xC3},
                        "CLI metadata is parsed only after winning precedence is selected");
+    }
+
+    bool test_cli_pairing_override_reaches_the_cf_and_console_is_carried() {
+        ResolverFixture fixture;
+        const auto key = valid_cpu_key();
+        fixture.write_binary("first/nanddump.bin",
+                             donor_image_with_metadata(ImageType::SmallBlock, key));
+        fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
+        fixture.write_binary("first/cd.bin", Bytes{0xCD});
+        fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+        auto args = fixture.minimum_args();
+        args.build_ini = "build.ini";
+        args.section = "falcon";
+        args.console = ConsoleType::Falcon;
+        args.image_type.reset();
+        const auto donor = fixture.resolve(args);
+        if (!require_resolved(donor, "donor CF pairing fixture resolves") ||
+            !require(donor->input.metadata.cf_pairing_data ==
+                         std::array<uint8_t, 3>{0xA1, 0xB2, 0xC3},
+                     "the donor CF pairing reaches the input") ||
+            !require(donor->input.console == ConsoleType::Falcon,
+                     "the selected console reaches the input")) {
+            return false;
+        }
+
+        args.config = {"pairing_data=0a0b0c"};
+        const auto overridden = fixture.resolve(args);
+        return require_resolved(overridden, "CLI pairing override resolves") &&
+               require(overridden->input.metadata.pairing_data ==
+                               std::array<uint8_t, 3>{0x0A, 0x0B, 0x0C} &&
+                           !overridden->input.metadata.cf_pairing_data,
+                       "a CLI pairing override also replaces the donor CF pairing");
     }
 
     bool test_metadata_winner_errors_report_the_winning_source() {
@@ -1066,17 +1315,24 @@ namespace {
             std::string name;
         };
         const std::array cases{
-            Case{BuildType::Jtag, "patches_fat_test.bin"},
-            Case{BuildType::Glitch, "patches_falcon_test.bin"},
+            Case{BuildType::Jtag, "patches_falcon_test.bin"},
+            Case{BuildType::Glitch, "patches_fat_test.bin"},
             Case{BuildType::Glitch2, "patches_g2falcon_test.bin"},
             Case{BuildType::Glitch2m, "patches_g2mfalcon_test.bin"},
             Case{BuildType::Glitch3, "patches_g3falcon_test.bin"},
         };
+        // devgl's name is checked by test_devgl_resolve_finds_the_sb_key_and_builds_retail_fuses,
+        // as it resolves only with an SB key.
         for (const auto& test : cases) {
             ResolverFixture fixture;
             auto args = fixture.complete_loose_args(test.type);
             args.patch_extension = "test";
             fixture.write_binary("first/bin/" + test.name, valid_glitch_patchset());
+            if (test.type == BuildType::Jtag) {
+                fixture.write_binary("first/xell-2f.bin", Bytes(0x40000, 0x5A));
+            } else if (test.type != BuildType::Retail && test.type != BuildType::Devkit) {
+                fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
+            }
             const auto result = fixture.resolve(args);
             if (!require_resolved(result, "automatic patch fixture resolves") ||
                 !require(result->input.patches && result->input.patches->automatic &&
@@ -1100,6 +1356,184 @@ namespace {
         return true;
     }
 
+    // Lines 0-6 for kFuseCbWord, as xerunner's test_build.py states them; lines 1-2 come
+    // from the CB, not from the falcon section, and 3-6 are the CPU key halves twice each.
+    bool require_fuse_lines_from_cb_word(const Bytes& fuses, const std::string& name) {
+        const auto key = valid_cpu_key();
+        const Bytes head{0xC0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F, 0x0F, 0x0F, 0x0F,
+                         0x0F, 0x0F, 0xF0, 0xF0, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+        Bytes expected = head;
+        expected.insert(expected.end(), key.begin(), key.begin() + 8);
+        expected.insert(expected.end(), key.begin(), key.begin() + 8);
+        expected.insert(expected.end(), key.begin() + 8, key.end());
+        expected.insert(expected.end(), key.begin() + 8, key.end());
+        return require(fuses.size() >= expected.size() &&
+                           std::equal(expected.begin(), expected.end(), fuses.begin()),
+                       name + " fuse lines 0-6 follow the CB word and CPU key");
+    }
+
+    bool test_jtag_resolve_populates_payloads() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Jtag);
+        args.console = ConsoleType::Falcon;
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_falcon_test.bin", valid_glitch_patchset());
+        fixture.write_binary("first/xell-2f.bin", Bytes(0x40000, 0x5A));
+
+        const auto result = fixture.resolve(args);
+        if (!require_resolved(result, "JTAG fixture carrying xell-2f.bin resolves")) {
+            return false;
+        }
+        const auto& payloads = result->input.payloads;
+        return require(payloads.has_value(), "JTAG resolution populates input.payloads") &&
+               require(payloads->xell && payloads->xell->size() == 0x40000,
+                       "xell-2f.bin is loaded verbatim") &&
+               require(payloads->rebooter && payloads->rebooter->size() == 0xd40,
+                       "the embedded freeBOOT rebooter is loaded at 0xd40 bytes") &&
+               require(*payloads->rebooter == gxbuild3::NAND::freeboot_rebooter_for("17559"),
+                       "the rebooter states the INI's kernel version") &&
+               require(payloads->payload && payloads->payload->size() == 0x200,
+                       "the embedded SMC payload is loaded at 0x200 bytes") &&
+               require(*payloads->payload == gxbuild3::NAND::freeboot_payload_for(0xd40),
+                       "the payload loads exactly the rebooter") &&
+               require(payloads->fuses && payloads->fuses->size() == 0x60,
+                       "generated virtual fuses fill the 0x60-byte region") &&
+               require_fuse_lines_from_cb_word(*payloads->fuses, "JTAG second CB");
+    }
+
+    bool test_jtag_resolve_fails_without_xell() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Jtag);
+        args.console = ConsoleType::Falcon;
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_falcon_test.bin", valid_glitch_patchset());
+
+        const auto result = fixture.resolve(args);
+        return require(!result.has_value(), "JTAG without a XeLL is rejected") &&
+               require(result.error().message.find("require a XeLL") != std::string::npos,
+                       "the missing-XeLL error names the requirement");
+    }
+
+    bool test_glitch_resolve_populates_xell_only() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Glitch2);
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_g2falcon_test.bin", valid_glitch_patchset());
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
+
+        const auto result = fixture.resolve(args);
+        if (!require_resolved(result, "glitch2 carrying xell-gggggg.bin resolves")) {
+            return false;
+        }
+        const auto& payloads = result->input.payloads;
+        return require(payloads && payloads->xell && payloads->xell->size() == 0x40000,
+                       "xell-gggggg.bin is loaded") &&
+               require(!payloads->rebooter && !payloads->payload,
+                       "glitch carries no JTAG rebooter/payload") &&
+               require(!payloads->fuses, "non-manufacturing glitch carries no fuses");
+    }
+
+    bool test_glitch2m_resolve_populates_fuses() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Glitch2m);
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_g2mfalcon_test.bin", valid_glitch_patchset());
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
+
+        const auto result = fixture.resolve(args);
+        if (!require_resolved(result, "glitch2m resolves")) {
+            return false;
+        }
+        const auto& payloads = result->input.payloads;
+        return require(payloads && payloads->xell && payloads->fuses &&
+                           payloads->fuses->size() == 0x60,
+                       "glitch2m loads XeLL and generated 0x60 fuses") &&
+               require_fuse_lines_from_cb_word(*payloads->fuses, "glitch2m CB_B");
+    }
+
+    bool test_glitch2m_without_cb_b_is_refused() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Glitch2m);
+        args.patch_extension = "test";
+        fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+        fixture.write_binary("first/bin/patches_g2mfalcon_test.bin", valid_glitch_patchset());
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
+
+        const auto result = fixture.resolve(args);
+        return require(!result.has_value() && result.error().item == "fuses" &&
+                           result.error().message.find("CB_B") != std::string::npos,
+                       "glitch2m fuses without a CB_B to read the word from are refused");
+    }
+
+    // A throwaway key whose file states the SB private key's CRC-32, so the resolver takes it.
+    Bytes sb_key_stand_in() {
+        return xe_rsa_test::with_crc32(xe_rsa_test::shared_private_key(),
+                                       gxbuild3::utils::kSbPrivateKeyCrc32);
+    }
+
+    bool test_devgl_resolve_finds_the_sb_key_and_builds_retail_fuses() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Devgl);
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_g2mfalcon_test.bin", valid_glitch_patchset());
+        const auto stand_in = sb_key_stand_in();
+        // A root's own candidate of the wrong CRC-32 is passed over for its keys folder's.
+        fixture.write_binary("first/SB_priv.bin", Bytes(stand_in.size(), 0x11));
+        fixture.write_binary("first/keys/sb_PRV.bin", stand_in);
+
+        const auto result = fixture.resolve(args);
+        if (!require(gxbuild3::utils::crc32(stand_in) == gxbuild3::utils::kSbPrivateKeyCrc32,
+                     "the stand-in key states the SB key's CRC-32") ||
+            !require_resolved(result, "devgl resolves with an SB key in a keys folder")) {
+            return false;
+        }
+        const auto& input = result->input;
+        // Line 1 names the retail type, line 2 holds no allow bits, lines 7.. count cfldv=3.
+        const Bytes type_line{0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0xF0};
+        const Bytes ldv_line{0xFF, 0xF0, 0, 0, 0, 0, 0, 0};
+        const auto& fuses = input.payloads ? input.payloads->fuses : std::nullopt;
+        return require(input.sb_private_key == stand_in, "the keys folder's SB key is taken") &&
+               require(input.patches && input.patches->automatic &&
+                           input.patches->automatic->name == "patches_g2mfalcon_test.bin",
+                       "devgl reads the glitch2m patch file") &&
+               require(input.payloads && !input.payloads->xell,
+                       "devgl leaves XeLL to the FlashFS") &&
+               require(fuses && fuses->size() == 0x60 &&
+                           std::equal(type_line.begin(), type_line.end(), fuses->begin() + 8) &&
+                           std::all_of(fuses->begin() + 0x10, fuses->begin() + 0x18,
+                                       [](uint8_t byte) { return byte == 0; }) &&
+                           std::equal(ldv_line.begin(), ldv_line.end(), fuses->begin() + 0x38),
+                       "devgl fuses state the retail type, no allow bits and the CF LDV");
+    }
+
+    bool test_devgl_resolve_without_the_sb_key_is_refused() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Devgl);
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_g2mfalcon_test.bin", valid_glitch_patchset());
+        const auto absent = fixture.resolve(args);
+        fixture.write_binary("first/keys/SB_priv.bin", xe_rsa_test::shared_private_key());
+        const auto wrong = fixture.resolve(args);
+        return require(!absent && absent.error().code == ResolutionErrorCode::SigningKeyNotFound &&
+                           absent.error().message.find("No SB_priv.bin") != std::string::npos,
+                       "devgl without an SB key is refused") &&
+               require(!wrong && wrong.error().code == ResolutionErrorCode::SigningKeyNotFound &&
+                           wrong.error().message.find("No candidate") != std::string::npos,
+                       "devgl with only a key of another CRC-32 is refused");
+    }
+
+    bool test_glitch_resolve_fails_without_xell() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Glitch2);
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_g2falcon_test.bin", valid_glitch_patchset());
+
+        const auto result = fixture.resolve(args);
+        return require(!result.has_value(), "glitch without a XeLL is rejected") &&
+               require(result.error().message.find("require a XeLL") != std::string::npos,
+                       "the missing-XeLL error names the requirement");
+    }
+
     bool test_glitch3_searches_all_g3_roots_before_g2_fallback() {
         ResolverFixture fixture;
         auto args = fixture.complete_loose_args(BuildType::Glitch3);
@@ -1107,6 +1541,7 @@ namespace {
         args.patch_extension = "test";
         fixture.write_binary("first/bin/patches_g2falcon_test.bin", valid_glitch_patchset(0x22));
         fixture.write_binary("second/bin/patches_g3falcon_test.bin", valid_glitch_patchset(0x33));
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
         const auto g3 = fixture.resolve(args);
         if (!require_resolved(g3, "glitch3 fixture resolves") ||
             !require(g3->input.patches && g3->input.patches->automatic &&
@@ -1123,6 +1558,40 @@ namespace {
                                "patches_g2falcon_test.bin" &&
                            fallback->input.patches->automatic->data.back() == 0x22,
                        "glitch3 falls back only after every g3 root is exhausted");
+    }
+
+    bool test_glitch3_prefers_g3_then_g2_and_fails_cleanly_without_either() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Glitch3);
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
+
+        const auto neither = fixture.resolve(args);
+        if (!require(!neither && neither.error().code == ResolutionErrorCode::PatchsetNotFound &&
+                         neither.error().item == "patches_g2falcon.bin" &&
+                         neither.error().message.find("patches_g3falcon.bin") !=
+                             std::string::npos &&
+                         neither.error().message.find("patches_g2falcon.bin") != std::string::npos,
+                     "glitch3 without a g3 or g2 patchset fails naming both files")) {
+            return false;
+        }
+
+        fixture.write_binary("first/bin/patches_g2falcon.bin", valid_glitch_patchset(0x22));
+        const auto g2_only = fixture.resolve(args);
+        if (!require_resolved(g2_only, "glitch3 with only a g2 patchset resolves") ||
+            !require(g2_only->input.patches && g2_only->input.patches->automatic &&
+                         g2_only->input.patches->automatic->name == "patches_g2falcon.bin" &&
+                         g2_only->input.patches->automatic->data.back() == 0x22,
+                     "glitch3 uses the g2 patchset when no g3 patchset exists")) {
+            return false;
+        }
+
+        fixture.write_binary("first/bin/patches_g3falcon.bin", valid_glitch_patchset(0x33));
+        const auto both = fixture.resolve(args);
+        return require_resolved(both, "glitch3 with both patchsets resolves") &&
+               require(both->input.patches && both->input.patches->automatic &&
+                           both->input.patches->automatic->name == "patches_g3falcon.bin" &&
+                           both->input.patches->automatic->data.back() == 0x33,
+                       "glitch3 prefers the g3 patchset over a g2 one in the same root");
     }
 
     bool test_missing_patchset_and_addon_errors_are_precise() {
@@ -1154,6 +1623,7 @@ namespace {
         fixture.write_binary("first/bin/second-addon.bin", Bytes{0x21});
         fixture.write_binary("second/bin/second-addon.bin", Bytes{0x99});
         fixture.write_binary("second/bin/first-addon.bin", Bytes{0x12});
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
         const auto result = fixture.resolve(args);
         return require_resolved(result, "add-on fixture resolves") &&
                require(result->input.patches && result->input.patches->addons.size() == 2,
@@ -1242,6 +1712,7 @@ namespace {
         auto args = fixture.complete_loose_args(BuildType::Glitch2);
         args.patch_extension = "test_alt";
         fixture.write_binary("first/bin/patches_g2falcon_test_alt.bin", valid_glitch_patchset());
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
         const auto valid_internal_underscore = fixture.resolve(args);
         if (!require_resolved(valid_internal_underscore,
                               "an internal-underscore patch suffix resolves") ||
@@ -1282,7 +1753,8 @@ namespace {
         auto args = fixture.complete_loose_args(BuildType::Glitch);
         args.image_type.reset();
         fixture.write_binary("first/nanddump.bin", *donor_bytes);
-        fixture.write_binary("first/bin/patches_falcon.bin", valid_glitch_patchset(0xC4));
+        fixture.write_binary("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
+        fixture.write_binary("first/bin/patches_fat.bin", valid_glitch_patchset(0xC4));
         const auto resolved = fixture.resolve(args);
         return require_resolved(resolved, "small-block Glitch KHV donor resolves") &&
                require(!resolved->input.payloads || (!resolved->input.payloads->rebooter &&
@@ -1330,15 +1802,29 @@ int main() {
     passed = test_ini_sc_bootloader_reaches_resolved_input() && passed;
     passed = test_loose_donor_requires_and_populates_every_component() && passed;
     passed = test_metadata_precedence_and_user_file_overrides() && passed;
-    passed = test_ini_flashfs_overlays_donor_by_lowercase_basename() && passed;
+    passed = test_loose_keyvault_in_the_clear_is_taken_as_it_stands() && passed;
+    passed = test_zero_cpu_key_donor_takes_the_keyvault_from_kv_bin() && passed;
+    passed = test_flashfs_holds_ini_files_and_donor_secured_files_only() && passed;
+    passed = test_unsupplied_security_files_reach_the_build() && passed;
+    passed = test_fcrt_follows_the_ini_not_the_keyvault() && passed;
     passed = test_metadata_values_require_full_valid_strings() && passed;
     passed = test_metadata_parses_only_the_winning_precedence_source() && passed;
+    passed = test_cli_pairing_override_reaches_the_cf_and_console_is_carried() && passed;
     passed = test_metadata_winner_errors_report_the_winning_source() && passed;
     passed = test_invalid_cli_metadata_retains_cli_provenance_in_loose_donor_mode() && passed;
     passed = test_ini_payload_lookup_failure_is_terminal() && passed;
     passed = test_ini_payload_is_required_unless_donor_supplies_same_basename() && passed;
     passed = test_automatic_patchset_names_and_retail_devkit_behavior() && passed;
+    passed = test_jtag_resolve_populates_payloads() && passed;
+    passed = test_jtag_resolve_fails_without_xell() && passed;
+    passed = test_glitch_resolve_populates_xell_only() && passed;
+    passed = test_glitch2m_resolve_populates_fuses() && passed;
+    passed = test_glitch2m_without_cb_b_is_refused() && passed;
+    passed = test_devgl_resolve_finds_the_sb_key_and_builds_retail_fuses() && passed;
+    passed = test_devgl_resolve_without_the_sb_key_is_refused() && passed;
+    passed = test_glitch_resolve_fails_without_xell() && passed;
     passed = test_glitch3_searches_all_g3_roots_before_g2_fallback() && passed;
+    passed = test_glitch3_prefers_g3_then_g2_and_fails_cleanly_without_either() && passed;
     passed = test_missing_patchset_and_addon_errors_are_precise() && passed;
     passed = test_addons_resolve_from_root_bin_in_cli_order() && passed;
     passed = test_retail_and_devkit_reject_addons_without_automatic_patchset() && passed;

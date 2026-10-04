@@ -119,7 +119,9 @@ namespace {
             cursor += sizeof(uint32_t);
         }
 
-        outSections.emplace_back(data.begin() + sectionStart, data.end());
+        if (sectionStart < data.size()) {
+            outSections.emplace_back(data.begin() + sectionStart, data.end());
+        }
         return outSections.size() == expectedSectionCount;
     }
 
@@ -131,6 +133,7 @@ namespace {
             case BuildType::Glitch2:
             case BuildType::Glitch2m:
             case BuildType::Glitch3:
+            case BuildType::Devgl:
                 return PatchSetKind::Glitch;
             default:
                 return std::nullopt;
@@ -193,6 +196,9 @@ namespace BinaryParser {
         }
 
         parsed.kind = *patchSetKind;
+        // A devgl image reads the glitch2m patch file and lays its patch slot the same way:
+        // fuses first, the KHV payload at 0x60.
+        parsed.manufacturing = buildType == BuildType::Glitch2m || buildType == BuildType::Devgl;
 
         if (*patchSetKind == PatchSetKind::Jtag) {
             std::vector<std::vector<uint8_t>> rawSections;
@@ -221,6 +227,13 @@ namespace BinaryParser {
             return true;
         }
 
+        std::vector<std::vector<uint8_t>> glitchSections;
+        if (!SplitRawSections(fileData, 3, glitchSections)) {
+            Log::Error("Glitch patchset must have 3 sections [CB_B][CD][KHV], found {}",
+                       glitchSections.size());
+            return false;
+        }
+
         size_t cursor = 0;
         for (size_t i = 0; i < 2; ++i) {
             ParsedPatchSection section;
@@ -242,9 +255,16 @@ namespace BinaryParser {
         khvSection.target = PatchSectionTarget::Khv;
         khvSection.identifier = "khv";
         khvSection.raw_data.assign(fileData.begin() + cursor, fileData.end());
+        if (khvSection.raw_data.size() >= sizeof(uint32_t)) {
+            const auto tail = khvSection.raw_data.size() - sizeof(uint32_t);
+            uint32_t lastWord = 0;
+            if (ReadBe32(khvSection.raw_data, tail, lastWord) && lastWord == kSectionDelimiter) {
+                khvSection.raw_data.resize(tail);
+            }
+        }
         parsed.sections.push_back(std::move(khvSection));
 
-        Log::Debug("Parsed Glitch patchset bytes ({} sections)", parsed.sections.size());
+        Log::Debug("Parsed Glitch patchset bytes ({} sections)", glitchSections.size());
         outPatchSet = std::move(parsed);
         return true;
     }
@@ -301,11 +321,15 @@ namespace BinaryParser {
             }
             out.insert(out.end(), section.raw_data.begin(), section.raw_data.end());
 
-            if (i + 1 < patchSet.sections.size()) {
-                AppendBe32(out, kSectionDelimiter);
-            }
+            AppendBe32(out, kSectionDelimiter);
         }
 
+        return out;
+    }
+
+    std::vector<uint8_t> SerializeKhvPayload(const ParsedPatchSection& section) {
+        std::vector<uint8_t> out = section.raw_data;
+        AppendBe32(out, kSectionDelimiter);
         return out;
     }
 

@@ -96,7 +96,7 @@ void BootloaderCf::calc_mac(const uint8_t onebl_key[16], const uint8_t cpu_key[1
     std::vector<uint8_t> cf_copy(serialized_hdr.begin(), serialized_hdr.begin() + 0x220);
 
     uint8_t rc4_key[20] = {0};
-    ExCryptHmacSha(onebl_key, 16, header.cg_key, 16, nullptr, 0, nullptr, 0, rc4_key, 20);
+    ExCryptHmacSha(onebl_key, 16, header.fixpoint_nonce, 16, nullptr, 0, nullptr, 0, rc4_key, 20);
 
     std::memcpy(cf_copy.data() + 0x20, rc4_key, 16);
 
@@ -105,11 +105,24 @@ void BootloaderCf::calc_mac(const uint8_t onebl_key[16], const uint8_t cpu_key[1
 
     if (data.size() >= 0x1C0 + sizeof(cf_perbox)) {
         std::memcpy(data.data() + 0x1C0 + 0x30, hmac_digest, 16);
+        if (perbox.has_value())
+            std::memcpy(perbox->per_box_digest, hmac_digest, 16);
     }
 }
 
 bool BootloaderCf::is_decrypted() const {
     return decrypted || (data.size() >= 0x10 && data[0] == 0x00 && data[1] == 0x00);
+}
+
+std::optional<std::array<uint8_t, 16>> BootloaderCf::cg_key() const {
+    if (!is_decrypted())
+        return std::nullopt;
+    const auto serialized = serialize();
+    if (serialized.size() < kCfCgNonceOffset + 16)
+        return std::nullopt;
+    std::array<uint8_t, 16> key{};
+    std::copy_n(serialized.begin() + kCfCgNonceOffset, key.size(), key.begin());
+    return key;
 }
 
 bool BootloaderCf::parse_perbox() {

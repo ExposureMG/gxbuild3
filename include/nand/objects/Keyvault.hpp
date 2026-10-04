@@ -205,6 +205,10 @@ struct CpuKeyResult {
     std::string message;
 };
 
+// Sixteen zero bytes: the key an image bound to no console is built under. It is accepted
+// wherever a CPU key is, though it has no ECC.
+bool is_zero_cpu_key(std::span<const uint8_t> cpu_key);
+
 CpuKeyResult validate_cpu_key(std::span<const uint8_t> cpu_key);
 CpuKeyResult validate_cpu_key_hex(std::string_view hex);
 
@@ -238,13 +242,42 @@ std::vector<uint8_t> keyvault_encrypt(std::span<const uint8_t> cpu_key,
 bool keyvault_verify(std::span<const uint8_t> cpu_key, std::span<const uint8_t> data,
                      std::span<const uint8_t> pub_key);
 
+// A kv.bin supplied beside a build, in the clear: 0x4000 bytes with its nonce. A copy sealed
+// under the CPU key (its nonce is HMAC(CPU key, body + 07 12)) is opened; any other copy is
+// taken as already in the clear, its first 0x10 bytes a stale nonce, as xeBuild 1.21 takes it.
+// A copy of 0x3FF0 bytes lacks the nonce and gets sixteen zero bytes in front. Nothing for any
+// other length or an unusable CPU key.
+struct LooseKeyvault {
+    // How the copy was taken, by xeBuild's own tests (its 0x41D0E0).
+    enum class Form {
+        // Sealed under the CPU key, and opened.
+        Sealed,
+        // In the clear: a zero nonce or the nonce its plaintext derives. xeBuild says nothing.
+        Clear,
+        // In the clear by its reserved bytes (0x38-0x8F zero), under a nonce the CPU key does
+        // not derive: another key's, or none. xeBuild warns and takes it as it stands.
+        StaleNonce,
+        // Neither: it looks sealed and opens under no key it is tried under, most likely sealed
+        // for another console. xeBuild reports an error and still takes it as the keyvault in
+        // the clear; so does this.
+        Unopened,
+    };
+    std::vector<uint8_t> plain;
+    Form form{Form::Clear};
+};
+std::optional<LooseKeyvault> open_loose_keyvault(std::span<const uint8_t> cpu_key,
+                                                 std::span<const uint8_t> data);
+
 } // namespace gxbuild3::NAND
 
-using gxbuild3::NAND::CpuKeyStatus;
 using gxbuild3::NAND::CpuKeyResult;
-using gxbuild3::NAND::validate_cpu_key;
-using gxbuild3::NAND::validate_cpu_key_hex;
+using gxbuild3::NAND::CpuKeyStatus;
+using gxbuild3::NAND::is_zero_cpu_key;
 using gxbuild3::NAND::Keyvault;
 using gxbuild3::NAND::keyvault_decrypt;
 using gxbuild3::NAND::keyvault_encrypt;
 using gxbuild3::NAND::keyvault_verify;
+using gxbuild3::NAND::LooseKeyvault;
+using gxbuild3::NAND::open_loose_keyvault;
+using gxbuild3::NAND::validate_cpu_key;
+using gxbuild3::NAND::validate_cpu_key_hex;

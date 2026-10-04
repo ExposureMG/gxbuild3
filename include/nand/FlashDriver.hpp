@@ -19,6 +19,25 @@ namespace gxbuild3::NAND {
         bool is_bad = false;
     };
 
+    // FlashFS spare metadata values. Big-block images use a distinct block-type space
+    // (0x2C root, 0x2A data) and carry a constant fs_size/page_count stamp on every root
+    // and data block; small/new-small images use 0x30 for the root and leave data blocks
+    // as type 0x00 with sequence 0, as real 16 MB dumps and xeBuild do. The big constants
+    // were derived byte-for-byte from retail and xeBuild big-block references, whose
+    // filesystem the stock kernel only mounts when these values are present.
+    namespace FlashFsMetadata {
+        inline constexpr uint8_t kRootTypeSmall = 0x30;
+        inline constexpr uint8_t kRootTypeBig = 0x2C;
+        inline constexpr uint8_t kDataTypeSmall = 0x00;
+        inline constexpr uint8_t kDataTypeBig = 0x2A;
+        inline constexpr uint16_t kBigFsSize = 0x2006;
+        // The stamp of the larger filesystem a big-block devkit image takes: spare byte 7
+        // states a 0x10-block system area and byte 8 the filesystem's 0xC00 blocks over 32
+        // (xeBuild 1.21 devkit jasperbb).
+        inline constexpr uint16_t kBigFsSizeLarger = 0x6010;
+        inline constexpr uint8_t kBigPageCount = 0x04;
+    } // namespace FlashFsMetadata
+
     struct BlockRange {
         size_t start_block = 0;
         size_t block_count = 0;
@@ -59,8 +78,8 @@ namespace gxbuild3::NAND {
         size_t block_size_clean() const;
         size_t block_size_raw() const;
         size_t data_block_limit() const;
-        [[nodiscard]] std::optional<BlockRange> block_range_for_byte_interval(
-            size_t offset, size_t length) const;
+        [[nodiscard]] std::optional<BlockRange> block_range_for_byte_interval(size_t offset,
+                                                                              size_t length) const;
 
         void set_layout(NandLayout layout);
         const NandLayout& layout() const;
@@ -90,6 +109,14 @@ namespace gxbuild3::NAND {
         void write_block_raw(size_t block_idx, std::span<const uint8_t> data);
 
         BlockMetadata interpret_block(size_t block_idx) const;
+        BlockMetadata interpret_cluster(size_t cluster_idx) const;
+        // One page's spare fields, read the way interpret_block reads a block's first page.
+        BlockMetadata interpret_page(size_t page) const;
+        void write_cluster_metadata(size_t cluster_idx, const BlockMetadata& meta);
+        // Stamps the spare of `page_count` pages from `first_page`, leaving their data alone.
+        void write_page_metadata(size_t first_page, size_t page_count, const BlockMetadata& meta);
+        // Returns a block to the erased state: 0xFF data and, on NAND, 0xFF spare.
+        void erase_block(size_t block_idx);
         bool is_bad_block(size_t block_idx) const;
         void mark_bad_block(size_t block_idx);
         void write_block_metadata(size_t block_idx, const BlockMetadata& meta);
@@ -109,6 +136,9 @@ namespace gxbuild3::NAND {
         void clean();
 
       private:
+        BlockMetadata interpret_page_metadata(size_t first_page) const;
+        void write_page_metadata_range(size_t first_page, size_t page_count,
+                                       const BlockMetadata& meta);
         std::vector<uint8_t> m_nand_image;
         DriverMode m_driver_mode;
         ImageSize m_image_size;

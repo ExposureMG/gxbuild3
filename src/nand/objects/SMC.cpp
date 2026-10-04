@@ -102,11 +102,24 @@ bool smc_is_encrypted(std::span<const uint8_t> data) {
     if (data.size() <= 0x100) {
         return false;
     }
+    // Every plaintext SMC image ends in four zero bytes (xeBuild's own test): zeros as
+    // given mean plaintext, zeros after one decryption mean it was encrypted.
+    const auto zero_tail = [](std::span<const uint8_t> bytes) {
+        return std::all_of(bytes.end() - 4, bytes.end(), [](uint8_t b) { return b == 0; });
+    };
+    if (zero_tail(data)) {
+        return false;
+    }
+    const auto decrypted = smc_decrypt(data);
+    if (zero_tail(decrypted)) {
+        return true;
+    }
+    // Neither form is padded, so this is not a stock-shaped image; fall back to
+    // checking which form carries a motherboard nibble at 0x100.
     const uint8_t raw_nibble = (data[0x100] >> 4) & 0xF;
     if (raw_nibble >= 1 && raw_nibble <= 7) {
         return false;
     }
-    const auto decrypted = smc_decrypt(data);
     const uint8_t dec_nibble = (decrypted[0x100] >> 4) & 0xF;
     return dec_nibble >= 1 && dec_nibble <= 7;
 }
@@ -248,6 +261,21 @@ SmcType smc_get_type(std::span<const uint8_t> data) {
     }
 
     return (ret == SmcType::Unknown && retail) ? SmcType::Retail : ret;
+}
+
+bool smc_has_jtag_mark(std::span<const uint8_t> data) {
+    std::vector<uint8_t> decrypted_data;
+    std::span<const uint8_t> plain = data;
+    if (smc_is_encrypted(data)) {
+        decrypted_data = smc_decrypt(data);
+        plain = decrypted_data;
+    }
+    static constexpr uint8_t cygnos_mark[] = {0x78, 0xBA, 0xB6};
+    static constexpr uint8_t jtag_mark[] = {0xD0, 0x00, 0x00, 0x1B};
+    const auto contains = [plain](std::span<const uint8_t> mark) {
+        return std::search(plain.begin(), plain.end(), mark.begin(), mark.end()) != plain.end();
+    };
+    return contains(cygnos_mark) || contains(jtag_mark);
 }
 
 std::optional<Smc> Smc::parse(std::span<const uint8_t> bytes) {

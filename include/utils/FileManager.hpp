@@ -64,20 +64,32 @@ namespace gxbuild3::utils {
     struct IniFilesResult {
         InputBootloaders bootloaders;
         std::vector<std::pair<std::string, std::vector<uint8_t>>> flashfs_sec;
+        std::vector<InputRawPatch> raw_patches;
     };
+
+    // The name a release INI entry is looked up under. xeBuild reads "..\data\x.bin" from
+    // the release directory, so its leading ".." components are dropped and the rest is
+    // found in the source roots, one of which holds the release directory.
+    std::string IniAssetName(std::string_view entry);
+
+    // Whether an INI entry names a file outside its release (a leading ".."). xeBuild goes
+    // without such a file when it is missing ("could not read file ..., skipping").
+    bool IniAssetIsOutside(std::string_view entry);
 
     // Search roots are ordered from highest to lowest priority. Within a root,
     // loose files win over STFS entries, then derived CF/CG parts. Payloads are
     // unique by lowercase basename; bootloader chain slots remain independent.
     std::optional<IniFilesResult>
     ReadIniFiles(const std::filesystem::path& ini_path, std::string_view target_section,
-                 const std::vector<std::filesystem::path>& search_paths, ScanOptions options = {});
+                 const std::vector<std::filesystem::path>& search_paths, ScanOptions options = {},
+                 BuildType build_type = BuildType::Retail);
 
     // Convenience wrapper: fw_dir (or mydata), version, then common.
     std::optional<IniFilesResult> ReadIniFiles(std::string_view version, std::string_view type,
                                                std::string_view target_section,
                                                const std::filesystem::path& fw_dir = {},
-                                               ScanOptions options = {});
+                                               ScanOptions options = {},
+                                               BuildType build_type = BuildType::Retail);
 
     // Same priority rules. STFS matches return the package path. Keys are
     // lowercase basenames. Throws if any unique requested file is unavailable.

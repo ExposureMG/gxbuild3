@@ -1,8 +1,9 @@
 #include "nand/objects/Keyvault.hpp"
-#include "utils/Log.hpp"
 
 #include "excrypt.h"
+#include "utils/Log.hpp"
 
+#include <algorithm>
 #include <bit>
 #include <cstring>
 #include <random>
@@ -38,11 +39,25 @@ namespace {
 
 } // namespace
 
+bool is_zero_cpu_key(std::span<const uint8_t> cpu_key) {
+    return cpu_key.size() == 16 &&
+           std::all_of(cpu_key.begin(), cpu_key.end(), [](uint8_t byte) { return byte == 0; });
+}
+
 CpuKeyResult validate_cpu_key(std::span<const uint8_t> cpu_key) {
     CpuKeyResult result{};
     if (cpu_key.size() != 16) {
         result.status = CpuKeyStatus::Invalid;
         result.message = "Invalid CPU key length: expected 16 bytes";
+        return result;
+    }
+
+    // Sixteen zero bytes are no console's key, but an image bound to no console is built under
+    // them (a manufacturing console whose key is unknown), as xeBuild 1.21 builds one.
+    if (is_zero_cpu_key(cpu_key)) {
+        result.status = CpuKeyStatus::Valid;
+        result.key.assign(cpu_key.begin(), cpu_key.end());
+        result.message = "The all-zero CPU key binds the image to no console";
         return result;
     }
 
@@ -106,6 +121,9 @@ bool cpukey_valid(std::span<const uint8_t> cpu_key) {
     if (cpu_key.size() != 0x10) {
         return false;
     }
+    if (is_zero_cpu_key(cpu_key)) {
+        return true;
+    }
     uint8_t key_copy[16];
     std::memcpy(key_copy, cpu_key.data(), 16);
     if (XeCryptUidEccDecode(key_copy) < 0) {
@@ -116,12 +134,13 @@ bool cpukey_valid(std::span<const uint8_t> cpu_key) {
 
 } // namespace gxbuild3::NAND
 
+// Every byte comes from the system's cryptographic source (getrandom, /dev/urandom, RtlGenRandom
+// or RDRAND, as the standard library selects), not from a seeded generator.
 void ExCryptRandom(uint8_t* dest, size_t size) {
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::uniform_int_distribution<uint32_t> distribution(0, 255);
-    for (size_t i = 0; i < size; ++i) {
-        dest[i] = static_cast<uint8_t>(distribution(generator));
+    std::random_device source;
+    for (size_t i = 0; i < size; i += sizeof(uint32_t)) {
+        const auto word = static_cast<uint32_t>(source());
+        std::memcpy(dest + i, &word, std::min(sizeof(word), size - i));
     }
 }
 
@@ -197,6 +216,38 @@ std::vector<uint8_t> keyvault_encrypt(std::span<const uint8_t> cpu_key,
     }
 
     return out_data;
+}
+
+std::optional<LooseKeyvault> open_loose_keyvault(std::span<const uint8_t> cpu_key,
+                                                 std::span<const uint8_t> data) {
+    std::vector<uint8_t> whole(data.begin(), data.end());
+    if (whole.size() == Keyvault::kSize - 0x10) {
+        whole.insert(whole.begin(), 0x10, 0);
+    }
+    if (whole.size() != Keyvault::kSize || !cpukey_valid(cpu_key)) {
+        return std::nullopt;
+    }
+    try {
+        return LooseKeyvault{keyvault_decrypt(cpu_key, whole), LooseKeyvault::Form::Sealed};
+    } catch (const std::exception&) {
+    }
+    const auto zero = [&whole](size_t from, size_t to) {
+        return std::all_of(whole.begin() + static_cast<std::ptrdiff_t>(from),
+                           whole.begin() + static_cast<std::ptrdiff_t>(to),
+                           [](uint8_t byte) { return byte == 0; });
+    };
+    // xeBuild's tests, in its order. A zero nonce is in the clear unless 0x58-0x5F say it is not;
+    // a nonce is the plaintext's own when sealing derives it again.
+    const auto derived = keyvault_encrypt(cpu_key, whole);
+    auto form = LooseKeyvault::Form::Unopened;
+    if (zero(0, 0x10)) {
+        form = zero(0x58, 0x60) ? LooseKeyvault::Form::Clear : LooseKeyvault::Form::Unopened;
+    } else if (std::equal(whole.begin(), whole.begin() + 0x10, derived.begin())) {
+        form = LooseKeyvault::Form::Clear;
+    } else if (zero(0x38, 0x90)) {
+        form = LooseKeyvault::Form::StaleNonce;
+    }
+    return LooseKeyvault{std::move(whole), form};
 }
 
 bool crypt_secfile(std::span<const uint8_t> cpu_key, std::span<uint8_t> data) {

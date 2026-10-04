@@ -56,5 +56,9 @@ std::vector<uint8_t> smc_decrypt(std::span<const uint8_t> data);
 std::vector<uint8_t> smc_encrypt(std::span<const uint8_t> data);
 bool smc_is_encrypted(std::span<const uint8_t> data);
 SmcType smc_get_type(std::span<const uint8_t> data);
+// Whether the SMC, sealed or plaintext, carries either mark of a JTAG hack anywhere: the
+// bytes 78 BA B6 or D0 00 00 1B (xeBuild 1.21's JTAG test). An SMC with neither is clean
+// for a JTAG image.
+bool smc_has_jtag_mark(std::span<const uint8_t> data);
 
 } // namespace gxbuild3::NAND

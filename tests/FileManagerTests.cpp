@@ -72,6 +72,19 @@ namespace {
         write_file(path, make_stfs_bytes(files, corrupt_file));
     }
 
+    // A synthetic xboxupd.bin: a 0x20-byte CF and a 0x20-byte CG, each stating `version`.
+    Bytes make_xboxupd(uint16_t version = 1) {
+        Bytes xboxupd(0x40, 0);
+        xboxupd[0] = xboxupd[0x20] = 0x43;
+        xboxupd[1] = 0x46;
+        xboxupd[0x21] = 0x47;
+        xboxupd[2] = xboxupd[0x22] = static_cast<uint8_t>(version >> 8);
+        xboxupd[3] = xboxupd[0x23] = static_cast<uint8_t>(version);
+        be32(xboxupd, 0x0C, 0x20);
+        be32(xboxupd, 0x1C, 0x20);
+        return xboxupd;
+    }
+
     struct Fixture {
         fs::path original = fs::current_path();
         fs::path root;
@@ -238,12 +251,7 @@ namespace {
 
     void test_find_file_data_derives_bootloaders_only_on_request() {
         Fixture f;
-        Bytes xboxupd(0x40, 0);
-        xboxupd[0] = xboxupd[0x20] = 0x43;
-        xboxupd[1] = 0x46;
-        xboxupd[0x21] = 0x47;
-        be32(xboxupd, 0x0C, 0x20);
-        be32(xboxupd, 0x1C, 0x20);
+        const Bytes xboxupd = make_xboxupd();
         write_stfs(f.root / "first/su_test", {{"xboxupd.bin", xboxupd}});
         require(!FileManager::FindFileData("cf_1.bin", {f.root / "first"}),
                 "regular lookup does not derive bootloaders");
@@ -307,6 +315,90 @@ namespace {
                 "deduplication must preserve both CF/CG chains");
     }
 
+    void test_ini_jtag_separates_extra_bootloaders() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini", "[testbl]\n"
+                                                 "cb_4558.bin,57dba8ff\n"
+                                                 "cd_4558.bin,3286f409\n"
+                                                 "ce_1888.bin,ff9b60df\n"
+                                                 "cf_4532.bin,d28ef722\n"
+                                                 "cg_4532.bin,2530f8ce\n"
+                                                 "cb_4579.bin,a504b0f1\n"
+                                                 "cd_8453.bin,25e0acd0\n"
+                                                 "cf_17559.bin,0883e155\n"
+                                                 "cg_17559.bin,10fbc84d\n");
+        write_file(f.root / "mydata/cb_4558.bin", {0x01});
+        write_file(f.root / "mydata/cd_4558.bin", {0x02});
+        write_file(f.root / "mydata/ce_1888.bin", {0x03});
+        write_file(f.root / "mydata/cf_4532.bin", {0x04});
+        write_file(f.root / "mydata/cg_4532.bin", {0x05});
+        write_file(f.root / "mydata/cb_4579.bin", {0x06});
+        write_file(f.root / "mydata/cd_8453.bin", {0x07});
+        write_file(f.root / "mydata/cf_17559.bin", {0x08});
+        write_file(f.root / "mydata/cg_17559.bin", {0x09});
+
+        const auto result =
+            FileManager::ReadIniFiles("version", "test", "test", {}, {}, BuildType::Jtag);
+        require(result.has_value(), "JTAG INI must resolve");
+        const auto& bl = result->bootloaders;
+        require(bl.cb_or_a == Bytes{0x01}, "first CB is the boot-chain CB");
+        require(bl.cd == Bytes{0x02}, "first CD is the boot-chain CD");
+        require(bl.ce == Bytes{0x03}, "CE is the boot-chain CE");
+        require(bl.cf0 == Bytes{0x04} && bl.cg0 == Bytes{0x05}, "first CF/CG pair is patch slot 0");
+        require(bl.cf1 == Bytes{0x08} && bl.cg1 == Bytes{0x09},
+                "second CF/CG pair is patch slot 1");
+        require(!bl.cb_b.has_value(), "JTAG second CB must not become CB_B");
+        require(bl.extra_cb == Bytes{0x06}, "second CB is the JTAG extra bootloader");
+        require(bl.extra_cd == Bytes{0x07}, "second CD is the JTAG extra bootloader");
+    }
+
+    void test_ini_non_jtag_leaves_extra_bootloaders_empty() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini", "[testbl]\n"
+                                                 "cba_5772.bin,6cb45431\n"
+                                                 "cbb_5772.bin,7a62ed25\n"
+                                                 "cd_9452.bin,231d513c\n"
+                                                 "ce_1888.bin,ff9b60df\n"
+                                                 "cf_17559.bin,0883e155\n"
+                                                 "cg_17559.bin,10fbc84d\n");
+        write_file(f.root / "mydata/cba_5772.bin", {0xA1});
+        write_file(f.root / "mydata/cbb_5772.bin", {0xA2});
+        write_file(f.root / "mydata/cd_9452.bin", {0xA3});
+        write_file(f.root / "mydata/ce_1888.bin", {0xA4});
+        write_file(f.root / "mydata/cf_17559.bin", {0xA5});
+        write_file(f.root / "mydata/cg_17559.bin", {0xA6});
+
+        const auto result =
+            FileManager::ReadIniFiles("version", "test", "test", {}, {}, BuildType::Glitch2);
+        require(result.has_value(), "glitch2 INI must resolve");
+        const auto& bl = result->bootloaders;
+        require(bl.cb_or_a == Bytes{0xA1} && bl.cb_b == Bytes{0xA2}, "CBA/CBB map to cb_or_a/cb_b");
+        require(bl.cd == Bytes{0xA3} && bl.ce == Bytes{0xA4}, "CD/CE map to the boot chain");
+        require(bl.cf0 == Bytes{0xA5} && bl.cg0 == Bytes{0xA6}, "CF/CG map to patch slot 0");
+        require(!bl.extra_cb.has_value() && !bl.extra_cd.has_value(),
+                "non-JTAG builds never populate extra bootloaders");
+    }
+
+    void test_ini_non_jtag_second_cb_stays_cb_b() {
+        Fixture f;
+        // Synthetic: a non-JTAG INI with two plain cb_ files keeps the historical
+        // mapping (second cb_ -> CB_B). This is the branch the JTAG gate protects.
+        write_text(f.root / "version/_test.ini", "[testbl]\ncb_1.bin\ncd_1.bin\ncb_2.bin\n");
+        write_file(f.root / "mydata/cb_1.bin", {0x11});
+        write_file(f.root / "mydata/cd_1.bin", {0x22});
+        write_file(f.root / "mydata/cb_2.bin", {0x33});
+
+        const auto result =
+            FileManager::ReadIniFiles("version", "test", "test", {}, {}, BuildType::Glitch2);
+        require(result.has_value(), "glitch INI must resolve");
+        const auto& bl = result->bootloaders;
+        require(bl.cb_or_a == Bytes{0x11}, "first CB stays the boot-chain CB");
+        require(bl.cb_b == Bytes{0x33}, "second CB stays CB_B for non-JTAG");
+        require(!bl.extra_cb.has_value() && !bl.extra_cd.has_value(),
+                "non-JTAG builds never populate extra bootloaders");
+        require(bl.cd == Bytes{0x22}, "single CD is the boot-chain CD");
+    }
+
     void test_findfiles_alias_priority() {
         Fixture f;
         write_file(f.root / "first/old/asset.bin", {1});
@@ -351,7 +443,8 @@ namespace {
         write_file(f.root / "version/secdata.bin", {3});
         const auto loose =
             FileManager::ReadIniFiles("version", "test", "test", {}, {.nosusecurity = true});
-        require(loose && payload(*loose, "secdata.bin") == Bytes{3},
+        // [flashfs] is read before [security], so the file keeps its [flashfs] spelling.
+        require(loose && payload(*loose, "SECDATA.BIN") == Bytes{3},
                 "nosusecurity retains loose security");
         const auto paths =
             FileManager::FindFiles({"secdata.bin", "dash.xex"},
@@ -359,6 +452,24 @@ namespace {
         require(paths.at("secdata.bin") == f.root / "version/secdata.bin" &&
                     paths.at("dash.xex") == f.root / "mydata/su_test",
                 "FindFiles filters only security from STFS");
+    }
+
+    // The FlashFS lists the [flashfs] files and then the [security] files, each in INI order,
+    // whatever order the INI gives the sections in (xeBuild 1.21).
+    void test_flashfs_files_precede_security_files() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nnone\n[security]\ncrl.bin\nsecdata.bin\n"
+                   "[flashfs]\nxam.xex\naac.xexp,12345678\n");
+        for (const auto* name : {"crl.bin", "secdata.bin", "xam.xex", "aac.xexp"})
+            write_file(f.root / "version" / name, {1});
+        const auto result = FileManager::ReadIniFiles("version", "test", "test", {});
+        std::vector<std::string> names;
+        if (result)
+            for (const auto& file : result->flashfs_sec)
+                names.push_back(file.first);
+        require(names == std::vector<std::string>{"xam.xex", "aac.xexp1", "crl.bin", "secdata.bin"},
+                "[flashfs] files come first, then [security] files, each in INI order");
     }
 
     void test_nosusecurity_skips_extraction() {
@@ -399,15 +510,8 @@ namespace {
 
     void test_split_bootloader_priority() {
         Fixture f;
-        write_text(f.root / "version/_test.ini",
-                   "[testbl]\ncf_1.bin\ncg_1.bin\ncf_2.bin\ncg_2.bin\n");
-        Bytes xboxupd(0x40, 0);
-        xboxupd[0] = 0x43;
-        xboxupd[1] = 0x46;
-        xboxupd[0x20] = 0x43;
-        xboxupd[0x21] = 0x47;
-        be32(xboxupd, 0x0C, 0x20);
-        be32(xboxupd, 0x1C, 0x20);
+        write_text(f.root / "version/_test.ini", "[testbl]\ncf_1.bin\ncg_1.bin\ncf.bin\ncg.bin\n");
+        const Bytes xboxupd = make_xboxupd();
         const Bytes cf(xboxupd.begin(), xboxupd.begin() + 0x20);
         const Bytes cg(xboxupd.begin() + 0x20, xboxupd.end());
         write_stfs(f.root / "mydata/su_test", {{"xboxupd.bin", xboxupd}});
@@ -474,6 +578,119 @@ namespace {
                 "a later-listed loose alias replaces STFS of the same root using source rank");
     }
 
+    void test_flashfs_preserves_filename_case() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nnone\n[flashfs]\nSegoeXbox-Light.xtt\nMixedCase.BIN\n");
+        write_file(f.root / "mydata/SegoeXbox-Light.xtt", {7});
+        write_file(f.root / "mydata/MixedCase.BIN", {8});
+        const auto result = FileManager::ReadIniFiles("version", "test", "test");
+        require(result && result->flashfs_sec.size() == 2,
+                "both mixed-case payloads must be present");
+        require(payload(*result, "SegoeXbox-Light.xtt") == Bytes{7},
+                "FlashFS entry name must preserve the INI-declared mixed casing");
+        require(payload(*result, "MixedCase.BIN") == Bytes{8},
+                "FlashFS entry name must preserve uppercase extension casing");
+    }
+
+    void test_flashfs_appends_patch_slot_suffix() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nnone\n[flashfs]\naac.xexp\nxenonclatin.xttp\nxenonclatin.xtt\n"
+                   "nomni.xexp1\n");
+        write_file(f.root / "mydata/aac.xexp", {1});
+        write_file(f.root / "mydata/xenonclatin.xttp", {2});
+        write_file(f.root / "mydata/xenonclatin.xtt", {4});
+        write_file(f.root / "mydata/nomni.xexp1", {5});
+        const auto result = FileManager::ReadIniFiles("version", "test", "test");
+        require(result && result->flashfs_sec.size() == 4,
+                "each distinct payload must be present exactly once");
+        require(payload(*result, "aac.xexp1") == Bytes{1},
+                "unsuffixed .xexp payload must be stored with the slot-1 suffix");
+        require(payload(*result, "xenonclatin.xttp1") == Bytes{2},
+                "unsuffixed .xttp payload must be stored with the slot-1 suffix");
+        require(payload(*result, "xenonclatin.xtt") == Bytes{4},
+                ".xtt fonts must not be suffixed");
+        require(payload(*result, "nomni.xexp1") == Bytes{5},
+                "already-suffixed .xexp1 payload must not be double-suffixed");
+    }
+
+    void test_flashfs_jtag_patch_slot_suffix() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nnone\n[flashfs]\naac.xexp\nxenonclatin.xttp\nxenonclatin.xtt\n"
+                   "nomni.xexp1\n");
+        write_file(f.root / "mydata/aac.xexp", {1});
+        write_file(f.root / "mydata/xenonclatin.xttp", {2});
+        write_file(f.root / "mydata/xenonclatin.xtt", {4});
+        write_file(f.root / "mydata/nomni.xexp1", {5});
+        const auto result =
+            FileManager::ReadIniFiles("version", "test", "test", {}, {}, BuildType::Jtag);
+        require(result && result->flashfs_sec.size() == 4,
+                "each distinct JTAG payload must be present exactly once");
+        require(payload(*result, "aac.xexp2") == Bytes{1},
+                "a JTAG image stores an unsuffixed .xexp payload with the two-slot suffix");
+        require(payload(*result, "xenonclatin.xttp2") == Bytes{2},
+                "a JTAG image stores an unsuffixed .xttp payload with the two-slot suffix");
+        require(payload(*result, "xenonclatin.xtt") == Bytes{4},
+                ".xtt fonts must not be suffixed on a JTAG image");
+        require(payload(*result, "nomni.xexp1") == Bytes{5},
+                "an already-suffixed payload keeps its suffix on a JTAG image");
+    }
+
+    void test_versioned_bootloader_skips_other_release_xboxupd() {
+        Fixture f;
+        const Bytes xboxupd = make_xboxupd(17559);
+        const Bytes cf(xboxupd.begin(), xboxupd.begin() + 0x20);
+        const Bytes cg(xboxupd.begin() + 0x20, xboxupd.end());
+        write_stfs(f.root / "version/su_test", {{"xboxupd.bin", xboxupd}});
+        write_file(f.root / "common/cf_4532.bin", {0x45});
+        write_file(f.root / "common/cg_4532.bin", {0x46});
+        const std::vector<fs::path> roots{f.root / "version", f.root / "common"};
+
+        const auto legacy =
+            FileManager::FindFileData("cf_4532.bin", roots, {}, FileManager::AssetKind::Bootloader);
+        require(legacy && legacy->data == Bytes{0x45} && legacy->root_index == 1 &&
+                    legacy->source == FileManager::AssetSource::Loose,
+                "a CF naming another release is not answered from the package's xboxupd");
+        const auto detailed = FileManager::FindFileDataDetailed("cg_4532.bin", roots, {},
+                                                                FileManager::AssetKind::Bootloader);
+        require(detailed && *detailed && (*detailed)->data == Bytes{0x46} &&
+                    (*detailed)->source == FileManager::AssetSource::Loose,
+                "a CG naming another release is not answered from the package's xboxupd");
+        const auto own = FileManager::FindFileDataDetailed("cf_17559.bin", roots, {},
+                                                           FileManager::AssetKind::Bootloader);
+        require(own && *own && (*own)->data == cf &&
+                    (*own)->source == FileManager::AssetSource::Xboxupd,
+                "a CF naming the package's own release comes from its xboxupd");
+        const auto absent = FileManager::FindFileDataDetailed("cf_17489.bin", roots, {},
+                                                              FileManager::AssetKind::Bootloader);
+        require(absent && !*absent, "a release no source supplies is reported absent");
+
+        const auto paths = FileManager::FindFiles({"cf_4532.bin", "cf_17559.bin"}, roots);
+        require(paths.at("cf_4532.bin") == f.root / "common/cf_4532.bin" &&
+                    paths.at("cf_17559.bin") == f.root / "version/su_test",
+                "FindFiles resolves CF requests by release");
+
+        FileManager::ScanOptions in_memory;
+        in_memory.in_memory_stfs.push_back(
+            {"versioned_update", make_stfs_bytes({{"xboxupd.bin", xboxupd}})});
+        const auto memory = FileManager::FindFileDataDetailed(
+            "cf_4532.bin", {f.root / "common"}, in_memory, FileManager::AssetKind::Bootloader);
+        require(memory && *memory && (*memory)->data == Bytes{0x45} &&
+                    (*memory)->source == FileManager::AssetSource::Loose,
+                "an in-memory package does not answer a CF naming another release");
+
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\ncf_4532.bin\ncg_4532.bin\ncf_17559.bin\ncg_17559.bin\n");
+        const auto jtag = FileManager::ReadIniFiles(f.root / "version/_test.ini", "test", roots, {},
+                                                    BuildType::Jtag);
+        require(jtag && jtag->bootloaders.cf0 == Bytes{0x45} &&
+                    jtag->bootloaders.cg0 == Bytes{0x46} && jtag->bootloaders.cf1 == cf &&
+                    jtag->bootloaders.cg1 == cg,
+                "a JTAG list takes its 4532 pair from disk and its 17559 pair from the package");
+    }
+
     void test_nested_bootloader_chains() {
         Fixture f;
         write_text(f.root / "version/_test.ini",
@@ -496,12 +713,7 @@ namespace {
     void test_numeric_bootloader_aliases() {
         Fixture f;
         write_text(f.root / "version/_test.ini", "[testbl]\n6bl.bin\n7bl.bin\n");
-        Bytes xboxupd(0x40, 0);
-        xboxupd[0] = xboxupd[0x20] = 0x43;
-        xboxupd[1] = 0x46;
-        xboxupd[0x21] = 0x47;
-        be32(xboxupd, 0x0C, 0x20);
-        be32(xboxupd, 0x1C, 0x20);
+        const Bytes xboxupd = make_xboxupd();
         write_stfs(f.root / "mydata/su_test", {{"xboxupd.bin", xboxupd}});
         const auto result = FileManager::ReadIniFiles("version", "test", "test");
         require(result &&
@@ -552,9 +764,89 @@ namespace {
                                      FileManager::FileLookupErrorCode::InspectionFailed,
                     "detailed lookup reports an unsafe name as an inspection failure");
             write_text(f.root / "version/_test.ini", "[testbl]\nnone\n[flashfs]\n" + path + "\n");
-            require(!FileManager::ReadIniFiles("version", "test", "test"),
-                    "unsafe payload paths reject the INI instead of becoming optional missing data");
+            const auto payloads = FileManager::ReadIniFiles("version", "test", "test");
+            if (path.starts_with("../")) {
+                // A leading ".." names a file beside the release, looked for as a loose file
+                // in the roots only: the file outside them and the STFS entry are not read.
+                require(payloads && payloads->flashfs_sec.empty(),
+                        "a payload from outside the release is skipped, never read from "
+                        "outside the roots or from STFS");
+            } else {
+                require(!payloads, "unsafe payload paths reject the INI instead of becoming "
+                                   "optional missing data");
+            }
         }
+    }
+
+    void test_ini_devkit_chain_takes_cd_and_ce_positions() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nSB_1.bin\nSC_1.bin\nSD_1.bin\nSE_1.bin\nnone\n");
+        write_file(f.root / "mydata/SB_1.bin", {0x53, 0x42});
+        write_file(f.root / "mydata/SC_1.bin", {0x53, 0x43});
+        write_file(f.root / "mydata/SD_1.bin", {0x53, 0x44});
+        write_file(f.root / "mydata/SE_1.bin", {0x53, 0x45});
+        const auto result = FileManager::ReadIniFiles("version", "test", "test");
+        require(result && result->bootloaders.cb_or_a == Bytes({0x53, 0x42}) &&
+                    result->bootloaders.sc == Bytes({0x53, 0x43}) &&
+                    result->bootloaders.cd == Bytes({0x53, 0x44}) &&
+                    result->bootloaders.ce == Bytes({0x53, 0x45}),
+                "SB, SC, SD and SE take the CB, SC, CD and CE positions");
+    }
+
+    void test_ini_lookup_falls_back_to_any_case() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nsc_17489.bin\n[flashfs]\nSegoe.XTT\nexact.bin\n");
+        write_file(f.root / "mydata/SC_17489.bin", {0x53, 0x43});
+        write_file(f.root / "mydata/segoe.xtt", {0x07});
+        write_file(f.root / "mydata/EXACT.bin", {0x01});
+        write_file(f.root / "mydata/exact.bin", {0x02});
+        const auto result = FileManager::ReadIniFiles("version", "test", "test");
+        require(result && result->bootloaders.sc == Bytes({0x53, 0x43}),
+                "a bootloader named in another case is found");
+        require(payload(*result, "Segoe.XTT") == Bytes{0x07},
+                "a payload named in another case is found and keeps the INI's casing");
+        require(payload(*result, "exact.bin") == Bytes{0x02},
+                "an exact-case file wins over one that only matches without case");
+        const auto detailed =
+            FileManager::FindFileDataDetailed("sc_17489.bin", {f.root / "mydata"});
+        require(detailed && *detailed && (**detailed).data == Bytes({0x53, 0x43}),
+                "the detailed lookup falls back to any case as well");
+        require(FileManager::FindFileData("SC_17489.BIN", {f.root / "mydata"}).has_value(),
+                "the byte lookup falls back to any case as well");
+    }
+
+    void test_ini_payload_outside_release_and_rawpatch() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nnone\n[flashfs]\n..\\data\\xell.bin,;\n..\\launch.xex,0\n"
+                   "rrbkgnd.bmp ,6850A07F\nrglXam.rglp\n[rawpatch]\nvfuses_khv.bin,0xE4000\n"
+                   "reason.bin,0x4E\n");
+        write_file(f.root / "mydata/data/xell.bin", {0x7F, 'E'});
+        write_file(f.root / "mydata/rrbkgnd.bmp", {0x42});
+        write_file(f.root / "mydata/rglXam.rglp", {0x43});
+        write_file(f.root / "mydata/reason.bin", {0x12});
+        const auto result = FileManager::ReadIniFiles("version", "test", "test");
+        require(result.has_value(), "a missing file from outside the release and a missing "
+                                    "[rawpatch] file are skipped");
+        require(payload(*result, "xell.bin") == Bytes({0x7F, 'E'}),
+                "..\\data\\xell.bin is found under data/ in a root and stored by its basename");
+        require(std::none_of(result->flashfs_sec.begin(), result->flashfs_sec.end(),
+                             [](const auto& file) { return file.first == "launch.xex"; }),
+                "a missing file from outside the release is left out");
+        require(payload(*result, "rrbkgnd.bmp1") == Bytes{0x42},
+                "a name ending in p with a checksum takes the slot suffix, as xeBuild writes it");
+        require(payload(*result, "rglXam.rglp") == Bytes{0x43},
+                "a name ending in p without a checksum is stored as it is");
+        require(result->raw_patches.size() == 1 && result->raw_patches[0].name == "reason.bin" &&
+                    result->raw_patches[0].offset == 0x4E &&
+                    result->raw_patches[0].data == Bytes{0x12},
+                "a [rawpatch] file is read with its offset; a missing one is skipped");
+
+        write_text(f.root / "version/_test.ini", "[testbl]\nnone\n[rawpatch]\nreason.bin,0xZZ\n");
+        require(!FileManager::ReadIniFiles("version", "test", "test"),
+                "a [rawpatch] offset that does not parse rejects the INI");
     }
 
     void test_ini_rejects_symlink_escape_and_keeps_safe_nested_paths() {
@@ -580,13 +872,7 @@ namespace {
 
     void test_stfs_caching_and_cache_clearing() {
         Fixture f;
-        Bytes xboxupd(0x40, 0);
-        xboxupd[0] = 0x43;
-        xboxupd[1] = 0x46;
-        xboxupd[0x20] = 0x43;
-        xboxupd[0x21] = 0x47;
-        be32(xboxupd, 0x0C, 0x20);
-        be32(xboxupd, 0x1C, 0x20);
+        const Bytes xboxupd = make_xboxupd();
         const Bytes cf(xboxupd.begin(), xboxupd.begin() + 0x20);
         const Bytes cg(xboxupd.begin() + 0x20, xboxupd.end());
 
@@ -654,13 +940,7 @@ namespace {
     }
 
     void test_in_memory_stfs_bootloader_derivation() {
-        Bytes xboxupd(0x40, 0);
-        xboxupd[0] = 0x43;
-        xboxupd[1] = 0x46;
-        xboxupd[0x20] = 0x43;
-        xboxupd[0x21] = 0x47;
-        be32(xboxupd, 0x0C, 0x20);
-        be32(xboxupd, 0x1C, 0x20);
+        const Bytes xboxupd = make_xboxupd();
         const Bytes cf(xboxupd.begin(), xboxupd.begin() + 0x20);
         const Bytes cg(xboxupd.begin() + 0x20, xboxupd.end());
 
@@ -748,18 +1028,32 @@ int main() {
         {"INI later STFS fallback", test_ini_later_stfs_fallback},
         {"INI deduplication", test_ini_deduplicates_and_scores_aliases},
         {"INI bootloader chains", test_ini_preserves_bootloader_chains},
+        {"INI JTAG extra bootloaders", test_ini_jtag_separates_extra_bootloaders},
+        {"INI non-JTAG leaves extra bootloaders empty",
+         test_ini_non_jtag_leaves_extra_bootloaders_empty},
+        {"INI non-JTAG second CB stays CB_B", test_ini_non_jtag_second_cb_stays_cb_b},
         {"FindFiles alias priority", test_findfiles_alias_priority},
         {"nosu", test_nosu},
         {"nosusecurity", test_nosusecurity},
+        {"flashfs files precede security files", test_flashfs_files_precede_security_files},
         {"nosusecurity skips extraction", test_nosusecurity_skips_extraction},
         {"explicit roots and ties", test_explicit_roots_and_same_root_ties},
         {"split bootloader priority", test_split_bootloader_priority},
         {"missing and invalid sources", test_missing_and_invalid_sources},
         {"duplicate loose wins over STFS", test_duplicate_loose_wins_over_stfs},
+        {"FlashFS preserves filename case", test_flashfs_preserves_filename_case},
+        {"FlashFS appends patch slot suffix", test_flashfs_appends_patch_slot_suffix},
+        {"FlashFS JTAG patch slot suffix", test_flashfs_jtag_patch_slot_suffix},
+        {"versioned bootloader skips another release's xboxupd",
+         test_versioned_bootloader_skips_other_release_xboxupd},
         {"nested bootloader chains", test_nested_bootloader_chains},
         {"numeric bootloader aliases", test_numeric_bootloader_aliases},
         {"INI recognizes SC and 3BL", test_ini_recognizes_sc_and_3bl_bootloaders},
         {"INI rejects unconfined paths", test_ini_rejects_unconfined_asset_paths},
+        {"INI devkit chain positions", test_ini_devkit_chain_takes_cd_and_ce_positions},
+        {"INI lookup falls back to any case", test_ini_lookup_falls_back_to_any_case},
+        {"INI payload outside the release and [rawpatch]",
+         test_ini_payload_outside_release_and_rawpatch},
         {"INI rejects symlink escapes and keeps nested paths",
          test_ini_rejects_symlink_escape_and_keeps_safe_nested_paths},
         {"STFS caching and cache clearing", test_stfs_caching_and_cache_clearing},

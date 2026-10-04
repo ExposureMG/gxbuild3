@@ -17,6 +17,9 @@ enum class BuildType {
     Glitch2m,
     Glitch3,
     Devkit,
+    // A development kernel (SB/SC/SD/SE) carrying the glitch2m patches: its patched SD is
+    // signed again with the SB private key.
+    Devgl,
 };
 
 enum class ConsoleType {
@@ -36,12 +39,11 @@ enum class ImageType {
     Emmc,
 };
 
-inline const std::map<std::string, BuildType>
-    kBuildTypeMap = {
-        {"retail", BuildType::Retail},     {"jtag", BuildType::Jtag},
-        {"glitch", BuildType::Glitch},     {"glitch2", BuildType::Glitch2},
-        {"glitch2m", BuildType::Glitch2m}, {"glitch3", BuildType::Glitch3},
-        {"devkit", BuildType::Devkit},
+inline const std::map<std::string, BuildType> kBuildTypeMap = {
+    {"retail", BuildType::Retail},     {"jtag", BuildType::Jtag},
+    {"glitch", BuildType::Glitch},     {"glitch2", BuildType::Glitch2},
+    {"glitch2m", BuildType::Glitch2m}, {"glitch3", BuildType::Glitch3},
+    {"devkit", BuildType::Devkit},     {"devgl", BuildType::Devgl},
 };
 
 inline const std::map<std::string, ConsoleType> kConsoleTypeMap = {
@@ -86,6 +88,21 @@ inline const std::map<std::string, ImageType> kImageTypeMap = {
     {"winchester4g", ImageType::Emmc},
 };
 
+// The 16 bytes a stage stores in clear and keys its seal from: +0x10 on CB/SC/CD/CE/CG, the
+// header fixpoint at +0x20 on CF.
+using BootloaderNonce = std::array<uint8_t, 16>;
+
+// Nonces read from a donor image. RunBuild seals each new boot-chain stage under the donor nonce
+// at the same position and every CF and CG it writes under the donor's CF and CG nonce, and
+// draws a random nonce for any nonce left empty here.
+struct DonorNonces {
+    // Boot-chain positions: first CB (SB), second CB (SC), CD (SD), CE (SE).
+    std::array<std::optional<BootloaderNonce>, 4> stages;
+    // CF and CG nonce of the donor slot stating the largest CF LDV.
+    std::optional<BootloaderNonce> cf;
+    std::optional<BootloaderNonce> cg;
+};
+
 struct InputMetadata {
     std::vector<uint8_t> cpu_key;
     std::optional<std::vector<uint8_t>> nand_image;
@@ -93,12 +110,28 @@ struct InputMetadata {
     // body is plaintext at the Input boundary. RunBuild encrypts the body for the output NAND.
     std::optional<std::vector<uint8_t>> keyvault;
     std::optional<std::vector<uint8_t>> smc;
+    // Writable CB/CB_B per-box LDV at +0x23, not the display value at +0x3B1.
     uint8_t cb_ldv{0};
+    // CF per-box LDV and pairing, taken from the donor slot stating the largest CF LDV. A CF
+    // without its own pairing here takes pairing_data.
     std::optional<uint8_t> cf_ldv;
     std::array<uint8_t, 3> pairing_data{};
+    std::optional<std::array<uint8_t, 3>> cf_pairing_data;
     uint8_t console_type{0};
     uint8_t console_sequence{0};
     uint16_t console_sequence_allow{0};
+    // Empty when there is no donor or its chain does not reach CE.
+    std::optional<DonorNonces> donor_nonces;
+    // The console's settings block (0x400 bytes whose head checksum holds) and its statistics
+    // and manufacturing blocks (0x1000 bytes each; all 0xFF where the console keeps none).
+    // They go to the target layout's own offsets, so a donor of another layout keeps them.
+    std::optional<std::vector<uint8_t>> smc_config;
+    std::optional<std::vector<uint8_t>> statistics;
+    std::optional<std::vector<uint8_t>> manufacturing;
+    // The console's own crl.bin, dae.bin and secdata.bin, in the form flashfs_sec carries them
+    // (secdata.bin in the clear behind its nonce). RunBuild seals the FlashFS's copies of these
+    // files with the vector, file key, heads and field these copies carry.
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> console_secured_files;
 };
 
 struct BootloaderEntryInfo {
@@ -199,6 +232,10 @@ struct InputBootloaders {
     std::optional<std::vector<uint8_t>> cg0;
     std::optional<std::vector<uint8_t>> cf1;
     std::optional<std::vector<uint8_t>> cg1;
+    // JTAG only: the second CB and second CD listed in the INI are staged into the
+    // JTAG payload window as "extra bootloaders"; they are not part of the boot chain.
+    std::optional<std::vector<uint8_t>> extra_cb;
+    std::optional<std::vector<uint8_t>> extra_cd;
 };
 
 struct InputPayloads {
@@ -235,6 +272,8 @@ struct OptionsArgs {
     std::optional<bool> nosusecurity;
     std::optional<bool> smcnocheck;
     std::optional<bool> noblpatch;
+    // Stages whose automatic patches are skipped: any of cb, cd, khv, joined with '+'.
+    std::optional<std::string> nopatch;
 
     // SMC config overrides
     std::optional<std::string> cputemp;
@@ -254,6 +293,16 @@ struct OptionsArgs {
     std::optional<std::string> macid;
 };
 
+struct NoPatch {
+    bool cb = false;
+    bool cd = false;
+    bool khv = false;
+};
+
+// The stages whose automatic patches are skipped. `noblpatch` is the older spelling of
+// `nopatch=cb+cd`.
+[[nodiscard]] NoPatch ResolveNoPatch(const OptionsArgs& options);
+
 class OptionsManager {
   public:
     OptionsManager() = default;
@@ -267,6 +316,10 @@ class OptionsManager {
 
     static bool is_known_option(std::string_view name);
     static bool is_bool_option(std::string_view name);
+    // The header byte for a power-on reason named by xellbutton, xellbutton2 or dualboot
+    // (any case): the device in the high nibble, the button in the low one, as xeBuild
+    // writes it. Nothing for a name xeBuild does not take.
+    static std::optional<uint8_t> power_on_reason(std::string_view name);
     bool has(std::string_view name) const;
 
     bool set_bool(std::string_view name, bool value);
@@ -314,9 +367,19 @@ struct InputPatches {
     std::vector<InputPatchFile> addons;
 };
 
+// A release INI [rawpatch] entry: the file's bytes written as they are at a clean image
+// offset, after everything else is laid.
+struct InputRawPatch {
+    std::string name;
+    uint32_t offset{0};
+    std::vector<uint8_t> data;
+};
+
 struct Input {
     BuildType build_type{BuildType::Retail};
     ImageType image_type{ImageType::SmallBlock};
+    // The board the image is built for; it selects the NAND header copyright.
+    std::optional<ConsoleType> console;
     OptionsArgs options{};
     InputMetadata metadata{};
     InputBootloaders bootloaders{};
@@ -324,4 +387,8 @@ struct Input {
     std::optional<InputPatches> patches;
     std::optional<InputPayloads> payloads;
     std::optional<std::vector<std::pair<std::string, std::vector<uint8_t>>>> flashfs_sec;
+    std::vector<InputRawPatch> raw_patches;
+    // The XeCrypt RSA-2048 private key a devgl build signs its patched SD with (SB_priv.bin,
+    // 0x390 bytes). Supplied by the user, never logged, and needed by no other build type.
+    std::optional<std::vector<uint8_t>> sb_private_key;
 };

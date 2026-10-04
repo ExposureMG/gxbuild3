@@ -154,6 +154,10 @@ namespace gxbuild3::cli {
                                                  "duplicate option", index - 1));
                 }
                 args.section = *value;
+                if (const auto console_it = kConsoleTypeMap.find(lowercase(*value));
+                    console_it != kConsoleTypeMap.end()) {
+                    args.console = console_it->second;
+                }
             } else if (token == "-t" || token == "--buildtype") {
                 if (std::exchange(saw_build_type, true)) {
                     return std::unexpected(error(ParseErrorCode::DuplicateArgument, token,

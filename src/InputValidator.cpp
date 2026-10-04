@@ -1,6 +1,8 @@
 #include "InputValidator.hpp"
 
 #include <expected>
+#include <string>
+#include <utility>
 
 namespace {
 
@@ -11,6 +13,7 @@ namespace {
             case BuildType::Glitch2:
             case BuildType::Glitch2m:
             case BuildType::Glitch3:
+            case BuildType::Devgl:
                 return true;
             case BuildType::Retail:
             case BuildType::Devkit:
@@ -44,6 +47,13 @@ std::expected<void, InputError> ValidateInput(const Input& input) {
         return std::unexpected(InputError{InputErrorCode::MissingCd, "CD bootloader is required"});
     }
 
+    if (input.build_type == BuildType::Devgl &&
+        (!input.sb_private_key || input.sb_private_key->empty())) {
+        return std::unexpected(InputError{
+            InputErrorCode::MissingSigningKey,
+            "A devgl image's patched SD is signed again, which needs the SB private key"});
+    }
+
     const bool has_automatic = has_automatic_patchset(input);
     if (requires_automatic_patchset(input.build_type) && !has_automatic) {
         return std::unexpected(InputError{InputErrorCode::MissingPatchset,
@@ -55,31 +65,38 @@ std::expected<void, InputError> ValidateInput(const Input& input) {
                                           "Build type does not allow patch data"});
     }
 
-    if (input.payloads && input.payloads->payload.has_value()) {
-        return std::unexpected(
-            InputError{InputErrorCode::UnsupportedCustomPayload,
-                       "Custom payload is unsupported because no on-disk format contract exists"});
+    if (input.payloads && input.payloads->payload && input.payloads->payload->size() != 0x200) {
+        return std::unexpected(InputError{InputErrorCode::InvalidPayloadSize,
+                                          "Payload must contain exactly 0x200 bytes"});
     }
-    if (input.payloads && input.payloads->rebooter &&
-        input.payloads->rebooter->size() != 0x1000) {
-        return std::unexpected(InputError{InputErrorCode::InvalidRebooterSize,
-                                          "Rebooter payload must contain exactly 0x1000 bytes"});
+    if (input.payloads && input.payloads->rebooter && input.payloads->rebooter->size() > 0x1000) {
+        return std::unexpected(
+            InputError{InputErrorCode::InvalidRebooterSize,
+                       "Rebooter payload must not exceed the 0x1000-byte region"});
     }
     if (input.payloads && input.payloads->fuses && input.payloads->fuses->size() != 0x60) {
         return std::unexpected(
             InputError{InputErrorCode::InvalidFusesSize,
                        "Virtual fuses payload must contain exactly 0x60 bytes"});
     }
-
-    const bool has_donor_backing = input.metadata.nand_image && !input.metadata.nand_image->empty();
-    if (!has_donor_backing && input.image_type == ImageType::Emmc) {
-        for (uint8_t block_type = 0x33; block_type <= 0x39; ++block_type) {
-            const auto* slot = input.mobiles.slot(block_type);
-            if (slot && *slot) {
-                return std::unexpected(
-                    InputError{InputErrorCode::UnsupportedMobileData,
-                               "eMMC Corona metadata supports mobile slots 0x31 and 0x32 only"});
-            }
+    if (input.metadata.smc_config && input.metadata.smc_config->size() != 0x400) {
+        return std::unexpected(InputError{InputErrorCode::InvalidSettingsBlockSize,
+                                          "SMC config block must contain exactly 0x400 bytes"});
+    }
+    for (const auto* block : {&input.metadata.statistics, &input.metadata.manufacturing}) {
+        if (*block && (*block)->size() != 0x1000) {
+            return std::unexpected(InputError{
+                InputErrorCode::InvalidSettingsBlockSize,
+                "Statistics and manufacturing blocks must contain exactly 0x1000 bytes"});
+        }
+    }
+    for (const auto& [name, button] : {std::pair{"xellbutton", &input.options.xellbutton},
+                                       std::pair{"xellbutton2", &input.options.xellbutton2},
+                                       std::pair{"dualboot", &input.options.dualboot}}) {
+        if (*button && !OptionsManager::power_on_reason(**button)) {
+            return std::unexpected(
+                InputError{InputErrorCode::InvalidOption,
+                           std::string(name) + " names no known button: '" + **button + "'"});
         }
     }
 

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.29)
 
 if(NOT DEFINED GXBUILD3_EXE OR GXBUILD3_EXE STREQUAL "")
     message(FATAL_ERROR "GXBUILD3_EXE must name the gxbuild3 executable")

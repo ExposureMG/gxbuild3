@@ -15,8 +15,12 @@ enum class InputErrorCode {
     UnexpectedPatchset,
     UnsupportedMobileData,
     UnsupportedCustomPayload,
+    InvalidPayloadSize,
     InvalidRebooterSize,
     InvalidFusesSize,
+    InvalidSettingsBlockSize,
+    InvalidOption,
+    MissingSigningKey,
 };
 
 struct InputError {
