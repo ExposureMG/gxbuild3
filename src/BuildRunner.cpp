@@ -23,6 +23,7 @@
 #include "patchers/Signature.hpp"
 #include "utils/Log.hpp"
 #include "utils/Utils.hpp"
+#include "utils/XeRsa.hpp"
 
 #include <algorithm>
 #include <array>
@@ -225,14 +226,16 @@ namespace {
     // A glitch (RGH1) image boots a single zero-paired CB, so its CD is keyed without the
     // CPU key, and its CFs state no pairing (xeBuild 1.21 glitch Jasper and Falcon). A JTAG
     // image's main chain is zero-paired the same way; its second chain's CB carries the
-    // console's pairing and CB LDV instead, and its second CF is paired. Every other chain
-    // carries the console's pairing and CB LDV. A JTAG image's first update pair carries
-    // nothing of the console and keeps its CF's per-box block as supplied.
+    // console's pairing and CB LDV instead, and its second CF is paired. A devgl image's SB
+    // is zero-paired too (xeBuild 1.21 devgl). Every other chain carries the console's pairing
+    // and CB LDV. A JTAG image's first update pair carries nothing of the console and keeps its
+    // CF's per-box block as supplied.
     std::expected<void, BuildError> apply_bootloader_metadata(FlashImage& flash_image,
                                                               const InputMetadata& metadata,
                                                               BuildType build_type) {
         const bool paired = build_type != BuildType::Glitch;
-        const bool main_cb_paired = paired && build_type != BuildType::Jtag;
+        const bool main_cb_paired =
+            paired && build_type != BuildType::Jtag && build_type != BuildType::Devgl;
         auto& cb_a = flash_image.cb_section.cb_or_A;
         try {
             if (flash_image.cb_section.cb_B.has_value()) {
@@ -531,7 +534,8 @@ namespace {
     // Header 0x10..0x47 holds the copyright notice; 0x48..0x4F are boot flags.
     constexpr size_t kCopyrightLength = sizeof(nand_header::copyright);
 
-    // The types whose CB/CD are patched: their header states 0x48 = 1 and the boot flags.
+    // The types whose CB/CD (devgl: SD) are patched: their header states 0x48 = 1 and the boot
+    // flags.
     bool is_hacked(BuildType build_type) {
         switch (build_type) {
             case BuildType::Jtag:
@@ -539,6 +543,7 @@ namespace {
             case BuildType::Glitch2:
             case BuildType::Glitch2m:
             case BuildType::Glitch3:
+            case BuildType::Devgl:
                 return true;
             case BuildType::Retail:
             case BuildType::Devkit:
@@ -604,6 +609,17 @@ namespace {
 BuildResult RunBuild(const Input& input) {
     if (const auto validation = ValidateInput(input); !validation) {
         return build_error(BuildErrorCode::InvalidInput, validation.error().message);
+    }
+
+    // A devgl image's SD is patched, so it is signed again with the SB private key.
+    std::optional<gxbuild3::utils::XeRsaPrivateKey> sd_signing_key;
+    if (input.build_type == BuildType::Devgl) {
+        sd_signing_key = gxbuild3::utils::XeRsaPrivateKey::parse(*input.sb_private_key);
+        if (!sd_signing_key) {
+            return build_error(BuildErrorCode::InvalidInput,
+                               "The SB private key is not a well-formed XeCrypt RSA-2048 "
+                               "private key");
+        }
     }
 
     FlashImage flash_image{};
@@ -843,17 +859,21 @@ BuildResult RunBuild(const Input& input) {
         parsed_patchset = std::move(*parsed);
     }
 
+    // A devgl chain has no CB_B: the glitch2m patch file's first section is not applied, and its
+    // CD section patches the SD (xeBuild 1.21 devgl: SB, SC and SE as the release ships them).
+    const bool devgl = input.build_type == BuildType::Devgl;
     if (parsed_patchset && parsed_patchset->kind == PatchSetKind::Glitch &&
         !input.options.noblpatch.value_or(false)) {
         const auto first_target = input.build_type == BuildType::Glitch ? PatchSectionTarget::Cb
                                                                         : PatchSectionTarget::Cbb;
-        const auto* first_section = find_patch_section(*parsed_patchset, first_target);
+        const auto* first_section =
+            devgl ? nullptr : find_patch_section(*parsed_patchset, first_target);
         const auto* cd_section = find_patch_section(*parsed_patchset, PatchSectionTarget::Cd);
-        if (!first_section || !cd_section) {
+        if ((!devgl && !first_section) || !cd_section) {
             return build_error(BuildErrorCode::PatchFailure,
                                "Glitch patchset is missing a bootloader patch section");
         }
-        if (first_target == PatchSectionTarget::Cbb && !flash_image.cb_section.cb_B) {
+        if (!devgl && first_target == PatchSectionTarget::Cbb && !flash_image.cb_section.cb_B) {
             return build_error(BuildErrorCode::PatchFailure,
                                "Automatic patchset targets CBB, but no CBB was supplied");
         }
@@ -876,23 +896,29 @@ BuildResult RunBuild(const Input& input) {
             flash_image.kernel_section.ce ? flash_image.kernel_section.ce->serialize().size() : 0,
         };
         const size_t first_index = first_target == PatchSectionTarget::Cb ? CbA : CbB;
-        const auto first_size =
-            patched_bootloader_size(stage_sizes[first_index], *first_section,
-                                    first_target == PatchSectionTarget::Cb ? "CB" : "CBB");
-        const auto cd_size = patched_bootloader_size(stage_sizes[Cd], *cd_section, "CD");
-        if (!first_size) {
-            return build_error(BuildErrorCode::PatchFailure, first_size.error().message);
+        if (first_section) {
+            const auto first_size =
+                patched_bootloader_size(stage_sizes[first_index], *first_section,
+                                        first_target == PatchSectionTarget::Cb ? "CB" : "CBB");
+            if (!first_size) {
+                return build_error(BuildErrorCode::PatchFailure, first_size.error().message);
+            }
+            stage_sizes[first_index] = *first_size;
         }
+        const auto cd_size = patched_bootloader_size(stage_sizes[Cd], *cd_section, "CD");
         if (!cd_size) {
             return build_error(BuildErrorCode::PatchFailure, cd_size.error().message);
         }
-        stage_sizes[first_index] = *first_size;
         stage_sizes[Cd] = *cd_size;
 
         const bool is_big_or_emmc =
             flash_image.flash_driver.driver_mode() == Driver::DriverMode::Big ||
             flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc;
-        const size_t boot_chain_limit = is_big_or_emmc ? 0xC0000 : 0x70000;
+        // A devgl chain runs past its first update slot, which it never fills, up to the KHV
+        // patch slot.
+        const size_t boot_chain_limit = devgl            ? flash_image.patch_slot_offset()
+                                        : is_big_or_emmc ? 0xC0000
+                                                         : 0x70000;
         constexpr size_t boot_chain_start = 0x8000;
         const size_t boot_chain_capacity = boot_chain_limit - boot_chain_start;
         size_t aligned_total = 0;
@@ -934,12 +960,12 @@ BuildResult RunBuild(const Input& input) {
             return std::nullopt;
         };
 
-        if (first_target == PatchSectionTarget::Cb) {
+        if (first_section && first_target == PatchSectionTarget::Cb) {
             if (const auto error = patch_and_reparse(flash_image.cb_section.cb_or_A, first_target,
                                                      target_capacity(CbA), "CB")) {
                 return std::unexpected(*error);
             }
-        } else {
+        } else if (first_section) {
             if (const auto error = patch_and_reparse(*flash_image.cb_section.cb_B, first_target,
                                                      target_capacity(CbB), "CBB")) {
                 return std::unexpected(*error);
@@ -948,6 +974,37 @@ BuildResult RunBuild(const Input& input) {
         if (const auto error = patch_and_reparse(
                 flash_image.kernel_section.cd, PatchSectionTarget::Cd, target_capacity(Cd), "CD")) {
             return std::unexpected(*error);
+        }
+        // A development SD stays plaintext until it is sealed; the parser's test is for a
+        // retail CD.
+        if (flash_image.devkit_chain()) {
+            flash_image.kernel_section.cd.decrypted = true;
+        }
+    }
+
+    // The patched SD no longer matches its signature, so it is signed again with the SB
+    // private key, as Xbox-360-Crypto sd_signer.py signs one (xeBuild 1.21 devgl: "SD_17489.bin
+    // failed signature check, attempting to resign"). The signature leaves the nonce out, so
+    // the donor nonce set below does not disturb it.
+    if (sd_signing_key) {
+        auto& sd = flash_image.kernel_section.cd;
+        auto sd_bytes = sd.serialize();
+        if (!gxbuild3::utils::verify_sd_signature(sd_bytes, sd_signing_key->public_key())) {
+            Log::Info("SD {} failed its signature check; signing it again with the SB private key",
+                      sd.header.header.version);
+            if (!gxbuild3::utils::sign_sd(sd_bytes, *sd_signing_key) ||
+                !gxbuild3::utils::verify_sd_signature(sd_bytes, sd_signing_key->public_key())) {
+                return build_error(BuildErrorCode::PatchFailure,
+                                   "Could not sign the SD with the SB private key");
+            }
+            try {
+                sd = BootloaderCd::parse(sd_bytes);
+            } catch (const std::exception& exception) {
+                return build_error(BuildErrorCode::PatchFailure,
+                                   std::string("Failed to reparse the signed SD: ") +
+                                       exception.what());
+            }
+            sd.decrypted = true;
         }
     }
 
@@ -1056,11 +1113,11 @@ BuildResult RunBuild(const Input& input) {
         // A new FlashFS starts at root sequence 1. The image writer clears every older root
         // block's metadata, so no donor root can outrank it.
         constexpr uint32_t version = 1;
-        // A devkit image's files start right behind its update slots: block 0x3D, past
-        // 0xF4000, on a 64 MB small-block image (xeBuild 1.21). Every other image keeps the
-        // first 0x50 blocks.
+        // A devkit or devgl image's files start right behind its update slots: block 0x3D,
+        // past 0xF4000, on a 64 MB small-block devkit image and block 0x3C, past 0xF0000, on a
+        // 16 MB devgl image (xeBuild 1.21). Every other image keeps the first 0x50 blocks.
         uint32_t reserved_boundary = 0x50;
-        if (input.build_type == BuildType::Devkit) {
+        if (input.build_type == BuildType::Devkit || devgl) {
             const size_t block_size = flash_image.flash_driver.block_size_clean();
             reserved_boundary = static_cast<uint32_t>(
                 (flash_image.update_slots_end() + block_size - 1) / block_size);

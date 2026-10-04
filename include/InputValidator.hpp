@@ -20,6 +20,7 @@ enum class InputErrorCode {
     InvalidFusesSize,
     InvalidSettingsBlockSize,
     InvalidOption,
+    MissingSigningKey,
 };
 
 struct InputError {

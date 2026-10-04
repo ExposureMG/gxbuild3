@@ -133,6 +133,7 @@ namespace {
             case BuildType::Glitch2:
             case BuildType::Glitch2m:
             case BuildType::Glitch3:
+            case BuildType::Devgl:
                 return PatchSetKind::Glitch;
             default:
                 return std::nullopt;
@@ -195,7 +196,9 @@ namespace BinaryParser {
         }
 
         parsed.kind = *patchSetKind;
-        parsed.manufacturing = buildType == BuildType::Glitch2m;
+        // A devgl image reads the glitch2m patch file and lays its patch slot the same way:
+        // fuses first, the KHV payload at 0x60.
+        parsed.manufacturing = buildType == BuildType::Glitch2m || buildType == BuildType::Devgl;
 
         if (*patchSetKind == PatchSetKind::Jtag) {
             std::vector<std::vector<uint8_t>> rawSections;

@@ -37,6 +37,7 @@ namespace gxbuild3::NAND {
         // 0x90000.
         constexpr uint32_t kJtagSlotOffset = 0x70000;
         constexpr uint32_t kJtagWindowOffset = 0x90000;
+        constexpr uint32_t kDevglSlotOffset = 0xD0000;
         constexpr uint32_t kSmallFsOffset = 0x10000;
         constexpr uint32_t kBigFsOffset = 0x20000;
 
@@ -173,12 +174,20 @@ namespace gxbuild3::NAND {
                                 static_cast<uint32_t>(image.flash_driver.block_size_clean()));
             }
             const auto mode = image.flash_driver.driver_mode();
+            // A devgl image states its first slot at 0xD0000, rounded up by the shape's slot
+            // step, inside the SE that runs past it, and lays its fuses and KHV patches one
+            // stride on (xeBuild 1.21 devgl: 0xD0000 on Jasper and Corona 4 GB, 0xE0000 on big
+            // block).
+            if (image.build_type == BuildType::Devgl) {
+                return round_up(kDevglSlotOffset, slot_round(mode));
+            }
             const uint32_t slot_base = jtag ? kJtagSlotOffset : retail_slot_offset(mode);
             return system_update_base(slot_base, slot_round(mode), jtag, glitch, image.payloads);
         }
 
         bool manufacturing(const FlashImage& image) {
             return image.build_type == BuildType::Glitch2m ||
+                   image.build_type == BuildType::Devgl ||
                    (image.payloads.patchset && image.payloads.patchset->manufacturing);
         }
         size_t khv_prefix(const FlashImage& image) { return manufacturing(image) ? 0x60 : 0x10; }
@@ -530,6 +539,48 @@ namespace gxbuild3::NAND {
         parse_patchslot(patchslot_base + slot_stride, system_update_1);
         if (invalid_continuation) return false;
 
+        std::vector<uint8_t> inferred_khv;
+        const auto valid_khv_at = [&](size_t offset, size_t prefix) {
+            const auto bytes =
+                flash_driver.read_clean(offset, slot_stride > prefix ? slot_stride - prefix : 0);
+            size_t cursor = 0, records = 0;
+            const auto word = [&](size_t at) {
+                return (uint32_t(bytes[at]) << 24) | (uint32_t(bytes[at + 1]) << 16) |
+                       (uint32_t(bytes[at + 2]) << 8) | bytes[at + 3];
+            };
+            while (cursor + 4 <= bytes.size()) {
+                const uint32_t address = word(cursor);
+                cursor += 4;
+                if (address == 0xFFFFFFFF) {
+                    if (records)
+                        inferred_khv.assign(bytes.begin(), bytes.begin() + cursor);
+                    return records != 0;
+                }
+                if ((address & 3) || cursor + 4 > bytes.size())
+                    return false;
+                const uint32_t count = word(cursor);
+                cursor += 4;
+                if (!count || count > (bytes.size() - cursor) / 4)
+                    return false;
+                cursor += size_t(count) * 4;
+                ++records;
+            }
+            return false;
+        };
+        const size_t overlay = size_t(patchslot_base) + slot_stride;
+        // A development chain names its type: devkit when the header states 0x8000 at 0x04,
+        // as a devkit image does, or the second slot holds no glitch2m fuses and KHV patches;
+        // devgl otherwise.
+        if (devkit_chain()) {
+            build_type = header.pairing != 0x8000 && valid_khv_at(overlay + 0x60, 0x60)
+                             ? BuildType::Devgl
+                             : BuildType::Devkit;
+        } else if (valid_khv_at(overlay + 0x10, 0x10)) {
+            build_type = BuildType::Glitch2;
+        } else if (valid_khv_at(overlay + 0x60, 0x60)) {
+            build_type = BuildType::Glitch2m;
+        }
+
         const size_t total_blocks = flash_driver.block_count();
         const size_t block_size = flash_driver.block_size_clean();
 
@@ -664,7 +715,7 @@ namespace gxbuild3::NAND {
 
             if (best_root) {
                 FlashFileSystem fs{};
-                fs.set_larger_filesystem(devkit_chain());
+                fs.set_larger_filesystem(build_type == BuildType::Devkit);
                 if (fs.load(flash_driver, static_cast<uint16_t>(*best_root / clusters_per_block),
                             *best_root % clusters_per_block)) {
                     filesystem = std::move(fs);
@@ -680,37 +731,8 @@ namespace gxbuild3::NAND {
             return xell_span.size() == XeLL::kSize ? XeLL::parse(xell_span) : std::nullopt;
         };
 
-        std::vector<uint8_t> inferred_khv;
-        const auto valid_khv_at = [&](size_t offset, size_t prefix) {
-            const auto bytes = flash_driver.read_clean(offset, slot_stride > prefix ? slot_stride - prefix : 0);
-            size_t cursor = 0, records = 0;
-            const auto word = [&](size_t at) { return (uint32_t(bytes[at]) << 24) |
-                (uint32_t(bytes[at+1]) << 16) | (uint32_t(bytes[at+2]) << 8) | bytes[at+3]; };
-            while (cursor + 4 <= bytes.size()) {
-                const uint32_t address = word(cursor); cursor += 4;
-                if (address == 0xFFFFFFFF) {
-                    if (records) inferred_khv.assign(bytes.begin(), bytes.begin() + cursor);
-                    return records != 0;
-                }
-                if ((address & 3) || cursor + 4 > bytes.size()) return false;
-                const uint32_t count = word(cursor); cursor += 4;
-                if (!count || count > (bytes.size() - cursor) / 4) return false;
-                cursor += size_t(count) * 4;
-                ++records;
-            }
-            return false;
-        };
-        const size_t overlay = size_t(patchslot_base) + slot_stride;
-        // A devkit chain names its type; its second slot holds no glitch patches.
-        if (devkit_chain()) {
-            build_type = BuildType::Devkit;
-        } else if (valid_khv_at(overlay + 0x10, 0x10)) {
-            build_type = BuildType::Glitch2;
-        } else if (valid_khv_at(overlay + 0x60, 0x60)) {
-            build_type = BuildType::Glitch2m;
-        }
         if (!inferred_khv.empty()) {
-            if (build_type != BuildType::Glitch2m)
+            if (build_type != BuildType::Glitch2m && build_type != BuildType::Devgl)
                 build_type = cb_section.cb_x ? BuildType::Glitch3 :
                              cb_section.cb_B ? BuildType::Glitch2 : BuildType::Glitch;
             // The NAND contains already-patched CB/CD. Rebuild with empty bootloader
@@ -722,7 +744,7 @@ namespace gxbuild3::NAND {
                 payloads.patchset = std::move(recovered);
         }
         const uint32_t window_base = kJtagWindowOffset;
-        payloads.xell = build_type == BuildType::Devkit ? std::nullopt : parse_xell_at(kXellOffset);
+        payloads.xell = devkit_chain() ? std::nullopt : parse_xell_at(kXellOffset);
         if (payloads.xell) {
             if (!build_type) build_type = BuildType::Glitch2;
         } else if (!build_type && header.cf_offset != glitch_slot_offset(slot_mode)) {
@@ -732,7 +754,7 @@ namespace gxbuild3::NAND {
         const auto nonempty = [](const auto& bytes) {
             return std::any_of(bytes.begin(), bytes.end(), [](uint8_t b) { return b != 0 && b != 0xFF; });
         };
-        if (build_type == BuildType::Glitch2m) {
+        if (build_type == BuildType::Glitch2m || build_type == BuildType::Devgl) {
             auto bytes = flash_driver.read_clean(overlay, 0x60);
             if (bytes.size() == 0x60) payloads.fuses = std::move(bytes);
         } else if (build_type == BuildType::Jtag) {
@@ -1358,6 +1380,10 @@ namespace gxbuild3::NAND {
                clear_patchslot(donor_patchslot_base + slot_stride, system_update_1);
     }
 
+    uint32_t FlashImage::patch_slot_offset() const {
+        return update_slots_end() - slot_size(*this);
+    }
+
     uint32_t FlashImage::update_slots_end() const {
         const auto slot_mode = flash_driver.driver_mode();
         const bool is_glitch_patchset =
@@ -1807,9 +1833,10 @@ namespace gxbuild3::NAND {
             // Glitch3 emits CB_B plaintext, so it binds nothing here.
             const bool bind_cb_b = cb_section.cb_B.has_value() && !plaintext_cb_b;
             // A devkit SB carries the console's block bound to the SMC, as a retail single CB
-            // does (xeBuild 1.21 devkit).
-            const bool bind_single_cb = (build_type == BuildType::Retail && cd_requires_cpu_key) ||
-                                        (devkit && cb_section.cb_or_A.decrypted);
+            // does (xeBuild 1.21 devkit); a devgl SB is zero-paired and binds nothing.
+            const bool bind_single_cb =
+                (build_type == BuildType::Retail && cd_requires_cpu_key) ||
+                (devkit && build_type != BuildType::Devgl && cb_section.cb_or_A.decrypted);
             // A JTAG image's second CB carries the console's block itself, bound to the SMC
             // under its own 1BL-derived key (xerunner build.py `_wears_console`).
             const bool bind_extra_cb = payloads.extra_cb.has_value() &&

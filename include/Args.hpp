@@ -17,6 +17,9 @@ enum class BuildType {
     Glitch2m,
     Glitch3,
     Devkit,
+    // A development kernel (SB/SC/SD/SE) carrying the glitch2m patches: its patched SD is
+    // signed again with the SB private key.
+    Devgl,
 };
 
 enum class ConsoleType {
@@ -36,12 +39,11 @@ enum class ImageType {
     Emmc,
 };
 
-inline const std::map<std::string, BuildType>
-    kBuildTypeMap = {
-        {"retail", BuildType::Retail},     {"jtag", BuildType::Jtag},
-        {"glitch", BuildType::Glitch},     {"glitch2", BuildType::Glitch2},
-        {"glitch2m", BuildType::Glitch2m}, {"glitch3", BuildType::Glitch3},
-        {"devkit", BuildType::Devkit},
+inline const std::map<std::string, BuildType> kBuildTypeMap = {
+    {"retail", BuildType::Retail},     {"jtag", BuildType::Jtag},
+    {"glitch", BuildType::Glitch},     {"glitch2", BuildType::Glitch2},
+    {"glitch2m", BuildType::Glitch2m}, {"glitch3", BuildType::Glitch3},
+    {"devkit", BuildType::Devkit},     {"devgl", BuildType::Devgl},
 };
 
 inline const std::map<std::string, ConsoleType> kConsoleTypeMap = {
@@ -370,4 +372,7 @@ struct Input {
     std::optional<InputPayloads> payloads;
     std::optional<std::vector<std::pair<std::string, std::vector<uint8_t>>>> flashfs_sec;
     std::vector<InputRawPatch> raw_patches;
+    // The XeCrypt RSA-2048 private key a devgl build signs its patched SD with (SB_priv.bin,
+    // 0x390 bytes). Supplied by the user, never logged, and needed by no other build type.
+    std::optional<std::vector<uint8_t>> sb_private_key;
 };

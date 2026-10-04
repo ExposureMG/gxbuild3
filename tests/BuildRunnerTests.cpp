@@ -1,4 +1,5 @@
 #include "BuildRunner.hpp"
+#include "XeRsaTestKey.hpp"
 #include "excrypt.h"
 #include "nand/FlashDriver.hpp"
 #include "nand/FlashImage.hpp"
@@ -11,6 +12,7 @@
 #include "nand/objects/Keyvault.hpp"
 #include "nand/objects/Patchset.hpp"
 #include "nand/objects/SMC.hpp"
+#include "utils/XeRsa.hpp"
 
 #include <algorithm>
 #include <array>
@@ -3628,6 +3630,127 @@ namespace {
         return require(!refused && refused.error().code == BuildErrorCode::SerializationFailure,
                        "a raw patch running past the image is refused");
     }
+
+    // A devgl image: the devkit chain with the glitch2m patch file's CD section on its SD, the SD
+    // signed again with a throwaway SB key, and fuses and KHV patches in the second slot.
+    Bytes devgl_khv() {
+        Bytes khv;
+        append_be32(khv, 0x00001000);
+        append_be32(khv, 2);
+        append_be32(khv, 0x60000000);
+        append_be32(khv, 0x4E800020);
+        return khv;
+    }
+
+    uint32_t devgl_sd_patch_address(const Input& input) {
+        return static_cast<uint32_t>(input.bootloaders.cd.size() + 0x10);
+    }
+
+    Input devgl_input(ImageType image_type) {
+        auto input = devkit_input(image_type);
+        input.build_type = BuildType::Devgl;
+        InputPatches patches{};
+        patches.automatic =
+            InputPatchFile{"patches_g2mjasper.bin",
+                           glitch_patchset(0x20, 0xA1B2C3D4, devgl_sd_patch_address(input),
+                                           0x10203040, devgl_khv())};
+        input.patches = std::move(patches);
+        InputPayloads payloads{};
+        payloads.fuses = Bytes(0x60, 0xF5);
+        input.payloads = std::move(payloads);
+        input.sb_private_key = xe_rsa_test::shared_private_key();
+        return input;
+    }
+
+    bool test_devgl_image_patches_and_signs_its_sd() {
+        const auto input = devgl_input(ImageType::NewSmallBlock);
+        const auto built = RunBuild(input);
+        if (!require(built.has_value() && built->size() == 0x1080000,
+                     "a Jasper devgl image keeps the console's 16 MB shape")) {
+            return false;
+        }
+        const auto header = read_logical(*built, 0, 0x80);
+        const std::string_view copyright =
+            header ? std::string_view(reinterpret_cast<const char*>(header->data() + 0x10), 0x37)
+                   : std::string_view{};
+        if (!require(header && read_be16(*header, 0x02) == 0x0760 && read_be16(*header, 0x04) == 0,
+                     "the devgl header states 0x0760 and no 0x8000") ||
+            !require(read_be32(*header, 0x48) == 1 && read_be32(*header, 0x4C) == 0x12,
+                     "a devgl image states the hack flag and the eject XeLL button") ||
+            !require(read_be32(*header, 0x0C) == 0xD0000 && read_be32(*header, 0x64) == 0xD0000,
+                     "the first slot is stated at 0xD0000") ||
+            !require(read_be16(*header, 0x68) == 2 && read_be32(*header, 0x70) == 0x10000,
+                     "two slots of 0x10000") ||
+            !require(copyright.find("2004-2009") != std::string_view::npos,
+                     "a Jasper devgl image states the Jasper year")) {
+            return false;
+        }
+
+        const uint32_t sd_size = align_16(devgl_sd_patch_address(input) + 4);
+        size_t at = 0x8000;
+        const auto stored = [&](size_t size) {
+            auto bytes = read_logical(*built, at, size);
+            at += align_16(static_cast<uint32_t>(size));
+            return bytes.value_or(Bytes{});
+        };
+        const auto sb = stored(input.bootloaders.cb_or_a.size());
+        const auto sc = stored(input.bootloaders.sc->size());
+        const auto sd = stored(sd_size);
+        const auto nonce = [](const Bytes& stage) {
+            return std::span<const uint8_t>(stage).subspan(0x10, 0x10);
+        };
+        const std::array<uint8_t, 16> zero{};
+        const auto k_sc = hmac_key(zero, nonce(sc));
+        const auto sb_plain = open_stage(sb, hmac_key(std::span(key_1bl), nonce(sb)));
+        const auto sd_plain = open_stage(sd, hmac_key(k_sc, nonce(sd)));
+        const auto key = gxbuild3::utils::XeRsaPrivateKey::parse(*input.sb_private_key);
+        const auto slot = read_logical(*built, 0xE0000, 0x60 + devgl_khv().size() + 4);
+        auto expected_slot = Bytes(0x60, 0xF5);
+        const auto khv = devgl_khv();
+        expected_slot.insert(expected_slot.end(), khv.begin(), khv.end());
+        append_be32(expected_slot, 0xFFFFFFFF);
+        const auto image = parse_image(*built);
+        return require(zero_between(sb_plain, 0x20, 0x40) &&
+                           std::equal(sb_plain.begin() + 0x40, sb_plain.end(),
+                                      input.bootloaders.cb_or_a.begin() + 0x40),
+                       "the SB is zero-paired and carries no patch") &&
+               require(read_be32(sd_plain, 0x0C) == sd_size &&
+                           read_be32(sd_plain, devgl_sd_patch_address(input)) == 0x10203040,
+                       "the SD carries the CD patch section and states its patched size") &&
+               require(key && gxbuild3::utils::verify_sd_signature(sd_plain, key->public_key()),
+                       "the patched SD is signed with the SB private key") &&
+               require(slot == expected_slot,
+                       "the fuses and KHV patches fill the second slot at 0xE0000") &&
+               require(image && image->build_type == BuildType::Devgl,
+                       "the image reads back as devgl");
+    }
+
+    bool test_big_block_devgl_slots_follow_the_big_block_step() {
+        const auto built = RunBuild(devgl_input(ImageType::BigBlock));
+        const auto header = built ? read_logical(*built, 0, 0x80) : std::nullopt;
+        const auto fuses = built ? read_logical(*built, 0x100000, 0x60) : std::nullopt;
+        return require(header && read_be32(*header, 0x64) == 0xE0000 &&
+                           read_be32(*header, 0x70) == 0x20000,
+                       "a big-block devgl image states its first slot at 0xE0000") &&
+               require(fuses == Bytes(0x60, 0xF5), "its fuses go to 0x100000");
+    }
+
+    bool test_devgl_needs_a_well_formed_sb_private_key() {
+        auto missing = devgl_input(ImageType::NewSmallBlock);
+        missing.sb_private_key.reset();
+        auto malformed = devgl_input(ImageType::NewSmallBlock);
+        malformed.sb_private_key = Bytes(gxbuild3::utils::kXeRsa2048PrivateKeySize, 0);
+        const auto refused_missing = RunBuild(missing);
+        const auto refused_malformed = RunBuild(malformed);
+        return require(!refused_missing &&
+                           refused_missing.error().code == BuildErrorCode::InvalidInput &&
+                           refused_missing.error().message.find("SB private key") !=
+                               std::string::npos,
+                       "a devgl build without the SB private key is refused") &&
+               require(!refused_malformed &&
+                           refused_malformed.error().code == BuildErrorCode::InvalidInput,
+                       "a devgl build with a malformed key is refused");
+    }
 } // namespace
 
 int main() {
@@ -3647,6 +3770,9 @@ int main() {
     passed = test_devkit_nonces_come_from_donor_positions() && passed;
     passed = test_devkit_image_takes_its_own_shape_beside_a_16_mb_donor() && passed;
     passed = test_raw_patches_are_written_last_and_bounded() && passed;
+    passed = test_devgl_image_patches_and_signs_its_sd() && passed;
+    passed = test_big_block_devgl_slots_follow_the_big_block_step() && passed;
+    passed = test_devgl_needs_a_well_formed_sb_private_key() && passed;
     passed = test_glitch_patch_region_does_not_overwrite_mobile_data() && passed;
     passed = test_glitch_patch_uses_header_overlay_anchor() && passed;
     passed = test_bigblock_glitch_uses_big_patch_stride() && passed;

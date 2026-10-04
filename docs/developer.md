@@ -58,8 +58,8 @@ gxbuild [build] -b <build.ini> -s <section> -t <buildtype>[:<blocktype>] -d <sou
 
 `-b` selects the build INI, `-s` selects its motherboard section stem, `-t` selects the build
 and (when necessary) image layout, and `-d` supplies one or more source roots. All four are
-required. Build types are `retail`, `jtag`, `glitch`, `glitch2`, `glitch2m`, `glitch3`, and
-`devkit`; `glitch1` and `gg` are aliases for `glitch`. Block types are `xsb` (small block),
+required. Build types are `retail`, `jtag`, `glitch`, `glitch2`, `glitch2m`, `glitch3`, `devkit`
+and `devgl`; `glitch1` and `gg` are aliases for `glitch`. Block types are `xsb` (small block),
 `psb` (new small block), `bb` (big block), and `emmc`.
 
 A devkit image is 64 MB, as xeBuild 1.21 builds it: `devkit:psb` or `devkit:xsb` gives the 64 MB
@@ -69,6 +69,18 @@ a directory holding the release `17489`, `common` and `data/xell-gggggg.bin`:
 
 ```text
 gxbuild -b 17489/_devkit.ini -s jasper -t devkit:psb -d 17489 -d common -d . -i nanddump.bin -o out.bin
+```
+
+A devgl image keeps the console's own shape (`devgl:psb` on a 16 MB Jasper, `devgl:bb` on a big
+block Jasper, `devgl:emmc` on a Corona 4 GB) and runs the development chain with the glitch2m
+patches: the SD takes the CD section of `patches_g2m<section>.bin` and is then signed again with
+the SB private key, the SB is zero-paired, and the fuses and KHV patches go to the second update
+slot (0xE0000, or 0x100000 on big block); XeLL stays a FlashFS file. gxbuild3 never ships that
+key: put `SB_priv.bin` (or `SB_prv.bin`) in a source root or a `keys` folder inside one. A file
+of another size or CRC-32 is passed over, and without the key a devgl build is refused.
+
+```text
+gxbuild -b 17489/_devgl.ini -s jasper -t devgl:psb -d 17489 -d common -d . -i nanddump.bin -o out.bin
 ```
 
 Repeat `-d`, `-c`, and `-a` as needed. A single `-d`, `-c`, or `-a` value may use comma or
@@ -140,7 +152,7 @@ gxbuild [build] -b <build.ini> -s <section> -t <buildtype>[:<blocktype>] -d <sou
 | `jtag` | `fat` |
 | `glitch` | section stem |
 | `glitch2` | `g2<section>` |
-| `glitch2m` | `g2m<section>` |
+| `glitch2m`, `devgl` | `g2m<section>` |
 | `glitch3` | `g3<section>`, then `g2<section>` after every root lacks `g3` |
 
 Each `-a <addon>` resolves as `<source-dir>/bin/<addon>.bin` and retains command-line order.

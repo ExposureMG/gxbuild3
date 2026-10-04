@@ -103,6 +103,9 @@ struct FlashImage {
     // The clean offset just past the second update slot, where the image writer would lay
     // them now.
     [[nodiscard]] uint32_t update_slots_end() const;
+    // The clean offset of the second update slot, which a glitch or devgl image fills with its
+    // KHV patches.
+    [[nodiscard]] uint32_t patch_slot_offset() const;
 
     // Describes a collision between payload writers, if the resolved layout is unsafe.
     [[nodiscard]] std::optional<std::string> payload_layout_error() const;

@@ -1,4 +1,5 @@
 #include "BuildRunner.hpp"
+#include "XeRsaTestKey.hpp"
 #include "cli/BuildInputResolver.hpp"
 #include "excrypt.h"
 #include "nand/bootloaders/2bl.hpp"
@@ -1147,6 +1148,8 @@ namespace {
             Case{BuildType::Glitch2m, "patches_g2mfalcon_test.bin"},
             Case{BuildType::Glitch3, "patches_g3falcon_test.bin"},
         };
+        // devgl's name is checked by test_devgl_resolve_finds_the_sb_key_and_builds_retail_fuses,
+        // as it resolves only with an SB key.
         for (const auto& test : cases) {
             ResolverFixture fixture;
             auto args = fixture.complete_loose_args(test.type);
@@ -1287,6 +1290,63 @@ namespace {
         return require(!result.has_value() && result.error().item == "fuses" &&
                            result.error().message.find("CB_B") != std::string::npos,
                        "glitch2m fuses without a CB_B to read the word from are refused");
+    }
+
+    // A throwaway key whose file states the SB private key's CRC-32, so the resolver takes it.
+    Bytes sb_key_stand_in() {
+        return xe_rsa_test::with_crc32(xe_rsa_test::shared_private_key(),
+                                       gxbuild3::utils::kSbPrivateKeyCrc32);
+    }
+
+    bool test_devgl_resolve_finds_the_sb_key_and_builds_retail_fuses() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Devgl);
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_g2mfalcon_test.bin", valid_glitch_patchset());
+        const auto stand_in = sb_key_stand_in();
+        // A root's own candidate of the wrong CRC-32 is passed over for its keys folder's.
+        fixture.write_binary("first/SB_priv.bin", Bytes(stand_in.size(), 0x11));
+        fixture.write_binary("first/keys/sb_PRV.bin", stand_in);
+
+        const auto result = fixture.resolve(args);
+        if (!require(gxbuild3::utils::crc32(stand_in) == gxbuild3::utils::kSbPrivateKeyCrc32,
+                     "the stand-in key states the SB key's CRC-32") ||
+            !require_resolved(result, "devgl resolves with an SB key in a keys folder")) {
+            return false;
+        }
+        const auto& input = result->input;
+        // Line 1 names the retail type, line 2 holds no allow bits, lines 7.. count cfldv=3.
+        const Bytes type_line{0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0xF0};
+        const Bytes ldv_line{0xFF, 0xF0, 0, 0, 0, 0, 0, 0};
+        const auto& fuses = input.payloads ? input.payloads->fuses : std::nullopt;
+        return require(input.sb_private_key == stand_in, "the keys folder's SB key is taken") &&
+               require(input.patches && input.patches->automatic &&
+                           input.patches->automatic->name == "patches_g2mfalcon_test.bin",
+                       "devgl reads the glitch2m patch file") &&
+               require(input.payloads && !input.payloads->xell,
+                       "devgl leaves XeLL to the FlashFS") &&
+               require(fuses && fuses->size() == 0x60 &&
+                           std::equal(type_line.begin(), type_line.end(), fuses->begin() + 8) &&
+                           std::all_of(fuses->begin() + 0x10, fuses->begin() + 0x18,
+                                       [](uint8_t byte) { return byte == 0; }) &&
+                           std::equal(ldv_line.begin(), ldv_line.end(), fuses->begin() + 0x38),
+                       "devgl fuses state the retail type, no allow bits and the CF LDV");
+    }
+
+    bool test_devgl_resolve_without_the_sb_key_is_refused() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Devgl);
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_g2mfalcon_test.bin", valid_glitch_patchset());
+        const auto absent = fixture.resolve(args);
+        fixture.write_binary("first/keys/SB_priv.bin", xe_rsa_test::shared_private_key());
+        const auto wrong = fixture.resolve(args);
+        return require(!absent && absent.error().code == ResolutionErrorCode::SigningKeyNotFound &&
+                           absent.error().message.find("No SB_priv.bin") != std::string::npos,
+                       "devgl without an SB key is refused") &&
+               require(!wrong && wrong.error().code == ResolutionErrorCode::SigningKeyNotFound &&
+                           wrong.error().message.find("No candidate") != std::string::npos,
+                       "devgl with only a key of another CRC-32 is refused");
     }
 
     bool test_glitch_resolve_fails_without_xell() {
@@ -1583,6 +1643,8 @@ int main() {
     passed = test_glitch_resolve_populates_xell_only() && passed;
     passed = test_glitch2m_resolve_populates_fuses() && passed;
     passed = test_glitch2m_without_cb_b_is_refused() && passed;
+    passed = test_devgl_resolve_finds_the_sb_key_and_builds_retail_fuses() && passed;
+    passed = test_devgl_resolve_without_the_sb_key_is_refused() && passed;
     passed = test_glitch_resolve_fails_without_xell() && passed;
     passed = test_glitch3_searches_all_g3_roots_before_g2_fallback() && passed;
     passed = test_glitch3_prefers_g3_then_g2_and_fails_cleanly_without_either() && passed;

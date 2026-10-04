@@ -9,6 +9,7 @@
 #include "utils/FusesetGenerator.hpp"
 #include "utils/Log.hpp"
 #include "utils/Utils.hpp"
+#include "utils/XeRsa.hpp"
 
 #include <algorithm>
 #include <array>
@@ -394,6 +395,7 @@ namespace gxbuild3::cli {
                 case BuildType::Glitch2:
                     return patch_name("g2" + args.section, args.patch_extension);
                 case BuildType::Glitch2m:
+                case BuildType::Devgl:
                     return patch_name("g2m" + args.section, args.patch_extension);
                 case BuildType::Glitch3:
                     return patch_name((glitch3_fallback ? "g2" : "g3") + args.section,
@@ -453,6 +455,57 @@ namespace gxbuild3::cli {
             static constexpr std::array<std::string_view, 5> kNames{
                 "crl.bin", "dae.bin", "extended.bin", "secdata.bin", "fcrt.bin"};
             return std::find(kNames.begin(), kNames.end(), lowercase_name) != kNames.end();
+        }
+
+        // The SB private key a devgl build signs its SD with: SB_priv.bin, or SB_prv.bin as
+        // Xbox-360-Crypto names it, in any case, in each source root and then in a keys folder
+        // inside it, in root order. The first candidate of the key's size and CRC-32 is taken;
+        // any other is passed over with a warning naming it. The key's bytes are never logged.
+        std::expected<std::vector<uint8_t>, ResolutionError>
+        find_sb_private_key(const std::vector<std::filesystem::path>& roots) {
+            static constexpr std::array<std::string_view, 2> kNames{"sb_priv.bin", "sb_prv.bin"};
+            bool passed_over = false;
+            for (const auto& root : roots) {
+                for (const auto& directory : {root, root / "keys"}) {
+                    std::error_code status_error;
+                    if (!std::filesystem::is_directory(directory, status_error)) {
+                        continue;
+                    }
+                    std::vector<std::filesystem::path> entries;
+                    for (const auto& entry :
+                         std::filesystem::directory_iterator(directory, status_error)) {
+                        entries.push_back(entry.path());
+                    }
+                    std::sort(entries.begin(), entries.end());
+                    for (const auto name : kNames) {
+                        for (const auto& path : entries) {
+                            if (lowercase_basename(path.filename().string()) != name ||
+                                !std::filesystem::is_regular_file(path, status_error)) {
+                                continue;
+                            }
+                            auto data = Utils::read_file(
+                                path, gxbuild3::utils::kXeRsa2048PrivateKeySize + 1);
+                            if (data && data->size() == gxbuild3::utils::kXeRsa2048PrivateKeySize &&
+                                gxbuild3::utils::crc32(*data) ==
+                                    gxbuild3::utils::kSbPrivateKeyCrc32) {
+                                Log::Info("Using the SB private key {}", path.string());
+                                return std::move(*data);
+                            }
+                            Log::Warn("{} is not the SB private key (size or CRC-32 differs); it "
+                                      "is passed over",
+                                      path.string());
+                            passed_over = true;
+                        }
+                    }
+                }
+            }
+            return std::unexpected(error(
+                ResolutionErrorCode::SigningKeyNotFound,
+                std::string(passed_over ? "No candidate SB_priv.bin is the SB private key"
+                                        : "No SB_priv.bin (or SB_prv.bin) was found") +
+                    ": a devgl image's patched SD is signed again with the SB private key. Put "
+                    "SB_priv.bin in a source root or a keys folder inside one",
+                {}, "SB_priv.bin"));
         }
 
         void overlay_flashfs(std::vector<std::pair<std::string, std::vector<uint8_t>>>& destination,
@@ -904,7 +957,28 @@ namespace gxbuild3::cli {
                 args.build_type == BuildType::Glitch || args.build_type == BuildType::Glitch2 ||
                 args.build_type == BuildType::Glitch2m || args.build_type == BuildType::Glitch3;
             const bool needs_fuses = is_jtag || args.build_type == BuildType::Glitch2m;
-            if (is_jtag || is_glitch_family) {
+            if (args.build_type == BuildType::Devgl) {
+                // A devgl image leaves XeLL to its FlashFS: its SE runs past where XeLL would
+                // go. Its fuses state the retail type and no allow bits, which no stage of its
+                // chain states, and the console's CPU key and CF LDV (xeBuild 1.21 devgl).
+                constexpr uint32_t kRetailConsoleWord = 0x01000000;
+                auto fuses = gxbuild3::utils::generate_fuseset(
+                    kRetailConsoleWord, foundations->cpu_key, input.metadata.cf_ldv.value_or(0));
+                if (!fuses) {
+                    return std::unexpected(error(ResolutionErrorCode::InvalidInput,
+                                                 "Could not generate the virtual fuseset", {},
+                                                 "fuses"));
+                }
+                InputPayloads payloads{};
+                payloads.fuses = std::move(*fuses);
+                input.payloads = std::move(payloads);
+
+                auto key = find_sb_private_key(roots);
+                if (!key) {
+                    return std::unexpected(key.error());
+                }
+                input.sb_private_key = std::move(*key);
+            } else if (is_jtag || is_glitch_family) {
                 InputPayloads payloads{};
                 const std::string xell_name = is_jtag ? "xell-2f.bin" : "xell-gggggg.bin";
                 auto xell = find_asset(xell_name, roots, scan_options);

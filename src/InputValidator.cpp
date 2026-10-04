@@ -13,6 +13,7 @@ namespace {
             case BuildType::Glitch2:
             case BuildType::Glitch2m:
             case BuildType::Glitch3:
+            case BuildType::Devgl:
                 return true;
             case BuildType::Retail:
             case BuildType::Devkit:
@@ -44,6 +45,13 @@ std::expected<void, InputError> ValidateInput(const Input& input) {
     }
     if (input.bootloaders.cd.empty()) {
         return std::unexpected(InputError{InputErrorCode::MissingCd, "CD bootloader is required"});
+    }
+
+    if (input.build_type == BuildType::Devgl &&
+        (!input.sb_private_key || input.sb_private_key->empty())) {
+        return std::unexpected(InputError{
+            InputErrorCode::MissingSigningKey,
+            "A devgl image's patched SD is signed again, which needs the SB private key"});
     }
 
     const bool has_automatic = has_automatic_patchset(input);

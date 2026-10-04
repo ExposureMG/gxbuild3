@@ -28,6 +28,7 @@ namespace gxbuild3::cli {
         PatchsetNotFound,
         AddonNotFound,
         InvalidInput,
+        SigningKeyNotFound,
     };
 
     struct ResolutionError {

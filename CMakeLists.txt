@@ -52,11 +52,13 @@ set(GXBUILD3_LIB_SOURCES
     src/stfs/MetadataParser.cpp
     src/stfs/Package.cpp
     src/stfs/StfsContainer.cpp
+    src/utils/BigUint.cpp
     src/utils/FileManager.cpp
     src/utils/FusesetGenerator.cpp
     src/utils/Log.cpp
     src/utils/Options.cpp
     src/utils/Utils.cpp
+    src/utils/XeRsa.cpp
 )
 
 add_library(gxbuild3_lib STATIC ${GXBUILD3_LIB_SOURCES})
@@ -93,6 +95,7 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_fuseset_tests tests/FusesetGeneratorTests.cpp)
     add_gxbuild3_test(gxbuild3_buildcommand_tests tests/BuildCommandTests.cpp)
     add_gxbuild3_test(gxbuild3_keyvault_version_tests tests/KeyvaultVersionTests.cpp)
+    add_gxbuild3_test(gxbuild3_xe_rsa_tests tests/XeRsaTests.cpp)
     add_gxbuild3_test(gxbuild3_crypto_reference_tests tests/CryptoReferenceTests.cpp)
     target_compile_definitions(gxbuild3_crypto_reference_tests PRIVATE
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
