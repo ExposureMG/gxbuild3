@@ -1485,6 +1485,29 @@ namespace {
                        "full NAND metadata reports the detected block type");
     }
 
+    // The keyvault's fcrt.bin flag is read as xeBuild 1.21 reads it: bits 0x0320 of the big-endian
+    // OddFeatures word at 0x1C.
+    bool test_extract_all_info_reads_the_fcrt_flag_big_endian() {
+        bool passed = true;
+        for (const auto& [features, required] : {std::pair<uint16_t, bool>{0x0020, true},
+                                                 {0x0200, true},
+                                                 {0x2000, false},
+                                                 {0x0000, false}}) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            Bytes plain(Keyvault::kSize, 0x00);
+            plain[0x1C] = static_cast<uint8_t>(features >> 8);
+            plain[0x1D] = static_cast<uint8_t>(features);
+            input.metadata.keyvault = canonical_keyvault(input.metadata.cpu_key, plain);
+            const auto built = RunBuild(input);
+            const auto info = built ? ExtractAllInfo(*built, input.metadata.cpu_key) : std::nullopt;
+            passed = require(info.has_value() && info->keyvault.present &&
+                                 info->keyvault.fcrt_required == required,
+                             "full NAND metadata reports the keyvault's fcrt.bin flag") &&
+                     passed;
+        }
+        return passed;
+    }
+
     bool test_sc_survives_extraction_and_backing_cleared_layout_override() {
         auto source = fresh_input(ImageType::SmallBlock);
         const auto donor = make_donor(source, {});
@@ -4300,6 +4323,7 @@ int main() {
     passed = test_extract_all_preserves_complete_donor_baseline() && passed;
     passed = test_extract_some_info_reads_public_nand_metadata_without_cpu_key() && passed;
     passed = test_extract_all_info_reports_the_detected_block_type() && passed;
+    passed = test_extract_all_info_reads_the_fcrt_flag_big_endian() && passed;
     passed = test_sc_survives_extraction_and_backing_cleared_layout_override() && passed;
     passed = test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() && passed;
     passed = test_fresh_layouts_match_requested_image_types() && passed;

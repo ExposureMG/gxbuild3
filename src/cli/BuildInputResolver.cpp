@@ -560,6 +560,49 @@ namespace gxbuild3::cli {
                              });
         }
 
+        // fcrt.bin is in the image as xeBuild 1.21 puts it there: when the INI's [security] lists
+        // it and a source supplies it, or (gxbuild3's carry-over) when the donor holds its own.
+        // The keyvault's flag adds nothing and drops nothing, and neither does nofcrt, which in
+        // xeBuild is a kernel patch (-a nofcrt). The flag only weighs an fcrt.bin the image
+        // lacks: for a listed one xeBuild reports an error when the keyvault requires it, with a
+        // note for hacked images on what a nofcrt patch can do, and passes over it otherwise. A
+        // required fcrt.bin the INI does not list is warned about here; xeBuild says nothing.
+        void weigh_missing_fcrt(const Ini::Document& ini,
+                                const std::optional<std::vector<uint8_t>>& keyvault,
+                                BuildType build_type) {
+            bool listed = false;
+            if (const auto* security = ini.get("security")) {
+                listed = std::any_of(security->begin(), security->end(), [](const auto& entry) {
+                    return lowercase_basename(FileManager::IniAssetName(entry.key)) == "fcrt.bin";
+                });
+            }
+            const auto requirement = keyvault ? gxbuild3::NAND::fcrt_requirement(*keyvault)
+                                              : gxbuild3::NAND::FcrtRequirement::NotRequired;
+            if (requirement == gxbuild3::NAND::FcrtRequirement::NotRequired) {
+                if (listed) {
+                    Log::Info("fcrt.bin was not found and the keyvault does not require it; it "
+                              "is left out");
+                }
+                return;
+            }
+            if (!listed) {
+                Log::Warn("The keyvault flags fcrt.bin as required, but the INI's [security] does "
+                          "not list it; it is left out");
+                return;
+            }
+            Log::Error("fcrt.bin was not found; the keyvault flags it as required, and it is left "
+                       "out");
+            if (build_type != BuildType::Retail && build_type != BuildType::Devkit) {
+                if (requirement == gxbuild3::NAND::FcrtRequirement::Required) {
+                    Log::Warn("On a hacked image a nofcrt patch (-a nofcrt) should let the drive "
+                              "and the console work");
+                } else {
+                    Log::Warn("On a hacked image a nofcrt patch (-a nofcrt) will not let the "
+                              "drive work, but should let the console boot");
+                }
+            }
+        }
+
     } // namespace
 
     BuildInputResolver::BuildInputResolver(std::filesystem::path working_directory)
@@ -962,6 +1005,9 @@ namespace gxbuild3::cli {
                 }
             }
             order_flashfs(flashfs, *ini_document);
+            if (!flashfs_positions.contains("fcrt.bin")) {
+                weigh_missing_fcrt(*ini_document, input.metadata.keyvault, args.build_type);
+            }
             input.flashfs_sec = std::move(flashfs);
 
             if ((args.build_type == BuildType::Retail || args.build_type == BuildType::Devkit) &&

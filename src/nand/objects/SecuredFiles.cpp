@@ -25,6 +25,7 @@ namespace gxbuild3::NAND {
         constexpr size_t kDaeBodyOffset = 0x130;
         constexpr std::string_view kDaeMagic = "DAEP";
         constexpr uint8_t kExtendedNonceTail[2] = {0x07, 0x12};
+        constexpr size_t kOddFeaturesOffset = 0x1C;
         constexpr size_t kFcrtSize = 0x4000;
         constexpr size_t kFcrtIvOffset = 0x100;
         constexpr size_t kFcrtBodyOffsetField = 0x11C;
@@ -479,6 +480,21 @@ namespace gxbuild3::NAND {
             out.sealing = FcrtSealing::Damaged;
         }
         return out;
+    }
+
+    FcrtRequirement fcrt_requirement(std::span<const uint8_t> clear_keyvault) {
+        if (clear_keyvault.size() < kOddFeaturesOffset + 2) {
+            return FcrtRequirement::NotRequired;
+        }
+        const auto features = static_cast<uint16_t>((clear_keyvault[kOddFeaturesOffset] << 8) |
+                                                    clear_keyvault[kOddFeaturesOffset + 1]);
+        if ((features & 0x0300) != 0) {
+            return FcrtRequirement::RequiredByDrive;
+        }
+        if ((features & 0x0020) != 0) {
+            return FcrtRequirement::Required;
+        }
+        return FcrtRequirement::NotRequired;
     }
 
     std::optional<std::array<uint8_t, 8>> secdata_head(std::span<const uint8_t> clear) {

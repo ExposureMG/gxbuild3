@@ -1917,7 +1917,9 @@ std::optional<AllNandInfo> ExtractAllInfo(std::span<const uint8_t> nand_image,
             }
         }
         info.keyvault.kv_type = is_type1 ? 1 : 2;
-        info.keyvault.fcrt_required = ((kv.data.w4OddFeatures & 0x0120) != 0);
+        // xeBuild's test, on the big-endian word: the build reads the same flag.
+        info.keyvault.fcrt_required =
+            fcrt_requirement(*info.raw_keyvault) != FcrtRequirement::NotRequired;
     }
 
     return info;

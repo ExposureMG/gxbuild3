@@ -419,6 +419,35 @@ namespace {
                      "and any fcrt.bin with a CPU key that is not 16 bytes");
     }
 
+    // xeBuild 1.21's test (its 0x413370) on the big-endian OddFeatures word at 0x1C.
+    bool test_the_keyvault_flags_fcrt_by_its_odd_features_word() {
+        const auto flagged = [](uint16_t features) {
+            Bytes keyvault(0x4000, 0x00);
+            keyvault[0x1C] = static_cast<uint8_t>(features >> 8);
+            keyvault[0x1D] = static_cast<uint8_t>(features);
+            return fcrt_requirement(keyvault);
+        };
+        bool passed = true;
+        for (const uint16_t features : {0x0100, 0x0200, 0x0300, 0x0120, 0x0320, 0xFFFF}) {
+            passed = check(flagged(features) == FcrtRequirement::RequiredByDrive,
+                           "bits 0x0300 make the drive need fcrt.bin") &&
+                     passed;
+        }
+        for (const uint16_t features : {0x0020, 0x00F0, 0x0021}) {
+            passed = check(flagged(features) == FcrtRequirement::Required,
+                           "bit 0x0020 alone makes fcrt.bin required") &&
+                     passed;
+        }
+        for (const uint16_t features : {0x0000, 0x0001, 0x00DF, 0x2000, 0x2001, 0xFCDF}) {
+            passed = check(flagged(features) == FcrtRequirement::NotRequired,
+                           "no other bit requires fcrt.bin, read big-endian") &&
+                     passed;
+        }
+        return check(fcrt_requirement(Bytes(0x1D, 0xFF)) == FcrtRequirement::NotRequired,
+                     "a keyvault too short for the word requires nothing") &&
+               passed;
+    }
+
     bool test_drawn_sealing_differs_between_draws() {
         const auto first = random_crl_sealing();
         const auto second = random_crl_sealing();
@@ -449,6 +478,7 @@ int main() {
     passed = test_an_fcrt_sealed_under_the_cpu_key_is_carried_byte_for_byte() && passed;
     passed = test_an_fcrt_of_the_wrong_size_or_offset_is_carried_as_supplied() && passed;
     passed = test_an_fcrt_that_does_not_open_is_carried_as_supplied() && passed;
+    passed = test_the_keyvault_flags_fcrt_by_its_odd_features_word() && passed;
     passed = test_drawn_sealing_differs_between_draws() && passed;
     return passed ? 0 : 1;
 }

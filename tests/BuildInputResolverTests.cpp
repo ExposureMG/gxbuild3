@@ -1040,6 +1040,59 @@ namespace {
                        "a missing secdata.bin is carried empty");
     }
 
+    // fcrt.bin is in the FlashFS when the INI's [security] lists it and a source supplies it, as
+    // xeBuild 1.21 puts it there. The keyvault's flag (none, 0x0020, 0x0200) and nofcrt neither
+    // add it nor drop it; they only change what is said about a missing one.
+    bool test_fcrt_follows_the_ini_not_the_keyvault() {
+        const auto key = valid_cpu_key();
+        bool passed = true;
+        for (const uint16_t features : {0x0000, 0x0020, 0x0200}) {
+            Bytes plain(Keyvault::kSize, 0x00);
+            plain[0x1C] = static_cast<uint8_t>(features >> 8);
+            plain[0x1D] = static_cast<uint8_t>(features);
+            for (const bool listed : {true, false}) {
+                for (const bool supplied : {true, false}) {
+                    for (const bool nofcrt : {false, true}) {
+                        ResolverFixture fixture;
+                        auto args = fixture.complete_loose_args();
+                        fixture.write_binary("first/kv.bin", keyvault_encrypt(key, plain));
+                        fixture.write_text(
+                            "working/build.ini",
+                            std::string("[falconbl]\ncb_1.bin\ncd.bin\n[security]\n") +
+                                (listed ? "fcrt.bin\n" : ";fcrt.bin,\n"));
+                        const Bytes fcrt(0x4000, 0x46);
+                        if (supplied) {
+                            fixture.write_binary("first/fcrt.bin", fcrt);
+                        }
+                        if (nofcrt) {
+                            args.config = {"nofcrt"};
+                        }
+                        const auto result = fixture.resolve(args);
+                        if (!require_resolved(result,
+                                              "a build with or without fcrt.bin resolves")) {
+                            passed = false;
+                            continue;
+                        }
+                        const auto& files = result->input.flashfs_sec;
+                        const bool held =
+                            files && std::any_of(files->begin(), files->end(), [&](const auto& f) {
+                                return f.first == "fcrt.bin" && f.second == fcrt;
+                            });
+                        const bool any =
+                            files && std::any_of(files->begin(), files->end(), [](const auto& f) {
+                                return f.first == "fcrt.bin";
+                            });
+                        passed = require(held == (listed && supplied) && any == held,
+                                         "fcrt.bin is in the FlashFS exactly when the INI lists it "
+                                         "and a source supplies it") &&
+                                 passed;
+                    }
+                }
+            }
+        }
+        return passed;
+    }
+
     bool test_metadata_values_require_full_valid_strings() {
         ResolverFixture fixture;
         auto args = fixture.complete_loose_args();
@@ -1742,6 +1795,7 @@ int main() {
     passed = test_zero_cpu_key_donor_takes_the_keyvault_from_kv_bin() && passed;
     passed = test_flashfs_holds_ini_files_and_donor_secured_files_only() && passed;
     passed = test_unsupplied_security_files_reach_the_build() && passed;
+    passed = test_fcrt_follows_the_ini_not_the_keyvault() && passed;
     passed = test_metadata_values_require_full_valid_strings() && passed;
     passed = test_metadata_parses_only_the_winning_precedence_source() && passed;
     passed = test_cli_pairing_override_reaches_the_cf_and_console_is_carried() && passed;

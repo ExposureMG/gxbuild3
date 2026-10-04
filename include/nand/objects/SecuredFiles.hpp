@@ -163,6 +163,21 @@ namespace gxbuild3::NAND {
     [[nodiscard]] SealedFcrt seal_fcrt(std::span<const uint8_t> content,
                                        std::span<const uint8_t> cpu_key);
 
+    // How a keyvault flags fcrt.bin, read as xeBuild 1.21 reads it (its 0x413370): the big-endian
+    // OddFeatures word at 0x1C of the keyvault in the clear. Either of bits 0x0300 makes the drive
+    // need fcrt.bin, and a nofcrt patch then keeps the console booting but not the drive working;
+    // bit 0x0020 alone makes it required in a way a nofcrt patch gets round. The flag does not put
+    // fcrt.bin into an image: xeBuild adds it when the INI's [security] lists it and a source
+    // supplies it, and reads the flag only to say how much a listed one that is missing matters.
+    enum class FcrtRequirement {
+        NotRequired,
+        Required,
+        RequiredByDrive,
+    };
+
+    // Nothing is required of a keyvault too short to hold the word.
+    [[nodiscard]] FcrtRequirement fcrt_requirement(std::span<const uint8_t> clear_keyvault);
+
     // The eight-byte head of an opened secdata.bin (`clear` is the nonce and the plaintext).
     [[nodiscard]] std::optional<std::array<uint8_t, 8>>
     secdata_head(std::span<const uint8_t> clear);
