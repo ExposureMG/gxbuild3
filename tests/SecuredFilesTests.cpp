@@ -279,6 +279,96 @@ namespace {
                check(!open_loose_secdata(Bytes(8), kCpuKey), "a file shorter than a nonce fails");
     }
 
+    // An fcrt.bin in the clear: the vector at 0x100, where the sealed part starts at 0x11C, and
+    // the SHA-1 of that part at 0x12C.
+    Bytes clear_fcrt(size_t body_offset = 0x140, size_t length = 0x4000) {
+        Bytes out(length);
+        for (size_t at = 0x100; at < 0x110; ++at) {
+            out[at] = static_cast<uint8_t>(at);
+        }
+        for (size_t index = 0; index < 4; ++index) {
+            out[0x11C + index] = static_cast<uint8_t>(body_offset >> (24 - 8 * index));
+        }
+        for (size_t at = body_offset; at < length; ++at) {
+            out[at] = static_cast<uint8_t>(at * 3 + 1);
+        }
+        ExCryptSha(out.data() + body_offset, static_cast<uint32_t>(length - body_offset), nullptr,
+                   0, nullptr, 0, out.data() + 0x12C, 20);
+        return out;
+    }
+
+    bool test_an_fcrt_in_the_clear_is_sealed_under_the_cpu_key_and_its_vector() {
+        bool held = true;
+        for (const size_t body_offset : {size_t{0x140}, size_t{0x150}}) {
+            const auto clear = clear_fcrt(body_offset);
+            const auto sealed = seal_fcrt(clear, kCpuKey);
+            const auto body = aes_cbc_decrypt(kCpuKey, std::span(clear).subspan(0x100, 16),
+                                              std::span(sealed.data).subspan(body_offset));
+            held =
+                check(sealed.sealing == FcrtSealing::Sealed,
+                      "an fcrt.bin in the clear is sealed") &&
+                check(std::equal(clear.begin(), clear.begin() + body_offset, sealed.data.begin()),
+                      "everything before where its header says the sealed part starts is kept") &&
+                check(!std::equal(clear.begin() + body_offset, clear.end(),
+                                  sealed.data.begin() + body_offset),
+                      "the part after it is sealed") &&
+                check(std::equal(body.begin(), body.end(), clear.begin() + body_offset),
+                      "and opens under the CPU key and the vector at 0x100") &&
+                check(seal_fcrt(clear, kCpuKey).data == sealed.data, "the sealing draws nothing") &&
+                held;
+        }
+        // A sealed part that is not whole blocks is left as it stands, as XeCrypt leaves it.
+        const auto unaligned = clear_fcrt(0x148);
+        const auto sealed = seal_fcrt(unaligned, kCpuKey);
+        return check(sealed.sealing == FcrtSealing::Sealed && sealed.data == unaligned,
+                     "a sealed part that is not whole blocks is left as it stands") &&
+               held;
+    }
+
+    bool test_an_fcrt_sealed_under_the_cpu_key_is_carried_byte_for_byte() {
+        const auto sealed = seal_fcrt(clear_fcrt(), kCpuKey).data;
+        const auto again = seal_fcrt(sealed, kCpuKey);
+        return check(again.sealing == FcrtSealing::Carried, "a sealed fcrt.bin verifies") &&
+               check(again.data == sealed, "and is carried byte for byte");
+    }
+
+    bool test_an_fcrt_of_the_wrong_size_or_offset_is_carried_as_supplied() {
+        auto longer = clear_fcrt();
+        longer.insert(longer.end(), 5, 0xAB);
+        auto shorter = clear_fcrt();
+        shorter.resize(0x3FF0);
+        auto moved = clear_fcrt();
+        moved[0x11C] = 0x00;
+        moved[0x11D] = 0x00;
+        moved[0x11E] = 0x40;
+        moved[0x11F] = 0x00;
+        const auto from_longer = seal_fcrt(longer, kCpuKey);
+        const auto from_shorter = seal_fcrt(shorter, kCpuKey);
+        const auto from_moved = seal_fcrt(moved, kCpuKey);
+        return check(from_longer.sealing == FcrtSealing::InvalidSize && from_longer.data == longer,
+                     "an fcrt.bin longer than 0x4000 bytes is carried as supplied") &&
+               check(from_shorter.sealing == FcrtSealing::InvalidSize &&
+                         from_shorter.data == shorter,
+                     "so is one shorter") &&
+               check(from_moved.sealing == FcrtSealing::InvalidOffset && from_moved.data == moved,
+                     "and one whose header puts the sealed part past 0x3FFF");
+    }
+
+    bool test_an_fcrt_that_does_not_open_is_carried_as_supplied() {
+        auto damaged = seal_fcrt(clear_fcrt(), kCpuKey).data;
+        damaged[0x2000] ^= 0x01;
+        const auto other = seal_fcrt(clear_fcrt(), kOtherKey).data;
+        const auto from_damaged = seal_fcrt(damaged, kCpuKey);
+        const auto from_other = seal_fcrt(other, kCpuKey);
+        const auto short_key = seal_fcrt(clear_fcrt(), std::span(kCpuKey).first(8));
+        return check(from_damaged.sealing == FcrtSealing::Damaged && from_damaged.data == damaged,
+                     "a damaged fcrt.bin is carried as supplied") &&
+               check(from_other.sealing == FcrtSealing::Damaged && from_other.data == other,
+                     "so is one sealed under another console's key") &&
+               check(short_key.sealing == FcrtSealing::Damaged && short_key.data == clear_fcrt(),
+                     "and any fcrt.bin with a CPU key that is not 16 bytes");
+    }
+
     bool test_drawn_sealing_differs_between_draws() {
         const auto first = random_crl_sealing();
         const auto second = random_crl_sealing();
@@ -301,6 +391,10 @@ int main() {
     passed = test_extended_takes_the_keyvault_head_and_derives_its_nonce() && passed;
     passed = test_secdata_takes_the_build_fields_and_derives_its_nonce() && passed;
     passed = test_loose_copies_reach_the_input_boundary_in_the_clear() && passed;
+    passed = test_an_fcrt_in_the_clear_is_sealed_under_the_cpu_key_and_its_vector() && passed;
+    passed = test_an_fcrt_sealed_under_the_cpu_key_is_carried_byte_for_byte() && passed;
+    passed = test_an_fcrt_of_the_wrong_size_or_offset_is_carried_as_supplied() && passed;
+    passed = test_an_fcrt_that_does_not_open_is_carried_as_supplied() && passed;
     passed = test_drawn_sealing_differs_between_draws() && passed;
     return passed ? 0 : 1;
 }

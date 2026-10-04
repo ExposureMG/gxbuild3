@@ -1625,9 +1625,21 @@ namespace {
         Bytes extended(digest, digest + 0x10);
         extended.insert(extended.end(), extended_plain.begin(), extended_plain.end());
 
+        // fcrt.bin in the clear: the vector at 0x100, the sealed part from 0x140 and its SHA-1 at
+        // 0x12C.
+        Bytes fcrt(0x4000);
+        std::fill(fcrt.begin() + 0x100, fcrt.begin() + 0x110, uint8_t{0x6C});
+        fcrt[0x11E] = 0x01;
+        fcrt[0x11F] = 0x40;
+        for (size_t at = 0x140; at < fcrt.size(); ++at) {
+            fcrt[at] = static_cast<uint8_t>(at * 3 + 1);
+        }
+        ExCryptSha(fcrt.data() + 0x140, static_cast<uint32_t>(fcrt.size() - 0x140), nullptr, 0,
+                   nullptr, 0, fcrt.data() + 0x12C, 20);
+
         input.metadata.console_secured_files = {{"crl.bin", *own_crl}};
-        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"crl.bin", clear_crl},
-                                                                       {"extended.bin", extended}};
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
+            {"crl.bin", clear_crl}, {"extended.bin", extended}, {"fcrt.bin", fcrt}};
         const auto built = RunBuild(input);
         const auto extracted = built ? ExtractAll(*built, cpu_key) : std::nullopt;
         if (!require(extracted.has_value() && extracted->flashfs_sec.has_value(),
@@ -1644,7 +1656,8 @@ namespace {
         };
         const auto* crl = find("crl.bin");
         const auto* opened_extended = find("extended.bin");
-        if (!require(crl && opened_extended, "both files are in the image")) {
+        const auto* sealed_fcrt = find("fcrt.bin");
+        if (!require(crl && opened_extended && sealed_fcrt, "the three files are in the image")) {
             return false;
         }
         const auto sealing = gxbuild3::NAND::crl_sealing(*crl, cpu_key);
@@ -1654,6 +1667,12 @@ namespace {
         Bytes body(crl->size() - 0x140);
         ExCryptAesCbc(&state, crl->data() + 0x140, static_cast<uint32_t>(body.size()), body.data(),
                       feed.data(), 0);
+        ExCryptAesKey(&state, cpu_key.data());
+        std::array<uint8_t, 16> fcrt_feed{};
+        std::copy_n(fcrt.begin() + 0x100, fcrt_feed.size(), fcrt_feed.begin());
+        Bytes fcrt_body(fcrt.size() - 0x140);
+        ExCryptAesCbc(&state, sealed_fcrt->data() + 0x140, static_cast<uint32_t>(fcrt_body.size()),
+                      fcrt_body.data(), fcrt_feed.data(), 0);
         const auto& keyvault = *input.metadata.keyvault;
         return require(sealing && sealing->iv == own_sealing.iv &&
                            sealing->file_key == own_sealing.file_key,
@@ -1668,7 +1687,11 @@ namespace {
                        "extended.bin carries the nonce its plaintext derives") &&
                require(std::equal(keyvault.begin() + 0x10, keyvault.begin() + 0x18,
                                   opened_extended->begin() + 0x10),
-                       "extended.bin's head is the keyvault's");
+                       "extended.bin's head is the keyvault's") &&
+               require(std::equal(fcrt.begin(), fcrt.begin() + 0x140, sealed_fcrt->begin()) &&
+                           *sealed_fcrt != fcrt &&
+                           std::equal(fcrt_body.begin(), fcrt_body.end(), fcrt.begin() + 0x140),
+                       "fcrt.bin in the clear is sealed under the CPU key and its own vector");
     }
 
     bool test_flashfs_overlay_outranks_a_higher_sequence_donor_root() {

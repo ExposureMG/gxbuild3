@@ -25,6 +25,10 @@ namespace gxbuild3::NAND {
         constexpr size_t kDaeBodyOffset = 0x130;
         constexpr std::string_view kDaeMagic = "DAEP";
         constexpr uint8_t kExtendedNonceTail[2] = {0x07, 0x12};
+        constexpr size_t kFcrtSize = 0x4000;
+        constexpr size_t kFcrtIvOffset = 0x100;
+        constexpr size_t kFcrtBodyOffsetField = 0x11C;
+        constexpr size_t kFcrtHashOffset = 0x12C;
 
         Key hmac_sha(std::span<const uint8_t> key, std::span<const uint8_t> first,
                      std::span<const uint8_t> second = {}, std::span<const uint8_t> third = {}) {
@@ -236,6 +240,26 @@ namespace gxbuild3::NAND {
             return opened;
         }
 
+        // Whether fcrt.bin's hash at 0x12C is the SHA-1 of `body`, its sealed part in the clear.
+        bool fcrt_hash_holds(std::span<const uint8_t> blob, std::span<const uint8_t> body) {
+            uint8_t digest[20]{};
+            ExCryptSha(body.data(), static_cast<uint32_t>(body.size()), nullptr, 0, nullptr, 0,
+                       digest, sizeof(digest));
+            return std::equal(digest, digest + sizeof(digest), blob.begin() + kFcrtHashOffset);
+        }
+
+        // fcrt.bin's sealed part under the CPU key and the vector at 0x100, either way; a part
+        // that is not whole blocks comes back as it stands.
+        std::vector<uint8_t> crypt_fcrt_body(std::span<const uint8_t> blob,
+                                             std::span<const uint8_t> cpu_key, size_t body_offset,
+                                             bool encrypt) {
+            const auto body = blob.subspan(body_offset);
+            if (body.size() % 16 != 0) {
+                return {body.begin(), body.end()};
+            }
+            return aes_cbc(cpu_key, blob.subspan(kFcrtIvOffset, 16), body, encrypt);
+        }
+
     } // namespace
 
     std::array<uint8_t, 8> secured_file_stamp(int64_t build_seconds) {
@@ -406,6 +430,36 @@ namespace gxbuild3::NAND {
     std::optional<std::vector<uint8_t>> open_loose_secdata(std::span<const uint8_t> blob,
                                                            std::span<const uint8_t> cpu_key) {
         return open_loose(blob, cpu_key, false);
+    }
+
+    SealedFcrt seal_fcrt(std::span<const uint8_t> content, std::span<const uint8_t> cpu_key) {
+        SealedFcrt out{{content.begin(), content.end()}, FcrtSealing::Carried};
+        if (content.size() != kFcrtSize) {
+            out.sealing = FcrtSealing::InvalidSize;
+            return out;
+        }
+        const size_t body_offset = (static_cast<size_t>(content[kFcrtBodyOffsetField]) << 24) |
+                                   (static_cast<size_t>(content[kFcrtBodyOffsetField + 1]) << 16) |
+                                   (static_cast<size_t>(content[kFcrtBodyOffsetField + 2]) << 8) |
+                                   content[kFcrtBodyOffsetField + 3];
+        if (body_offset >= kFcrtSize) {
+            out.sealing = FcrtSealing::InvalidOffset;
+            return out;
+        }
+        if (!valid_cpu_key(cpu_key)) {
+            out.sealing = FcrtSealing::Damaged;
+            return out;
+        }
+        if (fcrt_hash_holds(content, content.subspan(body_offset))) {
+            const auto sealed = crypt_fcrt_body(content, cpu_key, body_offset, true);
+            std::copy(sealed.begin(), sealed.end(), out.data.begin() + body_offset);
+            out.sealing = FcrtSealing::Sealed;
+            return out;
+        }
+        if (!fcrt_hash_holds(content, crypt_fcrt_body(content, cpu_key, body_offset, false))) {
+            out.sealing = FcrtSealing::Damaged;
+        }
+        return out;
     }
 
     std::optional<std::array<uint8_t, 8>> secdata_head(std::span<const uint8_t> clear) {

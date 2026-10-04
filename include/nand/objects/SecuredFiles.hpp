@@ -19,6 +19,12 @@
 // Their nonce follows from the plaintext: HMAC-SHA(CPU key, plaintext + 07 12) for extended.bin,
 // as for a keyvault, and HMAC-SHA(CPU key, plaintext) for secdata.bin. The Input boundary carries
 // both in the clear behind the nonce they were sealed with.
+//
+// fcrt.bin is 0x4000 bytes: a header that keeps the vector at 0x100, at 0x11C a big-endian word
+// saying where the sealed part starts (0x140 in every copy seen), and at 0x12C the SHA-1 of the
+// sealed part in the clear; the sealed part runs to the end under AES-128-CBC with the CPU key. A
+// sealed part that is not whole blocks is left as it stands by both directions, as XeCrypt leaves
+// it.
 namespace gxbuild3::NAND {
 
     // The vector and file key a crl.bin is sealed under.
@@ -104,6 +110,33 @@ namespace gxbuild3::NAND {
     open_loose_extended(std::span<const uint8_t> blob, std::span<const uint8_t> cpu_key);
     [[nodiscard]] std::optional<std::vector<uint8_t>>
     open_loose_secdata(std::span<const uint8_t> blob, std::span<const uint8_t> cpu_key);
+
+    // What a build makes of the fcrt.bin it is handed, as xeBuild 1.21 makes it.
+    enum class FcrtSealing {
+        // It was in the clear, its hash holding as it stands, and is now sealed under the CPU key.
+        Sealed,
+        // It is sealed under the CPU key already: it opens and its hash holds. Carried byte for
+        // byte.
+        Carried,
+        // It is not 0x4000 bytes long. Carried as supplied.
+        InvalidSize,
+        // Its header puts the sealed part past 0x3FFF. Carried as supplied.
+        InvalidOffset,
+        // It is neither in the clear nor opens under the CPU key (or the CPU key is not 16
+        // bytes). Carried as supplied.
+        Damaged,
+    };
+
+    struct SealedFcrt {
+        std::vector<uint8_t> data;
+        FcrtSealing sealing{FcrtSealing::Carried};
+    };
+
+    // fcrt.bin sealed for the console: a copy in the clear is sealed under the CPU key and the
+    // vector it carries, which makes the sealing deterministic; any other copy is carried as
+    // supplied, and `sealing` says why.
+    [[nodiscard]] SealedFcrt seal_fcrt(std::span<const uint8_t> content,
+                                       std::span<const uint8_t> cpu_key);
 
     // The eight-byte head of an opened secdata.bin (`clear` is the nonce and the plaintext).
     [[nodiscard]] std::optional<std::array<uint8_t, 8>>

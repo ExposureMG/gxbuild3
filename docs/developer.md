@@ -235,8 +235,17 @@ the CPU key, crl/dae sealing is drawn from the system's random source.
 
 crl.bin, dae.bin and secdata.bin state the build's lockdown value (the CF LDV) and the build's
 time as a big-endian FILETIME in UTC: the build time plus two seconds, down to the even second.
-extended.bin and secdata.bin take the nonce their plaintext derives. `fcrt.bin` is written as
-supplied, and a file that opens under no key is written back as supplied with a warning.
+extended.bin and secdata.bin take the nonce their plaintext derives. A file that opens under no
+key is written back as supplied with a warning.
+
+`fcrt.bin` is sealed when it is handed over in the clear: when the SHA-1 of its part from the
+offset its header keeps at 0x11C (0x140 in every copy seen) is the 20 bytes at 0x12C, that part
+is sealed under AES-128-CBC with the CPU key and the vector at 0x100, which makes the result
+deterministic. A copy that is already sealed under the CPU key (it opens and its hash holds) is
+carried byte for byte. A copy that is not 0x4000 bytes, whose header puts the sealed part past
+0x3FFF, or that neither is in the clear nor opens under the CPU key is written as supplied with a
+warning. xeBuild writes a copy that does not open as its failed decryption leaves it; gxbuild3
+keeps it as supplied.
 
 The FILETIME is UTC, so it does not depend on the zone. To reproduce a xeBuild reference image,
 set `SOURCE_DATE_EPOCH` to its build time in UTC (the FILETIME inside its crl.bin, less two

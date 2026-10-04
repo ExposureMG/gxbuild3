@@ -109,8 +109,9 @@ namespace {
     // sealed for this build as xeBuild 1.21 seals them: the content is the file supplied, the
     // sealing the console's own copy's (or, with none, the supplied file's own when it is a
     // console copy, or drawn), and crl.bin, dae.bin and secdata.bin state the build's time and
-    // the CF lockdown value. A file that does not open is written as supplied. Every other file,
-    // fcrt.bin among them, is written as supplied. Nothing when a file cannot be sealed at all.
+    // the CF lockdown value. A file that does not open is written as supplied. fcrt.bin is sealed
+    // under the CPU key when it is in the clear and otherwise written as supplied. Every other file
+    // is written as supplied. Nothing when a file cannot be sealed at all.
     std::optional<std::vector<uint8_t>> sealed_flashfs_file(std::string_view name,
                                                             const std::vector<uint8_t>& data,
                                                             const Input& input,
@@ -186,6 +187,30 @@ namespace {
                 return std::nullopt;
             }
             return file_data;
+        }
+        if (lower == "fcrt.bin") {
+            auto sealed = seal_fcrt(data, cpu_key);
+            switch (sealed.sealing) {
+                case FcrtSealing::Sealed:
+                    Log::Debug("fcrt.bin was in the clear; it is sealed under the CPU key");
+                    break;
+                case FcrtSealing::Carried:
+                    Log::Debug("fcrt.bin is sealed under the CPU key already; it is carried");
+                    break;
+                case FcrtSealing::InvalidSize:
+                    Log::Warn("fcrt.bin is 0x{:X} bytes, not 0x4000; it is written as supplied",
+                              data.size());
+                    break;
+                case FcrtSealing::InvalidOffset:
+                    Log::Warn("fcrt.bin's header puts its sealed part past its end; it is written "
+                              "as supplied");
+                    break;
+                case FcrtSealing::Damaged:
+                    Log::Warn("fcrt.bin is neither in the clear nor opens under the CPU key; it is "
+                              "written as supplied");
+                    break;
+            }
+            return std::move(sealed.data);
         }
         return data;
     }
