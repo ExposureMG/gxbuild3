@@ -1213,6 +1213,12 @@ namespace gxbuild3::NAND {
             }
         }
 
+        // The JTAG patch buffer is programmed whole, its erased tail included.
+        if (is_jtag_patchset && payloads.patchset &&
+            payloads.patchset->kind == PatchSetKind::Jtag) {
+            layout.programmed_ranges.emplace_back(window_base + 0x1000, kJTAGPatchesSize);
+        }
+
         if (driver.driver_mode() == Driver::DriverMode::Emmc) {
             CoronaConfig cc{};
             cc.table = layout.fs_root_block.value_or(0);
@@ -1247,8 +1253,20 @@ namespace gxbuild3::NAND {
                 return false;
             }
         }
+        // xeBuild programs the bytes after each JTAG window item zero, up to the next item or the
+        // end of the 16 KiB block that holds the item's end.
+        const auto zero_fill = [&driver](size_t from, size_t to) {
+            return from >= to || driver.write_offset(from, std::vector<uint8_t>(to - from, 0));
+        };
+        const auto zero_to_block_end = [&zero_fill](size_t end) {
+            return zero_fill(end, (end + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize);
+        };
         if (payloads.rebooter) {
             if (!driver.write_offset(window_base, *payloads.rebooter)) {
+                return false;
+            }
+            if (is_jtag_patchset &&
+                !zero_fill(window_base + payloads.rebooter->size(), window_base + 0x1000)) {
                 return false;
             }
         }
@@ -1310,6 +1328,20 @@ namespace gxbuild3::NAND {
             if (!patch_bytes.empty() && !driver.write_offset(patch_offset, patch_bytes)) {
                 return false;
             }
+            if (payloads.patchset->kind == PatchSetKind::Jtag) {
+                const size_t patch_end = patch_offset + patch_bytes.size();
+                const size_t block_end = (patch_end + kLayBlockSize - 1) / kLayBlockSize *
+                                         kLayBlockSize;
+                const size_t region_end = patch_offset + patch_capacity;
+                // The patch buffer is programmed whole: zero to the end of its block, then
+                // erased bytes, written as pages, up to its fixed length.
+                if (!zero_fill(patch_end, block_end) ||
+                    (block_end < region_end &&
+                     !driver.write_offset(block_end,
+                                          std::vector<uint8_t>(region_end - block_end, 0xFF)))) {
+                    return false;
+                }
+            }
             // xeBuild programs the rest of the patch slot's first 0x4000 bytes zero after the
             // KHV terminator; the slot past them stays erased.
             const size_t khv_end = patch_offset + patch_bytes.size();
@@ -1329,6 +1361,13 @@ namespace gxbuild3::NAND {
             }
             if (payloads.extra_cd &&
                 !driver.write_offset(extra.cd, payloads.extra_cd->serialize())) {
+                return false;
+            }
+            const size_t second_chain_end =
+                payloads.extra_cd ? extra.cd + payloads.extra_cd->serialize().size()
+                : payloads.extra_cb ? extra.cb + payloads.extra_cb->serialize().size()
+                                    : 0;
+            if (second_chain_end != 0 && !zero_to_block_end(second_chain_end)) {
                 return false;
             }
         }

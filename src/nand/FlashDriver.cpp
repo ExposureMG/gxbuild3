@@ -866,8 +866,15 @@ namespace gxbuild3::NAND {
                         for (size_t page = first_page; page < first_page + pages_per_block();
                              ++page) {
                             const auto data = read_page(page);
-                            if (std::all_of(data.begin(), data.end(),
-                                            [](uint8_t b) { return b == 0xFF; })) {
+                            const size_t page_offset = page * 0x200;
+                            const bool programmed = std::any_of(
+                                m_layout.programmed_ranges.begin(),
+                                m_layout.programmed_ranges.end(), [page_offset](const auto& range) {
+                                    return page_offset >= range.first &&
+                                           page_offset < range.first + range.second;
+                                });
+                            if (!programmed && std::all_of(data.begin(), data.end(),
+                                                           [](uint8_t b) { return b == 0xFF; })) {
                                 write_page_spare(page, erased_spare);
                             } else {
                                 write_page_metadata_range(page, 1, meta);

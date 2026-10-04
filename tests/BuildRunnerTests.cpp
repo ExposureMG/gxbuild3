@@ -599,6 +599,70 @@ namespace {
                        "extra CD is sealed, not written as supplied");
     }
 
+    // xeBuild programs the bytes after each JTAG window item zero up to the next item or the end
+    // of the 16 KiB block holding the item's end. The patch buffer is programmed whole, so its
+    // erased tail is written as pages that carry a spare stamp.
+    bool test_jtag_window_padding_is_programmed_like_xebuild() {
+        BootloaderCb extra_cb{};
+        extra_cb.header.header.magic = NANDBootloaderMagic::CB;
+        extra_cb.header.header.version = 4579;
+        extra_cb.data.resize(0x380, 0);
+        extra_cb.data.resize(0x400, 0x71);
+        extra_cb.header.header.size =
+            static_cast<uint32_t>(sizeof(generic_header) + extra_cb.data.size());
+        BootloaderCd extra_cd{};
+        extra_cd.header.header.magic = NANDBootloaderMagic::CD;
+        extra_cd.header.header.version = 8453;
+        extra_cd.header.ce_hash[0] = 1;
+        extra_cd.data.resize(0x100, 0x72);
+        extra_cd.header.header.size =
+            static_cast<uint32_t>(sizeof(cd_header) + extra_cd.data.size());
+        const Bytes cb_bytes = extra_cb.serialize();
+        const Bytes cd_bytes = extra_cd.serialize();
+
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.build_type = BuildType::Jtag;
+        input.metadata.smc = make_jtag_smc(0x11);
+        InputPatches patches{};
+        patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13, 0x13})};
+        input.patches = std::move(patches);
+        input.bootloaders.extra_cb = cb_bytes;
+        input.bootloaders.extra_cd = cd_bytes;
+        InputPayloads payloads{};
+        payloads.rebooter = Bytes(0x40, 0x74);
+        input.payloads = std::move(payloads);
+
+        const size_t cd_at = 0xD5060 + ((cb_bytes.size() + 0x0F) & ~size_t{0x0F});
+        const size_t chain_end = cd_at + cd_bytes.size();
+        const size_t pad_end = (chain_end + 0x3FFF) & ~size_t{0x3FFF};
+        const auto built = RunBuild(input);
+        auto image = built ? FlashImage::read(*built) : std::nullopt;
+        if (!require(image && image->parse(), "JTAG image with a rebooter builds and reads back")) {
+            return false;
+        }
+        const auto all_equal = [&image](size_t offset, size_t length, uint8_t value) {
+            const auto bytes = std::as_const(image->flash_driver).read_offset(offset, length);
+            return bytes.size() == length && std::all_of(bytes.begin(), bytes.end(),
+                                                         [value](uint8_t b) { return b == value; });
+        };
+        const auto spare_stamped = [&image](size_t offset) {
+            const auto spare = std::as_const(image->flash_driver).read_page_spare(offset / 0x200);
+            return std::any_of(spare.begin(), spare.end(), [](uint8_t b) { return b != 0xFF; });
+        };
+        return require(all_equal(0x90040, 0x1000 - 0x40, 0),
+                       "the bytes after the rebooter are zero up to the patch list") &&
+               require(all_equal(0x91100, 0x94000 - 0x91100, 0),
+                       "the bytes after the patch list are zero to the end of its block") &&
+               require(all_equal(0x94000, 0x1000, 0xFF),
+                       "the patch buffer's tail stays erased data") &&
+               require(spare_stamped(0x94000) && spare_stamped(0x94E00),
+                       "the patch buffer's erased tail is programmed as pages") &&
+               require(!spare_stamped(0x95200),
+                       "pages past the patch buffer that nothing writes stay unprogrammed") &&
+               require(chain_end < pad_end && all_equal(chain_end, pad_end - chain_end, 0),
+                       "the bytes after the second chain are zero to the end of its block");
+    }
+
     // A JTAG image boots through its SMC's hack: an SMC with no JTAG mark is refused, unless
     // smcnocheck waives the check. A marked SMC, sealed or plaintext, builds.
     bool test_jtag_refuses_a_clean_smc() {
@@ -4329,6 +4393,7 @@ int main() {
     passed = test_nopatch_skips_only_the_named_stages() && passed;
     passed = test_jtag_patchset_is_serialized_at_fixed_region() && passed;
     passed = test_jtag_flows_payload_and_extra_bootloaders() && passed;
+    passed = test_jtag_window_padding_is_programmed_like_xebuild() && passed;
     passed = test_jtag_refuses_a_clean_smc() && passed;
     passed = test_patch_regions_reject_overflow() && passed;
     passed = test_runbuild_rejects_retail_and_devkit_addon_patch_data() && passed;

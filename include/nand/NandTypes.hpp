@@ -3,8 +3,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <vector>
 #include <optional>
+#include <utility>
+#include <vector>
 
 #pragma pack(push, 1)
 
@@ -165,4 +166,7 @@ struct NandLayout {
     std::vector<MobileBlockPlacement> mobile_blocks;
     // Physical blocks holding FlashFS file data; FlashFileSystem::save stamps their spare.
     std::vector<uint16_t> fs_data_blocks;
+    // Byte ranges (offset, length) of the image that xeBuild programs even where they are all
+    // 0xFF, so their pages carry a type-0 spare stamp instead of an erased one.
+    std::vector<std::pair<size_t, size_t>> programmed_ranges;
 };
