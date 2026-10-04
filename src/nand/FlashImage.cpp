@@ -91,6 +91,18 @@ namespace gxbuild3::NAND {
             return round_up(kXellOffset + static_cast<uint32_t>(XeLL::kSize), slot_round(mode));
         }
 
+        // How many CG tails (sysupdate.xexpN) open the directory.
+        size_t leading_cg_tails(const FlashFileSystem& filesystem) {
+            const auto& entries = filesystem.entries();
+            const auto first_other =
+                std::find_if(entries.begin(), entries.end(), [](const FlashFileSystemEntry& entry) {
+                    const std::string_view name(entry.filename,
+                                                strnlen(entry.filename, kMaxFilenameLength));
+                    return !name.starts_with("sysupdate.xexp");
+                });
+            return static_cast<size_t>(first_other - entries.begin());
+        }
+
         bool is_jtag_image(const FlashImage& image) {
             return image.build_type == BuildType::Jtag ||
                    (image.payloads.patchset && image.payloads.patchset->kind == PatchSetKind::Jtag);
@@ -1136,10 +1148,30 @@ namespace gxbuild3::NAND {
                     for (size_t b = 0; b < blocks_needed; ++b) {
                         driver.erase_block(*free_start + b);
                     }
+                    // The table states a blob's blocks free (xeBuild 1.21); they are only
+                    // kept from the files and the root here.
                     if (mutable_filesystem &&
-                        !mutable_filesystem->reserve_blocks(*free_start, blocks_needed)) {
+                        !mutable_filesystem->withhold_blocks(*free_start, blocks_needed,
+                                                             BlockMapStatus::Free)) {
                         Log::Error("Failed to reserve mobile data type 0x{:02X} in FlashFS", bt);
                         return false;
+                    }
+                    // On big block the blobs start on an erase block, and the table never
+                    // names the clusters stepped over between the last file and them.
+                    if (mutable_filesystem && big && !open_block) {
+                        const size_t ratio = driver.block_size_clean() / 0x4000;
+                        const size_t blob_cluster = *free_start * ratio;
+                        const size_t floor = blob_cluster >= ratio ? blob_cluster - ratio : 0;
+                        size_t cluster = blob_cluster;
+                        while (cluster > floor &&
+                               filesystem->blockmap()[cluster - 1] == BlockMapStatus::Free) {
+                            --cluster;
+                        }
+                        if (cluster < blob_cluster &&
+                            !mutable_filesystem->withhold_clusters(cluster, blob_cluster - cluster,
+                                                                   BlockMapStatus::Unnamed)) {
+                            return false;
+                        }
                     }
                     open_block = *free_start;
                     next_page = 0;
@@ -1167,7 +1199,6 @@ namespace gxbuild3::NAND {
             }
             layout.fs_root_block = static_cast<uint16_t>(*root_start);
             layout.fs_version = filesystem->version();
-            layout.fs_size = static_cast<uint16_t>(filesystem->blockmap().size());
             layout.big_fs_size = filesystem->big_fs_size();
             auto& fs = const_cast<FlashFileSystem&>(*filesystem);
             fs.set_driver(&driver);
@@ -2001,7 +2032,17 @@ namespace gxbuild3::NAND {
                 if (const auto range = flash_driver.block_range_for_byte_interval(base, 2 * stride))
                     if (!filesystem->reserve_blocks(range->start_block, range->block_count)) return false;
                 if (filesystem->exists(filename) && !filesystem->delete_file(filename)) return false;
-                if (!filesystem->add_file(filename, std::span(cg).subspan(prefix))) return false;
+                // A built image lists each CG tail first, in slot order, and lays it on the
+                // filesystem's first free blocks, directly past the slots (xeBuild 1.21).
+                // A parsed image keeps its other files where they are.
+                if (preserve_layout) {
+                    if (!filesystem->add_file(filename, std::span(cg).subspan(prefix)))
+                        return false;
+                } else {
+                    if (!filesystem->insert_file(leading_cg_tails(*filesystem), filename,
+                                                 std::span(cg).subspan(prefix)))
+                        return false;
+                }
                 auto entry = filesystem->stat(filename);
                 if (!entry) return false;
                 auto chain = filesystem->get_chain(entry->block_number);

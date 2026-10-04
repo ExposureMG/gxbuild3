@@ -1227,13 +1227,15 @@ namespace gxbuild3::utils {
                           entry.key);
             }
         };
-        if (const auto* security = doc.get("security")) {
-            for (const auto& entry : *security)
-                process_payload_entry(entry, normalize_file_key(entry.key) == "fcrt.bin");
-        }
+        // The FlashFS lists the [flashfs] files and then the [security] files, each in the order
+        // the INI names them (xeBuild 1.21).
         if (const auto* flashfs = doc.get("flashfs")) {
             for (const auto& entry : *flashfs)
                 process_payload_entry(entry, false);
+        }
+        if (const auto* security = doc.get("security")) {
+            for (const auto& entry : *security)
+                process_payload_entry(entry, normalize_file_key(entry.key) == "fcrt.bin");
         }
         // [rawpatch] lists "file,offset": the file goes into the image as it is at that clean
         // offset. A file no root supplies is skipped with a warning.

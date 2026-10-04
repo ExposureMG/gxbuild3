@@ -443,7 +443,8 @@ namespace {
         write_file(f.root / "version/secdata.bin", {3});
         const auto loose =
             FileManager::ReadIniFiles("version", "test", "test", {}, {.nosusecurity = true});
-        require(loose && payload(*loose, "secdata.bin") == Bytes{3},
+        // [flashfs] is read before [security], so the file keeps its [flashfs] spelling.
+        require(loose && payload(*loose, "SECDATA.BIN") == Bytes{3},
                 "nosusecurity retains loose security");
         const auto paths =
             FileManager::FindFiles({"secdata.bin", "dash.xex"},
@@ -451,6 +452,24 @@ namespace {
         require(paths.at("secdata.bin") == f.root / "version/secdata.bin" &&
                     paths.at("dash.xex") == f.root / "mydata/su_test",
                 "FindFiles filters only security from STFS");
+    }
+
+    // The FlashFS lists the [flashfs] files and then the [security] files, each in INI order,
+    // whatever order the INI gives the sections in (xeBuild 1.21).
+    void test_flashfs_files_precede_security_files() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nnone\n[security]\ncrl.bin\nsecdata.bin\n"
+                   "[flashfs]\nxam.xex\naac.xexp,12345678\n");
+        for (const auto* name : {"crl.bin", "secdata.bin", "xam.xex", "aac.xexp"})
+            write_file(f.root / "version" / name, {1});
+        const auto result = FileManager::ReadIniFiles("version", "test", "test", {});
+        std::vector<std::string> names;
+        if (result)
+            for (const auto& file : result->flashfs_sec)
+                names.push_back(file.first);
+        require(names == std::vector<std::string>{"xam.xex", "aac.xexp1", "crl.bin", "secdata.bin"},
+                "[flashfs] files come first, then [security] files, each in INI order");
     }
 
     void test_nosusecurity_skips_extraction() {
@@ -1016,6 +1035,7 @@ int main() {
         {"FindFiles alias priority", test_findfiles_alias_priority},
         {"nosu", test_nosu},
         {"nosusecurity", test_nosusecurity},
+        {"flashfs files precede security files", test_flashfs_files_precede_security_files},
         {"nosusecurity skips extraction", test_nosusecurity_skips_extraction},
         {"explicit roots and ties", test_explicit_roots_and_same_root_ties},
         {"split bootloader priority", test_split_bootloader_priority},

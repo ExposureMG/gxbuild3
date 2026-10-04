@@ -912,7 +912,18 @@ namespace {
             const auto file = find(name);
             return file != files.end() && file->second == contents;
         };
+        // xeBuild 1.21 order: [flashfs] in INI order, then [security] in INI order, then the
+        // console's secured files the INI does not name.
+        const std::array<std::string_view, 8> order{"launch.ini", "new.bin",     "listed.bin",
+                                                    "aac.xexp1",  "secdata.bin", "extended.bin",
+                                                    "crl.bin",    "fcrt.bin"};
+        bool ordered = files.size() == order.size();
+        for (size_t i = 0; ordered && i < order.size(); ++i) {
+            ordered = find(order[i]) == files.begin() + static_cast<std::ptrdiff_t>(i);
+        }
         return require(files.size() == 8, "the FlashFS holds exactly the expected files") &&
+               require(ordered, "the FlashFS lists [flashfs], then [security], then the "
+                                "console's other secured files") &&
                require(has("launch.ini", Bytes{0x41}),
                        "an INI file from the source roots replaces the donor basename") &&
                require(has("secdata.bin", plaintext_secdata),

@@ -830,9 +830,9 @@ namespace gxbuild3::NAND {
                     meta.block_type = big_block ? FlashFsMetadata::kRootTypeBig
                                                 : FlashFsMetadata::kRootTypeSmall;
                     meta.sequence = m_layout.fs_version;
-                    meta.fs_size = big_block
-                                       ? m_layout.big_fs_size.value_or(FlashFsMetadata::kBigFsSize)
-                                       : m_layout.fs_size;
+                    // A small-block root states no size, as real dumps and xeBuild leave it.
+                    meta.fs_size =
+                        big_block ? m_layout.big_fs_size.value_or(FlashFsMetadata::kBigFsSize) : 0;
                     meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
                     write_cluster_metadata(blk * block_size_clean() / 0x4000, meta);
                 } else {

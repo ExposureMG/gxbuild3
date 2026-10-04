@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
-#include <set>
+#include <map>
 #include <unordered_set>
 
 namespace gxbuild3::NAND {
@@ -87,6 +87,7 @@ namespace gxbuild3::NAND {
         m_root_reserved_clusters = ratio;
         m_entries.clear();
         m_file_data.clear();
+        m_stated.clear();
         m_blockmap.assign(total_blocks * ratio, BlockMapStatus::Free);
 
         const size_t bound = std::max(
@@ -103,13 +104,41 @@ namespace gxbuild3::NAND {
                        "version={}",
                        total_blocks, version);
         } else {
-            m_root_block = root_block;
-            m_root_placed = true;
-            std::fill_n(m_blockmap.begin() + root_block * ratio, ratio, BlockMapStatus::EndOfChain);
+            place_root(root_block);
             Log::Debug("Formatted Flash File System: total_blocks={}, root_block={}, version={}",
                        total_blocks, root_block, version);
         }
         return true;
+    }
+
+    // The root takes the first cluster of its erase block, which the table states as itself;
+    // the rest of that block is kept from allocation and stated free, as xeBuild states it.
+    void FlashFileSystem::place_root(uint16_t root_block) {
+        const size_t ratio = clusters_per_block();
+        const size_t first = static_cast<size_t>(root_block) * ratio;
+        m_root_block = root_block;
+        m_root_cluster_offset = 0;
+        m_root_reserved_clusters = ratio;
+        m_blockmap[first] = BlockMapStatus::Table;
+        for (size_t cluster = first + 1; cluster < first + ratio; ++cluster) {
+            m_blockmap[cluster] = BlockMapStatus::Reserved;
+            m_stated[cluster] = BlockMapStatus::Free;
+        }
+        m_root_placed = true;
+    }
+
+    void FlashFileSystem::release_root() {
+        if (!m_root_placed) {
+            return;
+        }
+        const size_t first =
+            static_cast<size_t>(m_root_block) * clusters_per_block() + m_root_cluster_offset;
+        for (size_t cluster = first;
+             cluster < first + m_root_reserved_clusters && cluster < m_blockmap.size(); ++cluster) {
+            m_blockmap[cluster] = BlockMapStatus::Free;
+            m_stated.erase(cluster);
+        }
+        m_root_placed = false;
     }
 
     bool FlashFileSystem::set_root_block(uint16_t root_block) {
@@ -124,15 +153,8 @@ namespace gxbuild3::NAND {
             return false;
         }
 
-        if (m_root_placed) {
-            std::fill_n(m_blockmap.begin() + m_root_block * ratio + m_root_cluster_offset,
-                        m_root_reserved_clusters, BlockMapStatus::Free);
-        }
-        m_root_block = root_block;
-        m_root_cluster_offset = 0;
-        m_root_reserved_clusters = ratio;
-        std::fill_n(m_blockmap.begin() + m_root_block * ratio, ratio, BlockMapStatus::EndOfChain);
-        m_root_placed = true;
+        release_root();
+        place_root(root_block);
         return true;
     }
 
@@ -155,8 +177,37 @@ namespace gxbuild3::NAND {
         }
         for (size_t block = start_block; block < start_block + block_count; ++block) {
             m_blockmap[block] = BlockMapStatus::Reserved;
+            m_stated.erase(block);
         }
         return true;
+    }
+
+    bool FlashFileSystem::withhold_clusters(size_t first_cluster, size_t cluster_count,
+                                            uint16_t stated) {
+        if (cluster_count == 0 || first_cluster >= m_blockmap.size() ||
+            cluster_count > m_blockmap.size() - first_cluster) {
+            return false;
+        }
+        for (size_t cluster = first_cluster; cluster < first_cluster + cluster_count; ++cluster) {
+            if (m_blockmap[cluster] != BlockMapStatus::Free &&
+                !(m_blockmap[cluster] == BlockMapStatus::Reserved && m_stated.contains(cluster))) {
+                return false;
+            }
+        }
+        for (size_t cluster = first_cluster; cluster < first_cluster + cluster_count; ++cluster) {
+            m_blockmap[cluster] = BlockMapStatus::Reserved;
+            m_stated[cluster] = stated;
+        }
+        return true;
+    }
+
+    bool FlashFileSystem::withhold_blocks(size_t start_block, size_t block_count, uint16_t stated) {
+        const size_t ratio = clusters_per_block();
+        if (block_count == 0 || start_block >= m_blockmap.size() / ratio ||
+            block_count > m_blockmap.size() / ratio - start_block) {
+            return false;
+        }
+        return withhold_clusters(start_block * ratio, block_count * ratio, stated);
     }
 
     std::vector<uint16_t> FlashFileSystem::get_chain(uint16_t start_block) const {
@@ -248,7 +299,7 @@ namespace gxbuild3::NAND {
     }
 
     bool FlashFileSystem::add_file(std::string_view filename, std::span<const uint8_t> data,
-                                   uint32_t timestamp) {
+                                   std::optional<uint32_t> timestamp) {
         std::string_view clean_name = filename;
         auto pos = clean_name.find_last_of("/\\");
         if (pos != std::string_view::npos) {
@@ -283,10 +334,61 @@ namespace gxbuild3::NAND {
         entry.filename[clean_name.size()] = '\0';
         entry.block_number = *chain_start;
         entry.length = static_cast<uint32_t>(data.size());
-        entry.timestamp = timestamp;
+        entry.timestamp = timestamp.value_or(m_timestamp);
 
         m_entries.push_back(entry);
         m_file_data[std::string(clean_name)] = std::vector<uint8_t>(data.begin(), data.end());
+        return true;
+    }
+
+    bool FlashFileSystem::insert_file(size_t position, std::string_view filename,
+                                      std::span<const uint8_t> data,
+                                      std::optional<uint32_t> timestamp) {
+        std::string_view clean_name = filename;
+        if (const auto pos = clean_name.find_last_of("/\\"); pos != std::string_view::npos) {
+            clean_name = clean_name.substr(pos + 1);
+        }
+        // The data may be a view of the file being replaced, which deleting it frees.
+        const std::vector<uint8_t> inserted(data.begin(), data.end());
+        for (size_t index = 0; index < m_entries.size(); ++index) {
+            if (m_entries[index].matches(clean_name)) {
+                if (index < position) {
+                    --position;
+                }
+                delete_file(clean_name);
+                break;
+            }
+        }
+        position = std::min(position, m_entries.size());
+
+        struct Moved {
+            std::string name;
+            std::vector<uint8_t> data;
+            uint32_t timestamp;
+        };
+        std::vector<Moved> moved;
+        for (auto it = m_entries.begin() + static_cast<std::ptrdiff_t>(position);
+             it != m_entries.end(); ++it) {
+            free_chain(it->block_number);
+            const std::string name{it->filename};
+            auto data_it = m_file_data.find(name);
+            if (data_it == m_file_data.end()) {
+                Log::Error("FlashFS file '{}' has no data to lay again", name);
+                return false;
+            }
+            moved.push_back({name, std::move(data_it->second), it->timestamp});
+            m_file_data.erase(data_it);
+        }
+        m_entries.erase(m_entries.begin() + static_cast<std::ptrdiff_t>(position), m_entries.end());
+
+        if (!add_file(clean_name, inserted, timestamp)) {
+            return false;
+        }
+        for (const auto& file : moved) {
+            if (!add_file(file.name, file.data, file.timestamp)) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -390,8 +492,11 @@ namespace gxbuild3::NAND {
             uint8_t* page_ptr = root_block.data() + (page * 512);
             for (size_t entry = 0; entry < kBlocksPerPage && bm_written < m_blockmap.size();
                  ++entry) {
+                const auto stated = m_stated.find(bm_written);
                 uint16_t val = m_blockmap[bm_written++];
-                if ((val & 0x7FFF) < BlockMapStatus::BadBlock) {
+                if (stated != m_stated.end()) {
+                    val = stated->second;
+                } else if ((val & 0x7FFF) < BlockMapStatus::BadBlock) {
                     if ((val & 0x7FFF) < base_cluster())
                         return {};
                     val = static_cast<uint16_t>((val & 0x8000) | ((val & 0x7FFF) - base_cluster()));
@@ -456,7 +561,9 @@ namespace gxbuild3::NAND {
         root_meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
         root_meta.is_bad = false;
 
-        std::set<size_t> file_clusters;
+        // Each file cluster and how many of its pages carry the file's spare.
+        std::map<size_t, size_t> file_clusters;
+        constexpr size_t kPagesPerCluster = kCleanBlockSize / 512;
         for (const auto& entry : m_entries) {
             if (!entry.is_valid()) {
                 continue;
@@ -492,7 +599,13 @@ namespace gxbuild3::NAND {
                     }
                 }
 
-                file_clusters.insert(blk);
+                // A big-block file of one cluster states its spare on the pages its bytes
+                // reach; the zero padding after them keeps erased fields (xeBuild 1.21).
+                size_t pages = kPagesPerCluster;
+                if (big_block && file_bytes.size() <= kCleanBlockSize) {
+                    pages = std::max<size_t>(1, (chunk_len + 511) / 512);
+                }
+                file_clusters[blk] = pages;
 
                 bytes_written += chunk_len;
             }
@@ -505,7 +618,8 @@ namespace gxbuild3::NAND {
         // blocks with no size or page count; big-block ones carry type 0x2A and the
         // constant reference stamp. Only the 16 KiB clusters holding file data are stamped:
         // the rest of a big block stays erased, as xeBuild leaves it.
-        for (const size_t cluster : file_clusters) {
+        const std::vector<uint8_t> erased_spare(16, 0xFF);
+        for (const auto& [cluster, pages] : file_clusters) {
             BlockMetadata file_meta{};
             file_meta.logical_block_id = static_cast<uint16_t>(cluster / clusters_per_block());
             file_meta.sequence = 0;
@@ -514,7 +628,10 @@ namespace gxbuild3::NAND {
             file_meta.fs_size = big_block ? big_fs_size() : 0;
             file_meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
             file_meta.is_bad = false;
-            m_driver->write_cluster_metadata(cluster, file_meta);
+            m_driver->write_page_metadata(cluster * kPagesPerCluster, pages, file_meta);
+            for (size_t page = pages; page < kPagesPerCluster; ++page) {
+                m_driver->write_page_spare(cluster * kPagesPerCluster + page, erased_spare);
+            }
         }
 
         m_driver->write_cluster_metadata(root_cluster, root_meta);
@@ -537,6 +654,7 @@ namespace gxbuild3::NAND {
             return false;
         }
         m_root_placed = true;
+        m_stated.clear();
 
         const size_t cluster_count = driver.block_count() * clusters_per_block();
         m_blockmap.assign(std::min(cluster_count, kRootDirectoryPages * kBlocksPerPage),

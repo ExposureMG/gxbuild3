@@ -21,6 +21,7 @@
 #include "patchers/Patcher.hpp"
 #include "patchers/Patches.hpp"
 #include "patchers/Signature.hpp"
+#include "utils/BuildTime.hpp"
 #include "utils/Log.hpp"
 #include "utils/Utils.hpp"
 #include "utils/XeRsa.hpp"
@@ -1103,6 +1104,15 @@ BuildResult RunBuild(const Input& input) {
         FlashFileSystem fs{};
         fs.set_driver(&flash_image.flash_driver);
         fs.set_larger_filesystem(input.build_type == BuildType::Devkit);
+        // Every directory entry carries the build's time (SOURCE_DATE_EPOCH when set).
+        fs.set_timestamp(gxbuild3::utils::flashfs_build_timestamp(gxbuild3::utils::build_epoch()));
+        // A big-block filesystem's spare states the system area: all of the first 2 MB on
+        // every image but a retail one, whose system area ends with its update slots
+        // (xeBuild 1.21: 6 blocks of 0x20000 on a jasperbb retail image).
+        fs.set_big_system_blocks(
+            input.build_type == BuildType::Retail
+                ? static_cast<uint8_t>(flash_image.update_slots_end() / 0x20000)
+                : uint8_t{0x10});
         const size_t total_blocks = flash_image.flash_driver.block_count();
         const size_t data_limit = flash_image.flash_driver.data_block_limit();
         if (data_limit == 0 || data_limit > std::numeric_limits<uint16_t>::max()) {
@@ -1113,15 +1123,20 @@ BuildResult RunBuild(const Input& input) {
         // A new FlashFS starts at root sequence 1. The image writer clears every older root
         // block's metadata, so no donor root can outrank it.
         constexpr uint32_t version = 1;
-        // A devkit or devgl image's files start right behind its update slots: block 0x3D,
-        // past 0xF4000, on a 64 MB small-block devkit image and block 0x3C, past 0xF0000, on a
-        // 16 MB devgl image (xeBuild 1.21). Every other image keeps the first 0x50 blocks.
-        uint32_t reserved_boundary = 0x50;
-        if (input.build_type == BuildType::Devkit || devgl) {
-            const size_t block_size = flash_image.flash_driver.block_size_clean();
-            reserved_boundary = static_cast<uint32_t>(
-                (flash_image.update_slots_end() + block_size - 1) / block_size);
+        // The files start on the first block past the update slots and every payload laid
+        // after them, as xeBuild 1.21 lays them: block 0x24 (0x90000) on a 16 MB retail image,
+        // 0x34 on a glitch one, past the second chain on a JTAG one, and the filesystem's base
+        // on big block, where that is higher.
+        const size_t block_size = flash_image.flash_driver.block_size_clean();
+        size_t first_block = (flash_image.update_slots_end() + block_size - 1) / block_size;
+        for (const auto& range : flash_image.active_payload_block_ranges()) {
+            first_block = std::max(first_block, range.start_block + range.block_count);
         }
+        if (first_block > data_limit) {
+            return build_error(BuildErrorCode::SerializationFailure,
+                               "No usable blocks remain for the Flash File System");
+        }
+        const auto reserved_boundary = static_cast<uint32_t>(first_block);
         // Defer root placement so serialize allocates it once, last, from the same free
         // pool as the files and mobile data. Reserving a root here double-counts it and
         // starves a full image of the final block the root needs.
@@ -1129,10 +1144,29 @@ BuildResult RunBuild(const Input& input) {
             return build_error(BuildErrorCode::SerializationFailure,
                                "Failed to format the Flash File System");
         }
-        if (data_limit < total_blocks &&
-            !fs.reserve_blocks(data_limit, total_blocks - data_limit)) {
-            return build_error(BuildErrorCode::SerializationFailure,
-                               "Failed to reserve geometry tail blocks for the Flash File System");
+        // Past the last usable block, xeBuild's table reserves the settings blocks of a 16 MB
+        // part (four) and never names its remap pool after them; a big-block part's settings
+        // sit outside the filesystem's numbering, so it names nothing from there on. An eMMC
+        // part or a 64 MB small-block devkit part, which keep no pool, reserve every block to
+        // the end.
+        if (data_limit < total_blocks) {
+            const auto mode = flash_image.flash_driver.driver_mode();
+            const bool pool =
+                mode == Driver::DriverMode::Big ||
+                ((mode == Driver::DriverMode::Small || mode == Driver::DriverMode::NewSmall) &&
+                 total_blocks <= 0x400);
+            const size_t held = pool ? (mode == Driver::DriverMode::Big
+                                            ? 0
+                                            : std::min<size_t>(4, total_blocks - data_limit))
+                                     : total_blocks - data_limit;
+            if ((held > 0 && !fs.reserve_blocks(data_limit, held)) ||
+                (data_limit + held < total_blocks &&
+                 !fs.withhold_blocks(data_limit + held, total_blocks - data_limit - held,
+                                     BlockMapStatus::Unnamed))) {
+                return build_error(
+                    BuildErrorCode::SerializationFailure,
+                    "Failed to reserve geometry tail blocks for the Flash File System");
+            }
         }
         for (size_t block = 0; block < data_limit; ++block) {
             if (flash_image.flash_driver.is_bad_block(block) && !fs.reserve_blocks(block, 1)) {

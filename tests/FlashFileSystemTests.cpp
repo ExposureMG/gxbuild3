@@ -4,6 +4,7 @@
 #include <cstring>
 #include <iostream>
 #include <span>
+#include <string>
 #include <vector>
 
 using namespace gxbuild3::NAND;
@@ -141,7 +142,6 @@ namespace {
         NandLayout layout;
         layout.fs_root_block = 350;
         layout.fs_version = 0x125;
-        layout.fs_size = 0x1000;
         driver.set_layout(layout);
         driver.serialize();
 
@@ -292,7 +292,6 @@ namespace {
         NandLayout layout;
         layout.fs_root_block = root_block;
         layout.fs_version = fs.version();
-        layout.fs_size = static_cast<uint16_t>(fs.blockmap().size());
         driver.set_layout(layout);
 
         if (!check(fs.save(), "large files save"))
@@ -353,6 +352,139 @@ namespace {
                check(!fs.is_block_free(limit - 1), "the placed root block is no longer free") &&
                check(fs.save(), "save succeeds once the deferred root is placed");
     }
+
+    uint16_t stated_map_value(const Bytes& root, size_t index) {
+        const size_t at = map_offset(index);
+        return static_cast<uint16_t>((root[at] << 8) | root[at + 1]);
+    }
+
+    // A CG tail inserted first is laid on the first free blocks and every file after it is
+    // laid again behind it, in directory order, with the filesystem's stamp.
+    bool test_insert_file_lays_files_back_to_back() {
+        Driver driver(Driver::ImageSize::Smallblock, Driver::DriverMode::NewSmall);
+        FlashFileSystem fs;
+        fs.set_driver(&driver);
+        if (!check(fs.format(driver.block_count(), FlashFileSystem::kDeferRoot, 1, 0x24),
+                   "small-block filesystem formats from block 0x24"))
+            return false;
+        fs.set_timestamp(0x5D444AC2);
+        if (!check(fs.add_file("a.bin", Bytes(0x4001, 0xA1)) &&
+                       fs.add_file("b.bin", Bytes(0x10, 0xB2), 0x11223344),
+                   "files allocate"))
+            return false;
+        if (!check(fs.insert_file(0, "sysupdate.xexp1", Bytes(0x8000, 0x51)) &&
+                       fs.insert_file(1, "sysupdate.xexp2", Bytes(0x10, 0x52)),
+                   "CG tails insert"))
+            return false;
+        const auto& entries = fs.entries();
+        const std::vector<std::pair<std::string, uint16_t>> expected{
+            {"sysupdate.xexp1", 0x24}, {"sysupdate.xexp2", 0x26}, {"a.bin", 0x27}, {"b.bin", 0x29}};
+        bool laid = entries.size() == expected.size();
+        for (size_t i = 0; laid && i < expected.size(); ++i) {
+            laid = std::string(entries[i].filename) == expected[i].first &&
+                   entries[i].block_number == expected[i].second;
+        }
+        const auto a_chain = fs.get_chain(entries[2].block_number);
+        if (!check(laid, "tails come first and the files follow back to back") ||
+            !check(a_chain == std::vector<uint16_t>{0x27, 0x28}, "a moved file keeps its chain") ||
+            !check(fs.get_file("a.bin") == Bytes(0x4001, 0xA1), "a moved file keeps its bytes") ||
+            !check(entries[0].timestamp == 0x5D444AC2 && entries[2].timestamp == 0x5D444AC2,
+                   "entries take the filesystem's stamp") ||
+            !check(entries[3].timestamp == 0x11223344, "a given stamp is kept when moved"))
+            return false;
+        if (!check(fs.insert_file(0, "sysupdate.xexp1", Bytes(0x10, 0x53)),
+                   "a CG tail is replaced in place"))
+            return false;
+        return check(fs.entries().size() == 4 &&
+                         std::string(fs.entries()[0].filename) == "sysupdate.xexp1" &&
+                         fs.entries()[0].block_number == 0x24 &&
+                         fs.entries()[1].block_number == 0x25 &&
+                         fs.entries()[2].block_number == 0x26,
+                     "replacing the first tail lays the rest again behind it");
+    }
+
+    // The table states what xeBuild 1.21 states: the root's own cluster 0x1FFD and the rest
+    // of its erase block free, withheld clusters as they were withheld (settings blobs free,
+    // the remap pool and stepped-over clusters 0), none of them allocatable.
+    bool test_table_states_withheld_and_root_clusters() {
+        Driver driver(Driver::ImageSize::Bigordevkit, Driver::DriverMode::Big);
+        FlashFileSystem fs;
+        fs.set_driver(&driver);
+        if (!check(fs.format(driver.block_count(), FlashFileSystem::kDeferRoot), "formats"))
+            return false;
+        // Big block: the table counts clusters from 0xAE0, 8 to an erase block.
+        constexpr size_t base = 0xAE0;
+        if (!check(fs.add_file("one.bin", Bytes(0x200, 1)), "a file allocates") ||
+            !check(fs.withhold_clusters(base + 1, 7, BlockMapStatus::Unnamed),
+                   "stepped-over clusters withhold") ||
+            !check(fs.withhold_blocks((base + 8) / 8, 1, BlockMapStatus::Free),
+                   "a blob's erase block withholds") ||
+            !check(fs.withhold_blocks(0x1DC, 4, BlockMapStatus::Unnamed), "the tail withholds") ||
+            !check(fs.set_root_block((base + 16) / 8), "the root takes the next erase block"))
+            return false;
+        if (!check(!fs.is_block_free((base + 8) / 8) && !fs.is_block_free(0x1DC),
+                   "withheld blocks are not free") ||
+            !check(!fs.withhold_clusters(base, 1, BlockMapStatus::Free),
+                   "a file cluster cannot be withheld"))
+            return false;
+        const auto table = fs.serialize_root_block();
+        return check(table.size() == kCleanBlockSize, "the table serializes") &&
+               check(stated_map_value(table, 0) == BlockMapStatus::EndOfChain,
+                     "the file ends its chain") &&
+               check(stated_map_value(table, 1) == BlockMapStatus::Unnamed &&
+                         stated_map_value(table, 7) == BlockMapStatus::Unnamed,
+                     "stepped-over clusters are never named") &&
+               check(stated_map_value(table, 8) == BlockMapStatus::Free &&
+                         stated_map_value(table, 15) == BlockMapStatus::Free,
+                     "a blob's clusters are stated free") &&
+               check(stated_map_value(table, 16) == BlockMapStatus::Table,
+                     "the root states itself") &&
+               check(stated_map_value(table, 17) == BlockMapStatus::Free &&
+                         stated_map_value(table, 23) == BlockMapStatus::Free,
+                     "the rest of the root's erase block is stated free") &&
+               check(stated_map_value(table, 0x400) == BlockMapStatus::Unnamed,
+                     "the tail is never named");
+    }
+
+    // A big-block file of one cluster states its spare on the pages its bytes reach and leaves
+    // the padding's fields erased; a longer file states it on every page. The spare carries the
+    // system area given to the filesystem.
+    bool test_big_block_single_cluster_padding_keeps_erased_fields() {
+        Driver driver(Driver::ImageSize::Bigordevkit, Driver::DriverMode::Big);
+        FlashFileSystem fs;
+        fs.set_driver(&driver);
+        fs.set_big_system_blocks(0x10);
+        if (!check(fs.format(driver.block_count(), 350), "formats") ||
+            !check(fs.add_file("short.bin", Bytes(0x2800, 0x5A)) &&
+                       fs.add_file("long.bin", Bytes(0x4400, 0x6B)),
+                   "files allocate") ||
+            !check(fs.save(), "saves"))
+            return false;
+        const auto short_entry = fs.stat("short.bin");
+        const auto long_chain = fs.get_chain(fs.stat("long.bin")->block_number);
+        const size_t first_page = static_cast<size_t>(short_entry->block_number) * 32;
+        bool data_pages = true;
+        bool padding_pages = true;
+        for (size_t page = first_page; page < first_page + 32; ++page) {
+            const auto spare = driver.read_page_spare(page);
+            if (page < first_page + 0x14) {
+                data_pages = data_pages && spare[7] == 0x10 && spare[8] == 0x20 &&
+                             spare[9] == 0x04 && (spare[0xC] & 0x3F) == 0x2A;
+            } else {
+                padding_pages = padding_pages && std::all_of(spare.begin(), spare.begin() + 12,
+                                                             [](uint8_t b) { return b == 0xFF; });
+            }
+        }
+        bool long_pages = long_chain.size() == 2;
+        for (size_t page = long_chain.back() * 32; long_pages && page < long_chain.back() * 32 + 32;
+             ++page) {
+            long_pages = (driver.read_page_spare(page)[0xC] & 0x3F) == 0x2A;
+        }
+        return check(fs.big_fs_size() == 0x2010, "the stamp states a 0x10-block system area") &&
+               check(data_pages, "a one-cluster file's data pages carry its spare") &&
+               check(padding_pages, "its padding pages keep erased fields") &&
+               check(long_pages, "a longer file's last cluster carries its spare on every page");
+    }
 }
 
 int main() {
@@ -364,5 +496,8 @@ int main() {
     passed = test_serialize_leaves_erased_low_pages_unprogrammed() && passed;
     passed = test_big_block_large_file_roundtrips_through_serialize() && passed;
     passed = test_deferred_root_is_placed_last_from_free_pool() && passed;
+    passed = test_insert_file_lays_files_back_to_back() && passed;
+    passed = test_table_states_withheld_and_root_clusters() && passed;
+    passed = test_big_block_single_cluster_padding_keeps_erased_fields() && passed;
     return passed ? 0 : 1;
 }

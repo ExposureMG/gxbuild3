@@ -1609,7 +1609,9 @@ namespace {
         BlockMetadata raised = donor_image->flash_driver.interpret_cluster(donor_root);
         raised.sequence = 0x125;
         donor_image->flash_driver.write_cluster_metadata(donor_root, raised);
-        const auto donor_bytes = donor_image->flash_driver.serialize();
+        // The bytes as they stand: a driver with no layout of its own would stamp its low
+        // blocks, the root among them, as system area.
+        const auto donor_bytes = std::as_const(donor_image->flash_driver).serialize();
         const auto parsed_donor = parse_image(donor_bytes);
         if (!require(parsed_donor.has_value() && parsed_donor->filesystem.has_value() &&
                          parsed_donor->filesystem->version() == 0x125,
@@ -1693,7 +1695,15 @@ namespace {
 
     bool test_flashfs_allocation_reports_exhaustion_before_the_smc_tail() {
         auto input = fresh_input(ImageType::SmallBlock);
-        constexpr size_t first_flashfs_block = 0x50;
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"probe.bin", Bytes{1}}};
+        const auto probe = RunBuild(input);
+        const auto probed = probe ? parse_image(*probe) : std::nullopt;
+        const auto probe_entry =
+            probed && probed->filesystem ? probed->filesystem->stat("probe.bin") : std::nullopt;
+        if (!require(probe_entry.has_value(), "a one-file FlashFS builds and lists its file")) {
+            return false;
+        }
+        const size_t first_flashfs_block = probe_entry->block_number;
         constexpr size_t smc_tail_start = 0x3DC;
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
             {"fills-tail.bin", Bytes((smc_tail_start - first_flashfs_block + 1) * 0x4000, 0xA5)}};
@@ -2761,6 +2771,83 @@ namespace {
                        "CG0 without CF0 is rejected structurally") &&
                require(!orphan_cg1 && orphan_cg1.error().code == BuildErrorCode::InvalidInput,
                        "CG1 without CF1 is rejected structurally");
+    }
+
+    void set_source_date_epoch(const char* value) {
+#ifdef _WIN32
+        _putenv_s("SOURCE_DATE_EPOCH", value ? value : "");
+#else
+        if (value) {
+            setenv("SOURCE_DATE_EPOCH", value, 1);
+        } else {
+            unsetenv("SOURCE_DATE_EPOCH");
+        }
+#endif
+    }
+
+    // A built FlashFS is laid as xeBuild 1.21 lays it: the CG tail first, directly past the
+    // update slots, then the listed files back to back in their order, the settings blobs and
+    // the root behind them, every entry stamped with the build's time plus two seconds. Its
+    // table states the root as itself, the blobs free, the four settings blocks reserved and
+    // the remap pool after them as nothing.
+    bool test_flashfs_is_laid_as_xebuild_lays_it() {
+        namespace BlockMapStatus = gxbuild3::NAND::BlockMapStatus;
+        auto input = fresh_input(ImageType::SmallBlock);
+        const auto [cf0, ignored_cg0] = valid_system_update(0x51);
+        BootloaderCg cg0{};
+        cg0.header.header.magic = NANDBootloaderMagic::CG;
+        cg0.header.header.version = 1;
+        cg0.data.assign(0x10000, 0x7A);
+        cg0.header.header.size = static_cast<uint32_t>(sizeof(cg_header) + cg0.data.size());
+        input.bootloaders.cf0 = cf0;
+        input.bootloaders.cg0 = cg0.serialize();
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
+            {"zeta.bin", Bytes(0x4001, 0x5A)}, {"alpha.bin", Bytes(0x10, 0x41)}};
+        *input.mobiles.slot(0x31) = Bytes(0x800, 0x31);
+
+        // 2026-10-04 09:22:02 UTC: the entries say 09:22:04, 0x5D444AC2.
+        set_source_date_epoch("1791105722");
+        const auto built = RunBuild(input);
+        set_source_date_epoch(nullptr);
+        const auto image = built ? parse_image(*built) : std::nullopt;
+        if (!require(image.has_value() && image->filesystem.has_value(),
+                     "a FlashFS build with a CG tail parses")) {
+            return false;
+        }
+        const auto& fs = *image->filesystem;
+        const auto& entries = fs.entries();
+        const std::array<std::string_view, 3> names{"sysupdate.xexp1", "zeta.bin", "alpha.bin"};
+        bool listed = entries.size() == names.size();
+        for (size_t i = 0; listed && i < names.size(); ++i) {
+            listed = std::string_view(entries[i].filename) == names[i] &&
+                     entries[i].timestamp == 0x5D444AC2;
+        }
+        if (!require(listed, "the CG tail is listed first, then the files in their order, each "
+                             "stamped with the build's time")) {
+            return false;
+        }
+        const size_t first = (image->header.cf_offset + 2 * 0x10000) / 0x4000;
+        const auto tail = fs.get_chain(entries[0].block_number);
+        const size_t root = fs.root_block();
+        const auto& map = fs.blockmap();
+        return require(entries[0].block_number == first &&
+                           map[first - 1] == BlockMapStatus::Reserved,
+                       "the CG tail starts on the first block past the update slots") &&
+               require(image->system_update_0.cg_spill_blocks == tail,
+                       "the CF names the CG tail's blocks") &&
+               require(entries[1].block_number == first + tail.size() &&
+                           entries[2].block_number == entries[1].block_number + 2,
+                       "the files follow back to back") &&
+               require(map[entries[2].block_number + 1] == BlockMapStatus::Free &&
+                           root == entries[2].block_number + 2u,
+                       "the settings blob follows the files, stated free, and the root it") &&
+               require(map[root] == BlockMapStatus::Table, "the root states itself") &&
+               require(map[0x3DB] == BlockMapStatus::Free &&
+                           map[0x3DC] == BlockMapStatus::Reserved &&
+                           map[0x3DF] == BlockMapStatus::Reserved &&
+                           map[0x3E0] == BlockMapStatus::Unnamed &&
+                           map[0x3FF] == BlockMapStatus::Unnamed,
+                       "the settings blocks are reserved and the remap pool never named");
     }
 
     bool test_system_update_slot_zero_spills_and_preserves_slot_one() {
@@ -3843,6 +3930,7 @@ int main() {
     passed = test_direct_payload_layout_rejects_header_only_required_records() && passed;
     passed = test_required_chain_relationships_reject_before_serialization() && passed;
     passed = test_system_update_slot_zero_spills_and_preserves_slot_one() && passed;
+    passed = test_flashfs_is_laid_as_xebuild_lays_it() && passed;
     passed = test_replacement_layout_overrides_a_one_slot_donor_header() && passed;
     passed = test_clear_bootloader_chain_clears_header_only_cb_and_cd_records() && passed;
     passed = test_fresh_build_seals_stages_under_random_nonces() && passed;

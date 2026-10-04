@@ -520,6 +520,45 @@ namespace gxbuild3::cli {
             }
         }
 
+        // Lists the FlashFS files as xeBuild 1.21 does: the INI's [flashfs] files and then its
+        // [security] files, each in the order the INI names them, then any secured file of the
+        // console's the INI does not name. A patch file stored with its slot suffix
+        // ("aac.xexp1") takes the place of the INI entry it came from ("aac.xexp").
+        void order_flashfs(std::vector<std::pair<std::string, std::vector<uint8_t>>>& files,
+                           const Ini::Document& ini) {
+            std::unordered_map<std::string, size_t> ranks;
+            for (const auto section_name : {"flashfs", "security"}) {
+                if (const auto* section = ini.get(section_name)) {
+                    for (const auto& entry : *section) {
+                        const auto key = lowercase_basename(FileManager::IniAssetName(entry.key));
+                        if (!key.empty() && key != "none") {
+                            ranks.emplace(key, ranks.size());
+                        }
+                    }
+                }
+            }
+            static constexpr std::array<std::string_view, 5> kSecured{
+                "crl.bin", "dae.bin", "extended.bin", "secdata.bin", "fcrt.bin"};
+            const auto rank = [&ranks](const std::string& name) {
+                auto key = lowercase_basename(name);
+                if (const auto it = ranks.find(key); it != ranks.end()) {
+                    return it->second;
+                }
+                if (!key.empty() && key.back() >= '0' && key.back() <= '9') {
+                    key.pop_back();
+                    if (const auto it = ranks.find(key); it != ranks.end()) {
+                        return it->second;
+                    }
+                }
+                const auto secured = std::find(kSecured.begin(), kSecured.end(), key);
+                return ranks.size() + static_cast<size_t>(secured - kSecured.begin());
+            };
+            std::stable_sort(files.begin(), files.end(),
+                             [&rank](const auto& left, const auto& right) {
+                                 return rank(left.first) < rank(right.first);
+                             });
+        }
+
     } // namespace
 
     BuildInputResolver::BuildInputResolver(std::filesystem::path working_directory)
@@ -888,6 +927,7 @@ namespace gxbuild3::cli {
                 }
                 overlay_flashfs(flashfs, std::move(file), flashfs_positions);
             }
+            order_flashfs(flashfs, *ini_document);
             input.flashfs_sec = std::move(flashfs);
 
             if ((args.build_type == BuildType::Retail || args.build_type == BuildType::Devkit) &&

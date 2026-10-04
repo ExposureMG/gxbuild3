@@ -206,3 +206,17 @@ they are, last; a file no root supplies is skipped with a warning.
 The existing `ReadIniFiles(version, type, section, fw_dir, options)` convenience
 overload searches `fw_dir` (or `mydata`), the version directory, then `common`.
 Existing calls may omit the options argument.
+## FlashFS layout and timestamps
+
+A built FlashFS is laid as xeBuild 1.21 lays it. The CG tails (`sysupdate.xexpN`, in slot
+order) come first, on the first block past the update slots and every payload after them
+(block 0x24 on a 16 MB retail image, the filesystem's base on big block). The INI's
+`[flashfs]` files follow in INI order, then its `[security]` files, then any of the
+console's secured files the INI does not name, all back to back. The settings blobs and the
+root follow the last file.
+
+Every directory entry is stamped with the build's time plus two seconds, as a FAT date and
+time in UTC. The build's time is the clock, or `SOURCE_DATE_EPOCH` (seconds since the Unix
+epoch) when it is set, which pins the stamps for reproducible builds and image comparisons.
+To reproduce a reference image's stamp, set `SOURCE_DATE_EPOCH` to the moment that stamp
+states minus two seconds.
