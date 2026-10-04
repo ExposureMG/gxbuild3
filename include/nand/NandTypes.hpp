@@ -158,6 +158,13 @@ struct MobileBlockPlacement {
     uint32_t data_size = 0;
 };
 
+// Bytes xeBuild leaves in one page's spare that no stamp sets.
+struct SpareOverride {
+    size_t offset;
+    size_t index;
+    std::vector<uint8_t> bytes;
+};
+
 struct NandLayout {
     std::optional<uint16_t> fs_root_block;
     uint32_t fs_version = 1;
@@ -169,4 +176,7 @@ struct NandLayout {
     // Byte ranges (offset, length) of the image that xeBuild programs even where they are all
     // 0xFF, so their pages carry a type-0 spare stamp instead of an erased one.
     std::vector<std::pair<size_t, size_t>> programmed_ranges;
+    // Written into the spare of the page holding `offset`, after the block stamps and before
+    // the page's ECC is computed.
+    std::vector<SpareOverride> spare_overrides;
 };

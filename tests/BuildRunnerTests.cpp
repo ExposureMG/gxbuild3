@@ -630,6 +630,7 @@ namespace {
         input.bootloaders.extra_cd = cd_bytes;
         InputPayloads payloads{};
         payloads.rebooter = Bytes(0x40, 0x74);
+        payloads.payload = Bytes(0x200, 0x73);
         input.payloads = std::move(payloads);
 
         const size_t cd_at = 0xD5060 + ((cb_bytes.size() + 0x0F) & ~size_t{0x0F});
@@ -637,7 +638,9 @@ namespace {
         const size_t pad_end = (chain_end + 0x3FFF) & ~size_t{0x3FFF};
         const auto built = RunBuild(input);
         auto image = built ? FlashImage::read(*built) : std::nullopt;
-        if (!require(image && image->parse(), "JTAG image with a rebooter builds and reads back")) {
+        if (!require(built.has_value(), "JTAG image with a rebooter and a payload builds") ||
+            !require(image.has_value(), "JTAG image with a rebooter reads back") ||
+            !require(image->parse(), "JTAG image with a rebooter parses")) {
             return false;
         }
         const auto all_equal = [&image](size_t offset, size_t length, uint8_t value) {
@@ -649,6 +652,7 @@ namespace {
             const auto spare = std::as_const(image->flash_driver).read_page_spare(offset / 0x200);
             return std::any_of(spare.begin(), spare.end(), [](uint8_t b) { return b != 0xFF; });
         };
+        const auto payload_spare = std::as_const(image->flash_driver).read_page_spare(1);
         return require(all_equal(0x90040, 0x1000 - 0x40, 0),
                        "the bytes after the rebooter are zero up to the patch list") &&
                require(all_equal(0x91100, 0x94000 - 0x91100, 0),
@@ -660,7 +664,10 @@ namespace {
                require(!spare_stamped(0x95200),
                        "pages past the patch buffer that nothing writes stay unprogrammed") &&
                require(chain_end < pad_end && all_equal(chain_end, pad_end - chain_end, 0),
-                       "the bytes after the second chain are zero to the end of its block");
+                       "the bytes after the second chain are zero to the end of its block") &&
+               require(payload_spare.size() == 16 && payload_spare[10] == 0x03 &&
+                           payload_spare[11] == 0x50,
+                       "the payload page's spare carries xeBuild's 0x03 0x50 at bytes 10 and 11");
     }
 
     // A JTAG image boots through its SMC's hack: an SMC with no JTAG mark is refused, unless

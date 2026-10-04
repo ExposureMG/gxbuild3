@@ -884,6 +884,14 @@ namespace gxbuild3::NAND {
                 }
             }
 
+            for (const auto& spare_override : m_layout.spare_overrides) {
+                auto spare = read_page_spare(spare_override.offset / 0x200);
+                if (spare_override.index + spare_override.bytes.size() <= spare.size()) {
+                    std::copy(spare_override.bytes.begin(), spare_override.bytes.end(),
+                              spare.begin() + spare_override.index);
+                }
+            }
+
             size_t total_pages = m_nand_image.size() / 528;
             for (size_t p = 0; p < total_pages; ++p) {
                 size_t page_offset = p * 528;

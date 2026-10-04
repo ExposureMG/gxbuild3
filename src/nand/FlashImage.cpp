@@ -1218,6 +1218,11 @@ namespace gxbuild3::NAND {
             payloads.patchset->kind == PatchSetKind::Jtag) {
             layout.programmed_ranges.emplace_back(window_base + 0x1000, kJTAGPatchesSize);
         }
+        // xeBuild's JTAG image has 0x03 0x50 in spare bytes 10 and 11 of the page holding the SMC
+        // payload, in every shape and with the same payload; nothing else stamps them.
+        if (is_jtag_patchset && payloads.payload) {
+            layout.spare_overrides.push_back({0x200, 10, {0x03, 0x50}});
+        }
 
         if (driver.driver_mode() == Driver::DriverMode::Emmc) {
             CoronaConfig cc{};
