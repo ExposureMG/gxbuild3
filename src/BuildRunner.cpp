@@ -162,7 +162,7 @@ namespace {
         if (lower == "extended.bin" || lower == "secdata.bin") {
             const bool extended = lower == "extended.bin";
             std::optional<std::vector<uint8_t>> sealed;
-            if (extended && extended_opened(data, cpu_key)) {
+            if (extended && data.size() >= 0x18 && extended_opened(data, cpu_key)) {
                 // Its head is the keyvault's; with no keyvault it keeps its own.
                 const auto& keyvault = input.metadata.keyvault;
                 const auto head_source = keyvault && keyvault->size() >= 0x18
