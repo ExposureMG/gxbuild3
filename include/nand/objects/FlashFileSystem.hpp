@@ -52,6 +52,16 @@ namespace gxbuild3::NAND {
 
         void set_driver(Driver* driver);
 
+        // The larger filesystem a big-block devkit image takes (xeBuild 1.21 "extended size
+        // FFS"): its block numbers count from cluster 0x2E0 instead of 0xAE0. Small-block and
+        // eMMC filesystems count from zero either way.
+        void set_larger_filesystem(bool larger) noexcept { m_larger = larger; }
+
+        // The fs_size stamp its root and data blocks carry on big block.
+        [[nodiscard]] uint16_t big_fs_size() const noexcept {
+            return m_larger ? FlashFsMetadata::kBigFsSizeLarger : FlashFsMetadata::kBigFsSize;
+        }
+
         // Attach the driver before formatting. These allocation boundaries and root
         // locations are physical NAND blocks; directory entries/blockmap use 16 KiB clusters.
         bool format(size_t total_blocks, uint16_t root_block = 0x3E0, uint32_t version = 1,
@@ -89,6 +99,7 @@ namespace gxbuild3::NAND {
         uint32_t m_version = 1;
         uint16_t m_root_block = 0x3E0;
         bool m_root_placed = false;
+        bool m_larger = false;
         size_t m_root_cluster_offset = 0;
         size_t m_root_reserved_clusters = 1;
         std::vector<uint16_t> m_blockmap;

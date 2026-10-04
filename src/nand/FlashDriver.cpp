@@ -180,7 +180,9 @@ namespace gxbuild3::NAND {
                 break;
             case DriverMode::Small:
             case DriverMode::NewSmall:
-                smc_reserve_block = 0x3E0;
+                // The last 1/32 of a 64 MB devkit image, 0xF80 of 0x1000 blocks, as of a
+                // 16 MB one.
+                smc_reserve_block = total_blocks > 0x400 ? total_blocks - total_blocks / 32 : 0x3E0;
                 break;
         }
 
@@ -828,7 +830,9 @@ namespace gxbuild3::NAND {
                     meta.block_type = big_block ? FlashFsMetadata::kRootTypeBig
                                                 : FlashFsMetadata::kRootTypeSmall;
                     meta.sequence = m_layout.fs_version;
-                    meta.fs_size = big_block ? FlashFsMetadata::kBigFsSize : m_layout.fs_size;
+                    meta.fs_size = big_block
+                                       ? m_layout.big_fs_size.value_or(FlashFsMetadata::kBigFsSize)
+                                       : m_layout.fs_size;
                     meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
                     write_cluster_metadata(blk * block_size_clean() / 0x4000, meta);
                 } else {

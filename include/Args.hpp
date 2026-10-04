@@ -349,6 +349,14 @@ struct InputPatches {
     std::vector<InputPatchFile> addons;
 };
 
+// A release INI [rawpatch] entry: the file's bytes written as they are at a clean image
+// offset, after everything else is laid.
+struct InputRawPatch {
+    std::string name;
+    uint32_t offset{0};
+    std::vector<uint8_t> data;
+};
+
 struct Input {
     BuildType build_type{BuildType::Retail};
     ImageType image_type{ImageType::SmallBlock};
@@ -361,4 +369,5 @@ struct Input {
     std::optional<InputPatches> patches;
     std::optional<InputPayloads> payloads;
     std::optional<std::vector<std::pair<std::string, std::vector<uint8_t>>>> flashfs_sec;
+    std::vector<InputRawPatch> raw_patches;
 };

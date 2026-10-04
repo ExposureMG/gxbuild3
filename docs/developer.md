@@ -62,6 +62,15 @@ required. Build types are `retail`, `jtag`, `glitch`, `glitch2`, `glitch2m`, `gl
 `devkit`; `glitch1` and `gg` are aliases for `glitch`. Block types are `xsb` (small block),
 `psb` (new small block), `bb` (big block), and `emmc`.
 
+A devkit image is 64 MB, as xeBuild 1.21 builds it: `devkit:psb` or `devkit:xsb` gives the 64 MB
+small-block shape with that spare layout, and `devkit:bb` the big-block shape with the larger
+filesystem. A 16 MB donor gives such an image its nonces and console data only. For example, from
+a directory holding the release `17489`, `common` and `data/xell-gggggg.bin`:
+
+```text
+gxbuild -b 17489/_devkit.ini -s jasper -t devkit:psb -d 17489 -d common -d . -i nanddump.bin -o out.bin
+```
+
 Repeat `-d`, `-c`, and `-a` as needed. A single `-d`, `-c`, or `-a` value may use comma or
 semicolon separators; colon is never a list separator because it separates `buildtype` from
 `blocktype`. This keeps Windows drive paths intact. Source roots keep their declared order:
@@ -174,6 +183,13 @@ security files eligible. Security names are `crl.bin`, `dae.bin`, `odd.bin`,
 
 `extended.bin`, `fcrt.bin`, and `secdata.bin`, plus any names in the INI's
 `[security]` section when using `ReadIniFiles`.
+
+A name an INI states is looked up exactly first and then without regard to case, so
+`sc_17489.bin` finds `SC_17489.bin`. A payload named outside its release
+(`..\data\xell-gggggg.bin`) is looked for as a loose file under the rest of its
+path in each root, then by its basename, and is skipped with a warning when no
+root has it. `[rawpatch]` lines (`file,offset`) are written into the image as
+they are, last; a file no root supplies is skipped with a warning.
 
 The existing `ReadIniFiles(version, type, section, fw_dir, options)` convenience
 overload searches `fw_dir` (or `mydata`), the version directory, then `common`.

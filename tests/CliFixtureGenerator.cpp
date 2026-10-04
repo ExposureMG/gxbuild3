@@ -60,12 +60,7 @@ namespace {
         sc.header.header.size = static_cast<uint32_t>(sizeof(sc_header) + 0x20);
         sc.data.assign(0x20, 0x53);
         sc.decrypted = true;
-        auto cb_for_sc_key = cb;
-        cb_for_sc_key.encrypt(key_1bl);
-        if (!cb_for_sc_key.derived_key) {
-            return {};
-        }
-        sc.encrypt(cb_for_sc_key.derived_key->data());
+        sc.encrypt(BootloaderSc::kZeroSecret);
 
         BootloaderCd cd{};
         cd.header.header.magic = NANDBootloaderMagic::CD;

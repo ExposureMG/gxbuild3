@@ -161,6 +161,8 @@ struct NandLayout {
     std::optional<uint16_t> fs_root_block;
     uint32_t fs_version = 1;
     uint16_t fs_size = 0;
+    // The size stamp of a big-block root block; FlashFsMetadata::kBigFsSize when unset.
+    std::optional<uint16_t> big_fs_size;
     std::vector<MobileBlockPlacement> mobile_blocks;
     // Physical blocks holding FlashFS file data; FlashFileSystem::save stamps their spare.
     std::vector<uint16_t> fs_data_blocks;

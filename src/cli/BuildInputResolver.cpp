@@ -680,11 +680,25 @@ namespace gxbuild3::cli {
                     if (key.empty() || key == "none") {
                         continue;
                     }
-                    auto found = find_asset(entry.key, roots, scan_options);
+                    // A file from outside the release is looked up as the INI reader looks it
+                    // up: as a loose file under its path in the roots, then by its basename.
+                    const bool outside = FileManager::IniAssetIsOutside(entry.key);
+                    auto loose_options = scan_options;
+                    loose_options.nosu = true;
+                    const auto name = FileManager::IniAssetName(entry.key);
+                    auto found = outside ? find_asset(name, roots, loose_options)
+                                         : find_asset(entry.key, roots, scan_options);
+                    if (outside && found && !*found) {
+                        found = find_asset(std::filesystem::path(name).filename().string(), roots,
+                                           loose_options);
+                    }
                     if (!found) {
                         return std::unexpected(found.error());
                     }
-                    if (!*found && !donor_flashfs_names.contains(key)) {
+                    // A missing file from outside the release is skipped, as xeBuild skips it,
+                    // and so is a missing fcrt.bin, which the INI reader treats as optional.
+                    const bool optional = outside || key == "fcrt.bin";
+                    if (!*found && !optional && !donor_flashfs_names.contains(key)) {
                         return std::unexpected(error(
                             ResolutionErrorCode::AssetNotFound,
                             "Required INI payload '" + entry.key + "' from '" + ini_path.string() +
@@ -782,6 +796,7 @@ namespace gxbuild3::cli {
             }
 
             input.bootloaders = ini_files->bootloaders;
+            input.raw_patches = ini_files->raw_patches;
 
             // The FlashFS holds the INI [security] and [flashfs] files plus the console's
             // secured files. From the donor it takes only those secured files and the

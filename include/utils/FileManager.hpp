@@ -64,7 +64,17 @@ namespace gxbuild3::utils {
     struct IniFilesResult {
         InputBootloaders bootloaders;
         std::vector<std::pair<std::string, std::vector<uint8_t>>> flashfs_sec;
+        std::vector<InputRawPatch> raw_patches;
     };
+
+    // The name a release INI entry is looked up under. xeBuild reads "..\data\x.bin" from
+    // the release directory, so its leading ".." components are dropped and the rest is
+    // found in the source roots, one of which holds the release directory.
+    std::string IniAssetName(std::string_view entry);
+
+    // Whether an INI entry names a file outside its release (a leading ".."). xeBuild goes
+    // without such a file when it is missing ("could not read file ..., skipping").
+    bool IniAssetIsOutside(std::string_view entry);
 
     // Search roots are ordered from highest to lowest priority. Within a root,
     // loose files win over STFS entries, then derived CF/CG parts. Payloads are

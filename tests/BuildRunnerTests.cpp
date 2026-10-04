@@ -1430,14 +1430,13 @@ namespace {
                        "SC survives backing-cleared layout override");
     }
 
+    // An SC is sealed under HMAC(16 zero bytes, nonce), whatever its parent.
     bool test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() {
         auto encrypted_source = fresh_input(ImageType::SmallBlock);
-        auto cb_for_key = BootloaderCb::parse(encrypted_source.bootloaders.cb_or_a);
-        cb_for_key.encrypt(key_1bl);
         auto encrypted_sc = BootloaderSc::parse(*encrypted_source.bootloaders.sc);
         const auto expected_encrypted_sc_data = encrypted_sc.data;
         encrypted_sc.decrypted = true;
-        encrypted_sc.encrypt(cb_for_key.derived_key->data());
+        encrypted_sc.encrypt(BootloaderSc::kZeroSecret);
         encrypted_source.bootloaders.sc = encrypted_sc.serialize();
 
         const auto encrypted_build = RunBuild(encrypted_source);
@@ -2340,8 +2339,9 @@ namespace {
             size_t expected_slot;
             size_t expected_xell;
         };
+        // A devkit image is 64 MB, so it is laid fresh beside this 16 MB donor (see
+        // test_devkit_image_takes_its_own_shape_beside_a_16_mb_donor).
         const std::array cases{Case{BuildType::Retail, 0xB0000, 0x70000},
-                               Case{BuildType::Devkit, 0xB0000, 0x70000},
                                Case{BuildType::Jtag, 0x70000, 0x95060}};
         for (const auto& test_case : cases) {
             auto input = fresh_input(ImageType::SmallBlock);
@@ -3370,6 +3370,264 @@ namespace {
                require(rest_erased, "the rest of the file's big block stays erased");
     }
 
+    // A plaintext devkit chain as a release ships it: SB, SC, SD and SE with zero nonces and
+    // a recognizable body each. SE states build 17489.
+    InputBootloaders devkit_bootloaders() {
+        BootloaderCb sb{};
+        sb.header.header.magic = NANDBootloaderMagic::SB;
+        sb.header.header.version = 10375;
+        // Long enough to hold a whole CB header, so its per-box block reads back.
+        sb.data.assign(0x400, 0);
+        std::fill(sb.data.begin() + 0x100, sb.data.end(), 0x5B);
+        sb.header.header.size = static_cast<uint32_t>(sizeof(generic_header) + sb.data.size());
+        sb.decrypted = true;
+
+        BootloaderSc sc{};
+        sc.header.header.magic = NANDBootloaderMagic::SC;
+        sc.header.header.version = 17489;
+        sc.data.assign(0x48, 0x5C);
+        sc.header.header.size = static_cast<uint32_t>(sizeof(sc_header) + sc.data.size());
+        sc.decrypted = true;
+
+        BootloaderCd sd{};
+        sd.header.header.magic = NANDBootloaderMagic::SD;
+        sd.header.header.version = 17489;
+        sd.data.assign(0x30, 0x5D);
+        sd.header.header.size = static_cast<uint32_t>(sizeof(cd_header) + sd.data.size());
+        sd.decrypted = true;
+
+        BootloaderCe se{};
+        se.header.header.magic = NANDBootloaderMagic::SE;
+        se.header.header.version = 17489;
+        se.data.assign(0x42, 0x5E);
+        se.header.header.size = static_cast<uint32_t>(sizeof(ce_header) + se.data.size());
+        se.decrypted = true;
+
+        InputBootloaders bootloaders{};
+        bootloaders.cb_or_a = sb.serialize();
+        bootloaders.sc = sc.serialize();
+        bootloaders.cd = sd.serialize();
+        bootloaders.ce = se.serialize();
+        return bootloaders;
+    }
+
+    Input devkit_input(ImageType image_type) {
+        auto input = fresh_input(image_type);
+        input.build_type = BuildType::Devkit;
+        input.console = ConsoleType::Jasper;
+        input.bootloaders = devkit_bootloaders();
+        input.metadata.pairing_data = {0x12, 0x34, 0x56};
+        return input;
+    }
+
+    std::array<uint8_t, 16> hmac_key(std::span<const uint8_t> parent,
+                                     std::span<const uint8_t> nonce) {
+        uint8_t digest[20];
+        ExCryptHmacSha(parent.data(), static_cast<uint32_t>(parent.size()), nonce.data(),
+                       static_cast<uint32_t>(nonce.size()), nullptr, 0, nullptr, 0, digest, 20);
+        std::array<uint8_t, 16> key{};
+        std::copy_n(digest, key.size(), key.begin());
+        return key;
+    }
+
+    // A stage opened by hand: its nonce at 0x10 keys RC4 over everything from 0x20.
+    Bytes open_stage(Bytes stage, std::span<const uint8_t> key) {
+        ExCryptRc4(key.data(), static_cast<uint32_t>(key.size()), stage.data() + 0x20,
+                   static_cast<uint32_t>(stage.size() - 0x20));
+        return stage;
+    }
+
+    bool test_devkit_chain_is_sealed_from_the_zero_secret() {
+        const auto input = devkit_input(ImageType::NewSmallBlock);
+        const auto built = RunBuild(input);
+        if (!require(built.has_value() && built->size() == 0x4200000,
+                     "a small-block devkit image is 64 MB with spare")) {
+            return false;
+        }
+
+        const auto header = read_logical(*built, 0, 0x80);
+        const uint32_t chain_end = 0x8000 + align_16(uint32_t(input.bootloaders.cb_or_a.size())) +
+                                   align_16(uint32_t(input.bootloaders.sc->size())) +
+                                   align_16(uint32_t(input.bootloaders.cd.size())) +
+                                   align_16(uint32_t(input.bootloaders.ce->size()));
+        const uint32_t slot = (chain_end + 0x3FFF) & ~uint32_t{0x3FFF};
+        const std::string_view copyright =
+            header ? std::string_view(reinterpret_cast<const char*>(header->data() + 0x10), 0x37)
+                   : std::string_view{};
+        if (!require(header && read_be16(*header, 0x02) == 17489,
+                     "the devkit header states the SE build") ||
+            !require(read_be16(*header, 0x04) == 0x8000,
+                     "the devkit header states 0x8000 at 0x04") ||
+            !require(copyright.find("2004-2010") != std::string_view::npos,
+                     "the devkit header states 2010 on a Jasper") ||
+            !require(read_be32(*header, 0x0C) == slot && read_be32(*header, 0x64) == slot,
+                     "the first slot follows the chain at the next erase block") ||
+            !require(read_be16(*header, 0x68) == 2 && read_be32(*header, 0x70) == 0x10000,
+                     "the devkit header states two slots of 0x10000") ||
+            !require(read_be32(*header, 0x48) == 0 && read_be32(*header, 0x4C) == 0,
+                     "a devkit image states no hack or boot flags")) {
+            return false;
+        }
+
+        size_t at = 0x8000;
+        const auto stored = [&](const Bytes& supplied) {
+            auto bytes = read_logical(*built, at, supplied.size());
+            at += align_16(static_cast<uint32_t>(supplied.size()));
+            return bytes.value_or(Bytes{});
+        };
+        const auto sb = stored(input.bootloaders.cb_or_a);
+        const auto sc = stored(*input.bootloaders.sc);
+        const auto sd = stored(input.bootloaders.cd);
+        const auto se = stored(*input.bootloaders.ce);
+        const auto nonce = [](const Bytes& stage) {
+            return std::span<const uint8_t>(stage).subspan(0x10, 0x10);
+        };
+        const std::array<uint8_t, 16> zero{};
+        const auto k_sb = hmac_key(std::span(key_1bl), nonce(sb));
+        const auto k_sc = hmac_key(zero, nonce(sc));
+        const auto k_sd = hmac_key(k_sc, nonce(sd));
+        const auto k_se = hmac_key(k_sd, nonce(se));
+        const auto sb_plain = open_stage(sb, k_sb);
+        const auto body_equal = [](const Bytes& opened, const Bytes& supplied, size_t from) {
+            return opened.size() == supplied.size() &&
+                   std::equal(opened.begin() + from, opened.end(), supplied.begin() + from);
+        };
+        return require(body_equal(sb_plain, input.bootloaders.cb_or_a, 0x40),
+                       "SB opens under HMAC(1BL key, nonce)") &&
+               require(std::equal(sb_plain.begin() + 0x20, sb_plain.begin() + 0x23,
+                                  input.metadata.pairing_data.begin()),
+                       "SB carries the console's pairing") &&
+               require(!zero_between(sb_plain, 0x30, 0x40),
+                       "SB binds the SMC in its per-box digest") &&
+               require(body_equal(open_stage(sc, k_sc), *input.bootloaders.sc, 0x20),
+                       "SC opens under HMAC(16 zero bytes, nonce)") &&
+               require(body_equal(open_stage(sd, k_sd), input.bootloaders.cd, 0x20),
+                       "SD opens under HMAC(SC key, nonce)") &&
+               require(body_equal(open_stage(se, k_se), *input.bootloaders.ce, 0x20),
+                       "SE opens under HMAC(SD key, nonce)");
+    }
+
+    bool test_devkit_image_reads_back_and_rebuilds_its_chain() {
+        const auto input = devkit_input(ImageType::NewSmallBlock);
+        const auto built = RunBuild(input);
+        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        if (!require(extracted.has_value(), "a devkit image parses and opens") ||
+            !require(extracted->build_type == BuildType::Devkit &&
+                         extracted->image_type == ImageType::NewSmallBlock,
+                     "a devkit image reads back as a small-block devkit image") ||
+            !require(extracted->bootloaders.sc && extracted->bootloaders.ce,
+                     "the whole SB/SC/SD/SE chain reads back")) {
+            return false;
+        }
+        // An opened stage runs to its 16-byte boundary; the rounding reads back zero.
+        const auto tail_equal = [](const Bytes& opened, const Bytes& supplied) {
+            return opened.size() == align_16(static_cast<uint32_t>(supplied.size())) &&
+                   std::equal(supplied.begin() + 0x40, supplied.end(), opened.begin() + 0x40) &&
+                   zero_between(opened, supplied.size(), opened.size());
+        };
+        if (!require(tail_equal(extracted->bootloaders.cb_or_a, input.bootloaders.cb_or_a) &&
+                         tail_equal(*extracted->bootloaders.sc, *input.bootloaders.sc) &&
+                         tail_equal(extracted->bootloaders.cd, input.bootloaders.cd) &&
+                         tail_equal(*extracted->bootloaders.ce, *input.bootloaders.ce),
+                     "every stage reads back as the plaintext it was built from") ||
+            !require(extracted->metadata.pairing_data == input.metadata.pairing_data,
+                     "the SB's pairing reads back")) {
+            return false;
+        }
+
+        // Rebuilt over itself, every stage keeps the nonce at its position, so the sealed chain
+        // comes out byte for byte.
+        const auto rebuilt = RunBuild(*extracted);
+        const auto header = read_logical(*built, 0, 0x80);
+        const uint32_t slot = header ? read_be32(*header, 0x64) : 0;
+        const auto chain = read_logical(*built, 0, slot);
+        const auto rebuilt_chain = rebuilt ? read_logical(*rebuilt, 0, slot) : std::nullopt;
+        return require(rebuilt.has_value() && rebuilt->size() == built->size(),
+                       "an extracted devkit image builds again in its own shape") &&
+               require(chain && rebuilt_chain && chain == rebuilt_chain,
+                       "the header, SMC, keyvault and sealed chain rebuild byte for byte");
+    }
+
+    bool test_devkit_nonces_come_from_donor_positions() {
+        auto input = devkit_input(ImageType::BigBlock);
+        DonorNonces donor{};
+        for (size_t index = 0; index < donor.stages.size(); ++index) {
+            BootloaderNonce nonce{};
+            nonce.fill(static_cast<uint8_t>(0xA0 + index));
+            donor.stages[index] = nonce;
+        }
+        input.metadata.donor_nonces = donor;
+        const auto built = RunBuild(input);
+        if (!require(built.has_value() && built->size() == 0x4200000,
+                     "a big-block devkit image builds")) {
+            return false;
+        }
+        size_t at = 0x8000;
+        bool ok = true;
+        const std::array<const Bytes*, 4> stages{&input.bootloaders.cb_or_a, &*input.bootloaders.sc,
+                                                 &input.bootloaders.cd, &*input.bootloaders.ce};
+        for (size_t index = 0; index < stages.size(); ++index) {
+            const auto nonce = read_logical(*built, at + 0x10, 0x10);
+            ok = ok && nonce && std::all_of(nonce->begin(), nonce->end(), [index](uint8_t b) {
+                     return b == 0xA0 + index;
+                 });
+            at += align_16(static_cast<uint32_t>(stages[index]->size()));
+        }
+        const auto header = read_logical(*built, 0, 0x80);
+        return require(ok, "SB, SC, SD and SE take the donor's CB_A, CB_B, CD and CE nonces") &&
+               require(header && read_be32(*header, 0x64) == 0x20000 &&
+                           read_be32(*header, 0x70) == 0x20000,
+                       "a big-block devkit slot follows the chain at the next 0x20000 block");
+    }
+
+    // A 16 MB donor gives a devkit image its nonces and console data; the image itself is the
+    // 64 MB shape the console's spare layout takes.
+    bool test_devkit_image_takes_its_own_shape_beside_a_16_mb_donor() {
+        auto donor_input = fresh_input(ImageType::NewSmallBlock);
+        // A donor's nonces are read off a chain that reaches CE.
+        BootloaderCe ce{};
+        ce.header.header.magic = NANDBootloaderMagic::CE;
+        ce.header.header.version = 1;
+        ce.data.assign(0x20, 0x45);
+        ce.header.header.size = static_cast<uint32_t>(sizeof(ce_header) + ce.data.size());
+        ce.decrypted = true;
+        donor_input.bootloaders.ce = ce.serialize();
+        const auto donor = RunBuild(donor_input);
+        if (!require(donor.has_value() && donor->size() == 0x1080000, "16 MB donor builds")) {
+            return false;
+        }
+        auto input = devkit_input(ImageType::NewSmallBlock);
+        input.metadata.nand_image = *donor;
+        const auto built = RunBuild(input);
+        auto image = built ? parse_image(*built) : std::nullopt;
+        const auto donor_cb = read_logical(*donor, 0x8010, 0x10);
+        const auto sb_nonce = built ? read_logical(*built, 0x8010, 0x10) : std::nullopt;
+        return require(built.has_value() && built->size() == 0x4200000 && image.has_value(),
+                       "the devkit image is 64 MB beside a 16 MB donor") &&
+               require(image->flash_driver.driver_mode() == Driver::DriverMode::NewSmall,
+                       "it keeps the donor's spare layout") &&
+               require(image->build_type == BuildType::Devkit, "it reads back as devkit") &&
+               require(donor_cb && sb_nonce && donor_cb == sb_nonce,
+                       "its SB takes the donor's first CB nonce");
+    }
+
+    bool test_raw_patches_are_written_last_and_bounded() {
+        auto input = devkit_input(ImageType::NewSmallBlock);
+        input.raw_patches.push_back(InputRawPatch{"reason.bin", 0x4E, Bytes{0x12}});
+        input.raw_patches.push_back(InputRawPatch{"khv.bin", 0xE4000, Bytes(0x20, 0x77)});
+        const auto built = RunBuild(input);
+        const auto reason = built ? read_logical(*built, 0x4E, 1) : std::nullopt;
+        const auto khv = built ? read_logical(*built, 0xE4000, 0x20) : std::nullopt;
+        if (!require(reason == Bytes{0x12}, "a raw patch overwrites the header byte it names") ||
+            !require(khv == Bytes(0x20, 0x77), "a raw patch lands at its clean offset")) {
+            return false;
+        }
+        auto outside = devkit_input(ImageType::NewSmallBlock);
+        outside.raw_patches.push_back(InputRawPatch{"far.bin", 0x3FFFFFF, Bytes{1, 2}});
+        const auto refused = RunBuild(outside);
+        return require(!refused && refused.error().code == BuildErrorCode::SerializationFailure,
+                       "a raw patch running past the image is refused");
+    }
 } // namespace
 
 int main() {
@@ -3384,6 +3642,11 @@ int main() {
     passed = test_jtag_refuses_a_clean_smc() && passed;
     passed = test_patch_regions_reject_overflow() && passed;
     passed = test_runbuild_rejects_retail_and_devkit_addon_patch_data() && passed;
+    passed = test_devkit_chain_is_sealed_from_the_zero_secret() && passed;
+    passed = test_devkit_image_reads_back_and_rebuilds_its_chain() && passed;
+    passed = test_devkit_nonces_come_from_donor_positions() && passed;
+    passed = test_devkit_image_takes_its_own_shape_beside_a_16_mb_donor() && passed;
+    passed = test_raw_patches_are_written_last_and_bounded() && passed;
     passed = test_glitch_patch_region_does_not_overwrite_mobile_data() && passed;
     passed = test_glitch_patch_uses_header_overlay_anchor() && passed;
     passed = test_bigblock_glitch_uses_big_patch_stride() && passed;

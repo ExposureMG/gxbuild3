@@ -38,12 +38,17 @@ using namespace gxbuild3::NAND;
 
 namespace {
 
-    std::pair<Driver::ImageSize, Driver::DriverMode> driver_config(ImageType type) {
+    // A devkit image on a small-block console is 64 MB with that console's spare layout
+    // (xeBuild 1.21: "NAND size: 64MiB (small block)"); every other shape is the console's own.
+    std::pair<Driver::ImageSize, Driver::DriverMode> driver_config(ImageType type,
+                                                                   BuildType build_type) {
+        const auto small_size = build_type == BuildType::Devkit ? Driver::ImageSize::Bigordevkit
+                                                                : Driver::ImageSize::Smallblock;
         switch (type) {
             case ImageType::SmallBlock:
-                return {Driver::ImageSize::Smallblock, Driver::DriverMode::Small};
+                return {small_size, Driver::DriverMode::Small};
             case ImageType::NewSmallBlock:
-                return {Driver::ImageSize::Smallblock, Driver::DriverMode::NewSmall};
+                return {small_size, Driver::DriverMode::NewSmall};
             case ImageType::BigBlock:
                 return {Driver::ImageSize::Bigordevkit, Driver::DriverMode::Big};
             case ImageType::Emmc:
@@ -397,9 +402,9 @@ namespace {
     // Sets the nonce of every stage RunBuild seals, before any key is derived from it. Each
     // boot-chain key derives from its parent's, so a chain with any stage supplied already
     // sealed keeps all its nonces. A CB_X chain keeps its CB_X and the handoff key its
-    // plaintext CB_B holds at +0x10. SC is written as supplied. A JTAG image's second chain
-    // takes the first CB's and the CD's nonces again (xeBuild 1.21, xerunner build.py
-    // `_nonces`).
+    // plaintext CB_B holds at +0x10. A devkit SC takes the CB_B nonce; any other SC is
+    // written as supplied. A JTAG image's second chain takes the first CB's and the CD's
+    // nonces again (xeBuild 1.21, xerunner build.py `_nonces`).
     void apply_nonces(FlashImage& image, const std::optional<DonorNonces>& donor) {
         const auto stage = [&donor](size_t index) {
             return donor ? donor->stages[index] : std::optional<BootloaderNonce>{};
@@ -431,6 +436,10 @@ namespace {
             set_cb(cb_a, *cb_nonce);
             if (!cb_x && cb_b) {
                 set_cb(*cb_b, donor_or_random(stage(1)));
+            } else if (image.devkit_chain() && sc) {
+                // A devkit SC sits in the CB_B position (xeBuild 1.21 devkit).
+                const auto sc_nonce = donor_or_random(stage(1));
+                std::copy(sc_nonce.begin(), sc_nonce.end(), std::begin(sc->header.key));
             }
             cd_nonce = donor_or_random(stage(2));
             std::copy(cd_nonce->begin(), cd_nonce->end(), std::begin(cd.header.key));
@@ -516,6 +525,9 @@ namespace {
         std::unreachable();
     }
 
+    // A devkit image states 2010 on every board (xeBuild 1.21 devkit Jasper).
+    constexpr uint16_t kDevkitCopyrightYear = 2010;
+
     // Header 0x10..0x47 holds the copyright notice; 0x48..0x4F are boot flags.
     constexpr size_t kCopyrightLength = sizeof(nand_header::copyright);
 
@@ -573,10 +585,9 @@ namespace {
     }
 
     // The Latin-1 copyright sign, the notice and zeros, over 0x10..0x47 only.
-    void write_copyright(nand_header& header, ConsoleType console, BuildType build_type) {
-        const std::string text = "\xA9 2004-" +
-                                 std::to_string(copyright_year(console, build_type)) +
-                                 " Microsoft Corporation. All rights reserved.";
+    void write_copyright(nand_header& header, uint16_t year) {
+        const std::string text =
+            "\xA9 2004-" + std::to_string(year) + " Microsoft Corporation. All rights reserved.";
         std::fill_n(header.copyright, kCopyrightLength, uint8_t{0});
         std::memcpy(header.copyright, text.data(), std::min(text.size(), kCopyrightLength - 1));
     }
@@ -616,17 +627,28 @@ BuildResult RunBuild(const Input& input) {
             if (!donor_nonces) {
                 donor_nonces = collect_donor_nonces(*donor_img);
             }
-            has_donor = true;
-            if (donor_img->smc) {
-                donor_console = console_of(donor_img->smc->motherboard);
+            // A devkit image of another shape than its donor (the 64 MB image a 16 MB console
+            // takes) is laid fresh: the donor gives its nonces here and its console data
+            // through the Input.
+            const auto target = driver_config(input.image_type, input.build_type);
+            const bool donor_shape = donor_img->flash_driver.image_size() == target.first &&
+                                     donor_img->flash_driver.driver_mode() == target.second;
+            if (input.build_type != BuildType::Devkit || donor_shape) {
+                has_donor = true;
+                if (donor_img->smc) {
+                    donor_console = console_of(donor_img->smc->motherboard);
+                }
+                flash_image = std::move(*donor_img);
+            } else {
+                Log::Debug("Laying the devkit image fresh beside its donor's shape");
+                flash_image.flash_driver = Driver(target.first, target.second);
             }
-            flash_image = std::move(*donor_img);
         } catch (const std::exception& exception) {
             return build_error(BuildErrorCode::InvalidDonor, exception.what());
         }
     } else {
         Log::Debug("Configuring fresh NAND image layout");
-        const auto [image_size, driver_mode] = driver_config(input.image_type);
+        const auto [image_size, driver_mode] = driver_config(input.image_type, input.build_type);
         flash_image.flash_driver = Driver(image_size, driver_mode);
     }
 
@@ -688,8 +710,9 @@ BuildResult RunBuild(const Input& input) {
     flash_image.keyvault = *keyvault;
     flash_image.keyvault->encrypted = false;
 
-    // Header 0x04 carries no pairing; console dumps and xeBuild images hold zero there.
-    flash_image.header.pairing = 0;
+    // Header 0x04 carries no pairing; console dumps and xeBuild images hold zero there, and a
+    // devkit image 0x8000 (xeBuild 1.21).
+    flash_image.header.pairing = input.build_type == BuildType::Devkit ? 0x8000 : 0;
 
     // A donor of the same board keeps its own notice; any other image states the target's. A
     // JTAG Jasper always states the year of the CB it boots, which no retail donor carries.
@@ -699,9 +722,11 @@ BuildResult RunBuild(const Input& input) {
                                   [](uint8_t byte) { return byte == 0; });
     const bool jtag_jasper =
         input.build_type == BuildType::Jtag && input.console == ConsoleType::Jasper;
-    if (input.console &&
-        (!donor_copyright_usable || donor_console != input.console || jtag_jasper)) {
-        write_copyright(flash_image.header, *input.console, input.build_type);
+    if (input.build_type == BuildType::Devkit) {
+        write_copyright(flash_image.header, kDevkitCopyrightYear);
+    } else if (input.console &&
+               (!donor_copyright_usable || donor_console != input.console || jtag_jasper)) {
+        write_copyright(flash_image.header, copyright_year(*input.console, input.build_type));
     }
     flash_image.header.hack_flags = is_hacked(input.build_type) ? 1 : 0;
     flash_image.header.boot_flags = boot_flags(input.build_type, input.options);
@@ -766,6 +791,24 @@ BuildResult RunBuild(const Input& input) {
         }
         if (input.bootloaders.cg1 && !input.bootloaders.cg1->empty()) {
             flash_image.system_update_1.cg = BootloaderCg::parse(*input.bootloaders.cg1);
+        }
+        // A devkit chain is supplied plaintext, as a release ships it and ExtractAll returns
+        // it; the parsers' plaintext tests are for retail stages. The header states the SE
+        // build (xeBuild 1.21 devkit: 0x4451 for SE 17489).
+        if (flash_image.devkit_chain()) {
+            auto& sb = flash_image.cb_section.cb_or_A;
+            sb.decrypted = true;
+            sb.populate_metadata();
+            if (flash_image.cb_section.sc) {
+                flash_image.cb_section.sc->decrypted = true;
+            }
+            flash_image.kernel_section.cd.decrypted = true;
+            if (auto& se = flash_image.kernel_section.ce; se) {
+                se->decrypted = true;
+                if (input.build_type == BuildType::Devkit) {
+                    flash_image.header.version = se->header.header.version;
+                }
+            }
         }
     } catch (const std::exception& exception) {
         return build_error(BuildErrorCode::InvalidBootloader, exception.what());
@@ -996,10 +1039,13 @@ BuildResult RunBuild(const Input& input) {
         return build_error(BuildErrorCode::InvalidInput, *layout_error);
     }
 
+    flash_image.raw_patches = input.raw_patches;
+
     if (input.flashfs_sec) {
         Log::Info("Populating Flash File System ({} files)", input.flashfs_sec->size());
         FlashFileSystem fs{};
         fs.set_driver(&flash_image.flash_driver);
+        fs.set_larger_filesystem(input.build_type == BuildType::Devkit);
         const size_t total_blocks = flash_image.flash_driver.block_count();
         const size_t data_limit = flash_image.flash_driver.data_block_limit();
         if (data_limit == 0 || data_limit > std::numeric_limits<uint16_t>::max()) {
@@ -1010,10 +1056,19 @@ BuildResult RunBuild(const Input& input) {
         // A new FlashFS starts at root sequence 1. The image writer clears every older root
         // block's metadata, so no donor root can outrank it.
         constexpr uint32_t version = 1;
+        // A devkit image's files start right behind its update slots: block 0x3D, past
+        // 0xF4000, on a 64 MB small-block image (xeBuild 1.21). Every other image keeps the
+        // first 0x50 blocks.
+        uint32_t reserved_boundary = 0x50;
+        if (input.build_type == BuildType::Devkit) {
+            const size_t block_size = flash_image.flash_driver.block_size_clean();
+            reserved_boundary = static_cast<uint32_t>(
+                (flash_image.update_slots_end() + block_size - 1) / block_size);
+        }
         // Defer root placement so serialize allocates it once, last, from the same free
         // pool as the files and mobile data. Reserving a root here double-counts it and
         // starves a full image of the final block the root needs.
-        if (!fs.format(total_blocks, FlashFileSystem::kDeferRoot, version)) {
+        if (!fs.format(total_blocks, FlashFileSystem::kDeferRoot, version, reserved_boundary)) {
             return build_error(BuildErrorCode::SerializationFailure,
                                "Failed to format the Flash File System");
         }
@@ -1603,6 +1658,9 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
     }
 
     Input out{};
+    if (img.build_type == BuildType::Devkit) {
+        out.build_type = BuildType::Devkit;
+    }
     if (img.payloads.patchset && img.build_type) {
         out.build_type = *img.build_type;
         out.patches = InputPatches{};

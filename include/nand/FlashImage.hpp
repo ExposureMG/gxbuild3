@@ -77,11 +77,17 @@ struct FlashImage {
     std::optional<MobileData> mobile_data;
     std::optional<FlashFileSystem> filesystem;
     Payloads payloads;
+    // Written as they are at their clean offsets after everything else is laid.
+    std::vector<InputRawPatch> raw_patches;
 
     Driver flash_driver;
 
     static std::optional<FlashImage> read(std::vector<uint8_t> raw_image);
     bool parse();
+
+    // A devkit chain: SB, SC, SD and SE, held in the CB, SC, CD and CE positions. SB is keyed
+    // from the 1BL key like a single CB, SC from sixteen zero bytes, SD from SC and SE from SD.
+    [[nodiscard]] bool devkit_chain() const;
 
     bool decrypt_all(std::span<const uint8_t> cpu_key);
     // Hacked chains may deliberately leave stages plaintext for their patched parent.
@@ -93,6 +99,10 @@ struct FlashImage {
     bool clear_bootloader_chain();
 
     [[nodiscard]] std::vector<BlockRange> active_payload_block_ranges() const;
+
+    // The clean offset just past the second update slot, where the image writer would lay
+    // them now.
+    [[nodiscard]] uint32_t update_slots_end() const;
 
     // Describes a collision between payload writers, if the resolved layout is unsafe.
     [[nodiscard]] std::optional<std::string> payload_layout_error() const;

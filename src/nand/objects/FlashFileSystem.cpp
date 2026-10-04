@@ -20,7 +20,10 @@ namespace gxbuild3::NAND {
     }
 
     size_t FlashFileSystem::base_cluster() const {
-        return m_driver && m_driver->driver_mode() == Driver::DriverMode::Big ? 0xAE0 : 0;
+        if (!m_driver || m_driver->driver_mode() != Driver::DriverMode::Big) {
+            return 0;
+        }
+        return m_larger ? 0x2E0 : 0xAE0;
     }
 
     bool FlashFileSystem::is_block_free(size_t physical_block) const {
@@ -449,7 +452,7 @@ namespace gxbuild3::NAND {
         root_meta.sequence = m_version;
         root_meta.block_type =
             big_block ? FlashFsMetadata::kRootTypeBig : FlashFsMetadata::kRootTypeSmall;
-        root_meta.fs_size = big_block ? FlashFsMetadata::kBigFsSize : 0;
+        root_meta.fs_size = big_block ? big_fs_size() : 0;
         root_meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
         root_meta.is_bad = false;
 
@@ -508,7 +511,7 @@ namespace gxbuild3::NAND {
             file_meta.sequence = 0;
             file_meta.block_type =
                 big_block ? FlashFsMetadata::kDataTypeBig : FlashFsMetadata::kDataTypeSmall;
-            file_meta.fs_size = big_block ? FlashFsMetadata::kBigFsSize : 0;
+            file_meta.fs_size = big_block ? big_fs_size() : 0;
             file_meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
             file_meta.is_bad = false;
             m_driver->write_cluster_metadata(cluster, file_meta);

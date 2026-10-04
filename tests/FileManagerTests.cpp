@@ -745,9 +745,89 @@ namespace {
                                      FileManager::FileLookupErrorCode::InspectionFailed,
                     "detailed lookup reports an unsafe name as an inspection failure");
             write_text(f.root / "version/_test.ini", "[testbl]\nnone\n[flashfs]\n" + path + "\n");
-            require(!FileManager::ReadIniFiles("version", "test", "test"),
-                    "unsafe payload paths reject the INI instead of becoming optional missing data");
+            const auto payloads = FileManager::ReadIniFiles("version", "test", "test");
+            if (path.starts_with("../")) {
+                // A leading ".." names a file beside the release, looked for as a loose file
+                // in the roots only: the file outside them and the STFS entry are not read.
+                require(payloads && payloads->flashfs_sec.empty(),
+                        "a payload from outside the release is skipped, never read from "
+                        "outside the roots or from STFS");
+            } else {
+                require(!payloads, "unsafe payload paths reject the INI instead of becoming "
+                                   "optional missing data");
+            }
         }
+    }
+
+    void test_ini_devkit_chain_takes_cd_and_ce_positions() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nSB_1.bin\nSC_1.bin\nSD_1.bin\nSE_1.bin\nnone\n");
+        write_file(f.root / "mydata/SB_1.bin", {0x53, 0x42});
+        write_file(f.root / "mydata/SC_1.bin", {0x53, 0x43});
+        write_file(f.root / "mydata/SD_1.bin", {0x53, 0x44});
+        write_file(f.root / "mydata/SE_1.bin", {0x53, 0x45});
+        const auto result = FileManager::ReadIniFiles("version", "test", "test");
+        require(result && result->bootloaders.cb_or_a == Bytes({0x53, 0x42}) &&
+                    result->bootloaders.sc == Bytes({0x53, 0x43}) &&
+                    result->bootloaders.cd == Bytes({0x53, 0x44}) &&
+                    result->bootloaders.ce == Bytes({0x53, 0x45}),
+                "SB, SC, SD and SE take the CB, SC, CD and CE positions");
+    }
+
+    void test_ini_lookup_falls_back_to_any_case() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nsc_17489.bin\n[flashfs]\nSegoe.XTT\nexact.bin\n");
+        write_file(f.root / "mydata/SC_17489.bin", {0x53, 0x43});
+        write_file(f.root / "mydata/segoe.xtt", {0x07});
+        write_file(f.root / "mydata/EXACT.bin", {0x01});
+        write_file(f.root / "mydata/exact.bin", {0x02});
+        const auto result = FileManager::ReadIniFiles("version", "test", "test");
+        require(result && result->bootloaders.sc == Bytes({0x53, 0x43}),
+                "a bootloader named in another case is found");
+        require(payload(*result, "Segoe.XTT") == Bytes{0x07},
+                "a payload named in another case is found and keeps the INI's casing");
+        require(payload(*result, "exact.bin") == Bytes{0x02},
+                "an exact-case file wins over one that only matches without case");
+        const auto detailed =
+            FileManager::FindFileDataDetailed("sc_17489.bin", {f.root / "mydata"});
+        require(detailed && *detailed && (**detailed).data == Bytes({0x53, 0x43}),
+                "the detailed lookup falls back to any case as well");
+        require(FileManager::FindFileData("SC_17489.BIN", {f.root / "mydata"}).has_value(),
+                "the byte lookup falls back to any case as well");
+    }
+
+    void test_ini_payload_outside_release_and_rawpatch() {
+        Fixture f;
+        write_text(f.root / "version/_test.ini",
+                   "[testbl]\nnone\n[flashfs]\n..\\data\\xell.bin,;\n..\\launch.xex,0\n"
+                   "rrbkgnd.bmp ,6850A07F\nrglXam.rglp\n[rawpatch]\nvfuses_khv.bin,0xE4000\n"
+                   "reason.bin,0x4E\n");
+        write_file(f.root / "mydata/data/xell.bin", {0x7F, 'E'});
+        write_file(f.root / "mydata/rrbkgnd.bmp", {0x42});
+        write_file(f.root / "mydata/rglXam.rglp", {0x43});
+        write_file(f.root / "mydata/reason.bin", {0x12});
+        const auto result = FileManager::ReadIniFiles("version", "test", "test");
+        require(result.has_value(), "a missing file from outside the release and a missing "
+                                    "[rawpatch] file are skipped");
+        require(payload(*result, "xell.bin") == Bytes({0x7F, 'E'}),
+                "..\\data\\xell.bin is found under data/ in a root and stored by its basename");
+        require(std::none_of(result->flashfs_sec.begin(), result->flashfs_sec.end(),
+                             [](const auto& file) { return file.first == "launch.xex"; }),
+                "a missing file from outside the release is left out");
+        require(payload(*result, "rrbkgnd.bmp1") == Bytes{0x42},
+                "a name ending in p with a checksum takes the slot suffix, as xeBuild writes it");
+        require(payload(*result, "rglXam.rglp") == Bytes{0x43},
+                "a name ending in p without a checksum is stored as it is");
+        require(result->raw_patches.size() == 1 && result->raw_patches[0].name == "reason.bin" &&
+                    result->raw_patches[0].offset == 0x4E &&
+                    result->raw_patches[0].data == Bytes{0x12},
+                "a [rawpatch] file is read with its offset; a missing one is skipped");
+
+        write_text(f.root / "version/_test.ini", "[testbl]\nnone\n[rawpatch]\nreason.bin,0xZZ\n");
+        require(!FileManager::ReadIniFiles("version", "test", "test"),
+                "a [rawpatch] offset that does not parse rejects the INI");
     }
 
     void test_ini_rejects_symlink_escape_and_keeps_safe_nested_paths() {
@@ -950,6 +1030,10 @@ int main() {
         {"numeric bootloader aliases", test_numeric_bootloader_aliases},
         {"INI recognizes SC and 3BL", test_ini_recognizes_sc_and_3bl_bootloaders},
         {"INI rejects unconfined paths", test_ini_rejects_unconfined_asset_paths},
+        {"INI devkit chain positions", test_ini_devkit_chain_takes_cd_and_ce_positions},
+        {"INI lookup falls back to any case", test_ini_lookup_falls_back_to_any_case},
+        {"INI payload outside the release and [rawpatch]",
+         test_ini_payload_outside_release_and_rawpatch},
         {"INI rejects symlink escapes and keeps nested paths",
          test_ini_rejects_symlink_escape_and_keeps_safe_nested_paths},
         {"STFS caching and cache clearing", test_stfs_caching_and_cache_clearing},

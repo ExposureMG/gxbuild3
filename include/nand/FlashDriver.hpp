@@ -31,6 +31,10 @@ namespace gxbuild3::NAND {
         inline constexpr uint8_t kDataTypeSmall = 0x00;
         inline constexpr uint8_t kDataTypeBig = 0x2A;
         inline constexpr uint16_t kBigFsSize = 0x2006;
+        // The stamp of the larger filesystem a big-block devkit image takes: spare byte 7
+        // states a 0x10-block system area and byte 8 the filesystem's 0xC00 blocks over 32
+        // (xeBuild 1.21 devkit jasperbb).
+        inline constexpr uint16_t kBigFsSizeLarger = 0x6010;
         inline constexpr uint8_t kBigPageCount = 0x04;
     } // namespace FlashFsMetadata
 

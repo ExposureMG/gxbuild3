@@ -142,9 +142,36 @@ namespace gxbuild3::NAND {
             }
             return image.flash_driver.driver_mode() == Driver::Big ? 0x20000 : 0x10000;
         }
+        // Where the serialized boot chain ends, counted from kEntryOffset.
+        size_t boot_chain_end(const FlashImage& image) {
+            size_t end = kEntryOffset;
+            const auto add = [&end](const auto& bootloader) {
+                end += align_16(static_cast<uint32_t>(bootloader.serialize().size()));
+            };
+            if (!image.cb_section.cb_or_A.data.empty())
+                add(image.cb_section.cb_or_A);
+            if (image.cb_section.cb_x)
+                add(*image.cb_section.cb_x);
+            if (image.cb_section.cb_B)
+                add(*image.cb_section.cb_B);
+            if (image.cb_section.sc)
+                add(*image.cb_section.sc);
+            if (!image.kernel_section.cd.data.empty())
+                add(image.kernel_section.cd);
+            if (image.kernel_section.ce)
+                add(*image.kernel_section.ce);
+            return end;
+        }
+
         uint32_t update_base(const FlashImage& image, bool jtag, bool glitch) {
             if (image.preserve_layout && image.header.cf_offset && image.header.cf_offset != 0xFFFFFFFF)
                 return image.header.cf_offset;
+            // A devkit image's first slot follows its chain at the next erase block: 0xD4000
+            // behind the 17489 chain on small block, 0xE0000 on big block (xeBuild 1.21).
+            if (image.build_type == BuildType::Devkit) {
+                return round_up(static_cast<uint32_t>(boot_chain_end(image)),
+                                static_cast<uint32_t>(image.flash_driver.block_size_clean()));
+            }
             const auto mode = image.flash_driver.driver_mode();
             const uint32_t slot_base = jtag ? kJtagSlotOffset : retail_slot_offset(mode);
             return system_update_base(slot_base, slot_round(mode), jtag, glitch, image.payloads);
@@ -172,10 +199,23 @@ namespace gxbuild3::NAND {
                    (first_offset < second_end && second_offset < first_end);
         }
 
+        // A devkit chain holds its SB and SD where a retail chain holds its CB and CD.
+        uint16_t devkit_magic(uint16_t magic) {
+            switch (magic) {
+                case NANDBootloaderMagic::CB:
+                    return NANDBootloaderMagic::SB;
+                case NANDBootloaderMagic::CD:
+                    return NANDBootloaderMagic::SD;
+                default:
+                    return magic;
+            }
+        }
+
         template <typename T>
         bool has_parsed_bootloader_header(const T& bootloader, uint16_t expected_magic,
                                           size_t minimum_size) {
-            return bootloader.header.header.magic == expected_magic &&
+            return (bootloader.header.header.magic == expected_magic ||
+                    bootloader.header.header.magic == devkit_magic(expected_magic)) &&
                    bootloader.header.header.size >= minimum_size;
         }
 
@@ -240,8 +280,9 @@ namespace gxbuild3::NAND {
         }
 
         // Where the settings block sits: the last block before the reserved tail, which is
-        // 0xF7C000 on a 16 MB image, 0x3BE0000 on big block and 0x2FFC000 on eMMC. The
-        // statistics and manufacturing blocks lie one and two erase blocks below it.
+        // 0xF7C000 on a 16 MB image, 0x3DFC000 on a 64 MB small-block devkit image, 0x3BE0000
+        // on big block and 0x2FFC000 on eMMC. The statistics and manufacturing blocks lie one
+        // and two erase blocks below it.
         std::optional<size_t> smc_config_offset(const Driver& driver) {
             const size_t total_blocks = driver.block_count();
             if (total_blocks < 4 || driver.block_size_clean() == 0) {
@@ -258,7 +299,7 @@ namespace gxbuild3::NAND {
                     break;
                 case Driver::DriverMode::Small:
                 case Driver::DriverMode::NewSmall:
-                    reserve_block = 0x3E0;
+                    reserve_block = total_blocks > 0x400 ? total_blocks - total_blocks / 32 : 0x3E0;
                     break;
             }
 
@@ -363,9 +404,23 @@ namespace gxbuild3::NAND {
                 break;
             }
 
-            auto bldr_data = flash_driver.read_clean(cursor, bldr_size);
+            // A stage is sealed through its 16-byte rounding, so it is read with it: the
+            // rounding then opens back to the zeros it was sealed from.
+            auto bldr_data = flash_driver.read_clean(cursor, align_16(bldr_size));
 
-            if (magic == 0x4342) {
+            if (magic == NANDBootloaderMagic::SB && cb_section.cb_or_A.data.empty()) {
+                cb_section.cb_or_A = BootloaderCb::parse(bldr_data);
+                Log::Debug("Parsed SB bootloader at offset 0x{:X} (version {}, size 0x{:X})",
+                           cursor, version, bldr_size);
+            } else if (magic == NANDBootloaderMagic::SD) {
+                kernel_section.cd = BootloaderCd::parse(bldr_data);
+                Log::Debug("Parsed SD bootloader at offset 0x{:X} (version {}, size 0x{:X})",
+                           cursor, version, bldr_size);
+            } else if (magic == NANDBootloaderMagic::SE) {
+                kernel_section.ce = BootloaderCe::parse(bldr_data);
+                Log::Debug("Parsed SE bootloader at offset 0x{:X} (version {}, size 0x{:X})",
+                           cursor, version, bldr_size);
+            } else if (magic == 0x4342) {
                 if (version == 15432) {
                     cb_section.cb_x = BootloaderCb::parse(bldr_data);
                 } else if (cb_section.cb_or_A.data.empty()) {
@@ -609,6 +664,7 @@ namespace gxbuild3::NAND {
 
             if (best_root) {
                 FlashFileSystem fs{};
+                fs.set_larger_filesystem(devkit_chain());
                 if (fs.load(flash_driver, static_cast<uint16_t>(*best_root / clusters_per_block),
                             *best_root % clusters_per_block)) {
                     filesystem = std::move(fs);
@@ -645,8 +701,14 @@ namespace gxbuild3::NAND {
             return false;
         };
         const size_t overlay = size_t(patchslot_base) + slot_stride;
-        if (valid_khv_at(overlay + 0x10, 0x10)) build_type = BuildType::Glitch2;
-        else if (valid_khv_at(overlay + 0x60, 0x60)) build_type = BuildType::Glitch2m;
+        // A devkit chain names its type; its second slot holds no glitch patches.
+        if (devkit_chain()) {
+            build_type = BuildType::Devkit;
+        } else if (valid_khv_at(overlay + 0x10, 0x10)) {
+            build_type = BuildType::Glitch2;
+        } else if (valid_khv_at(overlay + 0x60, 0x60)) {
+            build_type = BuildType::Glitch2m;
+        }
         if (!inferred_khv.empty()) {
             if (build_type != BuildType::Glitch2m)
                 build_type = cb_section.cb_x ? BuildType::Glitch3 :
@@ -660,7 +722,7 @@ namespace gxbuild3::NAND {
                 payloads.patchset = std::move(recovered);
         }
         const uint32_t window_base = kJtagWindowOffset;
-        payloads.xell = parse_xell_at(kXellOffset);
+        payloads.xell = build_type == BuildType::Devkit ? std::nullopt : parse_xell_at(kXellOffset);
         if (payloads.xell) {
             if (!build_type) build_type = BuildType::Glitch2;
         } else if (!build_type && header.cf_offset != glitch_slot_offset(slot_mode)) {
@@ -681,6 +743,10 @@ namespace gxbuild3::NAND {
         }
 
         return true;
+    }
+
+    bool FlashImage::devkit_chain() const {
+        return cb_section.cb_or_A.header.header.magic == NANDBootloaderMagic::SB;
     }
 
     bool FlashImage::write_to_driver() const {
@@ -1080,6 +1146,7 @@ namespace gxbuild3::NAND {
             layout.fs_root_block = static_cast<uint16_t>(*root_start);
             layout.fs_version = filesystem->version();
             layout.fs_size = static_cast<uint16_t>(filesystem->blockmap().size());
+            layout.big_fs_size = filesystem->big_fs_size();
             auto& fs = const_cast<FlashFileSystem&>(*filesystem);
             fs.set_driver(&driver);
             if (!fs.save()) {
@@ -1213,6 +1280,18 @@ namespace gxbuild3::NAND {
             }
         }
 
+        const size_t clean_size = total_blocks * block_size;
+        for (const auto& patch : raw_patches) {
+            if (patch.offset > clean_size || patch.data.size() > clean_size - patch.offset) {
+                Log::Error("[rawpatch] '{}' (0x{:X} bytes at 0x{:X}) runs past the image",
+                           patch.name, patch.data.size(), patch.offset);
+                return false;
+            }
+            if (!driver.write_offset(patch.offset, patch.data)) {
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -1277,6 +1356,18 @@ namespace gxbuild3::NAND {
         };
         return clear_patchslot(donor_patchslot_base, system_update_0) &&
                clear_patchslot(donor_patchslot_base + slot_stride, system_update_1);
+    }
+
+    uint32_t FlashImage::update_slots_end() const {
+        const auto slot_mode = flash_driver.driver_mode();
+        const bool is_glitch_patchset =
+            (build_type &&
+             (*build_type == BuildType::Glitch || *build_type == BuildType::Glitch2 ||
+              *build_type == BuildType::Glitch2m || *build_type == BuildType::Glitch3)) ||
+            (payloads.patchset && payloads.patchset->kind == PatchSetKind::Glitch) ||
+            (payloads.xell && header.cf_offset == glitch_slot_offset(slot_mode));
+        const bool is_jtag_patchset = is_jtag_image(*this);
+        return update_base(*this, is_jtag_patchset, is_glitch_patchset) + 2 * slot_size(*this);
     }
 
     std::vector<BlockRange> FlashImage::active_payload_block_ranges() const {
@@ -1590,25 +1681,25 @@ namespace gxbuild3::NAND {
                                               cpu_key.data());
             }
 
+            // SC is keyed from sixteen zero bytes, not from its parent. One with a zero nonce
+            // is taken as plaintext.
             if (cb_section.sc.has_value() && !cb_section.sc->data.empty() &&
                 !cb_section.sc->is_decrypted() &&
                 std::any_of(std::begin(cb_section.sc->header.key),
                             std::end(cb_section.sc->header.key),
                             [](uint8_t byte) { return byte != 0; })) {
-                const auto* parent_key = cb_section.cb_B && cb_section.cb_B->derived_key
-                                             ? &*cb_section.cb_B->derived_key
-                                             : cb_section.cb_or_A.derived_key
-                                                   ? &*cb_section.cb_or_A.derived_key
-                                                   : nullptr;
-                if (!parent_key) {
-                    Log::Error("Cannot decrypt SC: parent CB derived key is missing");
-                    return false;
-                }
-                cb_section.sc->decrypt(parent_key->data());
+                cb_section.sc->decrypt(BootloaderSc::kZeroSecret);
             }
 
             if (!kernel_section.cd.data.empty() && !kernel_section.cd.is_decrypted()) {
-                if (cb_section.cb_B.has_value() && cb_section.cb_B->derived_key.has_value()) {
+                if (devkit_chain()) {
+                    if (!cb_section.sc || !cb_section.sc->derived_key) {
+                        Log::Error("Cannot decrypt SD: the SC key is missing");
+                        return false;
+                    }
+                    kernel_section.cd.decrypt(cb_section.sc->derived_key->data());
+                } else if (cb_section.cb_B.has_value() &&
+                           cb_section.cb_B->derived_key.has_value()) {
                     kernel_section.cd.decrypt(cb_section.cb_B->derived_key->data());
                 } else if (cb_section.cb_or_A.derived_key.has_value()) {
                     const uint8_t* cd_cpu_key = nullptr;
@@ -1697,8 +1788,13 @@ namespace gxbuild3::NAND {
                 Log::Error("Glitch3 requires CB_X and a plaintext CB_B");
                 return false;
             }
-            const bool cd_requires_cpu_key =
-                !cb_section.cb_B.has_value() && cb_section.cb_or_A.requires_cpu_key_for_cd();
+            const bool devkit = devkit_chain();
+            if (devkit && (!cb_section.sc || cb_section.sc->data.empty())) {
+                Log::Error("A devkit chain needs an SC to key its SD");
+                return false;
+            }
+            const bool cd_requires_cpu_key = !devkit && !cb_section.cb_B.has_value() &&
+                                             cb_section.cb_or_A.requires_cpu_key_for_cd();
 
             if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted() &&
                 cd_requires_cpu_key && cpu_key.size() < 16) {
@@ -1710,7 +1806,10 @@ namespace gxbuild3::NAND {
             // type (xerunner build.py `chain`); a retail single CB binds it as well.
             // Glitch3 emits CB_B plaintext, so it binds nothing here.
             const bool bind_cb_b = cb_section.cb_B.has_value() && !plaintext_cb_b;
-            const bool bind_single_cb = build_type == BuildType::Retail && cd_requires_cpu_key;
+            // A devkit SB carries the console's block bound to the SMC, as a retail single CB
+            // does (xeBuild 1.21 devkit).
+            const bool bind_single_cb = (build_type == BuildType::Retail && cd_requires_cpu_key) ||
+                                        (devkit && cb_section.cb_or_A.decrypted);
             // A JTAG image's second CB carries the console's block itself, bound to the SMC
             // under its own 1BL-derived key (xerunner build.py `_wears_console`).
             const bool bind_extra_cb = payloads.extra_cb.has_value() &&
@@ -1779,10 +1878,22 @@ namespace gxbuild3::NAND {
                                                 smc->data, &cb_section.cb_or_A.header);
             }
 
+            // A devkit SC is sealed under the zero secret; its key seals SD. A sealed SC is
+            // opened first, so its key is known.
+            if (devkit) {
+                auto& sc = *cb_section.sc;
+                if (!sc.decrypted) {
+                    sc.decrypt(BootloaderSc::kZeroSecret);
+                }
+                sc.encrypt(BootloaderSc::kZeroSecret);
+            }
+
             // xeBuild's CB_B patches keep CD decryption enabled. Plaintext CD is
             // specific to separate XeLL ECC payloads, not these dashboard builds.
             if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted()) {
-                if (cb_section.cb_B.has_value()) {
+                if (devkit) {
+                    kernel_section.cd.encrypt(cb_section.sc->derived_key->data());
+                } else if (cb_section.cb_B.has_value()) {
                     if (!cb_section.cb_B->derived_key.has_value()) {
                         Log::Error("Cannot encrypt CD: CB_B derived key is missing");
                         return false;

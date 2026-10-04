@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -45,14 +46,31 @@ namespace gxbuild3::utils {
         // unsuffixed copy. The suffix is the number of update slots the build type has:
         // '2' on a JTAG image, which carries two update pairs, and '1' on every other
         // (xeBuild 1.21 JTAG writes aac.xexp2; RGBuild and build360 write '1'). It is
-        // appended when the name ends in "xexp" or "xttp" and does not already end in a
-        // digit. ".xtt" fonts are not suffixed.
-        std::string flashfs_patch_suffix(std::string name, BuildType build_type) {
+        // appended when the name does not already end in a digit and either ends in "xexp"
+        // or "xttp", or ends in 'p' and the INI states a checksum for it: xeBuild 1.21 writes
+        // 17489's "rrbkgnd.bmp" as "rrbkgnd.bmp1". ".xtt" fonts are not suffixed.
+        std::string flashfs_patch_suffix(std::string name, BuildType build_type,
+                                         bool has_checksum) {
             const std::string_view view{name};
             const bool trailing_digit = !name.empty() && name.back() >= '0' && name.back() <= '9';
-            if (!trailing_digit && (view.ends_with("xexp") || view.ends_with("xttp")))
+            const bool ends_in_p = !name.empty() && (name.back() == 'p' || name.back() == 'P');
+            if (!trailing_digit &&
+                (view.ends_with("xexp") || view.ends_with("xttp") || (ends_in_p && has_checksum)))
                 name += build_type == BuildType::Jtag ? '2' : '1';
             return name;
+        }
+
+        // A checksum an INI entry states: anything but nothing or zero.
+        bool states_checksum(std::string_view value) {
+            return std::any_of(value.begin(), value.end(), [](char c) {
+                return std::isxdigit(static_cast<unsigned char>(c)) != 0 && c != '0';
+            });
+        }
+
+        std::string lowercase(std::string value) {
+            std::transform(value.begin(), value.end(), value.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return value;
         }
 
         // The version a CF/CG request names after its stage prefix: 4532 for "cf_4532.bin"
@@ -127,6 +145,43 @@ namespace gxbuild3::utils {
             return !within.empty() && !within.has_root_path() &&
                    std::none_of(within.begin(), within.end(),
                                 [](const auto& component) { return component == ".."; });
+        }
+
+        // The loose file `relative` names under `root`: the exact path when it exists,
+        // otherwise the entry matching each missing component without regard to case. A
+        // release INI may name "sc_17489.bin" for the file "SC_17489.bin", which a
+        // case-sensitive filesystem does not find. Of several such entries the first in
+        // name order is taken. Without a match, or for a match outside the root, the exact
+        // path is returned.
+        std::filesystem::path loose_candidate(const std::filesystem::path& root,
+                                              const std::filesystem::path& relative) {
+            const auto exact = root / relative;
+            std::error_code error;
+            if (std::filesystem::exists(exact, error) || error)
+                return exact;
+            std::filesystem::path current = root;
+            for (const auto& component : relative) {
+                auto next = current / component;
+                error.clear();
+                if (!std::filesystem::exists(next, error)) {
+                    if (error)
+                        return exact;
+                    const auto wanted = lowercase(component.string());
+                    std::optional<std::filesystem::path> match;
+                    for (const auto& entry : std::filesystem::directory_iterator(current, error)) {
+                        const auto name = entry.path().filename();
+                        if (lowercase(name.string()) == wanted && (!match || name < *match))
+                            match = name;
+                    }
+                    if (error || !match)
+                        return exact;
+                    next = current / *match;
+                }
+                current = std::move(next);
+            }
+            if (!contained_asset_path(root, current.lexically_relative(root)))
+                return exact;
+            return current;
         }
 
         std::vector<uint8_t> to_u8(std::span<const std::byte> data) {
@@ -443,7 +498,7 @@ namespace gxbuild3::utils {
                         invalid_path_ = true;
                         return std::nullopt;
                     }
-                    const auto candidate = root.path / relative;
+                    const auto candidate = loose_candidate(root.path, relative);
                     if (std::filesystem::is_regular_file(candidate)) {
                         if (!contents)
                             return LocatedFile{
@@ -520,6 +575,19 @@ namespace gxbuild3::utils {
         };
 
     } // namespace
+
+    std::string IniAssetName(std::string_view entry) {
+        std::string name{entry};
+        std::replace(name.begin(), name.end(), '\\', '/');
+        std::string_view rest{name};
+        while (rest.starts_with("../") || rest.starts_with("./"))
+            rest.remove_prefix(rest.find('/') + 1);
+        return std::string(rest);
+    }
+
+    bool IniAssetIsOutside(std::string_view entry) {
+        return entry.starts_with("..\\") || entry.starts_with("../");
+    }
 
     std::unordered_map<std::string, std::filesystem::path>
     FindFiles(const std::vector<std::string>& filenames,
@@ -610,7 +678,7 @@ namespace gxbuild3::utils {
 
             if (!contained_asset_path(root, relative))
                 return std::nullopt;
-            const auto candidate = root / relative;
+            const auto candidate = loose_candidate(root, relative);
             status_error.clear();
             if (std::filesystem::is_regular_file(candidate, status_error)) {
                 if (auto data = read_file(candidate)) {
@@ -822,7 +890,7 @@ namespace gxbuild3::utils {
                     continue;
                 }
 
-                const auto candidate = root / relative;
+                const auto candidate = loose_candidate(root, relative);
                 if (!contained_asset_path(root, relative)) {
                     return std::unexpected(FileLookupError{
                         .code = FileLookupErrorCode::InspectionFailed,
@@ -1029,13 +1097,16 @@ namespace gxbuild3::utils {
 
         // Validate all names before loading anything, including optional payloads.
         // An unsafe name must never become a basename-only STFS lookup.
-        for (const auto* section : {bl_sec, doc.get("security"), doc.get("flashfs")}) {
+        // A payload may name a file outside its release ("..\\data\\x.bin"); a bootloader may
+        // not.
+        for (const auto* section :
+             {bl_sec, doc.get("security"), doc.get("flashfs"), doc.get("rawpatch")}) {
             if (!section)
                 continue;
             for (const auto& entry : *section) {
                 if (entry.key.empty() || normalize_file_key(entry.key) == "none")
                     continue;
-                if (!safe_asset_name(entry.key)) {
+                if (!safe_asset_name(section == bl_sec ? entry.key : IniAssetName(entry.key))) {
                     Log::Error("INI asset '{}' is not confined to its source roots", entry.key);
                     return std::nullopt;
                 }
@@ -1047,6 +1118,10 @@ namespace gxbuild3::utils {
             for (const auto& entry : *security)
                 security_names.push_back(normalize_file_key(entry.key));
         }
+        // A file from outside the release is only ever a loose one.
+        ScanOptions loose_options = options;
+        loose_options.nosu = true;
+        AssetSearch loose_search(search_paths, loose_options, security_names);
         AssetSearch search(search_paths, options, std::move(security_names));
         IniFilesResult result{};
         const bool is_jtag = build_type == BuildType::Jtag;
@@ -1086,6 +1161,11 @@ namespace gxbuild3::utils {
                     result.bootloaders.cb_b = std::move(data);
             } else if (key.starts_with("sc") || stem == "3bl") {
                 result.bootloaders.sc = std::move(data);
+            } else if (key.starts_with("sd")) {
+                // A devkit chain's SD and SE take the CD and CE positions.
+                result.bootloaders.cd = std::move(data);
+            } else if (key.starts_with("se")) {
+                result.bootloaders.ce = std::move(data);
             } else if (key.starts_with("cd") || key == "4bl") {
                 if (chain == 0 || result.bootloaders.cd.empty())
                     result.bootloaders.cd = std::move(data);
@@ -1111,12 +1191,24 @@ namespace gxbuild3::utils {
         // Preserve INI order for unique payloads, replacing only when a better
         // source is found for an alias of an already selected basename.
         std::unordered_map<std::string, std::pair<size_t, SourceRank>> payloads;
+        // An entry from outside the release is found under its path in the roots, then by its
+        // basename, and only as a loose file.
+        const auto find_listed = [&search, &loose_search](std::string_view entry) {
+            if (!IniAssetIsOutside(entry))
+                return search.find(entry);
+            const auto name = IniAssetName(entry);
+            auto found = loose_search.find(name);
+            if (!found)
+                found = loose_search.find(display_basename(name));
+            return found;
+        };
         auto process_payload_entry = [&](const Ini::Entry& entry, bool optional) {
             const auto key = normalize_file_key(entry.key);
             if (key.empty() || key == "none")
                 return;
-            if (auto found = search.find(entry.key)) {
-                std::string stored = flashfs_patch_suffix(display_basename(entry.key), build_type);
+            if (auto found = find_listed(entry.key)) {
+                std::string stored = flashfs_patch_suffix(display_basename(entry.key), build_type,
+                                                          states_checksum(entry.value));
                 const auto [it, inserted] =
                     payloads.emplace(normalize_file_key(stored),
                                      std::pair{result.flashfs_sec.size(), found->rank});
@@ -1126,6 +1218,8 @@ namespace gxbuild3::utils {
                     result.flashfs_sec[it->second.first].second = std::move(found->data);
                     it->second.second = found->rank;
                 }
+            } else if (IniAssetIsOutside(entry.key)) {
+                Log::Warn("Could not read file '{}', skipping", entry.key);
             } else if (optional) {
                 Log::Debug("Optional asset '{}' not present", entry.key);
             } else {
@@ -1141,7 +1235,38 @@ namespace gxbuild3::utils {
             for (const auto& entry : *flashfs)
                 process_payload_entry(entry, false);
         }
-        if (search.invalid_path())
+        // [rawpatch] lists "file,offset": the file goes into the image as it is at that clean
+        // offset. A file no root supplies is skipped with a warning.
+        if (const auto* rawpatch = doc.get("rawpatch")) {
+            for (const auto& entry : *rawpatch) {
+                const auto key = normalize_file_key(entry.key);
+                if (key.empty() || key == "none")
+                    continue;
+                std::string_view digits = entry.value;
+                int base = 10;
+                if (digits.starts_with("0x") || digits.starts_with("0X")) {
+                    digits.remove_prefix(2);
+                    base = 16;
+                }
+                uint32_t offset = 0;
+                const auto parsed =
+                    std::from_chars(digits.data(), digits.data() + digits.size(), offset, base);
+                if (digits.empty() || parsed.ec != std::errc{} ||
+                    parsed.ptr != digits.data() + digits.size()) {
+                    Log::Error("[rawpatch] entry '{}' states no usable offset ('{}')", entry.key,
+                               entry.value);
+                    return std::nullopt;
+                }
+                auto found = find_listed(entry.key);
+                if (!found) {
+                    Log::Warn("[rawpatch] file '{}' was not found; it is skipped", entry.key);
+                    continue;
+                }
+                result.raw_patches.push_back(
+                    InputRawPatch{display_basename(entry.key), offset, std::move(found->data)});
+            }
+        }
+        if (search.invalid_path() || loose_search.invalid_path())
             return std::nullopt;
         return result;
     }
