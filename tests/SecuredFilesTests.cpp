@@ -253,6 +253,56 @@ namespace {
                      "and the rest is its own");
     }
 
+    // xeBuild 1.21's clean extended.bin: 0x4000 bytes, the plaintext zero but the keyvault's
+    // head, under the nonce HMAC-SHA(CPU key, plaintext + 07 12).
+    bool test_a_clean_extended_is_zero_but_the_keyvault_head() {
+        const std::array<uint8_t, 8> head{0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38};
+        const auto sealed = clean_extended(kCpuKey, head);
+        if (!check(sealed && sealed->size() == kExtendedSize, "a clean extended.bin is made")) {
+            return false;
+        }
+        auto opened = *sealed;
+        crypt_secfile(kCpuKey, opened);
+        Bytes plain(kExtendedSize - 0x10);
+        std::copy(head.begin(), head.end(), plain.begin());
+        static constexpr uint8_t kTail[2] = {0x07, 0x12};
+        const auto nonce = hmac(kCpuKey, plain, kTail);
+        return check(std::equal(nonce.begin(), nonce.end(), sealed->begin()),
+                     "its nonce is HMAC-SHA(CPU key, plaintext + 07 12)") &&
+               check(std::equal(plain.begin(), plain.end(), opened.begin() + 0x10),
+                     "its plaintext is zero but the keyvault's head") &&
+               check(extended_opened(opened, kCpuKey), "it opens under the CPU key") &&
+               check(clean_extended(kCpuKey, head) == sealed, "it is deterministic") &&
+               check(!clean_extended(Bytes(8), head), "a CPU key that is not 16 bytes fails");
+    }
+
+    // xeBuild 1.21's clean secdata.bin: 0x400 bytes, the plaintext zero but the head, 1, the
+    // lockdown value and the stamp, under the nonce HMAC-SHA(CPU key, plaintext).
+    bool test_a_clean_secdata_is_zero_but_the_build_fields() {
+        const std::array<uint8_t, 8> head{0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48};
+        const auto sealed = clean_secdata(kCpuKey, head, kBuild);
+        if (!check(sealed && sealed->size() == kSecdataSize, "a clean secdata.bin is made")) {
+            return false;
+        }
+        auto opened = *sealed;
+        crypt_secfile(kCpuKey, opened);
+        Bytes plain(kSecdataSize - 0x10);
+        std::copy(head.begin(), head.end(), plain.begin());
+        plain[0x08] = 0x01;
+        plain[0x09] = kBuild.lockdown_value;
+        const auto stamp = secured_file_stamp(kBuild.build_seconds);
+        std::copy(stamp.begin(), stamp.end(), plain.begin() + 0x10);
+        const auto nonce = hmac(kCpuKey, plain);
+        return check(std::equal(nonce.begin(), nonce.end(), sealed->begin()),
+                     "its nonce is HMAC-SHA(CPU key, plaintext)") &&
+               check(std::equal(plain.begin(), plain.end(), opened.begin() + 0x10),
+                     "its plaintext is zero but the head, 1, the lockdown value and the stamp") &&
+               check(secdata_opened(opened, kCpuKey) && secdata_head(opened) == head,
+                     "it opens under the CPU key with the given head") &&
+               check(!clean_secdata(Bytes(8), head, kBuild),
+                     "a CPU key that is not 16 bytes fails");
+    }
+
     bool test_loose_copies_reach_the_input_boundary_in_the_clear() {
         const auto clear = clear_keyvault_style(0x400, 9, false);
         auto sealed = clear;
@@ -374,7 +424,9 @@ namespace {
         const auto second = random_crl_sealing();
         const auto dae_first = random_dae_sealing();
         const auto dae_second = random_dae_sealing();
-        return check(first.iv != second.iv && first.file_key != second.file_key,
+        return check(random_secdata_head() != random_secdata_head(),
+                     "a drawn secdata.bin head differs between draws") &&
+               check(first.iv != second.iv && first.file_key != second.file_key,
                      "a drawn crl.bin vector and file key differ between draws") &&
                check(dae_first.field != dae_second.field,
                      "a drawn dae.bin field differs between draws");
@@ -390,6 +442,8 @@ int main() {
     passed = test_a_dae_whose_records_do_not_cover_it_is_refused() && passed;
     passed = test_extended_takes_the_keyvault_head_and_derives_its_nonce() && passed;
     passed = test_secdata_takes_the_build_fields_and_derives_its_nonce() && passed;
+    passed = test_a_clean_extended_is_zero_but_the_keyvault_head() && passed;
+    passed = test_a_clean_secdata_is_zero_but_the_build_fields() && passed;
     passed = test_loose_copies_reach_the_input_boundary_in_the_clear() && passed;
     passed = test_an_fcrt_in_the_clear_is_sealed_under_the_cpu_key_and_its_vector() && passed;
     passed = test_an_fcrt_sealed_under_the_cpu_key_is_carried_byte_for_byte() && passed;

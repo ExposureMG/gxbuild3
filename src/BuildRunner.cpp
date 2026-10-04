@@ -109,9 +109,13 @@ namespace {
     // sealed for this build as xeBuild 1.21 seals them: the content is the file supplied, the
     // sealing the console's own copy's (or, with none, the supplied file's own when it is a
     // console copy, or drawn), and crl.bin, dae.bin and secdata.bin state the build's time and
-    // the CF lockdown value. A file that does not open is written as supplied. fcrt.bin is sealed
-    // under the CPU key when it is in the clear and otherwise written as supplied. Every other file
-    // is written as supplied. Nothing when a file cannot be sealed at all.
+    // the CF lockdown value. A crl.bin or dae.bin that does not open is written as supplied, and
+    // so is a secdata.bin that does not open unless it is the console's own copy. An extended.bin
+    // or secdata.bin that is empty (nothing supplied it) or of the wrong length, an extended.bin
+    // that does not open and the console's own secdata.bin when it does not open are replaced by
+    // a clean one, as xeBuild makes one up. fcrt.bin is sealed under the CPU key when it is in the
+    // clear and otherwise written as supplied. Every other file is written as supplied. Nothing
+    // when a file cannot be sealed at all.
     std::optional<std::vector<uint8_t>> sealed_flashfs_file(std::string_view name,
                                                             const std::vector<uint8_t>& data,
                                                             const Input& input,
@@ -160,33 +164,65 @@ namespace {
             Log::Warn("dae.bin opens under no key it is tried under; it is written as supplied");
             return data;
         }
-        if (lower == "extended.bin" || lower == "secdata.bin") {
-            const bool extended = lower == "extended.bin";
-            std::optional<std::vector<uint8_t>> sealed;
-            if (extended && data.size() >= 0x18 && extended_opened(data, cpu_key)) {
-                // Its head is the keyvault's; with no keyvault it keeps its own.
-                const auto& keyvault = input.metadata.keyvault;
-                const auto head_source = keyvault && keyvault->size() >= 0x18
-                                             ? std::span<const uint8_t>(*keyvault)
-                                             : std::span<const uint8_t>(data);
-                sealed = reseal_extended(data, cpu_key, head_source.subspan(0x10).first<8>());
-            } else if (!extended && secdata_opened(data, cpu_key)) {
-                // Its head is the console's own copy's; with none it keeps its own.
-                const auto head =
-                    own && secdata_opened(*own, cpu_key) ? secdata_head(*own) : std::nullopt;
-                sealed = reseal_secdata(data, cpu_key, head, build);
+        if (lower == "extended.bin") {
+            // Its head is the keyvault's; with no keyvault, a copy that opens keeps its own and a
+            // clean one has a zero head.
+            const auto& keyvault = input.metadata.keyvault;
+            const bool keyvault_head = keyvault && keyvault->size() >= 0x18;
+            if (data.size() == kExtendedSize && extended_opened(data, cpu_key)) {
+                const auto head_source = keyvault_head ? std::span<const uint8_t>(*keyvault)
+                                                       : std::span<const uint8_t>(data);
+                return reseal_extended(data, cpu_key, head_source.subspan(0x10).first<8>());
             }
-            if (sealed) {
-                return std::move(*sealed);
+            if (data.empty()) {
+                Log::Info("extended.bin was not supplied; a clean one is made up");
+            } else if (data.size() != kExtendedSize) {
+                Log::Warn("extended.bin is 0x{:X} bytes, not 0x{:X}; a clean one is made up",
+                          data.size(), kExtendedSize);
+            } else {
+                Log::Warn("extended.bin opens under no key; a clean one is made up");
             }
-            Log::Warn("{} did not open under the CPU key; it is sealed again under the nonce it "
-                      "carries",
-                      name);
-            std::vector<uint8_t> file_data = data;
-            if (!crypt_secfile(cpu_key, file_data)) {
-                return std::nullopt;
+            std::array<uint8_t, 8> head{};
+            if (keyvault_head) {
+                std::copy_n(keyvault->begin() + 0x10, head.size(), head.begin());
             }
-            return file_data;
+            return clean_extended(cpu_key, head);
+        }
+        if (lower == "secdata.bin") {
+            // Its head is the console's own copy's; with none, a copy that opens keeps its own and
+            // a clean one takes a drawn head.
+            const auto own_head =
+                own && secdata_opened(*own, cpu_key) ? secdata_head(*own) : std::nullopt;
+            if (data.size() == kSecdataSize && secdata_opened(data, cpu_key)) {
+                return reseal_secdata(data, cpu_key, own_head, build);
+            }
+            // The console's own copy is used only when it opens; a supplied copy of the right
+            // length that does not open is written as it stands.
+            const bool unopened_own = own && data == *own;
+            if (data.size() == kSecdataSize && !unopened_own) {
+                Log::Warn("secdata.bin did not open under the CPU key; it is sealed again under "
+                          "the nonce it carries");
+                std::vector<uint8_t> file_data = data;
+                if (!crypt_secfile(cpu_key, file_data)) {
+                    return std::nullopt;
+                }
+                return file_data;
+            }
+            if (data.empty()) {
+                Log::Info("secdata.bin was not supplied; a clean one is made up");
+            } else if (data.size() != kSecdataSize) {
+                Log::Warn("secdata.bin is 0x{:X} bytes, not 0x{:X}; a clean one is made up",
+                          data.size(), kSecdataSize);
+            } else {
+                Log::Warn("The console's secdata.bin does not open under its CPU key; a clean one "
+                          "is made up");
+            }
+            auto head = own_head;
+            if (!head) {
+                Log::Info("secdata.bin is made up under a drawn head");
+                head = random_secdata_head();
+            }
+            return clean_secdata(cpu_key, *head, build);
         }
         if (lower == "fcrt.bin") {
             auto sealed = seal_fcrt(data, cpu_key);

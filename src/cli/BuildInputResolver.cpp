@@ -789,8 +789,12 @@ namespace gxbuild3::cli {
                         return std::unexpected(found.error());
                     }
                     // A missing file from outside the release is skipped, as xeBuild skips it,
-                    // and so is a missing fcrt.bin, which the INI reader treats as optional.
-                    const bool optional = outside || key == "fcrt.bin";
+                    // and so is a missing fcrt.bin, which the INI reader treats as optional. A
+                    // missing [security] extended.bin or secdata.bin is made up clean.
+                    const bool made_up = std::string_view(section_name) == "security" &&
+                                         !scan_options.nosusecurity &&
+                                         (key == "extended.bin" || key == "secdata.bin");
+                    const bool optional = outside || key == "fcrt.bin" || made_up;
                     if (!*found && !optional && !donor_flashfs_names.contains(key)) {
                         return std::unexpected(error(
                             ResolutionErrorCode::AssetNotFound,
@@ -917,9 +921,11 @@ namespace gxbuild3::cli {
                     }
                 }
             }
+            // A loose extended.bin or secdata.bin too short to hold its nonce is passed as
+            // supplied: RunBuild makes up a clean one for any copy of the wrong length.
             for (auto file : ini_files->flashfs_sec) {
                 const auto key = lowercase_basename(file.first);
-                if (key == "secdata.bin" || key == "extended.bin") {
+                if ((key == "secdata.bin" || key == "extended.bin") && file.second.size() >= 0x10) {
                     auto opened =
                         key == "extended.bin"
                             ? gxbuild3::NAND::open_loose_extended(file.second, foundations->cpu_key)
@@ -933,6 +939,19 @@ namespace gxbuild3::cli {
                     file.second = std::move(*opened);
                 }
                 overlay_flashfs(flashfs, std::move(file), flashfs_positions);
+            }
+            // An extended.bin or secdata.bin the INI's [security] names and nothing supplies is
+            // carried empty, and RunBuild makes up a clean one for it as xeBuild 1.21 does.
+            if (!scan_options.nosusecurity) {
+                if (const auto* security = ini_document->get("security")) {
+                    for (const auto& entry : *security) {
+                        const auto key = lowercase_basename(FileManager::IniAssetName(entry.key));
+                        if ((key == "extended.bin" || key == "secdata.bin") &&
+                            !flashfs_positions.contains(key)) {
+                            overlay_flashfs(flashfs, {key, {}}, flashfs_positions);
+                        }
+                    }
+                }
             }
             order_flashfs(flashfs, *ini_document);
             input.flashfs_sec = std::move(flashfs);

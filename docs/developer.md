@@ -235,8 +235,21 @@ the CPU key, crl/dae sealing is drawn from the system's random source.
 
 crl.bin, dae.bin and secdata.bin state the build's lockdown value (the CF LDV) and the build's
 time as a big-endian FILETIME in UTC: the build time plus two seconds, down to the even second.
-extended.bin and secdata.bin take the nonce their plaintext derives. A file that opens under no
-key is written back as supplied with a warning.
+extended.bin and secdata.bin take the nonce their plaintext derives. A crl.bin or dae.bin that
+opens under no key is written back as supplied with a warning.
+
+A clean `extended.bin` or `secdata.bin` is made up, as xeBuild 1.21 makes one up ("Making up an
+clean/empty extended.bin!"), for a copy that is not 0x4000 (extended.bin) or 0x400 (secdata.bin)
+bytes long, for an extended.bin that opens under no key, for the console's own secdata.bin when it
+does not open under the CPU key, and for an extended.bin or secdata.bin the INI's `[security]`
+names and nothing supplies (the resolver carries it empty). A clean extended.bin is 0x4000 bytes
+whose plaintext is zero but for the keyvault's eight-byte head; it is deterministic. A clean
+secdata.bin is 0x400 bytes whose plaintext is zero but for the head at 0x00, 1 at 0x08, the CF
+LDV at 0x09 and the stamp at 0x10. Its head is the console's own secdata.bin's when that opens
+under the CPU key, and otherwise drawn from the system's random source (logged without the
+value). A supplied secdata.bin of the right length that does not open, other than the console's
+own copy, is written as it stands. The generators are `clean_extended` and `clean_secdata` in
+`SecuredFiles`.
 
 `fcrt.bin` is sealed when it is handed over in the clear: when the SHA-1 of its part from the
 offset its header keeps at 0x11C (0x140 in every copy seen) is the 20 bytes at 0x12C, that part

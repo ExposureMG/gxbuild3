@@ -874,6 +874,16 @@ namespace {
         if (!image) {
             return require(false, "FlashFS donor fixture builds");
         }
+        // The donor's extended.bin was the wrong length, so its image carries a clean one.
+        const auto donor_files = ExtractAll(*image, key);
+        Bytes donor_extended;
+        for (const auto& [name, data] : donor_files
+                                            ? *donor_files->flashfs_sec
+                                            : std::vector<std::pair<std::string, Bytes>>{}) {
+            if (name == "extended.bin") {
+                donor_extended = data;
+            }
+        }
         fixture.write_binary("first/nanddump.bin", *image);
         fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
         fixture.write_binary("first/cd.bin", Bytes{0xCD});
@@ -928,7 +938,7 @@ namespace {
                        "an INI file from the source roots replaces the donor basename") &&
                require(has("secdata.bin", plaintext_secdata),
                        "a secure INI file from the source roots arrives as plaintext") &&
-               require(has("extended.bin", Bytes(0x20, 0x22)),
+               require(donor_extended.size() == 0x4000 && has("extended.bin", donor_extended),
                        "an INI security file missing from the roots comes from the donor") &&
                require(has("crl.bin", Bytes{0x23}) && has("fcrt.bin", Bytes{0x24}),
                        "donor secured files are carried without an INI entry") &&
@@ -940,6 +950,28 @@ namespace {
                require(find("donor.bin") == files.end() && find("aac.xexp2") == files.end() &&
                            find("sysupdate.xexp2") == files.end(),
                        "unlisted donor files, patch files and CG tails are dropped");
+    }
+
+    // An extended.bin or secdata.bin the INI's [security] names reaches RunBuild even when
+    // nothing supplies it (empty) or it is too short to hold a nonce (as supplied); RunBuild makes
+    // up a clean one for each.
+    bool test_unsupplied_security_files_reach_the_build() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args();
+        fixture.write_text("working/build.ini",
+                           "[falconbl]\ncb_1.bin\ncd.bin\n[security]\nextended.bin\nsecdata.bin\n");
+        fixture.write_binary("first/extended.bin", Bytes(5, 0x45));
+        const auto result = fixture.resolve(args);
+        if (!require_resolved(result, "a build whose security files are missing resolves") ||
+            !require(result->input.flashfs_sec.has_value(), "resolved input has FlashFS files")) {
+            return false;
+        }
+        const auto& files = *result->input.flashfs_sec;
+        return require(files.size() == 2 && files[0].first == "extended.bin" &&
+                           files[0].second == Bytes(5, 0x45),
+                       "a short extended.bin is carried as supplied") &&
+               require(files[1].first == "secdata.bin" && files[1].second.empty(),
+                       "a missing secdata.bin is carried empty");
     }
 
     bool test_metadata_values_require_full_valid_strings() {
@@ -1641,6 +1673,7 @@ int main() {
     passed = test_loose_donor_requires_and_populates_every_component() && passed;
     passed = test_metadata_precedence_and_user_file_overrides() && passed;
     passed = test_flashfs_holds_ini_files_and_donor_secured_files_only() && passed;
+    passed = test_unsupplied_security_files_reach_the_build() && passed;
     passed = test_metadata_values_require_full_valid_strings() && passed;
     passed = test_metadata_parses_only_the_winning_precedence_source() && passed;
     passed = test_cli_pairing_override_reaches_the_cf_and_console_is_carried() && passed;

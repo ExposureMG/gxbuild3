@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -18,7 +19,9 @@
 // extended.bin and secdata.bin are a 16-byte nonce and then RC4 under HMAC-SHA(CPU key, nonce).
 // Their nonce follows from the plaintext: HMAC-SHA(CPU key, plaintext + 07 12) for extended.bin,
 // as for a keyvault, and HMAC-SHA(CPU key, plaintext) for secdata.bin. The Input boundary carries
-// both in the clear behind the nonce they were sealed with.
+// both in the clear behind the nonce they were sealed with. A build makes up a clean one, as
+// xeBuild 1.21 does, for a copy of the wrong length, an extended.bin that opens under no key, and
+// a file nothing supplies.
 //
 // fcrt.bin is 0x4000 bytes: a header that keeps the vector at 0x100, at 0x11C a big-endian word
 // saying where the sealed part starts (0x140 in every copy seen), and at 0x12C the SHA-1 of the
@@ -101,11 +104,33 @@ namespace gxbuild3::NAND {
     reseal_secdata(std::span<const uint8_t> clear, std::span<const uint8_t> cpu_key,
                    std::optional<std::array<uint8_t, 8>> head, const SecuredFileBuild& build);
 
+    // The length of an extended.bin and of a secdata.bin, nonce included.
+    inline constexpr size_t kExtendedSize = 0x4000;
+    inline constexpr size_t kSecdataSize = 0x400;
+
+    // A clean extended.bin, as xeBuild 1.21 makes one up: kExtendedSize bytes whose plaintext is
+    // zero but for the keyvault's eight-byte head at 0x00, under the nonce that plaintext derives.
+    // Nothing for a CPU key that is not 16 bytes.
+    [[nodiscard]] std::optional<std::vector<uint8_t>>
+    clean_extended(std::span<const uint8_t> cpu_key, std::span<const uint8_t, 8> keyvault_head);
+
+    // A clean secdata.bin, as xeBuild 1.21 makes one up: kSecdataSize bytes whose plaintext is zero
+    // but for `head` at 0x00, 1 at 0x08, the lockdown value at 0x09 and the stamp at 0x10, under
+    // the nonce that plaintext derives. Nothing for a CPU key that is not 16 bytes.
+    [[nodiscard]] std::optional<std::vector<uint8_t>>
+    clean_secdata(std::span<const uint8_t> cpu_key, std::span<const uint8_t, 8> head,
+                  const SecuredFileBuild& build);
+
+    // A secdata.bin head drawn from the system's cryptographic random source, for a clean
+    // secdata.bin with no console copy to take it from.
+    [[nodiscard]] std::array<uint8_t, 8> random_secdata_head();
+
     // A loose extended.bin or secdata.bin in the form the Input boundary carries it. A copy sealed
     // under the CPU key is opened. A copy in the clear, as xeBuild takes one (an all-zero nonce,
     // or the nonce its plaintext derives), gets the nonce its plaintext derives. Anything else is
-    // opened under the nonce it carries; it then does not verify, and RunBuild writes it back as
-    // supplied. Nothing for a CPU key that is not 16 bytes or a file shorter than its nonce.
+    // opened under the nonce it carries; it then does not verify, and RunBuild makes up a clean
+    // extended.bin for it and writes a secdata.bin back as supplied. Nothing for a CPU key that is
+    // not 16 bytes or a file shorter than its nonce.
     [[nodiscard]] std::optional<std::vector<uint8_t>>
     open_loose_extended(std::span<const uint8_t> blob, std::span<const uint8_t> cpu_key);
     [[nodiscard]] std::optional<std::vector<uint8_t>>

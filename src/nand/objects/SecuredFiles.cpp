@@ -422,6 +422,25 @@ namespace gxbuild3::NAND {
         return seal_under_nonce(nonce, std::move(plain), cpu_key);
     }
 
+    std::optional<std::vector<uint8_t>> clean_extended(std::span<const uint8_t> cpu_key,
+                                                       std::span<const uint8_t, 8> keyvault_head) {
+        return reseal_extended(std::vector<uint8_t>(kExtendedSize), cpu_key, keyvault_head);
+    }
+
+    std::optional<std::vector<uint8_t>> clean_secdata(std::span<const uint8_t> cpu_key,
+                                                      std::span<const uint8_t, 8> head,
+                                                      const SecuredFileBuild& build) {
+        std::array<uint8_t, 8> own_head{};
+        std::copy(head.begin(), head.end(), own_head.begin());
+        return reseal_secdata(std::vector<uint8_t>(kSecdataSize), cpu_key, own_head, build);
+    }
+
+    std::array<uint8_t, 8> random_secdata_head() {
+        std::array<uint8_t, 8> head{};
+        ::ExCryptRandom(head.data(), head.size());
+        return head;
+    }
+
     std::optional<std::vector<uint8_t>> open_loose_extended(std::span<const uint8_t> blob,
                                                             std::span<const uint8_t> cpu_key) {
         return open_loose(blob, cpu_key, true);

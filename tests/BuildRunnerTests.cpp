@@ -597,7 +597,7 @@ namespace {
 
         return require(!jtag_result && jtag_result.error().code == BuildErrorCode::PatchFailure,
                        "JTAG patch overflow returns PatchFailure") &&
-                require(!glitch_result && glitch_result.error().code == BuildErrorCode::PatchFailure,
+               require(!glitch_result && glitch_result.error().code == BuildErrorCode::PatchFailure,
                        "glitch patch overflow returns PatchFailure");
     }
 
@@ -681,8 +681,7 @@ namespace {
         // and the overlay one 0x20000 stride above it.
         const auto first = built ? read_logical(*built, 0xA0010, 1) : std::nullopt;
         return require(built.has_value(), "big-block glitch accepts payload above small stride") &&
-               require(first == Bytes({0xB4}),
-                       "big-block KHV uses the second-slot overlay");
+               require(first == Bytes({0xB4}), "big-block KHV uses the second-slot overlay");
     }
 
     bool test_glitch_patch_is_disjoint_from_rebooter_without_xell() {
@@ -698,7 +697,8 @@ namespace {
 
         const auto built = RunBuild(input);
         return require(built.has_value(), "fixed KHV anchor is disjoint from the rebooter") &&
-               require(read_logical(*built, 0x80010, 1) == Bytes{0xA0}, "KHV stays at runtime anchor");
+               require(read_logical(*built, 0x80010, 1) == Bytes{0xA0},
+                       "KHV stays at runtime anchor");
     }
 
     bool test_jtag_xell_without_rebooter_preserves_patches_and_uses_fixed_offset() {
@@ -729,12 +729,16 @@ namespace {
             auto input = fresh_input(image_type);
             input.build_type = BuildType::Glitch;
             InputPatches patches{};
-            patches.automatic = InputPatchFile{"automatic", glitch_patchset(0x20,0,0x30,0,Bytes{0,0,0x10,0,0,0,0,1,0x60,0,0,0,255,255,255,255})};
+            patches.automatic =
+                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0,
+                                                            Bytes{0, 0, 0x10, 0, 0, 0, 0, 1, 0x60,
+                                                                  0, 0, 0, 255, 255, 255, 255})};
             input.patches = patches;
             input.payloads = InputPayloads{};
             input.payloads->xell = valid_xell();
-            auto [cf,cg] = valid_system_update(0x61);
-            input.bootloaders.cf0 = cf; input.bootloaders.cg0 = cg;
+            auto [cf, cg] = valid_system_update(0x61);
+            input.bootloaders.cf0 = cf;
+            input.bootloaders.cg0 = cg;
             auto built = RunBuild(input);
             // XeLL sits at 0x70000 on every shape and the slots follow it, rounded up by the
             // erase block: 0xB0000, or 0xC0000 on big block, whose slot is 0x20000 long.
@@ -747,20 +751,25 @@ namespace {
                 !require(read_logical(*built, xell_at, 0x40000) == input.payloads->xell,
                          "XeLL sits at 0x70000"))
                 return false;
-            auto extracted=ExtractAll(*built,input.metadata.cpu_key);
-            if(!require(extracted && extracted->patches && extracted->build_type==BuildType::Glitch,
-                        "extraction preserves the runtime patch stream and build type"))return false;
-            auto rebuilt=RunBuild(*extracted);
+            auto extracted = ExtractAll(*built, input.metadata.cpu_key);
+            if (!require(extracted && extracted->patches &&
+                             extracted->build_type == BuildType::Glitch,
+                         "extraction preserves the runtime patch stream and build type"))
+                return false;
+            auto rebuilt = RunBuild(*extracted);
             if (!require(rebuilt &&
                              read_logical(*rebuilt, base + stride + 0x10, 4) ==
                                  Bytes({0, 0, 0x10, 0}) &&
                              read_logical(*rebuilt, xell_at, 0x40000) == input.payloads->xell,
                          "extract/rebuild preserves XeLL and the KHV anchor"))
                 return false;
-            input.bootloaders.cf1 = cf; input.bootloaders.cg1 = cg;
+            input.bootloaders.cf1 = cf;
+            input.bootloaders.cg1 = cg;
             auto conflict = RunBuild(input);
-            if(!require(!conflict && conflict.error().message.find("second update slot") != std::string::npos,
-                        "CF1 cannot occupy the glitch overlay")) return false;
+            if (!require(!conflict && conflict.error().message.find("second update slot") !=
+                                          std::string::npos,
+                         "CF1 cannot occupy the glitch overlay"))
+                return false;
         }
         return true;
     }
@@ -952,18 +961,24 @@ namespace {
 
     bool test_big_and_emmc_glitch_do_not_infer_jtag_inside_xell() {
         for (auto image_type : {ImageType::BigBlock, ImageType::Emmc}) {
-            auto input=fresh_input(image_type); input.build_type=BuildType::Glitch;
-            input.patches=InputPatches{};
-            const Bytes khv{0,0,0x10,0,0,0,0,1,0x60,0,0,0,255,255,255,255};
-            input.patches->automatic=InputPatchFile{"automatic",glitch_patchset(0x20,0,0x30,0,khv)};
-            input.payloads=InputPayloads{}; input.payloads->xell=valid_xell();
-            auto built=RunBuild(input); auto image=built?FlashImage::read(*built):std::nullopt;
-            if(!require(image && image->parse(),"glitch donor with runtime KHV parses"))return false;
-            image->flash_driver.write_offset(0x70000,Bytes{0,0,0,0});
-            image->flash_driver.write_offset(0x95060,valid_xell());
-            auto extracted=ExtractAll(image->flash_driver.serialize(),input.metadata.cpu_key);
-            if(!require(extracted && (!extracted->payloads || !extracted->payloads->xell),
-                        "known glitch image cannot infer JTAG XeLL inside its damaged payload"))return false;
+            auto input = fresh_input(image_type);
+            input.build_type = BuildType::Glitch;
+            input.patches = InputPatches{};
+            const Bytes khv{0, 0, 0x10, 0, 0, 0, 0, 1, 0x60, 0, 0, 0, 255, 255, 255, 255};
+            input.patches->automatic =
+                InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, khv)};
+            input.payloads = InputPayloads{};
+            input.payloads->xell = valid_xell();
+            auto built = RunBuild(input);
+            auto image = built ? FlashImage::read(*built) : std::nullopt;
+            if (!require(image && image->parse(), "glitch donor with runtime KHV parses"))
+                return false;
+            image->flash_driver.write_offset(0x70000, Bytes{0, 0, 0, 0});
+            image->flash_driver.write_offset(0x95060, valid_xell());
+            auto extracted = ExtractAll(image->flash_driver.serialize(), input.metadata.cpu_key);
+            if (!require(extracted && (!extracted->payloads || !extracted->payloads->xell),
+                         "known glitch image cannot infer JTAG XeLL inside its damaged payload"))
+                return false;
         }
         return true;
     }
@@ -1390,10 +1405,8 @@ namespace {
                        "public NAND metadata reports the detected block type") &&
                require(info->smc.present && !info->smc.version.empty(),
                        "public NAND metadata reports the SMC version") &&
-               require(!info->smc.type_name.empty(),
-                       "public NAND metadata reports the SMC type") &&
-               require(info->bootloaders.cb_a.has_value() &&
-                           info->bootloaders.cb_a->version == 1,
+               require(!info->smc.type_name.empty(), "public NAND metadata reports the SMC type") &&
+               require(info->bootloaders.cb_a.has_value() && info->bootloaders.cb_a->version == 1,
                        "public NAND metadata reports the bootloader version") &&
                require(info->bootloaders.sc.has_value() && info->bootloaders.sc->version == 1,
                        "public NAND metadata reports the SC version") &&
@@ -1401,8 +1414,7 @@ namespace {
                        "public NAND metadata reports the kernel version") &&
                require(info->bootloaders.ce.has_value() && info->bootloaders.ce->version == 5,
                        "public NAND metadata reports the hypervisor version") &&
-               require(info->bootloaders.cf_0.has_value() &&
-                           info->bootloaders.cg_0.has_value(),
+               require(info->bootloaders.cf_0.has_value() && info->bootloaders.cg_0.has_value(),
                        "public NAND metadata reports the update versions") &&
                require(info->cpu_key.empty() && !info->raw_keyvault.has_value() &&
                            !info->keyvault.present,
@@ -1553,27 +1565,74 @@ namespace {
         const Bytes expected(0x4003, 0x52);
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"data.bin", expected}};
         const auto built = RunBuild(input);
-        if (!require(built.has_value(), "big-block filesystem donor builds")) return false;
+        if (!require(built.has_value(), "big-block filesystem donor builds"))
+            return false;
 
         input.metadata.nand_image = *built;
         input.flashfs_sec.reset();
         const auto rebuilt = RunBuild(input);
         const auto parsed = rebuilt ? parse_image(*rebuilt) : std::nullopt;
-        return require(parsed && parsed->filesystem &&
-                           parsed->filesystem->get_file("data.bin") == expected,
-                       "moved donor filesystem uses the current driver geometry without an overlay");
+        return require(
+            parsed && parsed->filesystem && parsed->filesystem->get_file("data.bin") == expected,
+            "moved donor filesystem uses the current driver geometry without an overlay");
+    }
+
+    // An extended.bin in the clear behind the nonce its plaintext derives, its head the
+    // keyvault's.
+    Bytes clear_extended(const Input& input, uint8_t fill) {
+        const auto& cpu_key = input.metadata.cpu_key;
+        Bytes plain(gxbuild3::NAND::kExtendedSize - 0x10, fill);
+        std::copy_n(input.metadata.keyvault->begin() + 0x10, 8, plain.begin());
+        const uint8_t tail[2] = {0x07, 0x12};
+        uint8_t digest[20]{};
+        ExCryptHmacSha(cpu_key.data(), 16, plain.data(), static_cast<uint32_t>(plain.size()), tail,
+                       2, nullptr, 0, digest, sizeof(digest));
+        Bytes out(digest, digest + 0x10);
+        out.insert(out.end(), plain.begin(), plain.end());
+        return out;
+    }
+
+    // A secdata.bin in the clear behind the nonce its plaintext derives.
+    Bytes clear_secdata(const Input& input, uint8_t fill) {
+        const auto& cpu_key = input.metadata.cpu_key;
+        Bytes plain(gxbuild3::NAND::kSecdataSize - 0x10, fill);
+        uint8_t digest[20]{};
+        ExCryptHmacSha(cpu_key.data(), 16, plain.data(), static_cast<uint32_t>(plain.size()),
+                       nullptr, 0, nullptr, 0, digest, sizeof(digest));
+        Bytes out(digest, digest + 0x10);
+        out.insert(out.end(), plain.begin(), plain.end());
+        return out;
     }
 
     bool test_secure_flashfs_files_roundtrip_through_extract_and_rebuild() {
         auto input = fresh_input(ImageType::SmallBlock);
-        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
-            {"secdata.bin", Bytes(0x20, 0x31)}, {"extended.bin", Bytes(0x20, 0x42)}};
+        const auto& cpu_key = input.metadata.cpu_key;
+        const auto extended = clear_extended(input, 0x42);
+        const auto secdata = clear_secdata(input, 0x31);
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"secdata.bin", secdata},
+                                                                       {"extended.bin", extended}};
         const auto built = RunBuild(input);
         if (!require(built.has_value(), "secure FlashFS build succeeds")) {
             return false;
         }
-        auto extracted = ExtractAll(*built, input.metadata.cpu_key);
-        if (!require(extracted.has_value() && extracted->flashfs_sec == input.flashfs_sec,
+        auto extracted = ExtractAll(*built, cpu_key);
+        const auto file = [](const Input& from, std::string_view name) -> const Bytes* {
+            if (!from.flashfs_sec) {
+                return nullptr;
+            }
+            for (const auto& [file_name, data] : *from.flashfs_sec) {
+                if (file_name == name) {
+                    return &data;
+                }
+            }
+            return nullptr;
+        };
+        const auto* first_secdata = extracted ? file(*extracted, "secdata.bin") : nullptr;
+        if (!require(extracted && file(*extracted, "extended.bin") &&
+                         *file(*extracted, "extended.bin") == extended && first_secdata &&
+                         gxbuild3::NAND::secdata_opened(*first_secdata, cpu_key) &&
+                         std::equal(secdata.begin() + 0x10, secdata.begin() + 0x18,
+                                    first_secdata->begin() + 0x10),
                      "extraction returns plaintext secure FlashFS files")) {
             return false;
         }
@@ -1582,9 +1641,16 @@ namespace {
         if (!require(rebuilt.has_value(), "secure FlashFS rebuild succeeds")) {
             return false;
         }
-        const auto roundtrip = ExtractAll(*rebuilt, input.metadata.cpu_key);
-        return require(roundtrip.has_value() && roundtrip->flashfs_sec == input.flashfs_sec,
-                       "secure FlashFS files survive extract and rebuild");
+        const auto roundtrip = ExtractAll(*rebuilt, cpu_key);
+        const auto* second_secdata = roundtrip ? file(*roundtrip, "secdata.bin") : nullptr;
+        return require(
+            roundtrip && file(*roundtrip, "extended.bin") &&
+                *file(*roundtrip, "extended.bin") == extended && second_secdata &&
+                gxbuild3::NAND::secdata_opened(*second_secdata, cpu_key) &&
+                std::equal(secdata.begin() + 0x10, secdata.begin() + 0x18,
+                           second_secdata->begin() + 0x10) &&
+                std::equal(secdata.begin() + 0x28, secdata.end(), second_secdata->begin() + 0x28),
+            "secure FlashFS files survive extract and rebuild");
     }
 
     // A signed record in the clear: magic, length and the SHA-1 of everything from 0x150 on.
@@ -1615,15 +1681,7 @@ namespace {
         if (!require(own_crl.has_value(), "the console's crl.bin fixture seals")) {
             return false;
         }
-        // extended.bin in the clear behind the nonce its plaintext derives.
-        Bytes extended_plain(0x4000 - 0x10, 0x5A);
-        const uint8_t tail[2] = {0x07, 0x12};
-        uint8_t digest[20]{};
-        ExCryptHmacSha(cpu_key.data(), 16, extended_plain.data(),
-                       static_cast<uint32_t>(extended_plain.size()), tail, 2, nullptr, 0, digest,
-                       sizeof(digest));
-        Bytes extended(digest, digest + 0x10);
-        extended.insert(extended.end(), extended_plain.begin(), extended_plain.end());
+        const auto extended = clear_extended(input, 0x5A);
 
         // fcrt.bin in the clear: the vector at 0x100, the sealed part from 0x140 and its SHA-1 at
         // 0x12C.
@@ -2894,6 +2952,102 @@ namespace {
 #endif
     }
 
+    // An extended.bin or secdata.bin of the wrong length or that nothing supplied, an
+    // extended.bin that opens under no key and the console's own secdata.bin when it does not
+    // open are made up clean, as xeBuild 1.21 makes them up: zero but the keyvault's head in
+    // extended.bin, and the console's head (or a drawn one), 1, the lockdown value and the stamp
+    // in secdata.bin. A supplied secdata.bin of the right length that does not open is written
+    // as it stands.
+    bool test_unusable_extended_and_secdata_are_made_up_clean() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        const auto cpu_key = input.metadata.cpu_key;
+        const auto keyvault = *input.metadata.keyvault;
+        input.metadata.cf_ldv = 9;
+        constexpr int64_t kSeconds = 1791105722;
+        const auto stamp = gxbuild3::NAND::secured_file_stamp(kSeconds);
+        const auto build_and_open = [&](const Input& build) -> std::optional<Input> {
+            set_source_date_epoch("1791105722");
+            const auto image = RunBuild(build);
+            set_source_date_epoch(nullptr);
+            return image ? ExtractAll(*image, cpu_key) : std::nullopt;
+        };
+        const auto file = [](const std::optional<Input>& from,
+                             std::string_view name) -> const Bytes* {
+            if (!from || !from->flashfs_sec) {
+                return nullptr;
+            }
+            for (const auto& [file_name, data] : *from->flashfs_sec) {
+                if (file_name == name) {
+                    return &data;
+                }
+            }
+            return nullptr;
+        };
+        const auto zero_from = [](const Bytes& data, size_t from) {
+            return std::all_of(data.begin() + static_cast<std::ptrdiff_t>(from), data.end(),
+                               [](uint8_t value) { return value == 0; });
+        };
+        const auto clean_extended_file = [&](const Bytes* data) {
+            return data && data->size() == gxbuild3::NAND::kExtendedSize &&
+                   gxbuild3::NAND::extended_opened(*data, cpu_key) &&
+                   std::equal(keyvault.begin() + 0x10, keyvault.begin() + 0x18,
+                              data->begin() + 0x10) &&
+                   zero_from(*data, 0x18);
+        };
+        const auto clean_secdata_file = [&](const Bytes* data) {
+            return data && data->size() == gxbuild3::NAND::kSecdataSize &&
+                   gxbuild3::NAND::secdata_opened(*data, cpu_key) && (*data)[0x18] == 0x01 &&
+                   (*data)[0x19] == 9 &&
+                   std::all_of(data->begin() + 0x1A, data->begin() + 0x20,
+                               [](uint8_t value) { return value == 0; }) &&
+                   std::equal(stamp.begin(), stamp.end(), data->begin() + 0x20) &&
+                   zero_from(*data, 0x28);
+        };
+
+        // Wrong lengths: the console's own secdata.bin opens, so its head is taken.
+        const auto own_secdata = clear_secdata(input, 0x66);
+        input.metadata.console_secured_files = {{"secdata.bin", own_secdata}};
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
+            {"extended.bin", Bytes(0x10, 0x42)}, {"secdata.bin", Bytes(0x3FF, 0x31)}};
+        const auto wrong_length = build_and_open(input);
+        const auto* short_secdata = file(wrong_length, "secdata.bin");
+
+        // Nothing supplied: no console copy, so the head is drawn.
+        input.metadata.console_secured_files.clear();
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"extended.bin", Bytes{}},
+                                                                       {"secdata.bin", Bytes{}}};
+        const auto unsupplied = build_and_open(input);
+
+        // An extended.bin that opens under no key and the console's own secdata.bin that does
+        // not open are made up clean; another secdata.bin that does not open stands.
+        const Bytes unopened_secdata(gxbuild3::NAND::kSecdataSize, 0x31);
+        input.metadata.console_secured_files = {{"secdata.bin", unopened_secdata}};
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
+            {"extended.bin", Bytes(gxbuild3::NAND::kExtendedSize, 0x42)},
+            {"secdata.bin", unopened_secdata}};
+        const auto unopened = build_and_open(input);
+        input.flashfs_sec->back().second = Bytes(gxbuild3::NAND::kSecdataSize, 0x32);
+        const auto supplied_unopened = build_and_open(input);
+
+        return require(clean_extended_file(file(wrong_length, "extended.bin")) &&
+                           clean_secdata_file(short_secdata) &&
+                           std::equal(own_secdata.begin() + 0x10, own_secdata.begin() + 0x18,
+                                      short_secdata->begin() + 0x10),
+                       "copies of the wrong length are made up clean, secdata.bin under the "
+                       "console's head") &&
+               require(clean_extended_file(file(unsupplied, "extended.bin")) &&
+                           clean_secdata_file(file(unsupplied, "secdata.bin")),
+                       "files nothing supplied are made up clean") &&
+               require(clean_extended_file(file(unopened, "extended.bin")) &&
+                           clean_secdata_file(file(unopened, "secdata.bin")),
+                       "an extended.bin and the console's secdata.bin that do not open are made "
+                       "up clean") &&
+               require(file(supplied_unopened, "secdata.bin") &&
+                           *file(supplied_unopened, "secdata.bin") ==
+                               Bytes(gxbuild3::NAND::kSecdataSize, 0x32),
+                       "a supplied secdata.bin that does not open is written as it stands");
+    }
+
     // A built FlashFS is laid as xeBuild 1.21 lays it: the CG tail first, directly past the
     // update slots, then the listed files back to back in their order, the settings blobs and
     // the root behind them, every entry stamped with the build's time plus two seconds. Its
@@ -4010,6 +4164,7 @@ int main() {
     passed = test_bigblock_flashfs_roundtrips_a_file_larger_than_16_kib() && passed;
     passed = test_secure_flashfs_files_roundtrip_through_extract_and_rebuild() && passed;
     passed = test_secured_flashfs_files_are_sealed_for_the_console() && passed;
+    passed = test_unusable_extended_and_secdata_are_made_up_clean() && passed;
     passed = test_big_block_donor_retains_flashfs_without_replacement() && passed;
     passed = test_flashfs_overlay_outranks_a_higher_sequence_donor_root() && passed;
     passed = test_serialized_mobile_overlay_skips_a_bad_donor_block() && passed;
