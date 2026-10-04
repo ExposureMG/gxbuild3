@@ -369,10 +369,11 @@ namespace {
     }
 
     // A CF bound to the console states its update slot at 0x21B. A paired CF takes the
-    // console's pairing; an unpaired one states zero there. Either keeps the LDV resolved for
-    // the console.
+    // console's pairing; an unpaired one states zero there. Either states the build's CF LDV
+    // when it has one.
     std::expected<void, BuildError> apply_cf_metadata(BootloaderCf& bootloader,
-                                                      const InputMetadata& metadata, bool paired,
+                                                      const InputMetadata& metadata,
+                                                      std::optional<uint8_t> cf_ldv, bool paired,
                                                       uint8_t slot, std::string_view name) {
         if (!bootloader.perbox.has_value()) {
             return std::unexpected(
@@ -380,8 +381,8 @@ namespace {
                            std::string(name) + " has no writable per-box metadata"});
         }
         bootloader.perbox->update_slot = slot;
-        if (metadata.cf_ldv) {
-            bootloader.perbox->lockdown_value = *metadata.cf_ldv;
+        if (cf_ldv) {
+            bootloader.perbox->lockdown_value = *cf_ldv;
         }
         const auto pairing = paired ? metadata.cf_pairing_data.value_or(metadata.pairing_data)
                                     : std::array<uint8_t, 3>{};
@@ -400,13 +401,18 @@ namespace {
     // console's pairing and CB LDV instead, and its second CF is paired. A devgl image's SB
     // is zero-paired too (xeBuild 1.21 devgl). Every other chain carries the console's pairing
     // and CB LDV. A JTAG image's first update pair carries nothing of the console and keeps its
-    // CF's per-box block as supplied.
+    // CF's per-box block as supplied. Under the all-zero CPU key a chain with a CB_B is
+    // zero-paired: its CB_B per-box block is zero and its CFs state no pairing (xeBuild 1.21
+    // "zeropairing CB_B"); every CF then states LDV 0.
     std::expected<void, BuildError> apply_bootloader_metadata(FlashImage& flash_image,
                                                               const InputMetadata& metadata,
                                                               BuildType build_type) {
-        const bool paired = build_type != BuildType::Glitch;
+        const bool zero_key = is_zero_cpu_key(metadata.cpu_key);
+        const bool zero_paired_cb_b = zero_key && flash_image.cb_section.cb_B.has_value();
+        const bool paired = build_type != BuildType::Glitch && !zero_paired_cb_b;
         const bool main_cb_paired =
             paired && build_type != BuildType::Jtag && build_type != BuildType::Devgl;
+        const auto cf_ldv = zero_key ? std::optional<uint8_t>{0} : metadata.cf_ldv;
         auto& cb_a = flash_image.cb_section.cb_or_A;
         try {
             if (flash_image.cb_section.cb_B.has_value()) {
@@ -423,7 +429,9 @@ namespace {
                     cb_b.decrypt_cb_b(cb_a.header, cb_a.derived_key->data(),
                                       metadata.cpu_key.data());
                 }
-                if (auto applied = apply_cb_metadata(cb_b, metadata, "CB_B"); !applied) {
+                auto applied = zero_paired_cb_b ? zero_pair_cb(cb_b, "CB_B")
+                                                : apply_cb_metadata(cb_b, metadata, "CB_B");
+                if (!applied) {
                     return std::unexpected(applied.error());
                 }
             } else {
@@ -453,7 +461,7 @@ namespace {
                     cf.decrypt(key_1bl);
                 }
                 if (update_slot_binds_console(build_type, 0)) {
-                    if (auto applied = apply_cf_metadata(cf, metadata, paired, 0, "CF_0");
+                    if (auto applied = apply_cf_metadata(cf, metadata, cf_ldv, paired, 0, "CF_0");
                         !applied) {
                         return std::unexpected(applied.error());
                     }
@@ -465,7 +473,7 @@ namespace {
                     cf.decrypt(key_1bl);
                 }
                 if (update_slot_binds_console(build_type, 1)) {
-                    if (auto applied = apply_cf_metadata(cf, metadata, paired, 1, "CF_1");
+                    if (auto applied = apply_cf_metadata(cf, metadata, cf_ldv, paired, 1, "CF_1");
                         !applied) {
                         return std::unexpected(applied.error());
                     }
@@ -1357,8 +1365,12 @@ BuildResult RunBuild(const Input& input) {
         fs.set_driver(&flash_image.flash_driver);
         flash_image.filesystem = std::move(fs);
 
-        // xeBuild states 1 when no lockdown value is set anywhere.
-        const SecuredFileBuild secured_build{build_seconds, input.metadata.cf_ldv.value_or(1)};
+        // xeBuild states 1 when no lockdown value is set anywhere, and 0 under the all-zero CPU
+        // key, as the CFs do.
+        const SecuredFileBuild secured_build{build_seconds,
+                                             is_zero_cpu_key(input.metadata.cpu_key)
+                                                 ? uint8_t{0}
+                                                 : input.metadata.cf_ldv.value_or(1)};
         for (const auto& [name, data] : *input.flashfs_sec) {
             const auto file_data = sealed_flashfs_file(name, data, input, secured_build);
             if (!file_data) {
@@ -1531,6 +1543,10 @@ std::optional<InputMetadata> ExtractMetadata(std::span<const uint8_t> nand_image
     }
 
     auto& kv = *img.keyvault;
+    if (kv.encrypted) {
+        Log::Error("The donor's keyvault does not open under the CPU key");
+        return std::nullopt;
+    }
     InputMetadata meta{};
     meta.cpu_key = std::vector<uint8_t>(cpu_key.begin(), cpu_key.end());
     meta.nand_image = std::vector<uint8_t>(nand_image.begin(), nand_image.end());
@@ -2018,7 +2034,9 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
         out.metadata.smc = img.smc->data;
     }
 
-    if (img.keyvault.has_value()) {
+    // A keyvault left sealed (it does not open under the all-zero CPU key) is not the
+    // console's in the clear; the build then needs the console's kv.bin.
+    if (img.keyvault.has_value() && !img.keyvault->encrypted) {
         out.metadata.keyvault = img.keyvault->serialize();
     }
 

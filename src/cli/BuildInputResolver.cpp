@@ -861,20 +861,28 @@ namespace gxbuild3::cli {
                 }
             }
 
+            // A kv.bin sealed under the CPU key is opened; one that does not open is taken as
+            // the console's keyvault in the clear (what J-Runner supplies for a console whose
+            // CPU key is unknown), as xeBuild 1.21 takes it.
             if (*keyvault) {
-                try {
-                    input.metadata.keyvault =
-                        keyvault_decrypt(foundations->cpu_key, (**keyvault).data);
-                } catch (const std::exception& exception) {
+                auto opened =
+                    gxbuild3::NAND::open_loose_keyvault(foundations->cpu_key, (**keyvault).data);
+                if (!opened) {
                     return std::unexpected(
                         error(ResolutionErrorCode::InvalidInput,
-                              "Could not decrypt kv.bin: " + std::string(exception.what()),
+                              "kv.bin is not 0x4000 bytes, nor 0x3FF0 without its nonce",
                               (**keyvault).source_path, "kv.bin"));
-                } catch (...) {
-                    return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                                 "Could not decrypt kv.bin",
-                                                 (**keyvault).source_path, "kv.bin"));
                 }
+                if (!opened->was_sealed) {
+                    Log::Warn("kv.bin does not open under the CPU key; it is taken as the "
+                              "keyvault in the clear");
+                }
+                input.metadata.keyvault = std::move(opened->plain);
+            } else if (foundations->donor && !input.metadata.keyvault) {
+                return std::unexpected(error(ResolutionErrorCode::InvalidInput,
+                                             "The donor's keyvault does not open under the CPU "
+                                             "key; supply the console's kv.bin",
+                                             {}, "kv.bin"));
             }
             if (*smc) {
                 input.metadata.smc = std::move((**smc).data);

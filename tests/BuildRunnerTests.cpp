@@ -49,6 +49,7 @@ namespace {
         return true;
     }
 
+    // A console's key: the all-zero key, which binds an image to no console, does not count.
     std::array<uint8_t, 16> valid_cpu_key() {
         for (size_t bit_count = 0; bit_count <= 106; ++bit_count) {
             std::array<uint8_t, 16> candidate{};
@@ -56,7 +57,8 @@ namespace {
                 candidate[bit / 8] |= static_cast<uint8_t>(1U << (bit % 8));
             }
             XeCryptUidEccEncode(candidate.data());
-            if (gxbuild3::NAND::cpukey_valid(candidate)) {
+            if (!gxbuild3::NAND::is_zero_cpu_key(candidate) &&
+                gxbuild3::NAND::cpukey_valid(candidate)) {
                 return candidate;
             }
         }
@@ -2357,6 +2359,94 @@ namespace {
                        "every supplied CF receives the winning LDV and pairing bytes");
     }
 
+    // Under the all-zero CPU key a chain with a CB_B is bound to no console (xeBuild 1.21
+    // "zeropairing CB_B"): the CB_B per-box block is zero, the CFs state no pairing and LDV 0,
+    // and the secured files state LDV 0, whatever the console's metadata says.
+    bool test_zero_cpu_key_zero_pairs_a_cb_b_chain() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        input.build_type = BuildType::Glitch2;
+        input.metadata.cpu_key.assign(16, 0);
+        input.metadata.keyvault =
+            canonical_keyvault(input.metadata.cpu_key, Bytes(Keyvault::kSize, 0x22));
+        input.bootloaders.cb_b = input.bootloaders.cb_or_a;
+        input.bootloaders.cf0 = decrypted_cf(0x31, {0x32, 0x33, 0x34});
+        input.bootloaders.cg0 = valid_system_update(0x51).second;
+        input.metadata.cb_ldv = 9;
+        input.metadata.cf_ldv = 10;
+        input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
+        input.metadata.cf_pairing_data = std::array<uint8_t, 3>{0xA4, 0xB5, 0xC6};
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"secdata.bin", Bytes{}}};
+        InputPatches patches{};
+        patches.automatic =
+            InputPatchFile{"automatic", glitch_patchset(0x100, 0x11223344, 0x30, 0, Bytes{0x91})};
+        input.patches = std::move(patches);
+
+        const auto built = RunBuild(input);
+        auto image = built ? FlashImage::read(*built) : std::nullopt;
+        const bool decrypted =
+            image && image->parse() && image->decrypt_all(input.metadata.cpu_key);
+        const bool cb_b_perbox = decrypted && image->cb_section.cb_B.has_value() &&
+                                 image->cb_section.cb_B->parse_perbox();
+        const auto* perbox = cb_b_perbox ? &*image->cb_section.cb_B->perbox : nullptr;
+        const auto* perbox_bytes = reinterpret_cast<const uint8_t*>(perbox);
+        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        const Bytes* secdata = nullptr;
+        if (extracted && extracted->flashfs_sec) {
+            for (const auto& [name, data] : *extracted->flashfs_sec) {
+                if (name == "secdata.bin") {
+                    secdata = &data;
+                }
+            }
+        }
+        return require(built.has_value() && decrypted && cb_b_perbox,
+                       "a zero-key CB_B chain builds and opens under the zero key") &&
+               require(std::all_of(perbox_bytes, perbox_bytes + sizeof(cb_perbox),
+                                   [](uint8_t byte) { return byte == 0; }),
+                       "the zero-key CB_B states no pairing, no LDV and no digest") &&
+               require(image->system_update_0.cf.has_value() &&
+                           image->system_update_0.cf->perbox->lockdown_value == 0 &&
+                           std::all_of(std::begin(image->system_update_0.cf->perbox->pairing_data),
+                                       std::end(image->system_update_0.cf->perbox->pairing_data),
+                                       [](uint8_t byte) { return byte == 0; }),
+                       "the zero-key CF states no pairing and LDV 0") &&
+               require(extracted && extracted->metadata.keyvault == input.metadata.keyvault,
+                       "the keyvault is sealed under the zero key") &&
+               require(secdata && secdata->size() == gxbuild3::NAND::kSecdataSize &&
+                           gxbuild3::NAND::secdata_opened(*secdata, input.metadata.cpu_key) &&
+                           (*secdata)[0x19] == 0,
+                       "the made-up secdata.bin states LDV 0");
+    }
+
+    // A console's keyvault does not open under the all-zero CPU key: its donor still extracts
+    // and builds, with no keyvault of its own, and the keyvault the build is given is sealed
+    // under the zero key.
+    bool test_zero_cpu_key_leaves_the_donor_keyvault_sealed() {
+        auto source = fresh_input(ImageType::SmallBlock);
+        const auto donor = make_donor(source, {});
+        const Bytes zero_key(16, 0);
+        const auto extracted = ExtractAll(donor, zero_key);
+        if (!require(extracted.has_value() && !extracted->metadata.keyvault.has_value(),
+                     "a donor extracts under the zero key without a keyvault") ||
+            !require(!ExtractMetadata(donor, zero_key).has_value(),
+                     "metadata extraction needs a keyvault that opens")) {
+            return false;
+        }
+
+        auto input = source;
+        input.metadata.cpu_key = zero_key;
+        input.metadata.nand_image = donor;
+        const auto built = RunBuild(input);
+        auto image = built ? parse_image(*built) : std::nullopt;
+        const bool opened =
+            image && image->decrypt_all(zero_key) && image->keyvault && !image->keyvault->encrypted;
+        const auto sealed_body = opened ? image->keyvault->serialize() : Bytes{};
+        return require(built.has_value(), "a zero-key build over a console's donor succeeds") &&
+               require(opened && sealed_body.size() == Keyvault::kSize &&
+                           std::equal(sealed_body.begin() + 0x10, sealed_body.end(),
+                                      input.metadata.keyvault->begin() + 0x10),
+                       "the supplied keyvault is sealed under the zero key");
+    }
+
     bool test_metadata_override_requires_writable_cb_perbox() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.bootloaders.cb_or_a = Bytes(sizeof(generic_header), 0);
@@ -4210,5 +4300,7 @@ int main() {
     passed = test_donor_build_leaves_unlaid_space_erased() && passed;
     passed = test_emmc_build_leaves_anchor_tails_and_unused_blocks_erased() && passed;
     passed = test_bigblock_flashfs_stamps_only_the_clusters_it_fills() && passed;
+    passed = test_zero_cpu_key_zero_pairs_a_cb_b_chain() && passed;
+    passed = test_zero_cpu_key_leaves_the_donor_keyvault_sealed() && passed;
     return passed ? 0 : 1;
 }

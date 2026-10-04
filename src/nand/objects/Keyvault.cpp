@@ -39,11 +39,25 @@ namespace {
 
 } // namespace
 
+bool is_zero_cpu_key(std::span<const uint8_t> cpu_key) {
+    return cpu_key.size() == 16 &&
+           std::all_of(cpu_key.begin(), cpu_key.end(), [](uint8_t byte) { return byte == 0; });
+}
+
 CpuKeyResult validate_cpu_key(std::span<const uint8_t> cpu_key) {
     CpuKeyResult result{};
     if (cpu_key.size() != 16) {
         result.status = CpuKeyStatus::Invalid;
         result.message = "Invalid CPU key length: expected 16 bytes";
+        return result;
+    }
+
+    // Sixteen zero bytes are no console's key, but an image bound to no console is built under
+    // them (a manufacturing console whose key is unknown), as xeBuild 1.21 builds one.
+    if (is_zero_cpu_key(cpu_key)) {
+        result.status = CpuKeyStatus::Valid;
+        result.key.assign(cpu_key.begin(), cpu_key.end());
+        result.message = "The all-zero CPU key binds the image to no console";
         return result;
     }
 
@@ -106,6 +120,9 @@ CpuKeyResult validate_cpu_key_hex(std::string_view hex) {
 bool cpukey_valid(std::span<const uint8_t> cpu_key) {
     if (cpu_key.size() != 0x10) {
         return false;
+    }
+    if (is_zero_cpu_key(cpu_key)) {
+        return true;
     }
     uint8_t key_copy[16];
     std::memcpy(key_copy, cpu_key.data(), 16);
@@ -199,6 +216,22 @@ std::vector<uint8_t> keyvault_encrypt(std::span<const uint8_t> cpu_key,
     }
 
     return out_data;
+}
+
+std::optional<LooseKeyvault> open_loose_keyvault(std::span<const uint8_t> cpu_key,
+                                                 std::span<const uint8_t> data) {
+    std::vector<uint8_t> whole(data.begin(), data.end());
+    if (whole.size() == Keyvault::kSize - 0x10) {
+        whole.insert(whole.begin(), 0x10, 0);
+    }
+    if (whole.size() != Keyvault::kSize || !cpukey_valid(cpu_key)) {
+        return std::nullopt;
+    }
+    try {
+        return LooseKeyvault{keyvault_decrypt(cpu_key, whole), true};
+    } catch (const std::exception&) {
+        return LooseKeyvault{std::move(whole), false};
+    }
 }
 
 bool crypt_secfile(std::span<const uint8_t> cpu_key, std::span<uint8_t> data) {

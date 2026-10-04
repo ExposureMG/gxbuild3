@@ -809,6 +809,72 @@ namespace {
                        "the exact INI section supplies the bootloader chain");
     }
 
+    // A kv.bin that does not open under the CPU key is the console's keyvault in the clear, as
+    // J-Runner supplies it for a console whose key is unknown; one of 0x3FF0 bytes lacks its
+    // nonce. Any other length is refused.
+    bool test_loose_keyvault_in_the_clear_is_taken_as_it_stands() {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args();
+        const auto key = valid_cpu_key();
+        const auto clear = canonical_keyvault(key, 0x5A);
+        fixture.write_binary("first/kv.bin", clear);
+        const auto whole = fixture.resolve(args);
+        if (!require_resolved(whole, "a kv.bin in the clear resolves") ||
+            !require(whole->input.metadata.keyvault == clear,
+                     "a kv.bin in the clear is the build's keyvault as it stands")) {
+            return false;
+        }
+
+        fixture.write_binary("first/kv.bin", Bytes(clear.begin() + 0x10, clear.end()));
+        const auto bare = fixture.resolve(args);
+        Bytes zero_nonce = clear;
+        std::fill(zero_nonce.begin(), zero_nonce.begin() + 0x10, 0);
+        if (!require_resolved(bare, "a kv.bin without its nonce resolves") ||
+            !require(bare->input.metadata.keyvault == zero_nonce,
+                     "a kv.bin without its nonce gets sixteen zero bytes in front")) {
+            return false;
+        }
+
+        fixture.write_binary("first/kv.bin", Bytes(0x100, 0x5A));
+        const auto wrong_length = fixture.resolve(args);
+        return require(!wrong_length &&
+                           wrong_length.error().code == ResolutionErrorCode::InvalidInput &&
+                           wrong_length.error().item == "kv.bin",
+                       "a kv.bin of another length is refused");
+    }
+
+    // Under the all-zero CPU key the donor's keyvault does not open; the donor still resolves,
+    // and the console's kv.bin supplies the keyvault. Without one the build is refused.
+    bool test_zero_cpu_key_donor_takes_the_keyvault_from_kv_bin() {
+        ResolverFixture fixture;
+        const auto key = valid_cpu_key();
+        fixture.write_binary("first/nanddump.bin", donor_image(ImageType::SmallBlock, key));
+        fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
+        fixture.write_binary("first/cd.bin", Bytes{0xCD});
+        fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+        auto args = fixture.minimum_args();
+        args.build_ini = "build.ini";
+        args.section = "falcon";
+        args.image_type.reset();
+        args.cpu_key = std::string(32, '0');
+
+        const auto without = fixture.resolve(args);
+        if (!require(!without && without.error().code == ResolutionErrorCode::InvalidInput &&
+                         without.error().item == "kv.bin",
+                     "a zero-key donor without kv.bin is refused for want of a keyvault")) {
+            return false;
+        }
+
+        const auto clear = canonical_keyvault(key, 0x72);
+        fixture.write_binary("first/kv.bin", clear);
+        const auto with = fixture.resolve(args);
+        return require_resolved(with, "a zero-key donor with kv.bin resolves") &&
+               require(with->input.metadata.keyvault == clear &&
+                           with->input.metadata.cpu_key == Bytes(16, 0) &&
+                           with->input.metadata.nand_image.has_value(),
+                       "the zero-key build carries the donor and the kv.bin's keyvault");
+    }
+
     bool test_metadata_precedence_and_user_file_overrides() {
         ResolverFixture fixture;
         const auto key = valid_cpu_key();
@@ -1672,6 +1738,8 @@ int main() {
     passed = test_ini_sc_bootloader_reaches_resolved_input() && passed;
     passed = test_loose_donor_requires_and_populates_every_component() && passed;
     passed = test_metadata_precedence_and_user_file_overrides() && passed;
+    passed = test_loose_keyvault_in_the_clear_is_taken_as_it_stands() && passed;
+    passed = test_zero_cpu_key_donor_takes_the_keyvault_from_kv_bin() && passed;
     passed = test_flashfs_holds_ini_files_and_donor_secured_files_only() && passed;
     passed = test_unsupplied_security_files_reach_the_build() && passed;
     passed = test_metadata_values_require_full_valid_strings() && passed;

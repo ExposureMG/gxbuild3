@@ -1822,8 +1822,22 @@ namespace gxbuild3::NAND {
                 smc->decrypt();
             }
 
+            // A console's keyvault does not open under the all-zero CPU key (only an image built
+            // under that key carries one that does), so under it a keyvault that does not open
+            // stays sealed and the build takes the console's from a kv.bin instead.
             if (keyvault.has_value() && keyvault->encrypted && !cpu_key.empty()) {
-                if (!keyvault->decrypt(cpu_key)) {
+                if (is_zero_cpu_key(cpu_key)) {
+                    if (auto opened = open_loose_keyvault(cpu_key, keyvault->raw_data);
+                        opened && opened->was_sealed) {
+                        keyvault->raw_data = std::move(opened->plain);
+                        std::memcpy(&keyvault->data, keyvault->raw_data.data(),
+                                    sizeof(XE_KEYVAULT_DATA));
+                        keyvault->encrypted = false;
+                    } else {
+                        Log::Warn("The keyvault does not open under the all-zero CPU key; it is "
+                                  "left sealed");
+                    }
+                } else if (!keyvault->decrypt(cpu_key)) {
                     Log::Error("Failed to decrypt Keyvault with provided CPU key");
                     return false;
                 }

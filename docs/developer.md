@@ -96,6 +96,11 @@ none is available. Similarly, `-i` overrides NAND discovery; otherwise gxbuild u
 `nanddump.bin`. Without a donor NAND, a complete loose donor is required: `kv.bin`, `smc.bin`,
 `cbldv`, `cfldv`, and `pairing_data`, as well as an explicit block type.
 
+A `kv.bin` sealed under the CPU key is opened. One that does not open is taken as the console's
+keyvault in the clear, with a warning, as xeBuild 1.21 takes it: 0x4000 bytes whose first 0x10
+bytes are a stale nonce, or 0x3FF0 bytes without the nonce, which get sixteen zero bytes in
+front. A `kv.bin` of any other length is refused.
+
 The selected build INI is read with `[<section>bl]`. Assets, including user overrides, are looked
 up through the source roots in order. Automatic patchsets and add-ons are searched only in
 `GXBUILD3_KEYVAULT_DECRYPTED_FILE`, or pass three file paths directly:
@@ -221,6 +226,30 @@ set, the system's zone otherwise. The build's time is the clock, or `SOURCE_DATE
 (seconds since the Unix epoch) when it is set. A reproducible build pins both
 `SOURCE_DATE_EPOCH` and `TZ` (for example `TZ=UTC0`); the same epoch in another zone gives other
 directory stamps.
+
+## All-zero CPU key
+
+`-p 00000000000000000000000000000000` builds an image bound to no console, for a console whose
+CPU key is unknown (J-Runner passes zeros for glitch2m). The key is accepted though it has no
+ECC. The donor's keyvault does not open under it, so `decrypt_all` leaves the keyvault sealed,
+`ExtractAll` returns no keyvault, and the build needs the console's keyvault as a `kv.bin` in the
+clear; without one the resolver refuses the build. The donor still gives its nonces, its CF LDV
+and the rest of its console data. As xeBuild 1.21 builds it:
+
+- a chain with a CB_B is zero-paired: the CB_B per-box block (pairing, LDV and SMC digest) is
+  zero and the CFs state no pairing;
+- every CF states LDV 0 and its MAC is computed under the zero key;
+- crl.bin, dae.bin and secdata.bin state LDV 0; the donor's copies do not open under the zero
+  key, so crl.bin and dae.bin are the update package's sealed under drawn material, and
+  extended.bin and secdata.bin are made up clean (secdata.bin under a drawn head);
+- the virtual fuses state the zero CPU key and still the donor's CF LDV (xeBuild 1.21 writes the
+  donor's LDV into fuse lines 7 and 8, not 0);
+- the keyvault and every file under the CPU key are sealed under the zero key.
+
+xeBuild 1.21 fills the values gxbuild3 draws here (crl.bin's vector and file key, dae.bin's head
+and field, secdata.bin's head) and the keyvault's eight-byte head at 0x10 from constants compiled
+into it, because it draws nothing when it walks a donor's chain; gxbuild3 draws them, and keeps
+the `kv.bin`'s own head.
 
 ## Secured FlashFS files
 
