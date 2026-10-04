@@ -835,6 +835,17 @@ namespace {
             return false;
         }
 
+        // Sealed for another console, it opens under no key: xeBuild 1.21 reports it and still
+        // takes it as the keyvault in the clear, and so does this.
+        const auto foreign = encrypted_keyvault(valid_cpu_key(true), 0x5A);
+        fixture.write_binary("first/kv.bin", foreign);
+        const auto other = fixture.resolve(args);
+        if (!require_resolved(other, "a kv.bin sealed under another key resolves") ||
+            !require(other->input.metadata.keyvault == foreign,
+                     "a kv.bin sealed under another key is taken as it stands")) {
+            return false;
+        }
+
         fixture.write_binary("first/kv.bin", Bytes(0x100, 0x5A));
         const auto wrong_length = fixture.resolve(args);
         return require(!wrong_length &&

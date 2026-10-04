@@ -906,7 +906,9 @@ namespace gxbuild3::cli {
 
             // A kv.bin sealed under the CPU key is opened; one that does not open is taken as
             // the console's keyvault in the clear (what J-Runner supplies for a console whose
-            // CPU key is unknown), as xeBuild 1.21 takes it.
+            // CPU key is unknown), as xeBuild 1.21 takes it, and sealed by the build under the
+            // CPU key. xeBuild warns of one in the clear under a stale nonce and reports one that
+            // looks sealed (most likely for another console) as an error, and so does this.
             if (*keyvault) {
                 auto opened =
                     gxbuild3::NAND::open_loose_keyvault(foundations->cpu_key, (**keyvault).data);
@@ -916,9 +918,14 @@ namespace gxbuild3::cli {
                               "kv.bin is not 0x4000 bytes, nor 0x3FF0 without its nonce",
                               (**keyvault).source_path, "kv.bin"));
                 }
-                if (!opened->was_sealed) {
-                    Log::Warn("kv.bin does not open under the CPU key; it is taken as the "
-                              "keyvault in the clear");
+                using Form = gxbuild3::NAND::LooseKeyvault::Form;
+                if (opened->form == Form::StaleNonce) {
+                    Log::Warn("kv.bin is in the clear, but its nonce is not one the CPU key "
+                              "derives; it is taken as it stands. Make sure it is this console's");
+                } else if (opened->form == Form::Unopened) {
+                    Log::Error("kv.bin looks sealed but does not open under the CPU key; it is "
+                               "taken as the keyvault in the clear, as xeBuild takes it, and the "
+                               "image will not boot unless it is this console's keyvault");
                 }
                 input.metadata.keyvault = std::move(opened->plain);
             } else if (foundations->donor && !input.metadata.keyvault) {

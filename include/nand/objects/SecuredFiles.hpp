@@ -147,8 +147,10 @@ namespace gxbuild3::NAND {
         InvalidSize,
         // Its header puts the sealed part past 0x3FFF. Carried as supplied.
         InvalidOffset,
-        // It is neither in the clear nor opens under the CPU key (or the CPU key is not 16
-        // bytes). Carried as supplied.
+        // It is neither in the clear nor opens under the CPU key. Written as xeBuild writes it:
+        // the header as supplied and the sealed part as its failed opening left it, under the CPU
+        // key and the vector at 0x100 (a part that is not whole blocks stays as it stands). With
+        // a CPU key that is not 16 bytes, carried as supplied.
         Damaged,
     };
 
@@ -158,8 +160,8 @@ namespace gxbuild3::NAND {
     };
 
     // fcrt.bin sealed for the console: a copy in the clear is sealed under the CPU key and the
-    // vector it carries, which makes the sealing deterministic; any other copy is carried as
-    // supplied, and `sealing` says why.
+    // vector it carries, which makes the sealing deterministic; a damaged copy becomes its failed
+    // opening; any other copy is carried as supplied. `sealing` says which.
     [[nodiscard]] SealedFcrt seal_fcrt(std::span<const uint8_t> content,
                                        std::span<const uint8_t> cpu_key);
 

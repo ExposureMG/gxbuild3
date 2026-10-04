@@ -114,8 +114,9 @@ namespace {
     // or secdata.bin that is empty (nothing supplied it) or of the wrong length, an extended.bin
     // that does not open and the console's own secdata.bin when it does not open are replaced by
     // a clean one, as xeBuild makes one up. fcrt.bin is sealed under the CPU key when it is in the
-    // clear and otherwise written as supplied. Every other file is written as supplied. Nothing
-    // when a file cannot be sealed at all.
+    // clear, written as its failed opening when it opens under no key (the console's own copy is
+    // then carried as it stands) and otherwise written as supplied. Every other file is written
+    // as supplied. Nothing when a file cannot be sealed at all.
     std::optional<std::vector<uint8_t>> sealed_flashfs_file(std::string_view name,
                                                             const std::vector<uint8_t>& data,
                                                             const Input& input,
@@ -242,8 +243,14 @@ namespace {
                               "as supplied");
                     break;
                 case FcrtSealing::Damaged:
+                    // The console's own copy is carried as it stands (xeBuild would discard it).
+                    if (own && data == *own) {
+                        Log::Warn("The console's fcrt.bin does not open under the CPU key; it is "
+                                  "carried as it stands");
+                        return data;
+                    }
                     Log::Warn("fcrt.bin is neither in the clear nor opens under the CPU key; it is "
-                              "written as supplied");
+                              "written as its failed opening, as xeBuild writes it");
                     break;
             }
             return std::move(sealed.data);

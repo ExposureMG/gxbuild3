@@ -404,19 +404,38 @@ namespace {
                      "and one whose header puts the sealed part past 0x3FFF");
     }
 
-    bool test_an_fcrt_that_does_not_open_is_carried_as_supplied() {
+    // xeBuild 1.21 opens an fcrt.bin in place and, where the hash then fails, writes what the
+    // opening left: the header as supplied and the sealed part opened under the CPU key and the
+    // vector at 0x100.
+    bool test_an_fcrt_that_does_not_open_is_written_as_its_failed_opening() {
+        const auto failed_opening = [](const Bytes& blob) {
+            Bytes out(blob.begin(), blob.begin() + 0x140);
+            const auto body = aes_cbc_decrypt(kCpuKey, std::span(blob).subspan(0x100, 16),
+                                              std::span(blob).subspan(0x140));
+            out.insert(out.end(), body.begin(), body.end());
+            return out;
+        };
         auto damaged = seal_fcrt(clear_fcrt(), kCpuKey).data;
         damaged[0x2000] ^= 0x01;
         const auto other = seal_fcrt(clear_fcrt(), kOtherKey).data;
         const auto from_damaged = seal_fcrt(damaged, kCpuKey);
         const auto from_other = seal_fcrt(other, kCpuKey);
+        auto unaligned = clear_fcrt(0x148);
+        unaligned[0x2000] ^= 0x01;
+        const auto from_unaligned = seal_fcrt(unaligned, kCpuKey);
         const auto short_key = seal_fcrt(clear_fcrt(), std::span(kCpuKey).first(8));
-        return check(from_damaged.sealing == FcrtSealing::Damaged && from_damaged.data == damaged,
-                     "a damaged fcrt.bin is carried as supplied") &&
-               check(from_other.sealing == FcrtSealing::Damaged && from_other.data == other,
+        return check(from_damaged.sealing == FcrtSealing::Damaged &&
+                         from_damaged.data == failed_opening(damaged) &&
+                         from_damaged.data != damaged,
+                     "a damaged fcrt.bin is written as its failed opening") &&
+               check(from_other.sealing == FcrtSealing::Damaged &&
+                         from_other.data == failed_opening(other),
                      "so is one sealed under another console's key") &&
+               check(from_unaligned.sealing == FcrtSealing::Damaged &&
+                         from_unaligned.data == unaligned,
+                     "a sealed part that is not whole blocks stays as it stands") &&
                check(short_key.sealing == FcrtSealing::Damaged && short_key.data == clear_fcrt(),
-                     "and any fcrt.bin with a CPU key that is not 16 bytes");
+                     "and any fcrt.bin with a CPU key that is not 16 bytes is carried as supplied");
     }
 
     // xeBuild 1.21's test (its 0x413370) on the big-endian OddFeatures word at 0x1C.
@@ -477,7 +496,7 @@ int main() {
     passed = test_an_fcrt_in_the_clear_is_sealed_under_the_cpu_key_and_its_vector() && passed;
     passed = test_an_fcrt_sealed_under_the_cpu_key_is_carried_byte_for_byte() && passed;
     passed = test_an_fcrt_of_the_wrong_size_or_offset_is_carried_as_supplied() && passed;
-    passed = test_an_fcrt_that_does_not_open_is_carried_as_supplied() && passed;
+    passed = test_an_fcrt_that_does_not_open_is_written_as_its_failed_opening() && passed;
     passed = test_the_keyvault_flags_fcrt_by_its_odd_features_word() && passed;
     passed = test_drawn_sealing_differs_between_draws() && passed;
     return passed ? 0 : 1;

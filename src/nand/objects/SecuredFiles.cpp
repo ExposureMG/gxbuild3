@@ -476,7 +476,10 @@ namespace gxbuild3::NAND {
             out.sealing = FcrtSealing::Sealed;
             return out;
         }
-        if (!fcrt_hash_holds(content, crypt_fcrt_body(content, cpu_key, body_offset, false))) {
+        // xeBuild opens it in place; where the hash then fails, what it writes is the opened part.
+        const auto opened = crypt_fcrt_body(content, cpu_key, body_offset, false);
+        if (!fcrt_hash_holds(content, opened)) {
+            std::copy(opened.begin(), opened.end(), out.data.begin() + body_offset);
             out.sealing = FcrtSealing::Damaged;
         }
         return out;

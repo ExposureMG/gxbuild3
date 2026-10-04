@@ -1830,6 +1830,52 @@ namespace {
                        "fcrt.bin in the clear is sealed under the CPU key and its own vector");
     }
 
+    // An fcrt.bin that is neither in the clear nor opens under the CPU key is written as xeBuild
+    // 1.21 writes it: its header as supplied and its sealed part as the failed opening left it.
+    // The console's own copy is carried as it stands.
+    bool test_a_damaged_fcrt_is_written_as_its_failed_opening() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        const auto& cpu_key = input.metadata.cpu_key;
+        Bytes damaged(0x4000);
+        std::fill(damaged.begin() + 0x100, damaged.begin() + 0x110, uint8_t{0x6C});
+        damaged[0x11E] = 0x01;
+        damaged[0x11F] = 0x40;
+        for (size_t at = 0x140; at < damaged.size(); ++at) {
+            damaged[at] = static_cast<uint8_t>(at * 3 + 1);
+        }
+        // No hash at 0x12C holds, in the clear or opened.
+        std::fill(damaged.begin() + 0x12C, damaged.begin() + 0x140, uint8_t{0xEE});
+        alignas(16) EXCRYPT_AES_STATE state{};
+        ExCryptAesKey(&state, cpu_key.data());
+        std::array<uint8_t, 16> feed{};
+        std::copy_n(damaged.begin() + 0x100, feed.size(), feed.begin());
+        Bytes failed_opening = damaged;
+        ExCryptAesCbc(&state, damaged.data() + 0x140, static_cast<uint32_t>(damaged.size() - 0x140),
+                      failed_opening.data() + 0x140, feed.data(), 0);
+
+        const auto image_fcrt = [&](const Input& build) -> std::optional<Bytes> {
+            const auto built = RunBuild(build);
+            const auto extracted = built ? ExtractAll(*built, cpu_key) : std::nullopt;
+            if (!extracted || !extracted->flashfs_sec) {
+                return std::nullopt;
+            }
+            for (const auto& [file, data] : *extracted->flashfs_sec) {
+                if (file == "fcrt.bin") {
+                    return data;
+                }
+            }
+            return std::nullopt;
+        };
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"fcrt.bin", damaged}};
+        const auto supplied = image_fcrt(input);
+        input.metadata.console_secured_files = {{"fcrt.bin", damaged}};
+        const auto own = image_fcrt(input);
+        return require(supplied && *supplied == failed_opening && *supplied != damaged,
+                       "a supplied damaged fcrt.bin is written as its failed opening") &&
+               require(own && *own == damaged,
+                       "the console's own fcrt.bin that does not open is carried as it stands");
+    }
+
     bool test_flashfs_overlay_outranks_a_higher_sequence_donor_root() {
         auto first = fresh_input(ImageType::SmallBlock);
         first.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"first.bin", Bytes{1}}};
@@ -4332,6 +4378,7 @@ int main() {
     passed = test_bigblock_flashfs_roundtrips_a_file_larger_than_16_kib() && passed;
     passed = test_secure_flashfs_files_roundtrip_through_extract_and_rebuild() && passed;
     passed = test_secured_flashfs_files_are_sealed_for_the_console() && passed;
+    passed = test_a_damaged_fcrt_is_written_as_its_failed_opening() && passed;
     passed = test_unusable_extended_and_secdata_are_made_up_clean() && passed;
     passed = test_big_block_donor_retains_flashfs_without_replacement() && passed;
     passed = test_flashfs_overlay_outranks_a_higher_sequence_donor_root() && passed;

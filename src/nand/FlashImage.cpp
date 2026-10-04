@@ -1828,7 +1828,7 @@ namespace gxbuild3::NAND {
             if (keyvault.has_value() && keyvault->encrypted && !cpu_key.empty()) {
                 if (is_zero_cpu_key(cpu_key)) {
                     if (auto opened = open_loose_keyvault(cpu_key, keyvault->raw_data);
-                        opened && opened->was_sealed) {
+                        opened && opened->form == LooseKeyvault::Form::Sealed) {
                         keyvault->raw_data = std::move(opened->plain);
                         std::memcpy(&keyvault->data, keyvault->raw_data.data(),
                                     sizeof(XE_KEYVAULT_DATA));

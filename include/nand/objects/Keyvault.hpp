@@ -248,8 +248,22 @@ bool keyvault_verify(std::span<const uint8_t> cpu_key, std::span<const uint8_t> 
 // A copy of 0x3FF0 bytes lacks the nonce and gets sixteen zero bytes in front. Nothing for any
 // other length or an unusable CPU key.
 struct LooseKeyvault {
+    // How the copy was taken, by xeBuild's own tests (its 0x41D0E0).
+    enum class Form {
+        // Sealed under the CPU key, and opened.
+        Sealed,
+        // In the clear: a zero nonce or the nonce its plaintext derives. xeBuild says nothing.
+        Clear,
+        // In the clear by its reserved bytes (0x38-0x8F zero), under a nonce the CPU key does
+        // not derive: another key's, or none. xeBuild warns and takes it as it stands.
+        StaleNonce,
+        // Neither: it looks sealed and opens under no key it is tried under, most likely sealed
+        // for another console. xeBuild reports an error and still takes it as the keyvault in
+        // the clear; so does this.
+        Unopened,
+    };
     std::vector<uint8_t> plain;
-    bool was_sealed{false};
+    Form form{Form::Clear};
 };
 std::optional<LooseKeyvault> open_loose_keyvault(std::span<const uint8_t> cpu_key,
                                                  std::span<const uint8_t> data);
@@ -263,6 +277,7 @@ using gxbuild3::NAND::Keyvault;
 using gxbuild3::NAND::keyvault_decrypt;
 using gxbuild3::NAND::keyvault_encrypt;
 using gxbuild3::NAND::keyvault_verify;
+using gxbuild3::NAND::LooseKeyvault;
 using gxbuild3::NAND::open_loose_keyvault;
 using gxbuild3::NAND::validate_cpu_key;
 using gxbuild3::NAND::validate_cpu_key_hex;

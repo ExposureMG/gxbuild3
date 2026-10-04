@@ -228,10 +228,26 @@ std::optional<LooseKeyvault> open_loose_keyvault(std::span<const uint8_t> cpu_ke
         return std::nullopt;
     }
     try {
-        return LooseKeyvault{keyvault_decrypt(cpu_key, whole), true};
+        return LooseKeyvault{keyvault_decrypt(cpu_key, whole), LooseKeyvault::Form::Sealed};
     } catch (const std::exception&) {
-        return LooseKeyvault{std::move(whole), false};
     }
+    const auto zero = [&whole](size_t from, size_t to) {
+        return std::all_of(whole.begin() + static_cast<std::ptrdiff_t>(from),
+                           whole.begin() + static_cast<std::ptrdiff_t>(to),
+                           [](uint8_t byte) { return byte == 0; });
+    };
+    // xeBuild's tests, in its order. A zero nonce is in the clear unless 0x58-0x5F say it is not;
+    // a nonce is the plaintext's own when sealing derives it again.
+    const auto derived = keyvault_encrypt(cpu_key, whole);
+    auto form = LooseKeyvault::Form::Unopened;
+    if (zero(0, 0x10)) {
+        form = zero(0x58, 0x60) ? LooseKeyvault::Form::Clear : LooseKeyvault::Form::Unopened;
+    } else if (std::equal(whole.begin(), whole.begin() + 0x10, derived.begin())) {
+        form = LooseKeyvault::Form::Clear;
+    } else if (zero(0x38, 0x90)) {
+        form = LooseKeyvault::Form::StaleNonce;
+    }
+    return LooseKeyvault{std::move(whole), form};
 }
 
 bool crypt_secfile(std::span<const uint8_t> cpu_key, std::span<uint8_t> data) {
