@@ -220,3 +220,23 @@ time in UTC. The build's time is the clock, or `SOURCE_DATE_EPOCH` (seconds sinc
 epoch) when it is set, which pins the stamps for reproducible builds and image comparisons.
 To reproduce a reference image's stamp, set `SOURCE_DATE_EPOCH` to the moment that stamp
 states minus two seconds.
+
+## Secured FlashFS files
+
+`crl.bin`, `dae.bin`, `extended.bin` and `secdata.bin` are sealed for the console on every
+build, as xeBuild 1.21 seals them (`src/nand/objects/SecuredFiles.cpp`). The content is the
+file the build carries (an update package's crl/dae, or the donor's), opened in the clear or
+under the CPU key, the retail XEX key or the all-zero development XEX key. The sealing comes
+from the console's own copies, which `ExtractAll` keeps in `InputMetadata::console_secured_files`:
+crl.bin's vector and file key, dae.bin's head and header field (from its first record), and
+secdata.bin's head. extended.bin's head is the keyvault's. With no console copy that opens under
+the CPU key, crl/dae sealing is drawn from the system's random source.
+
+crl.bin, dae.bin and secdata.bin state the build's lockdown value (the CF LDV) and the build's
+time as a big-endian FILETIME in UTC: the build time plus two seconds, down to the even second.
+extended.bin and secdata.bin take the nonce their plaintext derives. `fcrt.bin` is written as
+supplied, and a file that opens under no key is written back as supplied with a warning.
+
+xeBuild writes the directory entries in the build machine's local time but the FILETIME in UTC,
+so one `SOURCE_DATE_EPOCH` reproduces both only for a reference built in UTC. For a reference
+built elsewhere, the FILETIME inside crl.bin states the build time plus two seconds in UTC.

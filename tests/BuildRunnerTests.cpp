@@ -12,6 +12,7 @@
 #include "nand/objects/Keyvault.hpp"
 #include "nand/objects/Patchset.hpp"
 #include "nand/objects/SMC.hpp"
+#include "nand/objects/SecuredFiles.hpp"
 #include "utils/XeRsa.hpp"
 
 #include <algorithm>
@@ -1583,6 +1584,90 @@ namespace {
         const auto roundtrip = ExtractAll(*rebuilt, input.metadata.cpu_key);
         return require(roundtrip.has_value() && roundtrip->flashfs_sec == input.flashfs_sec,
                        "secure FlashFS files survive extract and rebuild");
+    }
+
+    // A signed record in the clear: magic, length and the SHA-1 of everything from 0x150 on.
+    Bytes clear_signed_record(std::string_view magic, size_t length) {
+        Bytes out(length);
+        std::copy(magic.begin(), magic.end(), out.begin());
+        out[4] = static_cast<uint8_t>(length >> 8);
+        out[5] = static_cast<uint8_t>(length);
+        for (size_t at = 0x150; at < length; ++at) {
+            out[at] = static_cast<uint8_t>(at * 5 + 1);
+        }
+        ExCryptSha(out.data() + 0x150, static_cast<uint32_t>(length - 0x150), nullptr, 0, nullptr,
+                   0, out.data() + 0x0C, 20);
+        return out;
+    }
+
+    bool test_secured_flashfs_files_are_sealed_for_the_console() {
+        auto input = fresh_input(ImageType::SmallBlock);
+        const auto& cpu_key = input.metadata.cpu_key;
+        input.metadata.cf_ldv = 9;
+        const auto clear_crl = clear_signed_record("CRLP", 0xA00);
+        const gxbuild3::NAND::CrlSealing own_sealing{
+            {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD,
+             0xAE, 0xAF},
+            {0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+             0x11, 0x12}};
+        const auto own_crl = gxbuild3::NAND::reseal_crl(clear_crl, cpu_key, own_sealing, {0, 3});
+        if (!require(own_crl.has_value(), "the console's crl.bin fixture seals")) {
+            return false;
+        }
+        // extended.bin in the clear behind the nonce its plaintext derives.
+        Bytes extended_plain(0x4000 - 0x10, 0x5A);
+        const uint8_t tail[2] = {0x07, 0x12};
+        uint8_t digest[20]{};
+        ExCryptHmacSha(cpu_key.data(), 16, extended_plain.data(),
+                       static_cast<uint32_t>(extended_plain.size()), tail, 2, nullptr, 0, digest,
+                       sizeof(digest));
+        Bytes extended(digest, digest + 0x10);
+        extended.insert(extended.end(), extended_plain.begin(), extended_plain.end());
+
+        input.metadata.console_secured_files = {{"crl.bin", *own_crl}};
+        input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"crl.bin", clear_crl},
+                                                                       {"extended.bin", extended}};
+        const auto built = RunBuild(input);
+        const auto extracted = built ? ExtractAll(*built, cpu_key) : std::nullopt;
+        if (!require(extracted.has_value() && extracted->flashfs_sec.has_value(),
+                     "a build with secured files extracts")) {
+            return false;
+        }
+        const auto find = [&](std::string_view name) -> const Bytes* {
+            for (const auto& [file, data] : *extracted->flashfs_sec) {
+                if (file == name) {
+                    return &data;
+                }
+            }
+            return nullptr;
+        };
+        const auto* crl = find("crl.bin");
+        const auto* opened_extended = find("extended.bin");
+        if (!require(crl && opened_extended, "both files are in the image")) {
+            return false;
+        }
+        const auto sealing = gxbuild3::NAND::crl_sealing(*crl, cpu_key);
+        alignas(16) EXCRYPT_AES_STATE state{};
+        ExCryptAesKey(&state, own_sealing.file_key.data());
+        auto feed = own_sealing.iv;
+        Bytes body(crl->size() - 0x140);
+        ExCryptAesCbc(&state, crl->data() + 0x140, static_cast<uint32_t>(body.size()), body.data(),
+                      feed.data(), 0);
+        const auto& keyvault = *input.metadata.keyvault;
+        return require(sealing && sealing->iv == own_sealing.iv &&
+                           sealing->file_key == own_sealing.file_key,
+                       "crl.bin is sealed under the console's own vector and file key") &&
+               require(body[0x0F] == 9, "crl.bin states the CF lockdown value") &&
+               require(std::equal(body.begin() + 0x10, body.end(), clear_crl.begin() + 0x150),
+                       "crl.bin keeps the supplied content") &&
+               require(extracted->metadata.console_secured_files.size() == 1 &&
+                           extracted->metadata.console_secured_files.front().second == *crl,
+                       "extraction keeps the console's own crl.bin") &&
+               require(gxbuild3::NAND::extended_opened(*opened_extended, cpu_key),
+                       "extended.bin carries the nonce its plaintext derives") &&
+               require(std::equal(keyvault.begin() + 0x10, keyvault.begin() + 0x18,
+                                  opened_extended->begin() + 0x10),
+                       "extended.bin's head is the keyvault's");
     }
 
     bool test_flashfs_overlay_outranks_a_higher_sequence_donor_root() {
@@ -3896,6 +3981,7 @@ int main() {
     passed = test_bigblock_flashfs_formats_and_roundtrips_an_empty_overlay() && passed;
     passed = test_bigblock_flashfs_roundtrips_a_file_larger_than_16_kib() && passed;
     passed = test_secure_flashfs_files_roundtrip_through_extract_and_rebuild() && passed;
+    passed = test_secured_flashfs_files_are_sealed_for_the_console() && passed;
     passed = test_big_block_donor_retains_flashfs_without_replacement() && passed;
     passed = test_flashfs_overlay_outranks_a_higher_sequence_donor_root() && passed;
     passed = test_serialized_mobile_overlay_skips_a_bad_donor_block() && passed;

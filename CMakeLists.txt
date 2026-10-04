@@ -38,6 +38,7 @@ set(GXBUILD3_LIB_SOURCES
     src/nand/objects/Keyvault.cpp
     src/nand/objects/MobileData.cpp
     src/nand/objects/Patchset.cpp
+    src/nand/objects/SecuredFiles.cpp
     src/nand/objects/SMC.cpp
     src/nand/objects/XConfig.cpp
     src/nand/objects/Xboxupd.cpp
@@ -87,6 +88,7 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_flashdriver_tests tests/FlashDriverTests.cpp)
     add_gxbuild3_test(gxbuild3_flashfs_tests tests/FlashFileSystemTests.cpp)
     add_gxbuild3_test(gxbuild3_build_time_tests tests/BuildTimeTests.cpp)
+    add_gxbuild3_test(gxbuild3_secured_files_tests tests/SecuredFilesTests.cpp)
     add_gxbuild3_test(gxbuild3_filemanager_tests tests/FileManagerTests.cpp)
     add_gxbuild3_test(gxbuild3_input_tests tests/InputTests.cpp)
     add_gxbuild3_test(gxbuild3_commandline_tests tests/CommandLineTests.cpp)

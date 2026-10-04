@@ -16,6 +16,7 @@
 #include "nand/objects/MobileData.hpp"
 #include "nand/objects/Patchset.hpp"
 #include "nand/objects/SMC.hpp"
+#include "nand/objects/SecuredFiles.hpp"
 #include "nand/objects/XConfig.hpp"
 #include "nand/objects/XeLL.hpp"
 #include "patchers/Patcher.hpp"
@@ -32,6 +33,7 @@
 #include <cstring>
 #include <expected>
 #include <limits>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -79,6 +81,113 @@ namespace {
         std::transform(lower.begin(), lower.end(), lower.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return lower == "secdata.bin" || lower == "extended.bin";
+    }
+
+    std::string lowercase_name(std::string_view name) {
+        std::string lower{name};
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return lower;
+    }
+
+    bool is_console_secured_file(std::string_view name) {
+        const auto lower = lowercase_name(name);
+        return lower == "crl.bin" || lower == "dae.bin" || lower == "secdata.bin";
+    }
+
+    const std::vector<uint8_t>* console_secured_file(const InputMetadata& metadata,
+                                                     std::string_view lower_name) {
+        for (const auto& [name, data] : metadata.console_secured_files) {
+            if (lowercase_name(name) == lower_name) {
+                return &data;
+            }
+        }
+        return nullptr;
+    }
+
+    // A FlashFS file as the image carries it. crl.bin, dae.bin, extended.bin and secdata.bin are
+    // sealed for this build as xeBuild 1.21 seals them: the content is the file supplied, the
+    // sealing the console's own copy's (or, with none, the supplied file's own when it is a
+    // console copy, or drawn), and crl.bin, dae.bin and secdata.bin state the build's time and
+    // the CF lockdown value. A file that does not open is written as supplied. Every other file,
+    // fcrt.bin among them, is written as supplied. Nothing when a file cannot be sealed at all.
+    std::optional<std::vector<uint8_t>> sealed_flashfs_file(std::string_view name,
+                                                            const std::vector<uint8_t>& data,
+                                                            const Input& input,
+                                                            const SecuredFileBuild& build) {
+        const auto& cpu_key = input.metadata.cpu_key;
+        const auto lower = lowercase_name(name);
+        if (cpu_key.size() < 16) {
+            return data;
+        }
+        const auto* own = console_secured_file(input.metadata, lower);
+        if (lower == "crl.bin") {
+            auto sealing = own ? crl_sealing(*own, cpu_key) : std::nullopt;
+            if (own && !sealing) {
+                Log::Warn("The console's crl.bin does not open under its CPU key; its sealing is "
+                          "not used");
+            }
+            if (!sealing) {
+                sealing = crl_sealing(data, cpu_key);
+            }
+            if (!sealing) {
+                Log::Info("crl.bin is sealed under a drawn vector and file key");
+                sealing = random_crl_sealing();
+            }
+            if (auto sealed = reseal_crl(data, cpu_key, *sealing, build)) {
+                return std::move(*sealed);
+            }
+            Log::Warn("crl.bin opens under no key it is tried under; it is written as supplied");
+            return data;
+        }
+        if (lower == "dae.bin") {
+            auto sealing = own ? dae_sealing(*own, cpu_key) : std::nullopt;
+            if (own && !sealing) {
+                Log::Warn("The console's dae.bin does not open under its CPU key; its sealing is "
+                          "not used");
+            }
+            if (!sealing) {
+                sealing = dae_sealing(data, cpu_key);
+            }
+            if (!sealing) {
+                Log::Info("dae.bin is sealed under a drawn head and field");
+                sealing = random_dae_sealing();
+            }
+            if (auto sealed = reseal_dae(data, cpu_key, *sealing, build)) {
+                return std::move(*sealed);
+            }
+            Log::Warn("dae.bin opens under no key it is tried under; it is written as supplied");
+            return data;
+        }
+        if (lower == "extended.bin" || lower == "secdata.bin") {
+            const bool extended = lower == "extended.bin";
+            std::optional<std::vector<uint8_t>> sealed;
+            if (extended && extended_opened(data, cpu_key)) {
+                // Its head is the keyvault's; with no keyvault it keeps its own.
+                const auto& keyvault = input.metadata.keyvault;
+                const auto head_source = keyvault && keyvault->size() >= 0x18
+                                             ? std::span<const uint8_t>(*keyvault)
+                                             : std::span<const uint8_t>(data);
+                sealed = reseal_extended(data, cpu_key, head_source.subspan(0x10).first<8>());
+            } else if (!extended && secdata_opened(data, cpu_key)) {
+                // Its head is the console's own copy's; with none it keeps its own.
+                const auto head =
+                    own && secdata_opened(*own, cpu_key) ? secdata_head(*own) : std::nullopt;
+                sealed = reseal_secdata(data, cpu_key, head, build);
+            }
+            if (sealed) {
+                return std::move(*sealed);
+            }
+            Log::Warn("{} did not open under the CPU key; it is sealed again under the nonce it "
+                      "carries",
+                      name);
+            std::vector<uint8_t> file_data = data;
+            if (!crypt_secfile(cpu_key, file_data)) {
+                return std::nullopt;
+            }
+            return file_data;
+        }
+        return data;
     }
 
     BuildResult build_error(BuildErrorCode code, std::string message) {
@@ -1104,8 +1213,10 @@ BuildResult RunBuild(const Input& input) {
         FlashFileSystem fs{};
         fs.set_driver(&flash_image.flash_driver);
         fs.set_larger_filesystem(input.build_type == BuildType::Devkit);
-        // Every directory entry carries the build's time (SOURCE_DATE_EPOCH when set).
-        fs.set_timestamp(gxbuild3::utils::flashfs_build_timestamp(gxbuild3::utils::build_epoch()));
+        // Every directory entry, and crl.bin, dae.bin and secdata.bin within, carry the build's
+        // time (SOURCE_DATE_EPOCH when set).
+        const int64_t build_seconds = gxbuild3::utils::build_epoch();
+        fs.set_timestamp(gxbuild3::utils::flashfs_build_timestamp(build_seconds));
         // A big-block filesystem's spare states the system area: all of the first 2 MB on
         // every image but a retail one, whose system area ends with its update slots
         // (xeBuild 1.21: 6 blocks of 0x20000 on a jasperbb retail image).
@@ -1184,17 +1295,16 @@ BuildResult RunBuild(const Input& input) {
         fs.set_driver(&flash_image.flash_driver);
         flash_image.filesystem = std::move(fs);
 
+        // xeBuild states 1 when no lockdown value is set anywhere.
+        const SecuredFileBuild secured_build{build_seconds, input.metadata.cf_ldv.value_or(1)};
         for (const auto& [name, data] : *input.flashfs_sec) {
-            std::vector<uint8_t> file_data = data;
-            if (input.metadata.cpu_key.size() >= 16 && is_cpu_keyed_secfile(name)) {
-                if (!crypt_secfile(input.metadata.cpu_key, file_data)) {
-                    return build_error(BuildErrorCode::EncryptionFailure,
-                                       "Failed to encrypt secure FlashFS file");
-                }
-                Log::Debug("Encrypted secure file '{}' with CPU key", name);
+            const auto file_data = sealed_flashfs_file(name, data, input, secured_build);
+            if (!file_data) {
+                return build_error(BuildErrorCode::EncryptionFailure,
+                                   "Failed to encrypt secure FlashFS file");
             }
-            Log::Debug("Adding FlashFS file: '{}' ({} bytes)", name, file_data.size());
-            if (!flash_image.filesystem->add_file(name, file_data)) {
+            Log::Debug("Adding FlashFS file: '{}' ({} bytes)", name, file_data->size());
+            if (!flash_image.filesystem->add_file(name, *file_data)) {
                 return build_error(BuildErrorCode::SerializationFailure,
                                    "Failed to add a Flash File System file");
             }
@@ -1859,6 +1969,9 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
                 if (is_cpu_keyed_secfile(filename) && !crypt_secfile(cpu_key, *file_data)) {
                     Log::Error("Failed to decrypt secure FlashFS file '{}'", filename);
                     return std::nullopt;
+                }
+                if (is_console_secured_file(filename)) {
+                    out.metadata.console_secured_files.emplace_back(filename, *file_data);
                 }
                 files.emplace_back(filename, std::move(*file_data));
             }

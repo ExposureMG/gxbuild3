@@ -128,6 +128,10 @@ struct InputMetadata {
     std::optional<std::vector<uint8_t>> smc_config;
     std::optional<std::vector<uint8_t>> statistics;
     std::optional<std::vector<uint8_t>> manufacturing;
+    // The console's own crl.bin, dae.bin and secdata.bin, in the form flashfs_sec carries them
+    // (secdata.bin in the clear behind its nonce). RunBuild seals the FlashFS's copies of these
+    // files with the vector, file key, heads and field these copies carry.
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> console_secured_files;
 };
 
 struct BootloaderEntryInfo {

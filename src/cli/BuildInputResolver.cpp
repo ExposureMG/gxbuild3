@@ -5,6 +5,7 @@
 #include "ini/IniParser.hpp"
 #include "nand/objects/Freeboot.hpp"
 #include "nand/objects/Keyvault.hpp"
+#include "nand/objects/SecuredFiles.hpp"
 #include "utils/FileManager.hpp"
 #include "utils/FusesetGenerator.hpp"
 #include "utils/Log.hpp"
@@ -918,12 +919,18 @@ namespace gxbuild3::cli {
             }
             for (auto file : ini_files->flashfs_sec) {
                 const auto key = lowercase_basename(file.first);
-                if ((key == "secdata.bin" || key == "extended.bin") &&
-                    !gxbuild3::NAND::crypt_secfile(foundations->cpu_key, file.second)) {
-                    return std::unexpected(
-                        error(ResolutionErrorCode::InvalidInput,
-                              "Could not decrypt secure INI file at the Input boundary", ini_path,
-                              file.first));
+                if (key == "secdata.bin" || key == "extended.bin") {
+                    auto opened =
+                        key == "extended.bin"
+                            ? gxbuild3::NAND::open_loose_extended(file.second, foundations->cpu_key)
+                            : gxbuild3::NAND::open_loose_secdata(file.second, foundations->cpu_key);
+                    if (!opened) {
+                        return std::unexpected(
+                            error(ResolutionErrorCode::InvalidInput,
+                                  "Could not decrypt secure INI file at the Input boundary",
+                                  ini_path, file.first));
+                    }
+                    file.second = std::move(*opened);
                 }
                 overlay_flashfs(flashfs, std::move(file), flashfs_positions);
             }
