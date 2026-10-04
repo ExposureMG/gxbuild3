@@ -272,6 +272,8 @@ struct OptionsArgs {
     std::optional<bool> nosusecurity;
     std::optional<bool> smcnocheck;
     std::optional<bool> noblpatch;
+    // Stages whose automatic patches are skipped: any of cb, cd, khv, joined with '+'.
+    std::optional<std::string> nopatch;
 
     // SMC config overrides
     std::optional<std::string> cputemp;
@@ -290,6 +292,16 @@ struct OptionsArgs {
     std::optional<std::string> dvdregion;
     std::optional<std::string> macid;
 };
+
+struct NoPatch {
+    bool cb = false;
+    bool cd = false;
+    bool khv = false;
+};
+
+// The stages whose automatic patches are skipped. `noblpatch` is the older spelling of
+// `nopatch=cb+cd`.
+[[nodiscard]] NoPatch ResolveNoPatch(const OptionsArgs& options);
 
 class OptionsManager {
   public:

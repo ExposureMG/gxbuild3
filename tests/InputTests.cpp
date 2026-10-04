@@ -175,6 +175,29 @@ namespace {
                        "a manufacturing block must contain exactly 0x1000 bytes");
     }
 
+    bool test_nopatch_options_accumulate_stage_by_stage() {
+        OptionsManager options;
+        if (!require(options.parse("nopatch=cb") && options.get_string("nopatch") == "cb",
+                     "nopatch takes one stage") ||
+            !require(options.parse("nopatch=khv,nopatch=cd") &&
+                         options.get_string("nopatch") == "cb+cd+khv",
+                     "repeated nopatch settings accumulate in stage order") ||
+            !require(!options.set("nopatch", "ce") && !options.set("nopatch", "cb+cd") &&
+                         options.get_string("nopatch") == "cb+cd+khv",
+                     "an unknown stage or a joined list is refused and the earlier value kept")) {
+            return false;
+        }
+        const auto all = ResolveNoPatch(options.data());
+        OptionsArgs legacy;
+        legacy.noblpatch = true;
+        const auto old = ResolveNoPatch(legacy);
+        return require(all.cb && all.cd && all.khv, "every named stage is skipped") &&
+               require(old.cb && old.cd && !old.khv,
+                       "noblpatch still means nopatch=cb and nopatch=cd") &&
+               require(options.set("nopatch", "") && !options.has("nopatch"),
+                       "a blank nopatch clears the list");
+    }
+
     bool test_button_options_take_xebuild_names_only() {
         OptionsManager options;
         if (!require(OptionsManager::power_on_reason("power") == 0x11 &&
@@ -226,5 +249,6 @@ int main() {
     passed = test_payload_and_rebooter_sizes() && passed;
     passed = test_settings_block_sizes() && passed;
     passed = test_button_options_take_xebuild_names_only() && passed;
+    passed = test_nopatch_options_accumulate_stage_by_stage() && passed;
     return passed ? 0 : 1;
 }

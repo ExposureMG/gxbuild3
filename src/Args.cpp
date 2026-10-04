@@ -50,7 +50,43 @@ namespace {
         return std::nullopt;
     }
 
+    // The stage list after `nopatch=<stage>` joins the stages already named. The stored text is
+    // the stages in canonical order, joined with '+'.
+    std::optional<std::string> add_nopatch_stage(const std::optional<std::string>& current,
+                                                 std::string_view value) {
+        const std::string stage = normalize_key(value);
+        const bool is_cb = stage == "cb" || stage == "cbb";
+        if (!is_cb && stage != "cd" && stage != "khv") {
+            return std::nullopt;
+        }
+        const std::string name = is_cb ? "cb" : stage;
+        const std::string existing = current.value_or("");
+        const auto named = [&existing](std::string_view candidate) {
+            return existing.find(candidate) != std::string::npos;
+        };
+        std::string canonical;
+        for (const std::string_view candidate : {"cb", "cd", "khv"}) {
+            if (named(candidate) || candidate == name) {
+                canonical += canonical.empty() ? "" : "+";
+                canonical += candidate;
+            }
+        }
+        return canonical;
+    }
+
 } // namespace
+
+NoPatch ResolveNoPatch(const OptionsArgs& options) {
+    const std::string named = options.nopatch.value_or("");
+    NoPatch stages;
+    stages.cb = named.find("cb") != std::string::npos;
+    stages.cd = named.find("cd") != std::string::npos;
+    stages.khv = named.find("khv") != std::string::npos;
+    if (options.noblpatch.value_or(false)) {
+        stages.cb = stages.cd = true;
+    }
+    return stages;
+}
 
 OptionsManager::OptionsManager(OptionsArgs args) : m_args(std::move(args)) {}
 
@@ -64,7 +100,8 @@ bool OptionsManager::is_known_option(std::string_view name) {
            key == "nomobile" || key == "nofcrt" || key == "noremap" || key == "noecdremap" ||
            key == "nandmu" || key == "nosecurity" || key == "nosusecurity" ||
            key == "smcnocheck" || key == "nochecksmc" || key == "noblpatch" ||
-           key == "cbldv" || key == "pairing_data" || key == "pairingdata" || key == "pd" ||
+           key == "nopatch" || key == "cbldv" || key == "pairing_data" ||
+           key == "pairingdata" || key == "pd" ||
            key == "cfldv" || key == "xellbutton" || key == "xellbutton2" ||
            key == "dualboot" || key == "cputemp" || key == "gputemp" ||
            key == "edramtemp" || key == "overcputemp" || key == "overgputemp" ||
@@ -124,6 +161,7 @@ bool OptionsManager::has(std::string_view name) const {
     if (key == "nosusecurity") return m_args.nosusecurity.has_value();
     if (key == "smcnocheck" || key == "nochecksmc") return m_args.smcnocheck.has_value();
     if (key == "noblpatch") return m_args.noblpatch.has_value();
+    if (key == "nopatch") return m_args.nopatch.has_value();
 
     if (key == "cbldv") return m_args.cbldv.has_value();
     if (key == "pairing_data" || key == "pairingdata" || key == "pd") return m_args.pairing_data.has_value();
@@ -179,6 +217,20 @@ bool OptionsManager::set(std::string_view name, std::string_view value) {
         return false;
     }
 
+    if (key == "nopatch") {
+        // A blank value clears the list; a stage joins it, so `nopatch=cb,nopatch=cd` skips both.
+        if (val.empty()) {
+            m_args.nopatch.reset();
+            return true;
+        }
+        const auto stages = add_nopatch_stage(m_args.nopatch, val);
+        if (!stages) {
+            return false;
+        }
+        m_args.nopatch = *stages;
+        return true;
+    }
+
     if (key == "cbldv") { m_args.cbldv = val; return true; }
     if (key == "pairing_data" || key == "pairingdata" || key == "pd") { m_args.pairing_data = val; return true; }
     if (key == "cfldv") { m_args.cfldv = val; return true; }
@@ -229,6 +281,7 @@ bool OptionsManager::unset(std::string_view name) {
     if (key == "nosusecurity") { m_args.nosusecurity.reset(); return true; }
     if (key == "smcnocheck" || key == "nochecksmc") { m_args.smcnocheck.reset(); return true; }
     if (key == "noblpatch") { m_args.noblpatch.reset(); return true; }
+    if (key == "nopatch") { m_args.nopatch.reset(); return true; }
 
     if (key == "cbldv") { m_args.cbldv.reset(); return true; }
     if (key == "pairing_data" || key == "pairingdata" || key == "pd") { m_args.pairing_data.reset(); return true; }
@@ -285,6 +338,7 @@ std::optional<bool> OptionsManager::get_bool(std::string_view name) const {
 
 std::optional<std::string> OptionsManager::get_string(std::string_view name) const {
     const std::string key = normalize_key(name);
+    if (key == "nopatch") return m_args.nopatch;
     if (key == "cbldv") return m_args.cbldv;
     if (key == "pairing_data" || key == "pairingdata" || key == "pd") return m_args.pairing_data;
     if (key == "cfldv") return m_args.cfldv;

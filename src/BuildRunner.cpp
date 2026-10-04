@@ -1041,18 +1041,29 @@ BuildResult RunBuild(const Input& input) {
     // A devgl chain has no CB_B: the glitch2m patch file's first section is not applied, and its
     // CD section patches the SD (xeBuild 1.21 devgl: SB, SC and SE as the release ships them).
     const bool devgl = input.build_type == BuildType::Devgl;
+    const NoPatch no_patch = ResolveNoPatch(input.options);
+    if (parsed_patchset && parsed_patchset->kind == PatchSetKind::Glitch && no_patch.khv) {
+        // The slot keeps its glitch layout and holds an empty KHV list, with no add-ons either.
+        for (auto& section : parsed_patchset->sections) {
+            if (section.target == PatchSectionTarget::Khv) {
+                section.raw_data.clear();
+            }
+        }
+    }
     if (parsed_patchset && parsed_patchset->kind == PatchSetKind::Glitch &&
-        !input.options.noblpatch.value_or(false)) {
+        !(no_patch.cb && no_patch.cd)) {
         const auto first_target = input.build_type == BuildType::Glitch ? PatchSectionTarget::Cb
                                                                         : PatchSectionTarget::Cbb;
         const auto* first_section =
-            devgl ? nullptr : find_patch_section(*parsed_patchset, first_target);
-        const auto* cd_section = find_patch_section(*parsed_patchset, PatchSectionTarget::Cd);
-        if ((!devgl && !first_section) || !cd_section) {
+            devgl || no_patch.cb ? nullptr : find_patch_section(*parsed_patchset, first_target);
+        const auto* cd_section =
+            no_patch.cd ? nullptr : find_patch_section(*parsed_patchset, PatchSectionTarget::Cd);
+        if ((!devgl && !no_patch.cb && !first_section) || (!no_patch.cd && !cd_section)) {
             return build_error(BuildErrorCode::PatchFailure,
                                "Glitch patchset is missing a bootloader patch section");
         }
-        if (!devgl && first_target == PatchSectionTarget::Cbb && !flash_image.cb_section.cb_B) {
+        if (!devgl && !no_patch.cb && first_target == PatchSectionTarget::Cbb &&
+            !flash_image.cb_section.cb_B) {
             return build_error(BuildErrorCode::PatchFailure,
                                "Automatic patchset targets CBB, but no CBB was supplied");
         }
@@ -1084,11 +1095,13 @@ BuildResult RunBuild(const Input& input) {
             }
             stage_sizes[first_index] = *first_size;
         }
-        const auto cd_size = patched_bootloader_size(stage_sizes[Cd], *cd_section, "CD");
-        if (!cd_size) {
-            return build_error(BuildErrorCode::PatchFailure, cd_size.error().message);
+        if (cd_section) {
+            const auto cd_size = patched_bootloader_size(stage_sizes[Cd], *cd_section, "CD");
+            if (!cd_size) {
+                return build_error(BuildErrorCode::PatchFailure, cd_size.error().message);
+            }
+            stage_sizes[Cd] = *cd_size;
         }
-        stage_sizes[Cd] = *cd_size;
 
         const bool is_big_or_emmc =
             flash_image.flash_driver.driver_mode() == Driver::DriverMode::Big ||
@@ -1150,9 +1163,12 @@ BuildResult RunBuild(const Input& input) {
                 return std::unexpected(*error);
             }
         }
-        if (const auto error = patch_and_reparse(
-                flash_image.kernel_section.cd, PatchSectionTarget::Cd, target_capacity(Cd), "CD")) {
-            return std::unexpected(*error);
+        if (cd_section) {
+            if (const auto error =
+                    patch_and_reparse(flash_image.kernel_section.cd, PatchSectionTarget::Cd,
+                                      target_capacity(Cd), "CD")) {
+                return std::unexpected(*error);
+            }
         }
         // A development SD stays plaintext until it is sealed; the parser's test is for a
         // retail CD.

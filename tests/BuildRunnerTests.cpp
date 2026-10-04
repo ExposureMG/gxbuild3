@@ -460,6 +460,59 @@ namespace {
                        "noblpatch still writes merged KHV at the runtime anchor");
     }
 
+    // nopatch names the stages left unpatched: cb keeps the CB, cd the CD, khv the KHV payload.
+    bool test_nopatch_skips_only_the_named_stages() {
+        struct Case {
+            const char* options;
+            bool cb_patched;
+            bool cd_patched;
+            bool khv_written;
+        };
+        for (const auto& test_case :
+             {Case{"nopatch=cb", false, true, true}, Case{"nopatch=cd", true, false, true},
+              Case{"nopatch=khv", true, true, false},
+              Case{"nopatch=cb,nopatch=khv", false, true, false}}) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            input.build_type = BuildType::Glitch;
+            OptionsManager options;
+            if (!require(options.parse(test_case.options), "nopatch options parse")) {
+                return false;
+            }
+            input.options = options.data();
+            const uint32_t cb_patch_address =
+                static_cast<uint32_t>(input.bootloaders.cb_or_a.size() + 0x10);
+            const uint32_t cd_patch_address =
+                static_cast<uint32_t>(input.bootloaders.cd.size() + 0x10);
+            const auto original_cb_size = input.bootloaders.cb_or_a.size();
+            const auto original_cd_size = input.bootloaders.cd.size();
+            InputPatches patches{};
+            patches.automatic = InputPatchFile{
+                "automatic", glitch_patchset(cb_patch_address, 0xA1B2C3D4, cd_patch_address,
+                                             0x10203040, Bytes{0xA0, 0xA1})};
+            patches.addons = {{"addon", {0xA2}}};
+            input.patches = std::move(patches);
+
+            const auto built = RunBuild(input);
+            const auto extracted =
+                built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+            const auto khv = built ? read_logical(*built, 0x80010, 3) : std::nullopt;
+            if (!require(extracted.has_value(),
+                         std::string(test_case.options) + " image builds and extracts") ||
+                !require((extracted->bootloaders.cb_or_a.size() != original_cb_size) ==
+                             test_case.cb_patched,
+                         std::string(test_case.options) + " leaves exactly the named CB alone") ||
+                !require((extracted->bootloaders.cd.size() != original_cd_size) ==
+                             test_case.cd_patched,
+                         std::string(test_case.options) + " leaves exactly the named CD alone") ||
+                !require((khv == Bytes({0xA0, 0xA1, 0xA2})) == test_case.khv_written,
+                         std::string(test_case.options) +
+                             " writes the KHV payload only if unnamed")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool test_jtag_patchset_is_serialized_at_fixed_region() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Jtag;
@@ -4204,6 +4257,7 @@ int main() {
     passed = test_glitch2m_cd_patch_states_the_16_byte_aligned_size() && passed;
     passed = test_glitch_types_patch_a_clean_retail_smc() && passed;
     passed = test_noblpatch_skips_bootloader_mutation_but_writes_khv() && passed;
+    passed = test_nopatch_skips_only_the_named_stages() && passed;
     passed = test_jtag_patchset_is_serialized_at_fixed_region() && passed;
     passed = test_jtag_flows_payload_and_extra_bootloaders() && passed;
     passed = test_jtag_refuses_a_clean_smc() && passed;
