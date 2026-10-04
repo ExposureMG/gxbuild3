@@ -6,6 +6,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
+#include <ctime>
 #include <limits>
 #include <string>
 
@@ -54,9 +55,46 @@ namespace gxbuild3::utils {
             return {year, month, day};
         }
 
-        // 1980-01-01 00:00:00 and 2107-12-31 23:59:58 UTC, the range a FAT stamp states.
+        // The day a proleptic Gregorian date is, counted from 1970-01-01.
+        int64_t days_from_civil(int64_t year, unsigned month, unsigned day) {
+            year -= month <= 2;
+            const int64_t era = (year >= 0 ? year : year - 399) / 400;
+            const auto year_of_era = static_cast<unsigned>(year - era * 400);
+            const unsigned day_of_year =
+                (153 * (month > 2 ? month - 3 : month + 9) + 2) / 5 + day - 1;
+            const unsigned day_of_era =
+                year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+            return era * 146097 + static_cast<int64_t>(day_of_era) - 719468;
+        }
+
+        constexpr int64_t kDay = 86400;
+
+        // 1980-01-01 00:00:00 and 2107-12-31 23:59:58, the range a FAT stamp states.
         constexpr int64_t kFatFirst = 315532800;
         constexpr int64_t kFatLast = 4354819198;
+
+        // The wall-clock time a moment has in the C library's local zone (TZ when it is set, the
+        // system's zone otherwise), as seconds from 1970-01-01 00:00 on that clock. A moment the
+        // library cannot convert keeps its UTC reading.
+        int64_t local_clock_seconds(int64_t seconds) {
+            const auto moment = static_cast<std::time_t>(seconds);
+            std::tm local{};
+#ifdef _MSC_VER
+            _tzset();
+            const bool converted = localtime_s(&local, &moment) == 0;
+#else
+            tzset();
+            const bool converted = localtime_r(&moment, &local) != nullptr;
+#endif
+            if (!converted) {
+                return seconds;
+            }
+            const int64_t days = days_from_civil(int64_t{local.tm_year} + 1900,
+                                                 static_cast<unsigned>(local.tm_mon + 1),
+                                                 static_cast<unsigned>(local.tm_mday));
+            return days * kDay + int64_t{local.tm_hour} * 3600 + int64_t{local.tm_min} * 60 +
+                   std::min(local.tm_sec, 59);
+        }
 
     } // namespace
 
@@ -86,8 +124,10 @@ namespace gxbuild3::utils {
     }
 
     uint32_t fat_timestamp(int64_t seconds) {
-        seconds = std::clamp(seconds, kFatFirst, kFatLast);
-        constexpr int64_t kDay = 86400;
+        // No zone is two days from UTC, so a moment held to two days either side of FAT's range
+        // keeps its place against that range on every local clock.
+        seconds = std::clamp(seconds, kFatFirst - 2 * kDay, kFatLast + 2 * kDay);
+        seconds = std::clamp(local_clock_seconds(seconds), kFatFirst, kFatLast);
         const int64_t days = seconds / kDay;
         const auto clock = static_cast<uint32_t>(seconds % kDay);
         const auto date = civil_from_days(days);

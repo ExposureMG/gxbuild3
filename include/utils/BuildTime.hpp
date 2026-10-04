@@ -14,13 +14,14 @@ namespace gxbuild3::utils {
     // seconds, or nothing for anything else.
     [[nodiscard]] std::optional<int64_t> parse_source_date_epoch(std::string_view value);
 
-    // A moment in UTC as a FlashFS directory entry keeps it: the FAT date in the high 16 bits
-    // and the FAT time, in two-second steps, in the low 16. A moment FAT cannot state is held
-    // to its range, 1980-01-01 to 2107-12-31.
+    // A moment (seconds since the Unix epoch) as a FlashFS directory entry keeps it: the local
+    // wall-clock time, in the zone the C library states (TZ when it is set, the system's zone
+    // otherwise), with the FAT date in the high 16 bits and the FAT time, in two-second steps,
+    // in the low 16. A time FAT cannot state is held to its range, 1980-01-01 to 2107-12-31.
     [[nodiscard]] uint32_t fat_timestamp(int64_t seconds);
 
     // The stamp xeBuild gives every directory entry of a build: the build's time plus two
-    // seconds, in FAT form.
+    // seconds, in FAT form on the local clock.
     [[nodiscard]] uint32_t flashfs_build_timestamp(int64_t build_seconds);
 
 } // namespace gxbuild3::utils

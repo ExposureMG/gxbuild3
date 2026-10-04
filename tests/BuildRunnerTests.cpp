@@ -1,4 +1,5 @@
 #include "BuildRunner.hpp"
+#include "ScopedTimeZone.hpp"
 #include "XeRsaTestKey.hpp"
 #include "excrypt.h"
 #include "nand/FlashDriver.hpp"
@@ -2890,10 +2891,14 @@ namespace {
             {"zeta.bin", Bytes(0x4001, 0x5A)}, {"alpha.bin", Bytes(0x10, 0x41)}};
         *input.mobiles.slot(0x31) = Bytes(0x800, 0x31);
 
-        // 2026-10-04 09:22:02 UTC: the entries say 09:22:04, 0x5D444AC2.
-        set_source_date_epoch("1791105722");
-        const auto built = RunBuild(input);
-        set_source_date_epoch(nullptr);
+        // 2026-10-04 09:22:02 UTC: in UTC the entries say 09:22:04, 0x5D444AC2.
+        const auto built = [&] {
+            const ScopedTimeZone utc{"UTC0"};
+            set_source_date_epoch("1791105722");
+            auto result = RunBuild(input);
+            set_source_date_epoch(nullptr);
+            return result;
+        }();
         const auto image = built ? parse_image(*built) : std::nullopt;
         if (!require(image.has_value() && image->filesystem.has_value(),
                      "a FlashFS build with a CG tail parses")) {

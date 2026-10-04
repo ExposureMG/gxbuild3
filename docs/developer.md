@@ -216,10 +216,11 @@ console's secured files the INI does not name, all back to back. The settings bl
 root follow the last file.
 
 Every directory entry is stamped with the build's time plus two seconds, as a FAT date and
-time in UTC. The build's time is the clock, or `SOURCE_DATE_EPOCH` (seconds since the Unix
-epoch) when it is set, which pins the stamps for reproducible builds and image comparisons.
-To reproduce a reference image's stamp, set `SOURCE_DATE_EPOCH` to the moment that stamp
-states minus two seconds.
+time on the build machine's local clock, as xeBuild stamps them: the zone `TZ` names when it is
+set, the system's zone otherwise. The build's time is the clock, or `SOURCE_DATE_EPOCH`
+(seconds since the Unix epoch) when it is set. A reproducible build pins both
+`SOURCE_DATE_EPOCH` and `TZ` (for example `TZ=UTC0`); the same epoch in another zone gives other
+directory stamps.
 
 ## Secured FlashFS files
 
@@ -237,6 +238,7 @@ time as a big-endian FILETIME in UTC: the build time plus two seconds, down to t
 extended.bin and secdata.bin take the nonce their plaintext derives. `fcrt.bin` is written as
 supplied, and a file that opens under no key is written back as supplied with a warning.
 
-xeBuild writes the directory entries in the build machine's local time but the FILETIME in UTC,
-so one `SOURCE_DATE_EPOCH` reproduces both only for a reference built in UTC. For a reference
-built elsewhere, the FILETIME inside crl.bin states the build time plus two seconds in UTC.
+The FILETIME is UTC, so it does not depend on the zone. To reproduce a xeBuild reference image,
+set `SOURCE_DATE_EPOCH` to its build time in UTC (the FILETIME inside its crl.bin, less two
+seconds) and `TZ` to the zone it was built in (unset, the system's zone, for a reference built on
+the same machine); the directory stamps and the secured files then match together.

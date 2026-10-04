@@ -1214,7 +1214,8 @@ BuildResult RunBuild(const Input& input) {
         fs.set_driver(&flash_image.flash_driver);
         fs.set_larger_filesystem(input.build_type == BuildType::Devkit);
         // Every directory entry, and crl.bin, dae.bin and secdata.bin within, carry the build's
-        // time (SOURCE_DATE_EPOCH when set).
+        // time (SOURCE_DATE_EPOCH when set): the entries on the local clock, as xeBuild stamps
+        // them, and the three files in UTC.
         const int64_t build_seconds = gxbuild3::utils::build_epoch();
         fs.set_timestamp(gxbuild3::utils::flashfs_build_timestamp(build_seconds));
         // A big-block filesystem's spare states the system area: all of the first 2 MB on
