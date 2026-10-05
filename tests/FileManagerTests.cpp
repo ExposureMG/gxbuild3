@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-using GxBuild::BuildType;
+using namespace gxbuild3;
 
 namespace {
     namespace fs = std::filesystem;

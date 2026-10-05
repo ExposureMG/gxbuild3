@@ -6,9 +6,7 @@
 #include <variant>
 #include <vector>
 
-using GxBuild::BuildType;
-using GxBuild::ConsoleType;
-using GxBuild::ImageType;
+using namespace gxbuild3;
 
 namespace {
 

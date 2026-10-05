@@ -36,7 +36,7 @@ namespace {
 } // namespace
 
 int main(int argc, char* argv[]) try {
-    Log::Init();
+    gxbuild3::Log::Init();
 
     std::vector<std::string_view> arguments;
     arguments.reserve(static_cast<size_t>(argc));
@@ -60,8 +60,8 @@ int main(int argc, char* argv[]) try {
 
     const auto& args = std::get<gxbuild3::cli::BuildArgs>(*parsed);
     if (args.verbose) {
-        Log::SetVerbose(true);
-        Log::Debug("Verbose logging enabled");
+        gxbuild3::Log::SetVerbose(true);
+        gxbuild3::Log::Debug("Verbose logging enabled");
     }
     const auto result = gxbuild3::cli::RunBuildCommand(
         args, gxbuild3::cli::DefaultBuildCommandServices(std::filesystem::current_path()));

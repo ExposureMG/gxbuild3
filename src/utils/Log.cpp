@@ -1,3 +1,7 @@
 #include "utils/Log.hpp"
 
-std::shared_ptr<spdlog::logger> Log::s_Logger;
+namespace gxbuild3 {
+
+    std::shared_ptr<spdlog::logger> Log::s_Logger;
+
+} // namespace gxbuild3

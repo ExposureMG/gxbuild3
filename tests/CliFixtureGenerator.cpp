@@ -17,10 +17,7 @@
 #include <string_view>
 #include <vector>
 
-using GxBuild::ImageType;
-using GxBuild::Input;
-using GxBuild::InputBootloaders;
-
+using namespace gxbuild3;
 using namespace gxbuild3::nand;
 
 namespace {

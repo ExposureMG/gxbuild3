@@ -7,10 +7,7 @@
 #include <system_error>
 #include <vector>
 
-using GxBuild::BuildError;
-using GxBuild::BuildErrorCode;
-using GxBuild::BuildResult;
-using GxBuild::Input;
+using namespace gxbuild3;
 
 namespace {
 

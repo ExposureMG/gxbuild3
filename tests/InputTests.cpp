@@ -6,14 +6,7 @@
 #include <string_view>
 #include <vector>
 
-using GxBuild::BuildType;
-using GxBuild::ImageType;
-using GxBuild::Input;
-using GxBuild::InputMobileData;
-using GxBuild::InputPatches;
-using GxBuild::InputPatchFile;
-using GxBuild::InputPayloads;
-using GxBuild::OptionsArgs;
+using namespace gxbuild3;
 
 namespace {
 

@@ -7,10 +7,7 @@
 #include <string_view>
 #include <vector>
 
-using GxBuild::BuildType;
-using GxBuild::InputPatches;
-using GxBuild::InputPatchFile;
-
+using namespace gxbuild3;
 using namespace gxbuild3::nand;
 
 namespace {

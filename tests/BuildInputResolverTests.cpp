@@ -25,17 +25,7 @@
 #include <utility>
 #include <vector>
 
-using GxBuild::BuildType;
-using GxBuild::ConsoleType;
-using GxBuild::ImageType;
-using GxBuild::Input;
-using GxBuild::InputBootloaders;
-using GxBuild::InputPatches;
-using GxBuild::InputPatchFile;
-
-using gxbuild3::extract_all;
-using gxbuild3::run_build;
-
+using namespace gxbuild3;
 using namespace gxbuild3::nand;
 
 namespace {
