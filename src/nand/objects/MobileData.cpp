@@ -1,6 +1,6 @@
 #include "nand/objects/MobileData.hpp"
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     bool MobileData::empty() const noexcept {
         return !x31 && !x32 && !x33 && !x34 && !x35 && !x36 && !x37 && !x38 && !x39;
@@ -57,4 +57,4 @@ namespace gxbuild3::NAND {
         }
     }
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

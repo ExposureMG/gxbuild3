@@ -9,7 +9,7 @@
 #include <random>
 #include <stdexcept>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     namespace {
 
@@ -132,19 +132,15 @@ namespace gxbuild3::NAND {
         return cpu_key_hamming_weight(key_copy) == 0x35;
     }
 
-} // namespace gxbuild3::NAND
-
-// Every byte comes from the system's cryptographic source (getrandom, /dev/urandom, RtlGenRandom
-// or RDRAND, as the standard library selects), not from a seeded generator.
-void ExCryptRandom(uint8_t* dest, size_t size) {
-    std::random_device source;
-    for (size_t i = 0; i < size; i += sizeof(uint32_t)) {
-        const auto word = static_cast<uint32_t>(source());
-        std::memcpy(dest + i, &word, std::min(sizeof(word), size - i));
+    // Every byte comes from the system's cryptographic source (getrandom, /dev/urandom,
+    // RtlGenRandom or RDRAND, as the standard library selects), not from a seeded generator.
+    void ExCryptRandom(uint8_t* dest, size_t size) {
+        std::random_device source;
+        for (size_t i = 0; i < size; i += sizeof(uint32_t)) {
+            const auto word = static_cast<uint32_t>(source());
+            std::memcpy(dest + i, &word, std::min(sizeof(word), size - i));
+        }
     }
-}
-
-namespace gxbuild3::NAND {
 
     std::vector<uint8_t> keyvault_decrypt(std::span<const uint8_t> cpu_key,
                                           std::span<const uint8_t> data, uint16_t kv_version) {
@@ -325,4 +321,4 @@ namespace gxbuild3::NAND {
         return out;
     }
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

@@ -25,6 +25,9 @@
 #include <utility>
 #include <vector>
 
+using namespace gxbuild3;
+using namespace gxbuild3::nand;
+
 namespace {
 
     using Bytes = std::vector<uint8_t>;
@@ -165,7 +168,7 @@ namespace {
         input.metadata.keyvault =
             keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)));
         input.bootloaders = valid_bootloaders();
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!built) {
             std::abort();
         }
@@ -214,7 +217,7 @@ namespace {
         input.metadata.cf_ldv = 8;
         input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!built) {
             std::abort();
         }
@@ -312,11 +315,11 @@ namespace {
         }
 
         auto resolve(const BuildArgs& args) const {
-            return BuildInputResolver(working_directory).Resolve(args);
+            return BuildInputResolver(working_directory).resolve(args);
         }
 
         auto resolve_foundations(const BuildArgs& args) const {
-            return BuildInputResolver(working_directory).ResolveFoundations(args);
+            return BuildInputResolver(working_directory).resolve_foundations(args);
         }
     };
 
@@ -575,7 +578,7 @@ namespace {
         fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
         fixture.write_binary("first/cd.bin", Bytes{0xCD});
         fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
-        const auto absolute = BuildInputResolver(fixture.working_directory).Resolve(args);
+        const auto absolute = BuildInputResolver(fixture.working_directory).resolve(args);
         return require(absolute && absolute->input.image_type == ImageType::BigBlock &&
                            absolute->output_path == fixture.path("absolute-output.bin"),
                        "absolute explicit NAND and output paths remain absolute");
@@ -630,7 +633,7 @@ namespace {
                                result.error().path == fixture.path("working/malformed.bin"),
                            "malformed supported-size NAND maps to InvalidDonor with provenance");
         } catch (...) {
-            return require(false, "donor parser exceptions must not escape ResolveFoundations");
+            return require(false, "donor parser exceptions must not escape resolve_foundations");
         }
     }
 
@@ -693,7 +696,7 @@ namespace {
         ResolverFixture fixture;
         auto args = fixture.minimum_args();
         args.cpu_key.reset();
-        const auto result = BuildInputResolver(fixture.working_directory).Resolve(args);
+        const auto result = BuildInputResolver(fixture.working_directory).resolve(args);
         return require(!result && result.error().code == ResolutionErrorCode::CpuKeyNotFound,
                        "Resolve exposes foundation failures before Task 7 phases");
     }
@@ -702,7 +705,7 @@ namespace {
         ResolverFixture fixture;
         auto args = fixture.complete_loose_args();
         args.output_path = "nested/result.bin";
-        const auto result = BuildInputResolver(fixture.working_directory).Resolve(args);
+        const auto result = BuildInputResolver(fixture.working_directory).resolve(args);
         return require_resolved(result, "complete output-path fixture resolves") &&
                require(result->output_path == fixture.path("working/nested/result.bin"),
                        "Resolve anchors a relative output path to its working directory");
@@ -947,12 +950,12 @@ namespace {
             {"listed.bin", Bytes{0x25}},        {"donor.bin", Bytes{0x30}},
             {"aac.xexp2", Bytes{0x31}},         {"aac.xexp1", Bytes{0x32}},
             {"sysupdate.xexp2", Bytes{0x33}}};
-        const auto image = RunBuild(donor);
+        const auto image = run_build(donor);
         if (!image) {
             return require(false, "FlashFS donor fixture builds");
         }
         // The donor's extended.bin was the wrong length, so its image carries a clean one.
-        const auto donor_files = ExtractAll(*image, key);
+        const auto donor_files = extract_all(*image, key);
         Bytes donor_extended;
         for (const auto& [name, data] : donor_files
                                             ? *donor_files->flashfs_sec
@@ -967,7 +970,7 @@ namespace {
         fixture.write_binary("first/launch.ini", Bytes{0x41});
         const auto plaintext_secdata = Bytes(0x20, 0x51);
         auto encrypted_secdata = plaintext_secdata;
-        if (!gxbuild3::NAND::crypt_secfile(key, encrypted_secdata)) {
+        if (!gxbuild3::nand::crypt_secfile(key, encrypted_secdata)) {
             return require(false, "secure fixture encrypts");
         }
         fixture.write_binary("first/secdata.bin", encrypted_secdata);
@@ -1029,8 +1032,8 @@ namespace {
                        "unlisted donor files, patch files and CG tails are dropped");
     }
 
-    // An extended.bin or secdata.bin the INI's [security] names reaches RunBuild even when
-    // nothing supplies it (empty) or it is too short to hold a nonce (as supplied); RunBuild makes
+    // An extended.bin or secdata.bin the INI's [security] names reaches run_build even when
+    // nothing supplies it (empty) or it is too short to hold a nonce (as supplied); run_build makes
     // up a clean one for each.
     bool test_unsupplied_security_files_reach_the_build() {
         ResolverFixture fixture;
@@ -1239,7 +1242,7 @@ namespace {
                            "[falconbl]\ncb_1.bin\ncd.bin\n[security]\nsecdata.bin\n");
         std::filesystem::create_directory(fixture.path("first/secdata.bin"));
         auto later = Bytes(0x20, 0x63);
-        if (!gxbuild3::NAND::crypt_secfile(valid_cpu_key(), later)) {
+        if (!gxbuild3::nand::crypt_secfile(valid_cpu_key(), later)) {
             return require(false, "later secure fixture encrypts");
         }
         fixture.write_binary("second/secdata.bin", later);
@@ -1266,7 +1269,7 @@ namespace {
         donor.bootloaders = valid_bootloaders();
         donor.flashfs_sec =
             std::vector<std::pair<std::string, Bytes>>{{"DONOR-ONLY.BIN", Bytes{0x44}}};
-        const auto donor_bytes = RunBuild(donor);
+        const auto donor_bytes = run_build(donor);
         if (!donor_bytes) {
             return require(false, "required-payload donor fixture builds");
         }
@@ -1390,11 +1393,11 @@ namespace {
                        "xell-2f.bin is loaded verbatim") &&
                require(payloads->rebooter && payloads->rebooter->size() == 0xd40,
                        "the embedded freeBOOT rebooter is loaded at 0xd40 bytes") &&
-               require(*payloads->rebooter == gxbuild3::NAND::freeboot_rebooter_for("17559"),
+               require(*payloads->rebooter == gxbuild3::nand::freeboot_rebooter_for("17559"),
                        "the rebooter states the INI's kernel version") &&
                require(payloads->payload && payloads->payload->size() == 0x200,
                        "the embedded SMC payload is loaded at 0x200 bytes") &&
-               require(*payloads->payload == gxbuild3::NAND::freeboot_payload_for(0xd40),
+               require(*payloads->payload == gxbuild3::nand::freeboot_payload_for(0xd40),
                        "the payload loads exactly the rebooter") &&
                require(payloads->fuses && payloads->fuses->size() == 0x60,
                        "generated virtual fuses fill the 0x60-byte region") &&
@@ -1634,8 +1637,8 @@ namespace {
                            result->input.patches->addons[1].data == Bytes{0x12},
                        "add-ons preserve CLI order and first-root priority") &&
                [&] {
-                   const auto merged = BinaryParser::ParseAndMergePatchSet(
-                       *result->input.patches, result->input.build_type);
+                   const auto merged =
+                       parse_and_merge_patch_set(*result->input.patches, result->input.build_type);
                    if (!require(merged.has_value(), "resolved patches parse and merge")) {
                        return false;
                    }
@@ -1739,14 +1742,15 @@ namespace {
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", valid_glitch_patchset(0xC4)};
         donor.patches = std::move(patches);
-        const auto donor_bytes = RunBuild(donor);
+        const auto donor_bytes = run_build(donor);
         if (!require(donor_bytes.has_value(), "small-block Glitch KHV donor fixture builds")) {
             return false;
         }
 
-        const auto extracted = ExtractAll(*donor_bytes, key);
-        if (!require(extracted.has_value() && !extracted->payloads,
-                     "ExtractAll does not invent fixed payloads from ambiguous Glitch KHV bytes")) {
+        const auto extracted = extract_all(*donor_bytes, key);
+        if (!require(
+                extracted.has_value() && !extracted->payloads,
+                "extract_all does not invent fixed payloads from ambiguous Glitch KHV bytes")) {
             return false;
         }
 
@@ -1769,7 +1773,7 @@ namespace {
         const auto result = fixture.resolve(args);
         return require(!result && result.error().code == ResolutionErrorCode::InvalidInput &&
                            result.error().message == "SMC is required",
-                       "ValidateInput failure becomes a structured InvalidInput error");
+                       "validate_input failure becomes a structured InvalidInput error");
     }
 
 } // namespace

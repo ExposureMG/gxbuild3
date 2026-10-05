@@ -29,9 +29,6 @@ endfunction()
 set(GXBUILD3_LIB_SOURCES
     src/Args.cpp
     src/BuildRunner.cpp
-    src/cli/BuildCommand.cpp
-    src/cli/BuildInputResolver.cpp
-    src/cli/CommandLine.cpp
     src/InputValidator.cpp
     src/Library.cpp
     src/ini/IniParser.cpp
@@ -75,26 +72,47 @@ set(GXBUILD3_LIB_SOURCES
     src/utils/XeRsa.cpp
 )
 
+# include/ holds only the public API (Library.hpp, GxBuildTypes.hpp); internal headers live
+# beside their sources in src/ and stay private, as do GxCrypt and spdlog.
 add_library(gxbuild3_lib STATIC ${GXBUILD3_LIB_SOURCES})
-target_include_directories(gxbuild3_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_include_directories(gxbuild3_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/stfs) # TODO: update imports instead
-target_include_directories(gxbuild3_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/freeboot)
-target_link_libraries(gxbuild3_lib PUBLIC
+target_include_directories(gxbuild3_lib
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/freeboot
+)
+target_link_libraries(gxbuild3_lib PRIVATE
     GxCrypt
     spdlog::spdlog
 )
 gxbuild3_enable_warnings(gxbuild3_lib)
 
+# Internal access for the CLI, tests and tools: src/ headers plus the private dependencies.
+add_library(gxbuild3_internal INTERFACE)
+target_include_directories(gxbuild3_internal INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(gxbuild3_internal INTERFACE
+    gxbuild3_lib
+    GxCrypt
+    spdlog::spdlog
+)
+
+# The command-line front end stays out of gxbuild3_lib so library consumers do not carry it.
+add_library(gxbuild3_cli STATIC
+    src/cli/BuildCommand.cpp
+    src/cli/BuildInputResolver.cpp
+    src/cli/CommandLine.cpp
+)
+target_link_libraries(gxbuild3_cli PUBLIC gxbuild3_internal)
+gxbuild3_enable_warnings(gxbuild3_cli)
+
 add_executable(gxbuild3 src/Main.cpp)
 set_target_properties(gxbuild3 PROPERTIES OUTPUT_NAME gxbuild)
-target_link_libraries(gxbuild3 PRIVATE gxbuild3_lib)
+target_link_libraries(gxbuild3 PRIVATE gxbuild3_cli)
 gxbuild3_enable_warnings(gxbuild3)
 
 include(CTest)
 if(BUILD_TESTING)
     function(add_gxbuild3_test name source)
         add_executable(${name} ${source})
-        target_link_libraries(${name} PRIVATE gxbuild3_lib)
+        target_link_libraries(${name} PRIVATE gxbuild3_internal)
         gxbuild3_enable_warnings(${name})
         add_test(NAME ${name} COMMAND ${name})
     endfunction()
@@ -117,6 +135,10 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_xe_rsa_tests tests/XeRsaTests.cpp)
     add_gxbuild3_test(gxbuild3_crypto_reference_tests tests/CryptoReferenceTests.cpp)
     add_gxbuild3_test(gxbuild3_stfs_tests tests/StfsTests.cpp)
+    foreach(cli_test gxbuild3_commandline_tests gxbuild3_resolver_tests
+            gxbuild3_buildcommand_tests)
+        target_link_libraries(${cli_test} PRIVATE gxbuild3_cli)
+    endforeach()
     target_compile_definitions(gxbuild3_stfs_tests PRIVATE
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
     set_tests_properties(gxbuild3_stfs_tests PROPERTIES TIMEOUT 60)
@@ -124,7 +146,7 @@ if(BUILD_TESTING)
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
 
     add_executable(gxbuild3_keyvault_crypto_tests tests/KeyvaultCryptoTests.cpp)
-    target_link_libraries(gxbuild3_keyvault_crypto_tests PRIVATE gxbuild3_lib)
+    target_link_libraries(gxbuild3_keyvault_crypto_tests PRIVATE gxbuild3_internal)
     gxbuild3_enable_warnings(gxbuild3_keyvault_crypto_tests)
     set(GXBUILD3_KEYVAULT_CPU_KEY_FILE "${CMAKE_CURRENT_SOURCE_DIR}/_temp/cpukey.txt"
         CACHE FILEPATH "Private CPU key fixture (32 hex characters)")
@@ -140,11 +162,11 @@ if(BUILD_TESTING)
     set_tests_properties(gxbuild3_keyvault_crypto_tests PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(gxbuild3_cli_fixture_generator tests/CliFixtureGenerator.cpp)
-    target_link_libraries(gxbuild3_cli_fixture_generator PRIVATE gxbuild3_lib)
+    target_link_libraries(gxbuild3_cli_fixture_generator PRIVATE gxbuild3_internal)
     gxbuild3_enable_warnings(gxbuild3_cli_fixture_generator)
 
     add_executable(gxbuild3_cli_output_verifier tests/CliOutputVerifier.cpp)
-    target_link_libraries(gxbuild3_cli_output_verifier PRIVATE gxbuild3_lib)
+    target_link_libraries(gxbuild3_cli_output_verifier PRIVATE gxbuild3_internal)
     gxbuild3_enable_warnings(gxbuild3_cli_output_verifier)
 
     add_test(NAME gxbuild3_cli_integration_tests
@@ -172,4 +194,7 @@ install(TARGETS gxbuild3 gxbuild3_lib
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+install(FILES include/Library.hpp include/GxBuildTypes.hpp
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gxbuild3
 )

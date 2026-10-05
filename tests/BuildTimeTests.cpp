@@ -53,12 +53,12 @@ namespace {
         {
             const ScopedTimeZone zone{"UTC0"};
             utc_stamp = flashfs_build_timestamp(build);
-            utc_filetime = gxbuild3::NAND::secured_file_stamp(build);
+            utc_filetime = gxbuild3::nand::secured_file_stamp(build);
         }
         {
             const ScopedTimeZone zone{"JST-9"};
             tokyo_stamp = flashfs_build_timestamp(build);
-            tokyo_filetime = gxbuild3::NAND::secured_file_stamp(build);
+            tokyo_filetime = gxbuild3::nand::secured_file_stamp(build);
         }
         bool passed =
             check(utc_stamp == kReferenceStamp, "UTC entries state 09:22:04") &&

@@ -173,10 +173,10 @@ unknown command-line argument.
 `FileManager` accepts scan options and ordered search directories:
 
 ```cpp
-FileManager::ScanOptions options{.nosu = false, .nosusecurity = true};
+gxbuild3::utils::ScanOptions options{.nosu = false, .nosusecurity = true};
 std::vector<std::filesystem::path> roots{"mydata", "17559", "common"};
-auto paths = FileManager::FindFiles({"cf_17559.bin", "dash.xex"}, roots, options);
-auto files = FileManager::ReadIniFiles(
+auto paths = gxbuild3::utils::find_files({"cf_17559.bin", "dash.xex"}, roots, options);
+auto files = gxbuild3::utils::read_ini_files(
     std::filesystem::path{"17559/_retail.ini"}, "jasper", roots, options);
 ```
 
@@ -188,7 +188,7 @@ is selected. Equal-ranked filename aliases keep their first match.
 
 Results contain one entry per lowercase basename. INI payload names are also
 returned as lowercase basenames, while separate bootloader chain slots are
-preserved. `FindFiles` returns the container path for STFS matches and throws
+preserved. `find_files` returns the container path for STFS matches and throws
 when a requested file cannot be located.
 
 Both options default to `false`. `nosu` disables STFS discovery entirely.
@@ -199,7 +199,7 @@ security files eligible. Security names are `crl.bin`, `dae.bin`, `odd.bin`,
 
 
 `extended.bin`, `fcrt.bin`, and `secdata.bin`, plus any names in the INI's
-`[security]` section when using `ReadIniFiles`.
+`[security]` section when using `read_ini_files`.
 
 A name an INI states is looked up exactly first and then without regard to case, so
 `sc_17489.bin` finds `SC_17489.bin`. A payload named outside its release
@@ -208,7 +208,7 @@ path in each root, then by its basename, and is skipped with a warning when no
 root has it. `[rawpatch]` lines (`file,offset`) are written into the image as
 they are, last; a file no root supplies is skipped with a warning.
 
-The existing `ReadIniFiles(version, type, section, fw_dir, options)` convenience
+The existing `read_ini_files(version, type, section, fw_dir, options)` convenience
 overload searches `fw_dir` (or `mydata`), the version directory, then `common`.
 Existing calls may omit the options argument.
 ## FlashFS layout and timestamps

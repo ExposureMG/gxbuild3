@@ -1,15 +1,17 @@
-#include <Commons.hpp>
-#include <Endian.hpp>
-#include <FileTableParser.hpp>
+#include "stfs/FileTableParser.hpp"
+
+#include "Endian.hpp"
+#include "stfs/Commons.hpp"
+
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
-    std::vector<FileEntry> parseFileListing(std::span<const std::byte> data) {
+    std::vector<FileEntry> parse_file_listing(std::span<const std::byte> data) {
         std::vector<FileEntry> entries;
         constexpr std::size_t entry_size = 0x40;
         constexpr std::size_t name_field_size = 0x28;
@@ -54,13 +56,13 @@ namespace stfs {
             entry.name.assign(name);
             entry.flags = flags;
 
-            entry.blocks_allocated = readUInt24LE(ptr + 0x29);
-            entry.blocks_allocated_copy = readUInt24LE(ptr + 0x2C);
-            entry.starting_block = readUInt24LE(ptr + 0x2F);
-            entry.path_indicator = static_cast<std::int16_t>(readBE16(ptr + 0x32));
-            entry.file_size = readBE32(ptr + 0x34);
-            entry.update_timestamp = readBE32(ptr + 0x38);
-            entry.access_timestamp = readBE32(ptr + 0x3C);
+            entry.blocks_allocated = read_le24(ptr + 0x29);
+            entry.blocks_allocated_copy = read_le24(ptr + 0x2C);
+            entry.starting_block = read_le24(ptr + 0x2F);
+            entry.path_indicator = static_cast<std::int16_t>(read_be16(ptr + 0x32));
+            entry.file_size = read_be32(ptr + 0x34);
+            entry.update_timestamp = read_be32(ptr + 0x38);
+            entry.access_timestamp = read_be32(ptr + 0x3C);
 
             entries.push_back(std::move(entry));
         }
@@ -68,4 +70,4 @@ namespace stfs {
         return entries;
     }
 
-} // namespace stfs
+} // namespace gxbuild3::stfs

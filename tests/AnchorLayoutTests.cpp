@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <iostream>
 #include <utility>
-using namespace gxbuild3::NAND;
+
+using namespace gxbuild3;
+using namespace gxbuild3::nand;
 using Bytes = std::vector<uint8_t>;
 static bool check(bool ok, const char* message) {
     if (!ok)
@@ -31,7 +33,7 @@ static FlashImage fixture(Driver::DriverMode mode, BuildType type) {
         p.insert(p.begin() + 8, {255, 255, 255, 255});
     }
     ParsedPatchSet ps;
-    BinaryParser::ParsePatchSet(p, type, ps);
+    parse_patch_set(p, type, ps);
     f.payloads.patchset = ps;
     return f;
 }
@@ -86,7 +88,8 @@ static bool anchors() {
 }
 static bool spill(BuildType type) {
     auto f = fixture(Driver::DriverMode::Big, BuildType::Glitch2);
-    if (type != BuildType::Glitch2) f.payloads.patchset.reset();
+    if (type != BuildType::Glitch2)
+        f.payloads.patchset.reset();
     if (type == BuildType::Jtag) {
         XeLL x{};
         x.data = raw_xell();
@@ -104,7 +107,8 @@ static bool spill(BuildType type) {
     cg.header.header.size = sizeof(cg_header) + cg.data.size();
     cg.decrypted = false;
     f.system_update_0 = {cf, cg};
-    if (type == BuildType::Retail) f.system_update_1 = {cf, cg};
+    if (type == BuildType::Retail)
+        f.system_update_1 = {cf, cg};
     f.filesystem = FlashFileSystem{};
     f.filesystem->set_driver(&f.flash_driver);
     f.filesystem->format(f.flash_driver.block_count(), 0x1D0);
@@ -115,12 +119,14 @@ static bool spill(BuildType type) {
     if (type == BuildType::Retail) {
         if (!check(!f.system_update_0.cg_spill_blocks.empty() &&
                        !f.system_update_1.cg_spill_blocks.empty(),
-                   "retail allocates both CG continuation chains")) return false;
+                   "retail allocates both CG continuation chains"))
+            return false;
         for (auto block : f.system_update_0.cg_spill_blocks)
             if (!check(std::find(f.system_update_1.cg_spill_blocks.begin(),
-                                f.system_update_1.cg_spill_blocks.end(), block) ==
-                           f.system_update_1.cg_spill_blocks.end(),
-                       "retail continuation chains do not overlap")) return false;
+                                 f.system_update_1.cg_spill_blocks.end(),
+                                 block) == f.system_update_1.cg_spill_blocks.end(),
+                       "retail continuation chains do not overlap"))
+                return false;
     }
     auto c = *f.system_update_0.cf;
     c.decrypt(key_1bl);
@@ -134,8 +140,10 @@ static bool spill(BuildType type) {
     if (type == BuildType::Retail &&
         !check(parsed->header.patch_slots == 2 && parsed->system_update_1.cg &&
                    parsed->system_update_1.cg->serialize() == expected,
-               "retail preserves slot one and reconstructs its complete CG")) return false;
-    if (!check(parsed->parse(), "split image can be parsed twice")) return false;
+               "retail preserves slot one and reconstructs its complete CG"))
+        return false;
+    if (!check(parsed->parse(), "split image can be parsed twice"))
+        return false;
     auto roundtrip = FlashImage::read(parsed->write());
     if (!check(roundtrip && roundtrip->parse() && roundtrip->system_update_0.cg &&
                    roundtrip->system_update_0.cg->serialize() == expected,
@@ -271,7 +279,7 @@ static bool jtag_window(Driver::DriverMode mode) {
     bool ok = filled(0x200, 0x200, 0xCC, "SMC payload lands at absolute 0x200");
     ok = filled(window, 0xd40, 0xAA, "rebooter lands at the anchored window base") && ok;
     ok = filled(window + 0x5000, 0x60, 0xBB, "virtual fuses land at window + 0x5000") && ok;
-    const auto patches = BinaryParser::SerializePatchSet(*f.payloads.patchset);
+    const auto patches = serialize_patch_set(*f.payloads.patchset);
     ok = check(d.read_clean(window + 0x1000, patches.size()) == patches,
                "KHV patchset is pinned at window + 0x1000") &&
          ok;

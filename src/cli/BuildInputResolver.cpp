@@ -170,8 +170,8 @@ namespace gxbuild3::cli {
         std::expected<std::vector<uint8_t>, ResolutionError>
         parse_cpu_key(std::string_view raw, const std::filesystem::path& path) {
             raw = trim_view(raw);
-            const auto parsed = validate_cpu_key_hex(raw);
-            if (parsed.status == CpuKeyStatus::Invalid) {
+            const auto parsed = nand::validate_cpu_key_hex(raw);
+            if (parsed.status == nand::CpuKeyStatus::Invalid) {
                 return std::unexpected(error(ResolutionErrorCode::InvalidCpuKey, parsed.message,
                                              path, std::string(raw)));
             }
@@ -200,7 +200,7 @@ namespace gxbuild3::cli {
         find_asset(std::string_view name, const std::vector<std::filesystem::path>& roots,
                    gxbuild3::utils::ScanOptions options = {},
                    gxbuild3::utils::AssetKind kind = gxbuild3::utils::AssetKind::Regular) {
-            auto found = FileManager::FindFileDataDetailed(name, roots, options, kind);
+            auto found = utils::find_file_data_detailed(name, roots, options, kind);
             if (!found) {
                 return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
                                              found.error().message, found.error().source_path,
@@ -440,7 +440,7 @@ namespace gxbuild3::cli {
                                                  "Resolved asset is not a readable regular file",
                                                  candidate, std::string(filename)));
                 }
-                auto data = Utils::read_file(candidate);
+                auto data = utils::read_file(candidate);
                 if (!data) {
                     return std::unexpected(error(failure_code, "Could not read resolved asset",
                                                  candidate, std::string(filename)));
@@ -484,7 +484,7 @@ namespace gxbuild3::cli {
                                 !std::filesystem::is_regular_file(path, status_error)) {
                                 continue;
                             }
-                            auto data = Utils::read_file(
+                            auto data = utils::read_file(
                                 path, gxbuild3::utils::kXeRsa2048PrivateKeySize + 1);
                             if (data && data->size() == gxbuild3::utils::kXeRsa2048PrivateKeySize &&
                                 gxbuild3::utils::crc32(*data) ==
@@ -526,12 +526,12 @@ namespace gxbuild3::cli {
         // console's the INI does not name. A patch file stored with its slot suffix
         // ("aac.xexp1") takes the place of the INI entry it came from ("aac.xexp").
         void order_flashfs(std::vector<std::pair<std::string, std::vector<uint8_t>>>& files,
-                           const Ini::Document& ini) {
+                           const ini::Document& ini) {
             std::unordered_map<std::string, size_t> ranks;
             for (const auto section_name : {"flashfs", "security"}) {
                 if (const auto* section = ini.get(section_name)) {
                     for (const auto& entry : *section) {
-                        const auto key = lowercase_basename(FileManager::IniAssetName(entry.key));
+                        const auto key = lowercase_basename(utils::ini_asset_name(entry.key));
                         if (!key.empty() && key != "none") {
                             ranks.emplace(key, ranks.size());
                         }
@@ -567,18 +567,18 @@ namespace gxbuild3::cli {
         // lacks: for a listed one xeBuild reports an error when the keyvault requires it, with a
         // note for hacked images on what a nofcrt patch can do, and passes over it otherwise. A
         // required fcrt.bin the INI does not list is warned about here; xeBuild says nothing.
-        void weigh_missing_fcrt(const Ini::Document& ini,
+        void weigh_missing_fcrt(const ini::Document& ini,
                                 const std::optional<std::vector<uint8_t>>& keyvault,
                                 BuildType build_type) {
             bool listed = false;
             if (const auto* security = ini.get("security")) {
                 listed = std::any_of(security->begin(), security->end(), [](const auto& entry) {
-                    return lowercase_basename(FileManager::IniAssetName(entry.key)) == "fcrt.bin";
+                    return lowercase_basename(utils::ini_asset_name(entry.key)) == "fcrt.bin";
                 });
             }
-            const auto requirement = keyvault ? gxbuild3::NAND::fcrt_requirement(*keyvault)
-                                              : gxbuild3::NAND::FcrtRequirement::NotRequired;
-            if (requirement == gxbuild3::NAND::FcrtRequirement::NotRequired) {
+            const auto requirement = keyvault ? gxbuild3::nand::fcrt_requirement(*keyvault)
+                                              : gxbuild3::nand::FcrtRequirement::NotRequired;
+            if (requirement == gxbuild3::nand::FcrtRequirement::NotRequired) {
                 if (listed) {
                     Log::Info("fcrt.bin was not found and the keyvault does not require it; it "
                               "is left out");
@@ -593,7 +593,7 @@ namespace gxbuild3::cli {
             Log::Error("fcrt.bin was not found; the keyvault flags it as required, and it is left "
                        "out");
             if (build_type != BuildType::Retail && build_type != BuildType::Devkit) {
-                if (requirement == gxbuild3::NAND::FcrtRequirement::Required) {
+                if (requirement == gxbuild3::nand::FcrtRequirement::Required) {
                     Log::Warn("On a hacked image a nofcrt patch (-a nofcrt) should let the drive "
                               "and the console work");
                 } else {
@@ -609,7 +609,7 @@ namespace gxbuild3::cli {
         : working_directory_(std::move(working_directory)) {}
 
     std::expected<ResolvedFoundations, ResolutionError>
-    BuildInputResolver::ResolveFoundations(const BuildArgs& args) const {
+    BuildInputResolver::resolve_foundations(const BuildArgs& args) const {
         if (args.source_dirs.empty()) {
             return std::unexpected(error(ResolutionErrorCode::InvalidSourceDirectory,
                                          "At least one source root is required"));
@@ -649,7 +649,7 @@ namespace gxbuild3::cli {
         if (args.cpu_key) {
             cpu_key = parse_cpu_key(*args.cpu_key, {});
         } else {
-            auto discovered = FileManager::FindFileDataDetailed("cpukey.txt", roots);
+            auto discovered = utils::find_file_data_detailed("cpukey.txt", roots);
             if (!discovered) {
                 return std::unexpected(error(ResolutionErrorCode::CpuKeyReadFailed,
                                              discovered.error().message,
@@ -668,13 +668,13 @@ namespace gxbuild3::cli {
         std::optional<std::vector<uint8_t>> nand_data;
         if (args.input_path) {
             nand_path = anchored(working_directory_, *args.input_path);
-            nand_data = Utils::read_file(*nand_path);
+            nand_data = utils::read_file(*nand_path);
             if (!nand_data) {
                 return std::unexpected(error(ResolutionErrorCode::InputReadFailed,
                                              "Could not read explicit donor NAND", *nand_path));
             }
         } else {
-            auto discovered = FileManager::FindFileDataDetailed("nanddump.bin", roots);
+            auto discovered = utils::find_file_data_detailed("nanddump.bin", roots);
             if (!discovered) {
                 return std::unexpected(error(ResolutionErrorCode::InputReadFailed,
                                              discovered.error().message,
@@ -690,7 +690,7 @@ namespace gxbuild3::cli {
         ImageType image_type{};
         if (nand_data) {
             try {
-                donor = ExtractAll(*nand_data, *cpu_key);
+                donor = extract_all(*nand_data, *cpu_key);
             } catch (const std::exception& exception) {
                 return std::unexpected(error(
                     ResolutionErrorCode::InvalidDonor,
@@ -729,9 +729,9 @@ namespace gxbuild3::cli {
     }
 
     std::expected<BuildRequest, ResolutionError>
-    BuildInputResolver::Resolve(const BuildArgs& args) const {
+    BuildInputResolver::resolve(const BuildArgs& args) const {
         try {
-            auto foundations = ResolveFoundations(args);
+            auto foundations = resolve_foundations(args);
             if (!foundations) {
                 return std::unexpected(foundations.error());
             }
@@ -759,12 +759,12 @@ namespace gxbuild3::cli {
                     error(ResolutionErrorCode::BuildIniReadFailed, std::move(message), ini_path));
             }
 
-            const auto ini_document = Ini::ParseFile(ini_path);
+            const auto ini_document = ini::parse_file(ini_path);
             if (!ini_document) {
                 return std::unexpected(
                     error(ResolutionErrorCode::BuildIniReadFailed,
                           "Could not read build INI: " +
-                              std::string(Ini::ParseErrorString(ini_document.error())),
+                              std::string(ini::parse_error_string(ini_document.error())),
                           ini_path));
             }
             if (args.section.empty()) {
@@ -818,10 +818,10 @@ namespace gxbuild3::cli {
                     }
                     // A file from outside the release is looked up as the INI reader looks it
                     // up: as a loose file under its path in the roots, then by its basename.
-                    const bool outside = FileManager::IniAssetIsOutside(entry.key);
+                    const bool outside = utils::ini_asset_is_outside(entry.key);
                     auto loose_options = scan_options;
                     loose_options.nosu = true;
-                    const auto name = FileManager::IniAssetName(entry.key);
+                    const auto name = utils::ini_asset_name(entry.key);
                     auto found = outside ? find_asset(name, roots, loose_options)
                                          : find_asset(entry.key, roots, scan_options);
                     if (outside && found && !*found) {
@@ -848,8 +848,8 @@ namespace gxbuild3::cli {
                 }
             }
 
-            const auto ini_files = FileManager::ReadIniFiles(ini_path, target_section, roots,
-                                                             scan_options, args.build_type);
+            const auto ini_files = utils::read_ini_files(ini_path, target_section, roots,
+                                                         scan_options, args.build_type);
             if (!ini_files) {
                 return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
                                              "Could not resolve build INI assets", ini_path,
@@ -911,14 +911,14 @@ namespace gxbuild3::cli {
             // looks sealed (most likely for another console) as an error, and so does this.
             if (*keyvault) {
                 auto opened =
-                    gxbuild3::NAND::open_loose_keyvault(foundations->cpu_key, (**keyvault).data);
+                    gxbuild3::nand::open_loose_keyvault(foundations->cpu_key, (**keyvault).data);
                 if (!opened) {
                     return std::unexpected(
                         error(ResolutionErrorCode::InvalidInput,
                               "kv.bin is not 0x4000 bytes, nor 0x3FF0 without its nonce",
                               (**keyvault).source_path, "kv.bin"));
                 }
-                using Form = gxbuild3::NAND::LooseKeyvault::Form;
+                using Form = gxbuild3::nand::LooseKeyvault::Form;
                 if (opened->form == Form::StaleNonce) {
                     Log::Warn("kv.bin is in the clear, but its nonce is not one the CPU key "
                               "derives; it is taken as it stands. Make sure it is this console's");
@@ -980,14 +980,14 @@ namespace gxbuild3::cli {
                 }
             }
             // A loose extended.bin or secdata.bin too short to hold its nonce is passed as
-            // supplied: RunBuild makes up a clean one for any copy of the wrong length.
+            // supplied: run_build makes up a clean one for any copy of the wrong length.
             for (auto file : ini_files->flashfs_sec) {
                 const auto key = lowercase_basename(file.first);
                 if ((key == "secdata.bin" || key == "extended.bin") && file.second.size() >= 0x10) {
                     auto opened =
                         key == "extended.bin"
-                            ? gxbuild3::NAND::open_loose_extended(file.second, foundations->cpu_key)
-                            : gxbuild3::NAND::open_loose_secdata(file.second, foundations->cpu_key);
+                            ? gxbuild3::nand::open_loose_extended(file.second, foundations->cpu_key)
+                            : gxbuild3::nand::open_loose_secdata(file.second, foundations->cpu_key);
                     if (!opened) {
                         return std::unexpected(
                             error(ResolutionErrorCode::InvalidInput,
@@ -999,11 +999,11 @@ namespace gxbuild3::cli {
                 overlay_flashfs(flashfs, std::move(file), flashfs_positions);
             }
             // An extended.bin or secdata.bin the INI's [security] names and nothing supplies is
-            // carried empty, and RunBuild makes up a clean one for it as xeBuild 1.21 does.
+            // carried empty, and run_build makes up a clean one for it as xeBuild 1.21 does.
             if (!scan_options.nosusecurity) {
                 if (const auto* security = ini_document->get("security")) {
                     for (const auto& entry : *security) {
-                        const auto key = lowercase_basename(FileManager::IniAssetName(entry.key));
+                        const auto key = lowercase_basename(utils::ini_asset_name(entry.key));
                         if ((key == "extended.bin" || key == "secdata.bin") &&
                             !flashfs_positions.contains(key)) {
                             overlay_flashfs(flashfs, {key, {}}, flashfs_positions);
@@ -1128,9 +1128,9 @@ namespace gxbuild3::cli {
                         version_section && !version_section->empty()) {
                         firmware_version = version_section->front().key;
                     }
-                    payloads.rebooter = gxbuild3::NAND::freeboot_rebooter_for(firmware_version);
+                    payloads.rebooter = gxbuild3::nand::freeboot_rebooter_for(firmware_version);
                     payloads.payload =
-                        gxbuild3::NAND::freeboot_payload_for(payloads.rebooter->size());
+                        gxbuild3::nand::freeboot_payload_for(payloads.rebooter->size());
                 }
 
                 if (needs_fuses) {
@@ -1166,7 +1166,7 @@ namespace gxbuild3::cli {
                 input.payloads = std::move(payloads);
             }
 
-            if (const auto validation = ValidateInput(input); !validation) {
+            if (const auto validation = validate_input(input); !validation) {
                 return std::unexpected(
                     error(ResolutionErrorCode::InvalidInput, validation.error().message));
             }

@@ -7,7 +7,7 @@
 #include <cstring>
 #include <string_view>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     namespace {
 
@@ -106,7 +106,8 @@ namespace gxbuild3::NAND {
         }
 
         // NAND XeLL starts with PPC exception-vector branches, not an ELF container.
-        constexpr uint8_t raw_entry[] = {0x48,0,0,0x20,0x48,0,0,0xEC,0x48,0,0,0,0x48,0,0,0};
+        constexpr uint8_t raw_entry[] = {0x48, 0, 0, 0x20, 0x48, 0, 0, 0xEC,
+                                         0x48, 0, 0, 0,    0x48, 0, 0, 0};
         if (!std::equal(std::begin(raw_entry), std::end(raw_entry), bytes.begin()) &&
             !std::equal(std::begin(kElfMagic), std::end(kElfMagic), bytes.begin())) {
             return std::nullopt;
@@ -124,4 +125,4 @@ namespace gxbuild3::NAND {
         return parse(std::span<const uint8_t>(bytes.data(), bytes.size()));
     }
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

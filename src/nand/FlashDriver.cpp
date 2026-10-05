@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     Driver::Driver(ImageSize size, DriverMode mode) : m_driver_mode(mode), m_image_size(size) {
         switch (m_driver_mode) {
@@ -774,4 +774,4 @@ namespace gxbuild3::NAND {
         return m_nand_image;
     }
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

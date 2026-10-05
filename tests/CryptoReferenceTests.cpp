@@ -22,6 +22,8 @@
 #include <utility>
 #include <vector>
 
+using namespace gxbuild3::nand;
+
 namespace {
     using Bytes = std::vector<uint8_t>;
     using Digest = std::array<uint8_t, 20>;
@@ -78,7 +80,6 @@ namespace {
     }
 
     bool test_packer_seals_devkit_chain_like_xerunner() {
-        using gxbuild3::bootloaders::BootloaderBlock;
         std::vector<BootloaderBlock> chain;
         for (const char* name : {"SB_10375.bin", "SC_17489.bin", "SD_17489.bin"}) {
             BootloaderBlock block{};
@@ -91,7 +92,7 @@ namespace {
             block.size = static_cast<uint32_t>(block.data.size());
             chain.push_back(std::move(block));
         }
-        if (!require(gxbuild3::bootloaders::crypt_bootloaders(chain, {}), "packer seals chain"))
+        if (!require(crypt_bootloaders(chain, {}), "packer seals chain"))
             return false;
         bool ok = require(sha1(chain[0].data) == digest_from_hex(kSealedSb),
                           "packer SB matches xerunner");
@@ -108,7 +109,7 @@ namespace {
     // plaintext motherboard nibble. Plaintext SMCs end in four zero bytes (xerunner
     // smc.py `handed_in`), so the decrypted tail decides.
     bool test_smc_encryption_is_detected_by_zero_tail() {
-        using namespace gxbuild3::NAND;
+        using namespace gxbuild3::nand;
         Bytes plain(0x3000, 0);
         for (size_t i = 0; i < 0x2F00; ++i)
             plain[i] = static_cast<uint8_t>(i * 7 + 3);

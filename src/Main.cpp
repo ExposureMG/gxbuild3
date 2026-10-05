@@ -36,7 +36,7 @@ namespace {
 } // namespace
 
 int main(int argc, char* argv[]) try {
-    Log::Init();
+    gxbuild3::Log::Init();
 
     std::vector<std::string_view> arguments;
     arguments.reserve(static_cast<size_t>(argc));
@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) try {
         arguments.emplace_back(argv[index]);
     }
 
-    const auto parsed = gxbuild3::cli::ParseCommandLine(arguments);
+    const auto parsed = gxbuild3::cli::parse_command_line(arguments);
     if (!parsed) {
         std::cerr << kProgramName << ": " << parsed.error().message << '\n';
         return 2;
@@ -60,11 +60,11 @@ int main(int argc, char* argv[]) try {
 
     const auto& args = std::get<gxbuild3::cli::BuildArgs>(*parsed);
     if (args.verbose) {
-        Log::SetVerbose(true);
-        Log::Debug("Verbose logging enabled");
+        gxbuild3::Log::SetVerbose(true);
+        gxbuild3::Log::Debug("Verbose logging enabled");
     }
-    const auto result = gxbuild3::cli::RunBuildCommand(
-        args, gxbuild3::cli::DefaultBuildCommandServices(std::filesystem::current_path()));
+    const auto result = gxbuild3::cli::run_build_command(
+        args, gxbuild3::cli::default_build_command_services(std::filesystem::current_path()));
     if (result.exit_code != 0) {
         std::cerr << kProgramName << ": " << result.message << '\n';
     }

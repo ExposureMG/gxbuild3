@@ -1,4 +1,5 @@
 #include "patchers/Signature.hpp"
+
 #include "utils/Log.hpp"
 
 #include <algorithm>
@@ -6,9 +7,9 @@
 #include <sstream>
 #include <string>
 
-namespace Signature {
+namespace gxbuild3::patchers {
 
-    std::vector<SigByte> ParsePattern(const std::string& patternStr) {
+    std::vector<SigByte> parse_signature_pattern(const std::string& patternStr) {
         std::vector<SigByte> pattern;
         std::stringstream ss(patternStr);
         std::string token;
@@ -23,7 +24,8 @@ namespace Signature {
                 try {
                     sigByte.value = static_cast<uint8_t>(std::stoul(token, nullptr, 16));
                 } catch (const std::exception& e) {
-                    Log::Error("Invalid signature token '{}', treating as wildcard: {}", token, e.what());
+                    Log::Error("Invalid signature token '{}', treating as wildcard: {}", token,
+                               e.what());
                     sigByte.isWildcard = true;
                     sigByte.value = 0x00;
                 }
@@ -34,14 +36,15 @@ namespace Signature {
         return pattern;
     }
 
-    uint32_t ApplyPatch(uint8_t* data, uint32_t dataSize, const std::string& searchPatternStr,
-                        const std::string& replacePatternStr) {
+    uint32_t apply_signature_patch(uint8_t* data, uint32_t dataSize,
+                                   const std::string& searchPatternStr,
+                                   const std::string& replacePatternStr) {
         if (!data || dataSize == 0) {
             return 0;
         }
 
-        std::vector<SigByte> searchPattern = ParsePattern(searchPatternStr);
-        std::vector<SigByte> replacePattern = ParsePattern(replacePatternStr);
+        std::vector<SigByte> searchPattern = parse_signature_pattern(searchPatternStr);
+        std::vector<SigByte> replacePattern = parse_signature_pattern(replacePatternStr);
 
         if (searchPattern.empty()) {
             return 0;
@@ -81,4 +84,4 @@ namespace Signature {
         return matchesCount;
     }
 
-} // namespace Signature
+} // namespace gxbuild3::patchers
