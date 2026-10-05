@@ -135,7 +135,8 @@ namespace gxbuild3::cli {
                 token != "-p" && token != "--cpukey" && token != "-e" && token != "--ext" &&
                 token != "-c" && token != "--config" && token != "-a" && token != "--addon") {
                 return std::unexpected(error(ParseErrorCode::UnknownArgument, token,
-                                             "unknown argument '" + std::string(token) + "'", index));
+                                             "unknown argument '" + std::string(token) + "'",
+                                             index));
             }
 
             const auto value = take_value(argv, index);
@@ -232,14 +233,14 @@ namespace gxbuild3::cli {
                 args.patch_extension = std::string(*value);
             } else if (token == "-c" || token == "--config") {
                 const auto values = split_list(*value);
-                if (values.empty() || !std::all_of(values.begin(), values.end(), is_valid_config)) {
+                if (values.empty() || !std::ranges::all_of(values, is_valid_config)) {
                     return std::unexpected(
                         error(ParseErrorCode::InvalidList, *value, "invalid config list", index));
                 }
                 args.config.insert(args.config.end(), values.begin(), values.end());
             } else if (token == "-a" || token == "--addon") {
                 const auto values = split_list(*value);
-                if (values.empty() || !std::all_of(values.begin(), values.end(), is_addon_name)) {
+                if (values.empty() || !std::ranges::all_of(values, is_addon_name)) {
                     return std::unexpected(
                         error(ParseErrorCode::InvalidAddon, *value, "invalid add-on", index));
                 }

@@ -271,13 +271,6 @@ namespace {
         return section == patchset.sections.end() ? nullptr : &*section;
     }
 
-    bool ranges_overlap(size_t first_offset, size_t first_length, size_t second_offset,
-                        size_t second_length) {
-        return first_length != 0 && second_length != 0 &&
-               first_offset < second_offset + second_length &&
-               second_offset < first_offset + first_length;
-    }
-
     size_t align_16(size_t value) {
         return (value + 0x0F) & ~size_t{0x0F};
     }
