@@ -52,6 +52,7 @@ set(GXBUILD3_LIB_SOURCES
     src/stfs/HeaderParser.cpp
     src/stfs/MetadataParser.cpp
     src/stfs/Package.cpp
+    src/stfs/PackageCommon.cpp
     src/stfs/StfsContainer.cpp
     src/utils/BigUint.cpp
     src/utils/BuildTime.cpp
@@ -101,6 +102,10 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_keyvault_version_tests tests/KeyvaultVersionTests.cpp)
     add_gxbuild3_test(gxbuild3_xe_rsa_tests tests/XeRsaTests.cpp)
     add_gxbuild3_test(gxbuild3_crypto_reference_tests tests/CryptoReferenceTests.cpp)
+    add_gxbuild3_test(gxbuild3_stfs_tests tests/StfsTests.cpp)
+    target_compile_definitions(gxbuild3_stfs_tests PRIVATE
+        GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
+    set_tests_properties(gxbuild3_stfs_tests PROPERTIES TIMEOUT 60)
     target_compile_definitions(gxbuild3_crypto_reference_tests PRIVATE
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
 

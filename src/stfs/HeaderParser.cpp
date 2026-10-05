@@ -9,6 +9,10 @@ namespace stfs {
 
     namespace {
 
+        // CON signatures end at 0x22C (0x1AC + 0x80); LIVE/PIRS signatures end at 0x22C as
+        // well (0x004 + 0x100 + 0x128). Every header variant needs this many bytes.
+        constexpr std::size_t kHeaderSize = 0x22C;
+
         Magic parseMagic(std::span<const std::byte> data) {
             std::array<char, 4> magic_bytes;
             std::memcpy(magic_bytes.data(), data.data(), 4);
@@ -61,7 +65,7 @@ namespace stfs {
     } // namespace
 
     Header parseHeader(std::span<const std::byte> data) {
-        if (data.size() < 0x1AC) {
+        if (data.size() < kHeaderSize) {
             throw std::runtime_error("Insufficient data for header parsing");
         }
 
@@ -87,16 +91,12 @@ namespace stfs {
             throw std::runtime_error("Cannot open file: " + path.string());
         }
 
-        file.seekg(0, std::ios::end);
-        std::size_t file_size = file.tellg();
-        file.seekg(0, std::ios::beg);
-
-        if (file_size < 0x1AC) {
+        std::vector<std::byte> buffer(kHeaderSize);
+        file.read(reinterpret_cast<char*>(buffer.data()),
+                  static_cast<std::streamsize>(buffer.size()));
+        if (file.gcount() != static_cast<std::streamsize>(buffer.size())) {
             throw std::runtime_error("File too small for header");
         }
-
-        std::vector<std::byte> buffer(0x1AC);
-        file.read(reinterpret_cast<char*>(buffer.data()), 0x1AC);
 
         return parseHeader(buffer);
     }

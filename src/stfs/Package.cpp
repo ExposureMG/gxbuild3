@@ -1,3 +1,5 @@
+#include "PackageCommon.hpp"
+
 #include <BlockParser.hpp>
 #include <Commons.hpp>
 #include <FileExtractor.hpp>
@@ -13,30 +15,6 @@ namespace stfs {
 
     namespace {
 
-        constexpr std::size_t kBlockSize = 0x1000;
-
-        std::vector<std::byte> readFileTableData(std::span<const std::byte> package,
-                                                 const StfsVolumeDescriptor& vd,
-                                                 std::uint32_t header_size) {
-            std::vector<std::byte> table_data;
-            table_data.reserve(static_cast<std::size_t>(vd.file_table_block_count) * kBlockSize);
-
-            for (std::int16_t i = 0; i < vd.file_table_block_count; ++i) {
-                auto logical = static_cast<std::uint32_t>(vd.file_table_block_number + i);
-                std::uint32_t data_block = computeDataBlockNumber(logical);
-                std::uint32_t offset = blockToOffset(data_block, header_size);
-
-                if (offset + kBlockSize > package.size()) {
-                    throw std::runtime_error("File table block out of bounds");
-                }
-
-                const auto* ptr = package.data() + offset;
-                table_data.insert(table_data.end(), ptr, ptr + kBlockSize);
-            }
-
-            return table_data;
-        }
-
         std::vector<FileEntry> buildFileListing(std::span<const std::byte> package,
                                                 const Metadata& meta) {
             const auto* vd = std::get_if<StfsVolumeDescriptor>(&meta.volume_descriptor);
@@ -44,29 +22,8 @@ namespace stfs {
                 throw std::runtime_error("SVOD packages are not supported for file listing");
             }
 
-            auto table_data = readFileTableData(package, *vd, meta.header_size);
+            auto table_data = detail::readFileTable(package, meta.header_size, *vd);
             return parseFileListing(table_data);
-        }
-
-        std::filesystem::path resolveEntryPath(const std::vector<FileEntry>& files,
-                                               const FileEntry& entry) {
-            if (entry.path_indicator == -1) {
-                return entry.name;
-            }
-
-            std::filesystem::path path = entry.name;
-            std::int16_t parent = entry.path_indicator;
-
-            while (parent != -1) {
-                if (parent < 0 || static_cast<std::size_t>(parent) >= files.size()) {
-                    throw std::runtime_error("Invalid path_indicator in file entry");
-                }
-                const FileEntry& dir = files[static_cast<std::size_t>(parent)];
-                path = std::filesystem::path(dir.name) / path;
-                parent = dir.path_indicator;
-            }
-
-            return path;
         }
 
         const std::array<std::byte, 0x14>* topHashPointer(const StfsVolumeDescriptor* vd) noexcept {
@@ -126,9 +83,17 @@ namespace stfs {
     }
 
     void Package::extractAll(const std::filesystem::path& output_dir, bool verify) const {
-        for (const auto& entry : files_) {
-            auto relative = resolveEntryPath(files_, entry);
-            auto dest = output_dir / relative;
+        // Validate every destination before writing anything.
+        const auto relative_paths = detail::buildEntryPaths(files_);
+        std::vector<std::filesystem::path> destinations;
+        destinations.reserve(relative_paths.size());
+        for (const auto& relative : relative_paths) {
+            destinations.push_back(detail::safeJoin(output_dir, relative));
+        }
+
+        for (std::size_t i = 0; i < files_.size(); ++i) {
+            const auto& entry = files_[i];
+            const auto& dest = destinations[i];
 
             if (entry.isDirectory()) {
                 std::filesystem::create_directories(dest);

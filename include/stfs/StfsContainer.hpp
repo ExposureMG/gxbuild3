@@ -35,13 +35,6 @@ namespace Stfs {
         [[nodiscard]] std::vector<std::byte> extractFileByName(std::string_view name) const;
 
       private:
-        struct EntryView {
-            std::size_t index;
-            std::filesystem::path path;
-        };
-
-        [[nodiscard]] std::vector<EntryView> buildEntryViews() const;
-
         std::span<const std::byte> data_;
         std::uint32_t header_size_;
         std::vector<::stfs::FileEntry> entries_;

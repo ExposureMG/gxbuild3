@@ -1,5 +1,6 @@
 #include "stfs/StfsContainer.hpp"
 
+#include "PackageCommon.hpp"
 #include "utils/Log.hpp"
 
 #include <BlockParser.hpp>
@@ -9,7 +10,6 @@
 #include <MetadataParser.hpp>
 #include <algorithm>
 #include <cctype>
-#include <fstream>
 #include <stdexcept>
 #include <string_view>
 #include <variant>
@@ -17,7 +17,6 @@
 namespace Stfs {
     namespace {
 
-        constexpr std::size_t kBlockSize = 0x1000;
         constexpr std::size_t kBootloaderHeaderSize = 0x10;
 
         [[nodiscard]] std::uint16_t readBe16(std::span<const std::byte> data, std::size_t offset) {
@@ -60,47 +59,6 @@ namespace Stfs {
                 name.erase(0, prefix.size());
             }
             return name;
-        }
-
-        [[nodiscard]] std::filesystem::path safeJoin(const std::filesystem::path& parent,
-                                                     std::string_view child) {
-            std::filesystem::path child_path{std::string{child}};
-            if (child_path.is_absolute()) {
-                throw std::runtime_error("STFS entry uses an absolute path");
-            }
-
-            const auto normalized = child_path.lexically_normal();
-            for (const auto& part : normalized) {
-                if (part == "..") {
-                    throw std::runtime_error("STFS entry escapes the target directory");
-                }
-            }
-
-            return parent / normalized;
-        }
-
-        [[nodiscard]] std::vector<std::byte> readFileTable(std::span<const std::byte> data,
-                                                           std::uint32_t header_size,
-                                                           const stfs::StfsVolumeDescriptor& vd) {
-            stfs::FileEntry table_entry{};
-            table_entry.name = "$filetable";
-            table_entry.flags = 0;
-            table_entry.blocks_allocated = static_cast<std::uint32_t>(vd.file_table_block_count);
-            table_entry.blocks_allocated_copy = table_entry.blocks_allocated;
-            table_entry.starting_block = static_cast<std::uint32_t>(vd.file_table_block_number);
-            table_entry.file_size = table_entry.blocks_allocated * kBlockSize;
-
-            return stfs::extractFile(data, table_entry, stfs::Magic::PIRS, header_size);
-        }
-
-        void writeFile(const std::filesystem::path& path, std::span<const std::byte> data) {
-            std::ofstream out(path, std::ios::binary);
-            if (!out) {
-                throw std::runtime_error("Cannot open output file: " + path.string());
-            }
-
-            out.write(reinterpret_cast<const char*>(data.data()),
-                      static_cast<std::streamsize>(data.size()));
         }
 
     } // namespace
@@ -158,46 +116,28 @@ namespace Stfs {
             throw std::runtime_error("PIRS package is missing an STFS volume descriptor");
         }
 
-        if (vd->file_table_block_count <= 0 || vd->file_table_block_number < 0) {
-            throw std::runtime_error("PIRS package has an invalid file table descriptor");
-        }
-
         header_size_ = metadata.header_size;
 
-        const auto file_table = readFileTable(data_, header_size_, *vd);
+        const auto file_table = stfs::detail::readFileTable(data_, header_size_, *vd);
         entries_ = stfs::parseFileListing(file_table);
         Log::Debug("Opened STFS container ({} entries, header size 0x{:X})", entries_.size(),
                    header_size_);
     }
 
-    std::vector<StfsContainer::EntryView> StfsContainer::buildEntryViews() const {
-        std::vector<EntryView> views;
-        views.reserve(entries_.size());
+    void StfsContainer::extractAll(const std::filesystem::path& target_dir) const {
+        // Validate every destination before writing anything.
+        const auto relative_paths = stfs::detail::buildEntryPaths(entries_);
+        std::vector<std::filesystem::path> destinations;
+        destinations.reserve(relative_paths.size());
+        for (const auto& relative : relative_paths) {
+            destinations.push_back(stfs::detail::safeJoin(target_dir, relative));
+        }
+
+        std::filesystem::create_directories(target_dir);
 
         for (std::size_t i = 0; i < entries_.size(); ++i) {
             const auto& entry = entries_[i];
-            std::filesystem::path path{entry.name};
-
-            if (entry.path_indicator >= 0) {
-                const auto parent_index = static_cast<std::size_t>(entry.path_indicator);
-                if (parent_index >= views.size()) {
-                    throw std::runtime_error("STFS file table references an invalid parent index");
-                }
-                path = views[parent_index].path / path;
-            }
-
-            views.push_back(EntryView{i, path.lexically_normal()});
-        }
-
-        return views;
-    }
-
-    void StfsContainer::extractAll(const std::filesystem::path& target_dir) const {
-        std::filesystem::create_directories(target_dir);
-
-        for (const auto& view : buildEntryViews()) {
-            const auto& entry = entries_[view.index];
-            const auto full_path = safeJoin(target_dir, view.path.string());
+            const auto& full_path = destinations[i];
 
             if (entry.isDirectory()) {
                 std::filesystem::create_directories(full_path);
@@ -206,7 +146,7 @@ namespace Stfs {
 
             std::filesystem::create_directories(full_path.parent_path());
             const auto file_data = stfs::extractFile(data_, entry, stfs::Magic::PIRS, header_size_);
-            writeFile(full_path, file_data);
+            stfs::detail::writeFile(full_path, file_data);
         }
     }
 

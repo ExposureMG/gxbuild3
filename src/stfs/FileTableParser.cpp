@@ -3,6 +3,8 @@
 #include <FileTableParser.hpp>
 #include <span>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace stfs {
@@ -10,6 +12,7 @@ namespace stfs {
     std::vector<FileEntry> parseFileListing(std::span<const std::byte> data) {
         std::vector<FileEntry> entries;
         constexpr std::size_t entry_size = 0x40;
+        constexpr std::size_t name_field_size = 0x28;
 
         if (data.size() % entry_size != 0) {
             throw std::runtime_error("File listing size not aligned to entry size");
@@ -21,23 +24,34 @@ namespace stfs {
         for (std::size_t i = 0; i < entry_count; ++i) {
             const auto* ptr = base + i * entry_size;
 
-            bool all_zero = true;
-            for (std::size_t b = 0; b < entry_size; ++b) {
-                if (ptr[b] != std::byte{0}) {
-                    all_zero = false;
-                    break;
-                }
-            }
-            if (all_zero) {
-                break;
-            }
-
-            FileEntry entry;
-
             std::uint8_t flags = static_cast<std::uint8_t>(ptr[0x28]);
             std::uint8_t name_length = flags & 0x3F;
 
-            entry.name.assign(reinterpret_cast<const char*>(ptr), name_length);
+            // The listing ends with an all-zero entry. An entry with no name length cannot name
+            // a file either, so it ends the listing as well: skipping it instead would shift the
+            // table positions that later entries' parent indexes refer to.
+            if (name_length == 0) {
+                break;
+            }
+            if (name_length > name_field_size) {
+                throw std::runtime_error("File table entry " + std::to_string(i) +
+                                         " has a name longer than its 40-byte field");
+            }
+
+            // Names are not NUL-terminated, but tolerate NUL padding inside the stated length.
+            std::string_view name(reinterpret_cast<const char*>(ptr), name_length);
+            name = name.substr(0, name.find('\0'));
+            if (name.empty()) {
+                throw std::runtime_error("File table entry " + std::to_string(i) +
+                                         " has an empty name");
+            }
+            if (name.find_first_of("/\\") != std::string_view::npos) {
+                throw std::runtime_error("File table entry " + std::to_string(i) +
+                                         " has a path separator in its name");
+            }
+
+            FileEntry entry;
+            entry.name.assign(name);
             entry.flags = flags;
 
             entry.blocks_allocated = readUInt24LE(ptr + 0x29);
