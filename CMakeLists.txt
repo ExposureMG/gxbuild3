@@ -6,13 +6,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Force -O2 for -O3 optimizer bug
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "" FORCE)
+if(PROJECT_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
 add_subdirectory(extern/GxCrypt)
 add_subdirectory(extern/spdlog)
+
+# Clang -O3 hangs on C++23 code such as FlashFileSystem.cpp. Cap Release at -O2 for
+# gxbuild3 targets only (directory scope, after extern/); the later -O2 overrides -O3.
+add_compile_options("$<$<AND:$<CXX_COMPILER_ID:Clang>,$<CONFIG:Release>>:-O2>")
 
 set(GXBUILD3_LIB_SOURCES
     src/Args.cpp
