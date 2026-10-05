@@ -1,9 +1,9 @@
-#include "../src/stfs/PackageCommon.hpp"
 #include "excrypt.h"
 #include "stfs/BlockParser.hpp"
 #include "stfs/FileExtractor.hpp"
 #include "stfs/HeaderParser.hpp"
 #include "stfs/Package.hpp"
+#include "stfs/PackageCommon.hpp"
 #include "stfs/StfsContainer.hpp"
 
 #include <algorithm>
