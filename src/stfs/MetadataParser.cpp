@@ -1,6 +1,7 @@
 #include <Commons.hpp>
 #include <Endian.hpp>
 #include <MetadataParser.hpp>
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstring>
@@ -10,13 +11,60 @@ namespace stfs {
 
     namespace {
 
-        std::u8string readLocaleString(const std::byte* ptr, std::size_t max_bytes) {
-            const auto* char_ptr = reinterpret_cast<const char8_t*>(ptr);
-            std::size_t len = 0;
-            while (len < max_bytes && char_ptr[len] != u8'\0') {
-                ++len;
+        void appendUtf8(std::u8string& out, char32_t cp) {
+            if (cp < 0x80) {
+                out += static_cast<char8_t>(cp);
+            } else if (cp < 0x800) {
+                out += static_cast<char8_t>(0xC0 | (cp >> 6));
+                out += static_cast<char8_t>(0x80 | (cp & 0x3F));
+            } else if (cp < 0x10000) {
+                out += static_cast<char8_t>(0xE0 | (cp >> 12));
+                out += static_cast<char8_t>(0x80 | ((cp >> 6) & 0x3F));
+                out += static_cast<char8_t>(0x80 | (cp & 0x3F));
+            } else {
+                out += static_cast<char8_t>(0xF0 | (cp >> 18));
+                out += static_cast<char8_t>(0x80 | ((cp >> 12) & 0x3F));
+                out += static_cast<char8_t>(0x80 | ((cp >> 6) & 0x3F));
+                out += static_cast<char8_t>(0x80 | (cp & 0x3F));
             }
-            return std::u8string(char_ptr, len);
+        }
+
+        // Decodes a NUL-terminated UTF-16BE string of at most `max_bytes` bytes to UTF-8.
+        // Unpaired surrogates become U+FFFD; a trailing odd byte is ignored.
+        std::u8string readLocaleString(const std::byte* ptr, std::size_t max_bytes) {
+            constexpr char32_t kReplacement = 0xFFFD;
+            const std::size_t units = max_bytes / 2;
+            const auto unit = [ptr](std::size_t i) -> char32_t {
+                return (static_cast<char32_t>(ptr[2 * i]) << 8) |
+                       static_cast<char32_t>(ptr[2 * i + 1]);
+            };
+
+            std::u8string out;
+            for (std::size_t i = 0; i < units; ++i) {
+                char32_t cp = unit(i);
+                if (cp == 0) {
+                    break;
+                }
+                if (cp >= 0xD800 && cp <= 0xDBFF) {
+                    const char32_t low = i + 1 < units ? unit(i + 1) : 0;
+                    if (low >= 0xDC00 && low <= 0xDFFF) {
+                        cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
+                        ++i;
+                    } else {
+                        cp = kReplacement;
+                    }
+                } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+                    cp = kReplacement;
+                }
+                appendUtf8(out, cp);
+            }
+            return out;
+        }
+
+        // Thumbnail sizes are signed on disk; negative sizes mean no image.
+        std::size_t thumbnailSize(std::int32_t size) {
+            constexpr std::int32_t kMaxThumbnailSize = 0x4000;
+            return size <= 0 ? 0 : static_cast<std::size_t>(std::min(size, kMaxThumbnailSize));
         }
 
         StfsVolumeDescriptor parseStfsVolumeDescriptor(const std::byte* ptr) {
@@ -135,14 +183,10 @@ namespace stfs {
         meta.thumbnail_image_size = static_cast<std::int32_t>(readBE32(base + 0x1712));
         meta.title_thumbnail_image_size = static_cast<std::int32_t>(readBE32(base + 0x1716));
 
-        auto thumb_size = static_cast<std::size_t>(meta.thumbnail_image_size);
-        if (thumb_size > 0x4000)
-            thumb_size = 0x4000;
+        const auto thumb_size = thumbnailSize(meta.thumbnail_image_size);
         meta.thumbnail_image.assign(base + 0x171A, base + 0x171A + thumb_size);
 
-        auto title_thumb_size = static_cast<std::size_t>(meta.title_thumbnail_image_size);
-        if (title_thumb_size > 0x4000)
-            title_thumb_size = 0x4000;
+        const auto title_thumb_size = thumbnailSize(meta.title_thumbnail_image_size);
         meta.title_thumbnail_image.assign(base + 0x571A, base + 0x571A + title_thumb_size);
 
         return meta;

@@ -654,6 +654,9 @@ namespace {
 
         const auto package = stfs::Package::fromData(bytes);
         require(package.files().size() == 31, "fixture lists 31 files");
+        const auto& display_name = package.metadata().display_name;
+        require(std::string(display_name.begin(), display_name.end()) == "System Update",
+                "fixture display_name decodes from UTF-16BE");
 
         const Stfs::StfsContainer container{bytes};
         const auto in_memory = container.extractToMemory();
@@ -680,6 +683,54 @@ namespace {
         require(sha1_hex(package.extractFile(find("$flash_dash.xex"), true)) ==
                     "3d44ef57781c20669705cd687e3b62b1c2f1ff6b",
                 "$flash_dash.xex extracts byte-identically");
+    }
+
+    // --- Metadata strings ------------------------------------------------------------------
+
+    void put_utf16be(Bytes& bytes, std::size_t offset, std::u16string_view text) {
+        for (std::size_t i = 0; i < text.size(); ++i)
+            put_be(bytes, offset + 2 * i, text[i], 2);
+    }
+
+    std::string as_string(const std::u8string& text) {
+        return {text.begin(), text.end()};
+    }
+
+    void test_locale_strings_decode_utf16be() {
+        auto bytes = make_package({{"a.bin", pattern(10, 1)}});
+        put_utf16be(bytes, 0x411, u"System Update");
+        put_utf16be(bytes, 0xD11, u"caf\u00e9 \u20ac \U0001F600"); // 2-, 3- and 4-byte UTF-8
+        put_utf16be(bytes, 0x1611, u"Pub\xD800x");                 // unpaired high surrogate
+        put_utf16be(bytes, 0x1691, std::u16string(0x40, u'T'));    // fills the whole field
+        bytes[0x1691 + 0x80] = std::byte{0x41};                    // next field, not part of it
+
+        const auto package = stfs::Package::fromData(bytes);
+        const auto& meta = package.metadata();
+        require(as_string(meta.display_name) == "System Update", "display_name decodes");
+        require(as_string(meta.display_description) == "caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80",
+                "non-ASCII and surrogate pairs decode to UTF-8");
+        require(as_string(meta.publisher_name) == "Pub\xEF\xBF\xBDx",
+                "unpaired surrogates become U+FFFD");
+        require(as_string(meta.title_name) == std::string(0x40, 'T'),
+                "a field without a terminator stops at its size");
+    }
+
+    void test_negative_thumbnail_size_is_empty() {
+        auto bytes = make_package({{"a.bin", pattern(10, 1)}});
+        put_be(bytes, 0x1712, 0xFFFFFFFF, 4);
+        put_be(bytes, 0x1716, 0x80000000, 4);
+        const auto package = stfs::Package::fromData(bytes);
+        const auto& meta = package.metadata();
+        require(meta.thumbnail_image.empty() && meta.title_thumbnail_image.empty(),
+                "negative thumbnail sizes yield no image");
+
+        put_be(bytes, 0x1712, 0x20, 4);
+        put_be(bytes, 0x1716, 0x7FFFFFFF, 4);
+        const auto sized_package = stfs::Package::fromData(bytes);
+        const auto& sized = sized_package.metadata();
+        require(sized.thumbnail_image.size() == 0x20 &&
+                    sized.title_thumbnail_image.size() == 0x4000,
+                "positive sizes are kept and clamped to 0x4000");
     }
 
 } // namespace
@@ -714,6 +765,8 @@ int main() {
         {"verify requires total_blocks", test_verify_requires_total_blocks},
         {"verify detects corruption", test_verify_detects_corruption},
         {"system update fixture", test_system_update_fixture},
+        {"locale strings decode UTF-16BE", test_locale_strings_decode_utf16be},
+        {"negative thumbnail size is empty", test_negative_thumbnail_size_is_empty},
     };
     int failed = 0;
     for (const auto& [name, test] : tests) {
