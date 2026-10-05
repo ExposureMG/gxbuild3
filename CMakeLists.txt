@@ -29,9 +29,6 @@ endfunction()
 set(GXBUILD3_LIB_SOURCES
     src/Args.cpp
     src/BuildRunner.cpp
-    src/cli/BuildCommand.cpp
-    src/cli/BuildInputResolver.cpp
-    src/cli/CommandLine.cpp
     src/InputValidator.cpp
     src/Library.cpp
     src/ini/IniParser.cpp
@@ -97,9 +94,18 @@ target_link_libraries(gxbuild3_internal INTERFACE
     spdlog::spdlog
 )
 
+# The command-line front end stays out of gxbuild3_lib so library consumers do not carry it.
+add_library(gxbuild3_cli STATIC
+    src/cli/BuildCommand.cpp
+    src/cli/BuildInputResolver.cpp
+    src/cli/CommandLine.cpp
+)
+target_link_libraries(gxbuild3_cli PUBLIC gxbuild3_internal)
+gxbuild3_enable_warnings(gxbuild3_cli)
+
 add_executable(gxbuild3 src/Main.cpp)
 set_target_properties(gxbuild3 PROPERTIES OUTPUT_NAME gxbuild)
-target_link_libraries(gxbuild3 PRIVATE gxbuild3_internal)
+target_link_libraries(gxbuild3 PRIVATE gxbuild3_cli)
 gxbuild3_enable_warnings(gxbuild3)
 
 include(CTest)
@@ -129,6 +135,10 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_xe_rsa_tests tests/XeRsaTests.cpp)
     add_gxbuild3_test(gxbuild3_crypto_reference_tests tests/CryptoReferenceTests.cpp)
     add_gxbuild3_test(gxbuild3_stfs_tests tests/StfsTests.cpp)
+    foreach(cli_test gxbuild3_commandline_tests gxbuild3_resolver_tests
+            gxbuild3_buildcommand_tests)
+        target_link_libraries(${cli_test} PRIVATE gxbuild3_cli)
+    endforeach()
     target_compile_definitions(gxbuild3_stfs_tests PRIVATE
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
     set_tests_properties(gxbuild3_stfs_tests PROPERTIES TIMEOUT 60)
