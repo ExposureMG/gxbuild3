@@ -4,9 +4,6 @@
 [submodule "extern/GxCrypt"]
 	path = extern/GxCrypt
 	url = https://github.com/GxOSS/GxCrypt.git
-[submodule "extern/argparse"]
-	path = extern/argparse
-	url = https://github.com/p-ranav/argparse
 [submodule "extern/freeBOOT"]
 	path = extern/freeBOOT
 	url = https://github.com/ExposureMG/freeBOOT
