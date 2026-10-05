@@ -59,7 +59,6 @@ set(GXBUILD3_LIB_SOURCES
     src/utils/FileManager.cpp
     src/utils/FusesetGenerator.cpp
     src/utils/Log.cpp
-    src/utils/Options.cpp
     src/utils/Utils.cpp
     src/utils/XeRsa.cpp
 )
