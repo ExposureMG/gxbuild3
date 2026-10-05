@@ -1,10 +1,11 @@
-#include "PackageCommon.hpp"
+#include "stfs/FileExtractor.hpp"
 
-#include <BlockParser.hpp>
-#include <Commons.hpp>
-#include <Endian.hpp>
-#include <FileExtractor.hpp>
-#include <HashVerifier.hpp>
+#include "Endian.hpp"
+#include "PackageCommon.hpp"
+#include "stfs/BlockParser.hpp"
+#include "stfs/Commons.hpp"
+#include "stfs/HashVerifier.hpp"
+
 #include <algorithm>
 #include <format>
 #include <stdexcept>

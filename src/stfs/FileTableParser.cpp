@@ -1,6 +1,8 @@
-#include <Commons.hpp>
-#include <Endian.hpp>
-#include <FileTableParser.hpp>
+#include "stfs/FileTableParser.hpp"
+
+#include "Endian.hpp"
+#include "stfs/Commons.hpp"
+
 #include <span>
 #include <stdexcept>
 #include <string>

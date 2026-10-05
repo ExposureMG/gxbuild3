@@ -1,12 +1,13 @@
-#include "PackageCommon.hpp"
+#include "stfs/Package.hpp"
 
-#include <BlockParser.hpp>
-#include <Commons.hpp>
-#include <FileExtractor.hpp>
-#include <FileTableParser.hpp>
-#include <HeaderParser.hpp>
-#include <MetadataParser.hpp>
-#include <Package.hpp>
+#include "PackageCommon.hpp"
+#include "stfs/BlockParser.hpp"
+#include "stfs/Commons.hpp"
+#include "stfs/FileExtractor.hpp"
+#include "stfs/FileTableParser.hpp"
+#include "stfs/HeaderParser.hpp"
+#include "stfs/MetadataParser.hpp"
+
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>

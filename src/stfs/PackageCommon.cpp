@@ -1,6 +1,7 @@
 #include "PackageCommon.hpp"
 
-#include <FileExtractor.hpp>
+#include "stfs/FileExtractor.hpp"
+
 #include <cstdint>
 #include <fstream>
 #include <stdexcept>

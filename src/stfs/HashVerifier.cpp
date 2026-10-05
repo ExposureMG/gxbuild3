@@ -1,8 +1,9 @@
-#include "excrypt.h"
+#include "stfs/HashVerifier.hpp"
 
-#include <BlockParser.hpp>
-#include <Commons.hpp>
-#include <HashVerifier.hpp>
+#include "excrypt.h"
+#include "stfs/BlockParser.hpp"
+#include "stfs/Commons.hpp"
+
 #include <array>
 #include <cstring>
 #include <stdexcept>

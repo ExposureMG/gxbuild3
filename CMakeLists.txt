@@ -77,7 +77,6 @@ set(GXBUILD3_LIB_SOURCES
 
 add_library(gxbuild3_lib STATIC ${GXBUILD3_LIB_SOURCES})
 target_include_directories(gxbuild3_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_include_directories(gxbuild3_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/stfs) # TODO: update imports instead
 target_include_directories(gxbuild3_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/freeboot)
 target_link_libraries(gxbuild3_lib PUBLIC
     GxCrypt

@@ -1,13 +1,13 @@
 #include "stfs/StfsContainer.hpp"
 
 #include "PackageCommon.hpp"
+#include "stfs/BlockParser.hpp"
+#include "stfs/FileExtractor.hpp"
+#include "stfs/FileTableParser.hpp"
+#include "stfs/HeaderParser.hpp"
+#include "stfs/MetadataParser.hpp"
 #include "utils/Log.hpp"
 
-#include <BlockParser.hpp>
-#include <FileExtractor.hpp>
-#include <FileTableParser.hpp>
-#include <HeaderParser.hpp>
-#include <MetadataParser.hpp>
 #include <algorithm>
 #include <cctype>
 #include <stdexcept>

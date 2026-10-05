@@ -2,7 +2,8 @@
 
 // Internal helpers shared by stfs::Package and Stfs::StfsContainer.
 
-#include <Commons.hpp>
+#include "stfs/Commons.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <span>

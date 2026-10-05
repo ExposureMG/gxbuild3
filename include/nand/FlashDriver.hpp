@@ -1,6 +1,6 @@
 #pragma once
 
-#include "NandTypes.hpp"
+#include "nand/NandTypes.hpp"
 
 #include <cstddef>
 #include <cstdint>
