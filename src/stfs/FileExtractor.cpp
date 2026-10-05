@@ -122,6 +122,9 @@ namespace stfs {
         if (verify && top_hash == nullptr) {
             throw std::runtime_error("Verification requested but no top_hash provided");
         }
+        if (verify && total_blocks == 0) {
+            throw std::runtime_error("total_blocks required for hash verification");
+        }
 
         if (entry.file_size == 0) {
             return {};

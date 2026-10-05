@@ -1,7 +1,8 @@
+#include "excrypt.h"
+
 #include <BlockParser.hpp>
 #include <Commons.hpp>
 #include <HashVerifier.hpp>
-#include <SHA1.hpp>
 #include <array>
 #include <cstring>
 #include <stdexcept>
@@ -10,60 +11,46 @@ namespace stfs {
 
     namespace {
 
+        using Digest = std::array<std::byte, 0x14>;
+
         constexpr std::size_t kHashEntrySize = 0x18;
         constexpr std::size_t kBlockSize = 0x1000;
         constexpr std::array<std::uint32_t, 3> kDataBlocksPerHashLevel = {0xAA, 0x70E4, 0x4AF768};
 
-        std::array<std::byte, 0x14> sha1(std::span<const std::byte> data) {
-            SHA1 checksum;
-            checksum.update(std::string(reinterpret_cast<const char*>(data.data()), data.size()));
-            std::string hex = checksum.final();
-
-            std::array<std::byte, 0x14> out;
-            for (std::size_t i = 0; i < 0x14; ++i) {
-                std::string byte_str = hex.substr(i * 2, 2);
-                out[i] = static_cast<std::byte>(std::stoul(byte_str, nullptr, 16));
+        // True when the 4 KiB block at `offset` is inside the package and hashes to `expected`.
+        bool blockHashMatches(std::span<const std::byte> package, std::uint64_t offset,
+                              const Digest& expected) {
+            if (offset + kBlockSize > package.size()) {
+                return false;
             }
-            return out;
+
+            std::array<std::uint8_t, 0x14> digest{};
+            ExCryptSha(reinterpret_cast<const std::uint8_t*>(package.data() + offset),
+                       static_cast<std::uint32_t>(kBlockSize), nullptr, 0, nullptr, 0,
+                       digest.data(), static_cast<std::uint32_t>(digest.size()));
+            return std::memcmp(digest.data(), expected.data(), digest.size()) == 0;
         }
 
-        struct LevelEntry {
-            std::array<std::byte, 0x14> hash;
-            std::uint8_t status;
-            std::uint32_t next_block;
-        };
-
-        LevelEntry readLevelEntry(std::span<const std::byte> package, std::uint32_t block_number,
-                                  int level, std::uint32_t header_size) {
+        // The hash stored for `block_number` in its level-N hash table.
+        Digest readLevelHash(std::span<const std::byte> package, std::uint32_t block_number,
+                             int level, std::uint32_t header_size) {
             std::uint32_t record = block_number;
             if (level > 0) {
                 record /= kDataBlocksPerHashLevel[level - 1];
             }
             record %= kDataBlocksPerHashLevel[0];
 
-            std::uint32_t backing_block = computeLevelNHashBlockNumber(block_number, level);
-            std::uint64_t hash_offset =
-                blockToOffset(backing_block, header_size) + record * kHashEntrySize;
+            const std::uint32_t backing_block = computeLevelNHashBlockNumber(block_number, level);
+            const std::uint64_t hash_offset =
+                blockToOffset(backing_block, header_size) + std::uint64_t{record} * kHashEntrySize;
 
             if (hash_offset + kHashEntrySize > package.size()) {
                 throw std::runtime_error("Hash entry offset out of bounds");
             }
 
-            const auto* ptr = package.data() + hash_offset;
-
-            LevelEntry entry;
-            std::memcpy(entry.hash.data(), ptr, 0x14);
-            entry.status = static_cast<std::uint8_t>(ptr[0x14]);
-            entry.next_block = (static_cast<std::uint32_t>(ptr[0x15]) << 16) |
-                               (static_cast<std::uint32_t>(ptr[0x16]) << 8) |
-                               static_cast<std::uint32_t>(ptr[0x17]);
-
-            return entry;
-        }
-
-        bool hashesEqual(const std::array<std::byte, 0x14>& a,
-                         const std::array<std::byte, 0x14>& b) {
-            return std::memcmp(a.data(), b.data(), 0x14) == 0;
+            Digest hash;
+            std::memcpy(hash.data(), package.data() + hash_offset, hash.size());
+            return hash;
         }
 
     } // namespace
@@ -71,49 +58,26 @@ namespace stfs {
     bool verifyDataBlock(std::span<const std::byte> package, std::uint32_t block,
                          std::uint32_t header_size, const std::array<std::byte, 0x14>& top_hash,
                          std::uint32_t total_blocks) {
-        std::array<std::byte, 0x14> expected = top_hash;
-
-        bool has_l2 = total_blocks > kDataBlocksPerHashLevel[1];
-        bool has_l1 = total_blocks > kDataBlocksPerHashLevel[0];
-
-        if (has_l2) {
-            std::uint32_t l2_backing = computeLevelNHashBlockNumber(block, 2);
-            std::uint64_t l2_offset = blockToOffset(l2_backing, header_size);
-            if (l2_offset + kBlockSize > package.size())
-                return false;
-            std::span<const std::byte> l2_block(package.data() + l2_offset, kBlockSize);
-            if (!hashesEqual(sha1(l2_block), expected))
-                return false;
-            expected = readLevelEntry(package, block, 2, header_size).hash;
+        if (total_blocks == 0) {
+            throw std::runtime_error("total_blocks required for hash verification");
         }
 
-        if (has_l1) {
-            std::uint32_t l1_backing = computeLevelNHashBlockNumber(block, 1);
-            std::uint64_t l1_offset = blockToOffset(l1_backing, header_size);
-            if (l1_offset + kBlockSize > package.size())
+        // The top hash covers the highest hash table level the package needs.
+        Digest expected = top_hash;
+        const int top_level = total_blocks > kDataBlocksPerHashLevel[1]   ? 2
+                              : total_blocks > kDataBlocksPerHashLevel[0] ? 1
+                                                                          : 0;
+
+        for (int level = top_level; level >= 0; --level) {
+            const auto table = computeLevelNHashBlockNumber(block, level);
+            if (!blockHashMatches(package, blockToOffset(table, header_size), expected)) {
                 return false;
-            std::span<const std::byte> l1_block(package.data() + l1_offset, kBlockSize);
-            if (!hashesEqual(sha1(l1_block), expected))
-                return false;
-            expected = readLevelEntry(package, block, 1, header_size).hash;
+            }
+            expected = readLevelHash(package, block, level, header_size);
         }
 
-        std::uint32_t l0_backing = computeLevelNHashBlockNumber(block, 0);
-        std::uint64_t l0_offset = blockToOffset(l0_backing, header_size);
-        if (l0_offset + kBlockSize > package.size())
-            return false;
-        std::span<const std::byte> l0_block(package.data() + l0_offset, kBlockSize);
-        if (!hashesEqual(sha1(l0_block), expected))
-            return false;
-        LevelEntry l0_entry = readLevelEntry(package, block, 0, header_size);
-
-        std::uint32_t data_phys = computeDataBlockNumber(block);
-        std::uint64_t data_offset = blockToOffset(data_phys, header_size);
-        if (data_offset + kBlockSize > package.size())
-            return false;
-        std::span<const std::byte> data_block(package.data() + data_offset, kBlockSize);
-
-        return hashesEqual(sha1(data_block), l0_entry.hash);
+        const auto data_block = computeDataBlockNumber(block);
+        return blockHashMatches(package, blockToOffset(data_block, header_size), expected);
     }
 
 } // namespace stfs

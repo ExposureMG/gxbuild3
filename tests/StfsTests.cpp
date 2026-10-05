@@ -7,11 +7,13 @@
 #include "stfs/StfsContainer.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -583,6 +585,103 @@ namespace {
             "an unopenable output path is reported");
     }
 
+    // --- Hash verification -----------------------------------------------------------------
+
+    std::string sha1_hex(const Bytes& data) {
+        Bytes digest(0x14);
+        sha1(data, 0, data.size(), digest, 0);
+        std::string hex;
+        for (const auto byte : digest) {
+            constexpr std::string_view digits = "0123456789abcdef";
+            hex += digits[std::to_integer<unsigned>(byte) >> 4];
+            hex += digits[std::to_integer<unsigned>(byte) & 0xF];
+        }
+        return hex;
+    }
+
+    void test_verify_requires_total_blocks() {
+        const auto bytes = make_package({{"a.bin", pattern(10, 1)}});
+        const auto package = stfs::Package::fromData(bytes);
+        const auto& entry = package.files().at(0);
+        const auto* vd =
+            std::get_if<stfs::StfsVolumeDescriptor>(&package.metadata().volume_descriptor);
+        require(vd != nullptr, "synthetic package has an STFS descriptor");
+
+        require_throws(
+            [&] {
+                (void) stfs::extractFile(bytes, entry, stfs::Magic::PIRS, 0xA000, true,
+                                         &vd->top_hash_table_hash, 0);
+            },
+            "extractFile with verify and total_blocks 0 throws");
+        TempDir dir;
+        require_throws(
+            [&] {
+                stfs::extractFileToDisk(bytes, entry, stfs::Magic::PIRS, 0xA000, dir.root / "a",
+                                        true, &vd->top_hash_table_hash, 0);
+            },
+            "extractFileToDisk with verify and total_blocks 0 throws");
+
+        require(stfs::extractFile(bytes, entry, stfs::Magic::PIRS, 0xA000, true,
+                                  &vd->top_hash_table_hash, 2) == pattern(10, 1),
+                "verification passes with total_blocks set");
+    }
+
+    void test_verify_detects_corruption() {
+        auto data_corrupt = make_package({{"a.bin", pattern(10, 1)}});
+        data_corrupt[data_offset(1) + 0x800] ^= std::byte{0x01}; // past file_size, still hashed
+        const auto package = stfs::Package::fromData(data_corrupt);
+        require(package.extractFile(package.files().at(0)) == pattern(10, 1),
+                "unverified extraction ignores the hash");
+        require_throws([&] { (void) package.extractFile(package.files().at(0), true); },
+                       "a corrupted data block fails verification");
+
+        auto table_corrupt = make_package({{"a.bin", pattern(10, 1)}});
+        table_corrupt[hash_offset(5) + 0x3] ^= std::byte{0x01}; // unused hash slot
+        const auto table_package = stfs::Package::fromData(table_corrupt);
+        require_throws([&] { (void) table_package.extractFile(table_package.files().at(0), true); },
+                       "a corrupted hash table fails the top hash");
+    }
+
+    // The tracked system update package: two hash levels, 31 consecutive files.
+    void test_system_update_fixture() {
+        const fs::path path = fs::path(GXBUILD3_SUPPORT_DIR) / "17559" / "su20076000_00000000";
+        std::ifstream in(path, std::ios::binary);
+        const std::vector<char> raw(std::istreambuf_iterator<char>(in), {});
+        require(!raw.empty(), "fixture su20076000_00000000 is readable");
+        Bytes bytes(raw.size());
+        std::transform(raw.begin(), raw.end(), bytes.begin(),
+                       [](char c) { return static_cast<std::byte>(c); });
+
+        const auto package = stfs::Package::fromData(bytes);
+        require(package.files().size() == 31, "fixture lists 31 files");
+
+        const Stfs::StfsContainer container{bytes};
+        const auto in_memory = container.extractToMemory();
+        for (const auto& entry : package.files()) {
+            const auto verified = package.extractFile(entry, true);
+            std::string key = entry.name;
+            if (key.starts_with("$flash_"))
+                key.erase(0, 7);
+            std::transform(key.begin(), key.end(), key.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            require(in_memory.at(key) == verified,
+                    "Package (verified) and StfsContainer extract identical bytes");
+        }
+
+        const auto find = [&](std::string_view name) -> const stfs::FileEntry& {
+            for (const auto& entry : package.files())
+                if (entry.name == name)
+                    return entry;
+            throw std::runtime_error("fixture entry missing");
+        };
+        require(sha1_hex(package.extractFile(find("xboxupd.bin"), true)) ==
+                    "ea7666ebe2799812270581538b342b8143397ab9",
+                "xboxupd.bin extracts byte-identically");
+        require(sha1_hex(package.extractFile(find("$flash_dash.xex"), true)) ==
+                    "3d44ef57781c20669705cd687e3b62b1c2f1ff6b",
+                "$flash_dash.xex extracts byte-identically");
+    }
+
 } // namespace
 
 int main() {
@@ -612,6 +711,9 @@ int main() {
         {"nameless entry ends listing", test_nameless_entry_ends_listing},
         {"entry name contents", test_entry_name_contents},
         {"write failure throws", test_write_failure_throws},
+        {"verify requires total_blocks", test_verify_requires_total_blocks},
+        {"verify detects corruption", test_verify_detects_corruption},
+        {"system update fixture", test_system_update_fixture},
     };
     int failed = 0;
     for (const auto& [name, test] : tests) {
