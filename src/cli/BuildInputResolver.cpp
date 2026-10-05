@@ -690,7 +690,7 @@ namespace gxbuild3::cli {
         ImageType image_type{};
         if (nand_data) {
             try {
-                donor = ExtractAll(*nand_data, *cpu_key);
+                donor = extract_all(*nand_data, *cpu_key);
             } catch (const std::exception& exception) {
                 return std::unexpected(error(
                     ResolutionErrorCode::InvalidDonor,
@@ -980,7 +980,7 @@ namespace gxbuild3::cli {
                 }
             }
             // A loose extended.bin or secdata.bin too short to hold its nonce is passed as
-            // supplied: RunBuild makes up a clean one for any copy of the wrong length.
+            // supplied: run_build makes up a clean one for any copy of the wrong length.
             for (auto file : ini_files->flashfs_sec) {
                 const auto key = lowercase_basename(file.first);
                 if ((key == "secdata.bin" || key == "extended.bin") && file.second.size() >= 0x10) {
@@ -999,7 +999,7 @@ namespace gxbuild3::cli {
                 overlay_flashfs(flashfs, std::move(file), flashfs_positions);
             }
             // An extended.bin or secdata.bin the INI's [security] names and nothing supplies is
-            // carried empty, and RunBuild makes up a clean one for it as xeBuild 1.21 does.
+            // carried empty, and run_build makes up a clean one for it as xeBuild 1.21 does.
             if (!scan_options.nosusecurity) {
                 if (const auto* security = ini_document->get("security")) {
                     for (const auto& entry : *security) {

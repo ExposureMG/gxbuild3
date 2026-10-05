@@ -7,7 +7,7 @@ typedef struct _smc_patch {
     std::string value;
 } smc_patch_t;
 
-// Glitch reboot patch, applied by RunBuild to a retail SMC on glitch builds.
+// Glitch reboot patch, applied by run_build to a retail SMC on glitch builds.
 inline const smc_patch_t Glitch{"05 ?? E5 ?? B4 05", "00 00 ?? ?? ?? ??"};
 
 // Not yet wired: planned SMC options (no drive blink, eject disable) for xeBuild parity.

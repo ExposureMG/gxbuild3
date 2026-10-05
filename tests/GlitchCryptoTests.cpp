@@ -10,6 +10,10 @@
 #include <string>
 #include <utility>
 
+using gxbuild3::extract_all;
+using gxbuild3::extract_all_info;
+using gxbuild3::extract_metadata;
+using gxbuild3::run_build;
 using gxbuild3::nand::FlashImage;
 using gxbuild3::nand::Keyvault;
 
@@ -198,7 +202,7 @@ namespace {
         auto& target = split ? *input.bootloaders.cb_b : input.bootloaders.cb_or_a;
         target[0x24] = 0xA7; // Reserved bytes also participate in authentication.
         std::fill(target.begin() + 0x30, target.begin() + 0x40, 0xCC);
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(bool(built), "retail BB digest fixture builds"))
             return false;
         auto image = FlashImage::read(*built);
@@ -227,13 +231,13 @@ namespace {
         bool ok = require(decoded == expected, "retail digest: split=" + std::to_string(split) +
                                                    " flags=" + std::to_string(flags) +
                                                    " change=" + std::to_string(change));
-        auto extracted = ExtractAll(*built, input.metadata.cpu_key);
+        auto extracted = extract_all(*built, input.metadata.cpu_key);
         if (!require(bool(extracted), "retail BB extracts"))
             return false;
         if (change != 0)
             return ok;
         input.bootloaders = extracted->bootloaders;
-        const auto rebuilt = RunBuild(input);
+        const auto rebuilt = run_build(input);
         if (!require(bool(rebuilt), "retail BB rebuilds"))
             return false;
         auto again = FlashImage::read(*rebuilt);
@@ -319,11 +323,11 @@ namespace {
         // A stale digest in the input CB_B, which a manufacturing seal must clear.
         if (manufacturing)
             std::fill_n(input.bootloaders.cb_b->begin() + 0x30, 16, 0xCC);
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value(), name + " builds"))
             return false;
         bool ok = check_chain(input, *built, name);
-        auto extracted = ExtractAll(*built, input.metadata.cpu_key);
+        auto extracted = extract_all(*built, input.metadata.cpu_key);
         if (!require(extracted.has_value(), name + " extracts"))
             return false;
         ok = require(extracted->bootloaders.cb_x == input.bootloaders.cb_x,
@@ -340,7 +344,7 @@ namespace {
                      name + " extracts original CB_B, CD and CE") &&
              ok;
         input.bootloaders = extracted->bootloaders;
-        const auto rebuilt = RunBuild(input);
+        const auto rebuilt = run_build(input);
         return require(rebuilt.has_value(), name + " rebuilds") &&
                check_chain(input, *rebuilt, name + " rebuild") && ok;
     }
@@ -350,20 +354,20 @@ namespace {
         input.metadata.cb_ldv = perbox_ldv;
         input.metadata.pairing_data = {1, 2, 3};
         (*input.bootloaders.cb_b)[0x3B1] = 12;
-        const auto donor = RunBuild(input);
+        const auto donor = run_build(input);
         if (!require(bool(donor), "distinct per-box/display LDV donor builds"))
             return false;
 
-        const auto metadata = ExtractMetadata(*donor, input.metadata.cpu_key);
-        const auto extracted = ExtractAll(*donor, input.metadata.cpu_key);
-        const auto info = ExtractAllInfo(*donor, input.metadata.cpu_key);
+        const auto metadata = extract_metadata(*donor, input.metadata.cpu_key);
+        const auto extracted = extract_all(*donor, input.metadata.cpu_key);
+        const auto info = extract_all_info(*donor, input.metadata.cpu_key);
         if (!require(metadata && extracted && info && info->bootloaders.cb_b,
                      "distinct LDV donor extracts through all APIs"))
             return false;
         bool ok = require(metadata->cb_ldv == perbox_ldv,
-                          "ExtractMetadata preserves CB_B +0x23 instead of display +0x3B1");
+                          "extract_metadata preserves CB_B +0x23 instead of display +0x3B1");
         ok = require(extracted->metadata.cb_ldv == perbox_ldv,
-                     "ExtractAll preserves CB_B +0x23 instead of display +0x3B1") &&
+                     "extract_all preserves CB_B +0x23 instead of display +0x3B1") &&
              ok;
         ok = require(info->bootloaders.cb_b->ldv == 12 && info->bootloaders.cb_ldv == 12,
                      "inspection still reports the independent display LDV") &&
@@ -374,13 +378,13 @@ namespace {
             auto rebuild_input = full_extract ? *extracted : input;
             if (!full_extract) {
                 rebuild_input.metadata = *metadata;
-                // ExtractMetadata supplies donor metadata; the resolver supplies SMC separately.
+                // extract_metadata supplies donor metadata; the resolver supplies SMC separately.
                 rebuild_input.metadata.smc = input.metadata.smc;
             }
-            const auto rebuilt = RunBuild(rebuild_input);
+            const auto rebuilt = run_build(rebuild_input);
             if (!require(bool(rebuilt), "extracted LDV donor rebuilds"))
                 return false;
-            const auto decoded = ExtractAll(*rebuilt, input.metadata.cpu_key);
+            const auto decoded = extract_all(*rebuilt, input.metadata.cpu_key);
             if (!require(decoded && decoded->bootloaders.cb_b, "rebuilt CB_B decrypts"))
                 return false;
             ok = require((*decoded->bootloaders.cb_b)[0x23] == perbox_ldv &&
@@ -403,7 +407,7 @@ namespace {
                 input.bootloaders.cb_x.reset();
             else
                 input.bootloaders.cb_b.reset();
-            const auto result = RunBuild(input);
+            const auto result = run_build(input);
             ok =
                 require(!result && result.error().code == BuildErrorCode::InvalidBootloader,
                         "glitch3 rejects an incomplete CB_A/CB_X/CB_B chain even with noblpatch") &&
@@ -429,7 +433,7 @@ namespace {
         word(0xFFFFFFFF);
         patch.push_back(0xA5);
         input.patches->automatic->data = patch;
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value(), "patched glitch image builds"))
             return false;
         const Bytes cb_patch{0xDE, 0xAD, 0xBE, 0xEF};
@@ -451,7 +455,7 @@ namespace {
         input.bootloaders.cb_or_a = cba;
         input.bootloaders.cb_b = cbb;
         std::copy(cbb_key.begin(), cbb_key.end(), expected.bootloaders.cb_b->begin() + 0x10);
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         return require(built.has_value(), "encrypted glitch3 replacements build") &&
                check_chain(expected, *built, "encrypted replacement handoff");
     }
@@ -528,7 +532,7 @@ namespace {
         }
         const std::string label = v1 ? "glitch3 v1 CB_X" : "glitch3 v2 CB_X";
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value(), label + " builds"))
             return false;
         auto image = FlashImage::read(*built);
@@ -543,7 +547,7 @@ namespace {
         ok = require(std::equal(sealed.begin() + 0x10, sealed.begin() + 0x20, cb_x.begin() + 0x10),
                      label + " keeps its nonce as supplied") &&
              ok;
-        const auto extracted = ExtractAll(*built, input.metadata.cpu_key);
+        const auto extracted = extract_all(*built, input.metadata.cpu_key);
         return require(extracted && extracted->bootloaders.cb_x == expected,
                        label + " extracts as the sealed plaintext") &&
                ok;
@@ -576,7 +580,7 @@ namespace {
         cf.decrypted = true;
         input.bootloaders.cf0 = cf.serialize();
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value(), name + " single-CB image builds"))
             return false;
         auto image = FlashImage::read(*built);
@@ -673,7 +677,7 @@ namespace {
         input.bootloaders.extra_cb = extra_cb;
         input.bootloaders.extra_cd = extra_cd;
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value(), "JTAG image builds"))
             return false;
         auto image = FlashImage::read(*built);
@@ -758,7 +762,7 @@ namespace {
         const Bytes cg_input = cg.serialize();
         input.bootloaders.cg0 = cg_input;
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(bool(built), "cf/cg retail image builds"))
             return false;
         auto image = FlashImage::read(*built);

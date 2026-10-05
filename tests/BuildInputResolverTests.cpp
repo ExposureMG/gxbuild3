@@ -25,6 +25,9 @@
 #include <utility>
 #include <vector>
 
+using gxbuild3::extract_all;
+using gxbuild3::run_build;
+
 namespace {
 
     using Bytes = std::vector<uint8_t>;
@@ -165,7 +168,7 @@ namespace {
         input.metadata.keyvault =
             keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)));
         input.bootloaders = valid_bootloaders();
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!built) {
             std::abort();
         }
@@ -214,7 +217,7 @@ namespace {
         input.metadata.cf_ldv = 8;
         input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!built) {
             std::abort();
         }
@@ -947,12 +950,12 @@ namespace {
             {"listed.bin", Bytes{0x25}},        {"donor.bin", Bytes{0x30}},
             {"aac.xexp2", Bytes{0x31}},         {"aac.xexp1", Bytes{0x32}},
             {"sysupdate.xexp2", Bytes{0x33}}};
-        const auto image = RunBuild(donor);
+        const auto image = run_build(donor);
         if (!image) {
             return require(false, "FlashFS donor fixture builds");
         }
         // The donor's extended.bin was the wrong length, so its image carries a clean one.
-        const auto donor_files = ExtractAll(*image, key);
+        const auto donor_files = extract_all(*image, key);
         Bytes donor_extended;
         for (const auto& [name, data] : donor_files
                                             ? *donor_files->flashfs_sec
@@ -1029,8 +1032,8 @@ namespace {
                        "unlisted donor files, patch files and CG tails are dropped");
     }
 
-    // An extended.bin or secdata.bin the INI's [security] names reaches RunBuild even when
-    // nothing supplies it (empty) or it is too short to hold a nonce (as supplied); RunBuild makes
+    // An extended.bin or secdata.bin the INI's [security] names reaches run_build even when
+    // nothing supplies it (empty) or it is too short to hold a nonce (as supplied); run_build makes
     // up a clean one for each.
     bool test_unsupplied_security_files_reach_the_build() {
         ResolverFixture fixture;
@@ -1266,7 +1269,7 @@ namespace {
         donor.bootloaders = valid_bootloaders();
         donor.flashfs_sec =
             std::vector<std::pair<std::string, Bytes>>{{"DONOR-ONLY.BIN", Bytes{0x44}}};
-        const auto donor_bytes = RunBuild(donor);
+        const auto donor_bytes = run_build(donor);
         if (!donor_bytes) {
             return require(false, "required-payload donor fixture builds");
         }
@@ -1739,14 +1742,15 @@ namespace {
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", valid_glitch_patchset(0xC4)};
         donor.patches = std::move(patches);
-        const auto donor_bytes = RunBuild(donor);
+        const auto donor_bytes = run_build(donor);
         if (!require(donor_bytes.has_value(), "small-block Glitch KHV donor fixture builds")) {
             return false;
         }
 
-        const auto extracted = ExtractAll(*donor_bytes, key);
-        if (!require(extracted.has_value() && !extracted->payloads,
-                     "ExtractAll does not invent fixed payloads from ambiguous Glitch KHV bytes")) {
+        const auto extracted = extract_all(*donor_bytes, key);
+        if (!require(
+                extracted.has_value() && !extracted->payloads,
+                "extract_all does not invent fixed payloads from ambiguous Glitch KHV bytes")) {
             return false;
         }
 

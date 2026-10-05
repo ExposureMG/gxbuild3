@@ -582,7 +582,7 @@ namespace {
         return nonce;
     }
 
-    // Sets the nonce of every stage RunBuild seals, before any key is derived from it. Each
+    // Sets the nonce of every stage run_build seals, before any key is derived from it. Each
     // boot-chain key derives from its parent's, so a chain with any stage supplied already
     // sealed keeps all its nonces. A CB_X chain keeps its CB_X and the handoff key its
     // plaintext CB_B holds at +0x10. A devkit SC takes the CB_B nonce; any other SC is
@@ -786,7 +786,7 @@ namespace {
 
 } // namespace
 
-BuildResult RunBuild(const Input& input) try {
+BuildResult gxbuild3::run_build(const Input& input) try {
     if (const auto validation = ValidateInput(input); !validation) {
         return build_error(BuildErrorCode::InvalidInput, validation.error().message);
     }
@@ -988,7 +988,7 @@ BuildResult RunBuild(const Input& input) try {
         if (input.bootloaders.cg1 && !input.bootloaders.cg1->empty()) {
             flash_image.system_update_1.cg = BootloaderCg::parse(*input.bootloaders.cg1);
         }
-        // A devkit chain is supplied plaintext, as a release ships it and ExtractAll returns
+        // A devkit chain is supplied plaintext, as a release ships it and extract_all returns
         // it; the parsers' plaintext tests are for retail stages. The header states the SE
         // build (xeBuild 1.21 devkit: 0x4451 for SE 17489).
         if (flash_image.devkit_chain()) {
@@ -1452,7 +1452,7 @@ BuildResult RunBuild(const Input& input) try {
                        std::string("internal error: ") + exception.what());
 }
 
-std::optional<AllNandInfo> ExtractSomeInfo(std::span<const uint8_t> nand_image) try {
+std::optional<AllNandInfo> gxbuild3::extract_some_info(std::span<const uint8_t> nand_image) try {
     if (nand_image.empty()) {
         Log::Error("Cannot extract public NAND info: NAND image is empty");
         return std::nullopt;
@@ -1533,12 +1533,12 @@ std::optional<AllNandInfo> ExtractSomeInfo(std::span<const uint8_t> nand_image) 
     return std::nullopt;
 }
 
-std::optional<AllNandInfo> ExtractSomeInfo(const std::vector<uint8_t>& nand_image) {
-    return ExtractSomeInfo(std::span<const uint8_t>(nand_image));
+std::optional<AllNandInfo> gxbuild3::extract_some_info(const std::vector<uint8_t>& nand_image) {
+    return extract_some_info(std::span<const uint8_t>(nand_image));
 }
 
-std::optional<InputMetadata> ExtractMetadata(std::span<const uint8_t> nand_image,
-                                             std::span<const uint8_t> cpu_key) try {
+std::optional<InputMetadata> gxbuild3::extract_metadata(std::span<const uint8_t> nand_image,
+                                                        std::span<const uint8_t> cpu_key) try {
     if (cpu_key.size() != 16) {
         Log::Error("Cannot extract metadata: CPU key must be 16 bytes (got {})", cpu_key.size());
         return std::nullopt;
@@ -1594,13 +1594,13 @@ std::optional<InputMetadata> ExtractMetadata(std::span<const uint8_t> nand_image
     }
 
     // CB_B, when present, overrides CB_A's LDV/pairing data - independent of
-    // whether CB_A itself parsed, matching ExtractAll()/ExtractAllInfo().
+    // whether CB_A itself parsed, matching extract_all()/extract_all_info().
     if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
         auto& cb_b = *img.cb_section.cb_B;
         if (cb_b.perbox.has_value()) {
             cb_ldv = cb_b.perbox->lockdown_value;
             // Build metadata must preserve the per-box byte at +0x23. The value at
-            // +0x3B1 is used for display by ExtractAllInfo, not written into per-box data.
+            // +0x3B1 is used for display by extract_all_info, not written into per-box data.
             std::memcpy(pairing_data, cb_b.perbox->pairing_data, 3);
         }
     }
@@ -1625,13 +1625,14 @@ std::optional<InputMetadata> ExtractMetadata(std::span<const uint8_t> nand_image
     return std::nullopt;
 }
 
-std::optional<InputMetadata> ExtractMetadata(const std::vector<uint8_t>& nand_image,
-                                             const std::vector<uint8_t>& cpu_key) {
-    return ExtractMetadata(std::span<const uint8_t>(nand_image), std::span<const uint8_t>(cpu_key));
+std::optional<InputMetadata> gxbuild3::extract_metadata(const std::vector<uint8_t>& nand_image,
+                                                        const std::vector<uint8_t>& cpu_key) {
+    return extract_metadata(std::span<const uint8_t>(nand_image),
+                            std::span<const uint8_t>(cpu_key));
 }
 
-std::optional<AllNandInfo> ExtractAllInfo(std::span<const uint8_t> nand_image,
-                                          std::span<const uint8_t> cpu_key) try {
+std::optional<AllNandInfo> gxbuild3::extract_all_info(std::span<const uint8_t> nand_image,
+                                                      std::span<const uint8_t> cpu_key) try {
     if (cpu_key.size() != 16) {
         Log::Error("Cannot extract NAND info: CPU key must be 16 bytes (got {})", cpu_key.size());
         return std::nullopt;
@@ -1939,13 +1940,14 @@ std::optional<AllNandInfo> ExtractAllInfo(std::span<const uint8_t> nand_image,
     return std::nullopt;
 }
 
-std::optional<AllNandInfo> ExtractAllInfo(const std::vector<uint8_t>& nand_image,
-                                          const std::vector<uint8_t>& cpu_key) {
-    return ExtractAllInfo(std::span<const uint8_t>(nand_image), std::span<const uint8_t>(cpu_key));
+std::optional<AllNandInfo> gxbuild3::extract_all_info(const std::vector<uint8_t>& nand_image,
+                                                      const std::vector<uint8_t>& cpu_key) {
+    return extract_all_info(std::span<const uint8_t>(nand_image),
+                            std::span<const uint8_t>(cpu_key));
 }
 
-std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
-                                std::span<const uint8_t> cpu_key) try {
+std::optional<Input> gxbuild3::extract_all(std::span<const uint8_t> nand_image,
+                                           std::span<const uint8_t> cpu_key) try {
     if (cpu_key.size() != 16) {
         Log::Error("Cannot extract NAND: CPU key must be 16 bytes (got {})", cpu_key.size());
         return std::nullopt;
@@ -2128,7 +2130,7 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
     return std::nullopt;
 }
 
-std::optional<Input> ExtractAll(const std::vector<uint8_t>& nand_image,
-                                const std::vector<uint8_t>& cpu_key) {
-    return ExtractAll(std::span<const uint8_t>(nand_image), std::span<const uint8_t>(cpu_key));
+std::optional<Input> gxbuild3::extract_all(const std::vector<uint8_t>& nand_image,
+                                           const std::vector<uint8_t>& cpu_key) {
+    return extract_all(std::span<const uint8_t>(nand_image), std::span<const uint8_t>(cpu_key));
 }

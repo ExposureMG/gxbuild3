@@ -27,26 +27,30 @@ struct BuildError {
 
 using BuildResult = std::expected<std::vector<uint8_t>, BuildError>;
 
-BuildResult RunBuild(const Input& input);
+namespace gxbuild3 {
 
-std::optional<AllNandInfo> ExtractSomeInfo(std::span<const uint8_t> nand_image);
+    BuildResult run_build(const Input& input);
 
-std::optional<AllNandInfo> ExtractSomeInfo(const std::vector<uint8_t>& nand_image);
+    std::optional<AllNandInfo> extract_some_info(std::span<const uint8_t> nand_image);
 
-std::optional<InputMetadata> ExtractMetadata(std::span<const uint8_t> nand_image,
-                                             std::span<const uint8_t> cpu_key);
+    std::optional<AllNandInfo> extract_some_info(const std::vector<uint8_t>& nand_image);
 
-std::optional<InputMetadata> ExtractMetadata(const std::vector<uint8_t>& nand_image,
-                                             const std::vector<uint8_t>& cpu_key);
+    std::optional<InputMetadata> extract_metadata(std::span<const uint8_t> nand_image,
+                                                  std::span<const uint8_t> cpu_key);
 
-std::optional<AllNandInfo> ExtractAllInfo(std::span<const uint8_t> nand_image,
-                                          std::span<const uint8_t> cpu_key);
+    std::optional<InputMetadata> extract_metadata(const std::vector<uint8_t>& nand_image,
+                                                  const std::vector<uint8_t>& cpu_key);
 
-std::optional<AllNandInfo> ExtractAllInfo(const std::vector<uint8_t>& nand_image,
-                                          const std::vector<uint8_t>& cpu_key);
+    std::optional<AllNandInfo> extract_all_info(std::span<const uint8_t> nand_image,
+                                                std::span<const uint8_t> cpu_key);
 
-std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
-                                std::span<const uint8_t> cpu_key);
+    std::optional<AllNandInfo> extract_all_info(const std::vector<uint8_t>& nand_image,
+                                                const std::vector<uint8_t>& cpu_key);
 
-std::optional<Input> ExtractAll(const std::vector<uint8_t>& nand_image,
-                                const std::vector<uint8_t>& cpu_key);
+    std::optional<Input> extract_all(std::span<const uint8_t> nand_image,
+                                     std::span<const uint8_t> cpu_key);
+
+    std::optional<Input> extract_all(const std::vector<uint8_t>& nand_image,
+                                     const std::vector<uint8_t>& cpu_key);
+
+} // namespace gxbuild3

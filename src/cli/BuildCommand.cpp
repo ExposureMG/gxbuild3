@@ -39,7 +39,7 @@ namespace gxbuild3::cli {
         return {
             .resolve = [resolver = BuildInputResolver(cwd)](
                            const BuildArgs& args) { return resolver.Resolve(args); },
-            .build = [](const Input& input) { return RunBuild(input); },
+            .build = [](const Input& input) { return run_build(input); },
             .write =
                 [](const std::filesystem::path& path, const std::vector<uint8_t>& data) {
                     return gxbuild3::utils::write_file(path, data);

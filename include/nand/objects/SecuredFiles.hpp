@@ -128,7 +128,7 @@ namespace gxbuild3::nand {
     // A loose extended.bin or secdata.bin in the form the Input boundary carries it. A copy sealed
     // under the CPU key is opened. A copy in the clear, as xeBuild takes one (an all-zero nonce,
     // or the nonce its plaintext derives), gets the nonce its plaintext derives. Anything else is
-    // opened under the nonce it carries; it then does not verify, and RunBuild makes up a clean
+    // opened under the nonce it carries; it then does not verify, and run_build makes up a clean
     // extended.bin for it and writes a secdata.bin back as supplied. Nothing for a CPU key that is
     // not 16 bytes or a file shorter than its nonce.
     [[nodiscard]] std::optional<std::vector<uint8_t>>

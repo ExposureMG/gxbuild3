@@ -20,6 +20,7 @@
 namespace {
 
     using Bytes = std::vector<uint8_t>;
+    using gxbuild3::run_build;
     using gxbuild3::nand::Keyvault;
 
     constexpr std::array<uint8_t, 16> kCpuKey{
@@ -133,7 +134,7 @@ namespace {
             keyvault_decrypt(kCpuKey, keyvault_encrypt(kCpuKey, Bytes(Keyvault::kSize, 0x72)));
         input.bootloaders = bootloaders;
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!built) {
             return std::nullopt;
         }

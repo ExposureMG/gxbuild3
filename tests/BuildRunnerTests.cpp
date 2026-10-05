@@ -30,6 +30,11 @@
 #include <utility>
 #include <vector>
 
+using gxbuild3::extract_all;
+using gxbuild3::extract_all_info;
+using gxbuild3::extract_metadata;
+using gxbuild3::extract_some_info;
+using gxbuild3::run_build;
 using gxbuild3::nand::BlockMetadata;
 using gxbuild3::nand::Driver;
 using gxbuild3::nand::FlashImage;
@@ -170,7 +175,7 @@ namespace {
         return {cf.serialize(), cg.serialize()};
     }
 
-    // RunBuild opens a supplied sealed CG and seals it again under a new nonce, so a CG is
+    // run_build opens a supplied sealed CG and seals it again under a new nonce, so a CG is
     // compared by what it carries: its plaintext, with the nonce at +0x10 cleared.
     std::optional<Bytes> opened_cg(const Bytes& cf_bytes, const Bytes& cg_bytes) {
         auto cf = BootloaderCf::parse(cf_bytes);
@@ -310,8 +315,8 @@ namespace {
                                                         cd_patch_address, 0x10203040, Bytes{0x91})};
         input.patches = std::move(patches);
 
-        const auto built = RunBuild(input);
-        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto built = run_build(input);
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
         if (!require(extracted.has_value(), "patched glitch image builds and extracts")) {
             return false;
         }
@@ -348,8 +353,8 @@ namespace {
             "automatic", glitch_patchset(0x20, 0, cd_patch_address, 0x5A5A5A5A, Bytes{0x93})};
         input.patches = std::move(patches);
 
-        const auto built = RunBuild(input);
-        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto built = run_build(input);
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
         if (!require(extracted.has_value(), "patched glitch2m image builds and extracts")) {
             return false;
         }
@@ -375,8 +380,8 @@ namespace {
             "automatic", glitch_patchset(cbb_patch_address, 0xCAFEBABE, 0x30, 0, Bytes{0x92})};
         input.patches = std::move(patches);
 
-        const auto built = RunBuild(input);
-        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto built = run_build(input);
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
         if (!require(extracted.has_value() && extracted->bootloaders.cb_b.has_value(),
                      "Glitch2 CBB image builds and extracts")) {
             return false;
@@ -419,7 +424,7 @@ namespace {
                 InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0x94})};
             input.patches = std::move(patches);
 
-            const auto built = RunBuild(input);
+            const auto built = run_build(input);
             auto image = built ? FlashImage::read(*built) : std::nullopt;
             if (!require(image && image->parse() && image->smc,
                          std::string(name) + " image builds with an SMC")) {
@@ -450,8 +455,8 @@ namespace {
         patches.addons = {{"addon", {0xA2}}};
         input.patches = std::move(patches);
 
-        const auto built = RunBuild(input);
-        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto built = run_build(input);
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
         const auto khv = built ? read_logical(*built, 0x80010, 3) : std::nullopt;
         return require(extracted.has_value() &&
                            extracted->bootloaders.cb_or_a.size() == original_cb_size,
@@ -492,9 +497,9 @@ namespace {
             patches.addons = {{"addon", {0xA2}}};
             input.patches = std::move(patches);
 
-            const auto built = RunBuild(input);
+            const auto built = run_build(input);
             const auto extracted =
-                built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+                built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
             const auto khv = built ? read_logical(*built, 0x80010, 3) : std::nullopt;
             if (!require(extracted.has_value(),
                          std::string(test_case.options) + " image builds and extracts") ||
@@ -530,7 +535,7 @@ namespace {
         append_be32(expected, 0xFFFFFFFF);
         expected.insert(expected.end(), {0x13, 0x13, 0x20, 0x30});
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto raw = built ? read_logical(*built, 0x91000, expected.size()) : std::nullopt;
         return require(built.has_value(), "JTAG patchset image builds") &&
                require(raw == expected, "merged JTAG patchset is byte-exact at 0x91000");
@@ -571,7 +576,7 @@ namespace {
         // Small-block window base is 0x90000, so the window tail starts at 0x90000 + 0x45060.
         const size_t cb_at = 0xD5060;
         const size_t cd_at = cb_at + ((cb_bytes.size() + 0x0F) & ~size_t{0x0F});
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto placed_payload = built ? read_logical(*built, 0x200, 0x200) : std::nullopt;
         const auto placed_cb = built ? read_logical(*built, cb_at, cb_bytes.size()) : std::nullopt;
         const auto placed_cd = built ? read_logical(*built, cd_at, cd_bytes.size()) : std::nullopt;
@@ -636,7 +641,7 @@ namespace {
         const size_t cd_at = 0xD5060 + ((cb_bytes.size() + 0x0F) & ~size_t{0x0F});
         const size_t chain_end = cd_at + cd_bytes.size();
         const size_t pad_end = (chain_end + 0x3FFF) & ~size_t{0x3FFF};
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? FlashImage::read(*built) : std::nullopt;
         if (!require(built.has_value(), "JTAG image with a rebooter and a payload builds") ||
             !require(image.has_value(), "JTAG image with a rebooter reads back") ||
@@ -682,18 +687,18 @@ namespace {
             input.patches = std::move(patches);
             return input;
         };
-        const auto clean = RunBuild(jtag_input(make_smc(0x11)));
+        const auto clean = run_build(jtag_input(make_smc(0x11)));
         auto waived_input = jtag_input(make_smc(0x11));
         waived_input.options.smcnocheck = true;
-        const auto waived = RunBuild(waived_input);
-        const auto marked = RunBuild(jtag_input(make_jtag_smc(0x11)));
+        const auto waived = run_build(waived_input);
+        const auto marked = run_build(jtag_input(make_jtag_smc(0x11)));
         auto cygnos_smc = make_smc(0x11);
         const Bytes cygnos_mark{0x78, 0xBA, 0xB6};
         std::copy(cygnos_mark.begin(), cygnos_mark.end(), cygnos_smc.begin() + 0x180);
-        const auto sealed = RunBuild(jtag_input(gxbuild3::nand::smc_encrypt(cygnos_smc)));
+        const auto sealed = run_build(jtag_input(gxbuild3::nand::smc_encrypt(cygnos_smc)));
         auto retail_input = fresh_input(ImageType::SmallBlock);
         retail_input.build_type = BuildType::Retail;
-        const auto retail = RunBuild(retail_input);
+        const auto retail = run_build(retail_input);
         return require(!clean && clean.error().code == BuildErrorCode::InvalidSmc &&
                            clean.error().message.find("Clean SMC") != std::string::npos,
                        "JTAG over an SMC with no JTAG mark is refused as a clean SMC") &&
@@ -711,7 +716,7 @@ namespace {
         InputPatches jtag_patches{};
         jtag_patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes(0x4001, 0x44))};
         jtag.patches = std::move(jtag_patches);
-        const auto jtag_result = RunBuild(jtag);
+        const auto jtag_result = run_build(jtag);
 
         auto glitch = fresh_input(ImageType::SmallBlock);
         glitch.build_type = BuildType::Glitch;
@@ -719,7 +724,7 @@ namespace {
         glitch_patches.automatic =
             InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes(0xFFF1, 0x55))};
         glitch.patches = std::move(glitch_patches);
-        const auto glitch_result = RunBuild(glitch);
+        const auto glitch_result = run_build(glitch);
 
         return require(!jtag_result && jtag_result.error().code == BuildErrorCode::PatchFailure,
                        "JTAG patch overflow returns PatchFailure") &&
@@ -733,9 +738,9 @@ namespace {
             input.build_type = build_type;
             input.patches = InputPatches{.automatic = std::nullopt,
                                          .addons = {InputPatchFile{"addon", {0x01}}}};
-            const auto result = RunBuild(input);
+            const auto result = run_build(input);
             if (!require(!result && result.error().code == BuildErrorCode::InvalidInput,
-                         "RunBuild rejects retail and devkit add-on patch data")) {
+                         "run_build rejects retail and devkit add-on patch data")) {
                 return false;
             }
         }
@@ -759,8 +764,8 @@ namespace {
             *input.mobiles.slot(block_type) = std::move(expected_mobile);
         }
 
-        const auto built = RunBuild(input);
-        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto built = run_build(input);
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
         if (!require(extracted.has_value(), "glitch image with mobile data extracts")) {
             return false;
         }
@@ -784,7 +789,7 @@ namespace {
         payloads.xell = valid_xell();
         input.payloads = std::move(payloads);
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto khv = built ? read_logical(*built, 0xC0010, 1) : std::nullopt;
         const auto xell_magic = built ? read_logical(*built, 0x70000, 4) : std::nullopt;
         return require(built.has_value(), "glitch patch and XeLL image builds") &&
@@ -802,7 +807,7 @@ namespace {
             InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes(0x10000, 0xB4))};
         input.patches = std::move(patches);
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         // With no XeLL the first slot is the chain's end rounded up by 0x20000, which is 0x80000,
         // and the overlay one 0x20000 stride above it.
         const auto first = built ? read_logical(*built, 0xA0010, 1) : std::nullopt;
@@ -821,7 +826,7 @@ namespace {
         payloads.rebooter = Bytes(0x1000, 0x71);
         input.payloads = std::move(payloads);
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         return require(built.has_value(), "fixed KHV anchor is disjoint from the rebooter") &&
                require(read_logical(*built, 0x80010, 1) == Bytes{0xA0},
                        "KHV stays at runtime anchor");
@@ -840,7 +845,7 @@ namespace {
 
         const auto merged = BinaryParser::ParseAndMergePatchSet(patches, BuildType::Jtag);
         const auto expected = merged ? BinaryParser::SerializePatchSet(*merged) : Bytes{};
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto written_patch =
             built ? read_logical(*built, 0x91000, expected.size()) : std::nullopt;
         const auto xell_magic = built ? read_logical(*built, 0x95060, 4) : std::nullopt;
@@ -865,7 +870,7 @@ namespace {
             auto [cf, cg] = valid_system_update(0x61);
             input.bootloaders.cf0 = cf;
             input.bootloaders.cg0 = cg;
-            auto built = RunBuild(input);
+            auto built = run_build(input);
             // XeLL sits at 0x70000 on every shape and the slots follow it, rounded up by the
             // erase block: 0xB0000, or 0xC0000 on big block, whose slot is 0x20000 long.
             const size_t base = image_type == ImageType::BigBlock ? 0xC0000 : 0xB0000;
@@ -877,12 +882,12 @@ namespace {
                 !require(read_logical(*built, xell_at, 0x40000) == input.payloads->xell,
                          "XeLL sits at 0x70000"))
                 return false;
-            auto extracted = ExtractAll(*built, input.metadata.cpu_key);
+            auto extracted = extract_all(*built, input.metadata.cpu_key);
             if (!require(extracted && extracted->patches &&
                              extracted->build_type == BuildType::Glitch,
                          "extraction preserves the runtime patch stream and build type"))
                 return false;
-            auto rebuilt = RunBuild(*extracted);
+            auto rebuilt = run_build(*extracted);
             if (!require(rebuilt &&
                              read_logical(*rebuilt, base + stride + 0x10, 4) ==
                                  Bytes({0, 0, 0x10, 0}) &&
@@ -891,7 +896,7 @@ namespace {
                 return false;
             input.bootloaders.cf1 = cf;
             input.bootloaders.cg1 = cg;
-            auto conflict = RunBuild(input);
+            auto conflict = run_build(input);
             if (!require(!conflict && conflict.error().message.find("second update slot") !=
                                           std::string::npos,
                          "CF1 cannot occupy the glitch overlay"))
@@ -927,7 +932,7 @@ namespace {
             }
             input.payloads = std::move(payloads);
 
-            const auto built = RunBuild(input);
+            const auto built = run_build(input);
             if (!require(!built && built.error().code == BuildErrorCode::InvalidInput,
                          "small-block Glitch rejects overlapping fixed payloads") ||
                 !require(!built || built.error().message.find(test_case.collided_payload) !=
@@ -951,7 +956,7 @@ namespace {
         donor_payloads.fuses = Bytes(0x60, 0x72);
         donor_payloads.xell = valid_xell();
         donor_input.payloads = std::move(donor_payloads);
-        const auto donor = RunBuild(donor_input);
+        const auto donor = run_build(donor_input);
         if (!require(donor.has_value(), "adjacent JTAG donor payload layout builds")) {
             return false;
         }
@@ -964,7 +969,7 @@ namespace {
             InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xA2})};
         input.patches = std::move(patches);
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         return require(!built && built.error().code == BuildErrorCode::InvalidInput,
                        "donor transition rejects retained payload collision") &&
                require(!built || built.error().message.find("XeLL overlaps rebooter") !=
@@ -1002,7 +1007,7 @@ namespace {
             payloads.xell = valid_xell();
             input.payloads = std::move(payloads);
 
-            const auto built = RunBuild(input);
+            const auto built = run_build(input);
             const auto rebooter =
                 built ? read_logical(*built, 0x90000, input.payloads->rebooter->size())
                       : std::nullopt;
@@ -1034,12 +1039,13 @@ namespace {
         payloads.xell->at(0x25000) = 0x57;
         input.payloads = std::move(payloads);
 
-        const auto built = RunBuild(input);
-        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
-        return require(extracted.has_value() && extracted->payloads && extracted->payloads->xell &&
-                           *extracted->payloads->xell == *input.payloads->xell,
-                       "small-block Glitch ExtractAll retains patch-base XeLL bytes at 0x20000 and "
-                       "0x25000") &&
+        const auto built = run_build(input);
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        return require(
+                   extracted.has_value() && extracted->payloads && extracted->payloads->xell &&
+                       *extracted->payloads->xell == *input.payloads->xell,
+                   "small-block Glitch extract_all retains patch-base XeLL bytes at 0x20000 and "
+                   "0x25000") &&
                require(!extracted->payloads->rebooter && !extracted->payloads->fuses,
                        "patch-base XeLL suppresses ambiguous rebooter and fuse inference");
     }
@@ -1057,7 +1063,7 @@ namespace {
             payloads.xell = valid_xell();
             input.payloads = std::move(payloads);
 
-            const auto built = RunBuild(input);
+            const auto built = run_build(input);
             auto image = built ? FlashImage::read(*built) : std::nullopt;
             const Bytes invalid_patch_base{0, 0, 0, 0};
             const Bytes false_jtag_elf{0x7F, 'E', 'L', 'F'};
@@ -1069,7 +1075,7 @@ namespace {
                                   image->flash_driver.write_offset(0x95000, false_fuses) &&
                                   image->flash_driver.write_offset(0x95060, false_jtag_elf);
             const auto extracted =
-                modified ? ExtractAll(image->flash_driver.serialize(), input.metadata.cpu_key)
+                modified ? extract_all(image->flash_driver.serialize(), input.metadata.cpu_key)
                          : std::nullopt;
 
             if (!require(modified, "shifted patch-base XeLL fixture is modified successfully") ||
@@ -1095,13 +1101,13 @@ namespace {
                 InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, khv)};
             input.payloads = InputPayloads{};
             input.payloads->xell = valid_xell();
-            auto built = RunBuild(input);
+            auto built = run_build(input);
             auto image = built ? FlashImage::read(*built) : std::nullopt;
             if (!require(image && image->parse(), "glitch donor with runtime KHV parses"))
                 return false;
             image->flash_driver.write_offset(0x70000, Bytes{0, 0, 0, 0});
             image->flash_driver.write_offset(0x95060, valid_xell());
-            auto extracted = ExtractAll(image->flash_driver.serialize(), input.metadata.cpu_key);
+            auto extracted = extract_all(image->flash_driver.serialize(), input.metadata.cpu_key);
             if (!require(extracted && (!extracted->payloads || !extracted->payloads->xell),
                          "known glitch image cannot infer JTAG XeLL inside its damaged payload"))
                 return false;
@@ -1125,7 +1131,7 @@ namespace {
             payloads.xell = valid_xell();
             input.payloads = std::move(payloads);
 
-            const auto built = RunBuild(input);
+            const auto built = run_build(input);
             if (!require(built.has_value(),
                          "big-geometry glitch carrying a XeLL builds without a collision")) {
                 return false;
@@ -1156,9 +1162,9 @@ namespace {
                 return false;
             }
 
-            const auto extracted = ExtractAll(*built, input.metadata.cpu_key);
+            const auto extracted = extract_all(*built, input.metadata.cpu_key);
             if (!require(extracted.has_value() && extracted->bootloaders.cf0.has_value(),
-                         "the shifted CF0 is recovered by ExtractAll") ||
+                         "the shifted CF0 is recovered by extract_all") ||
                 !require(extracted->payloads && extracted->payloads->xell == input.payloads->xell,
                          "the anchored XeLL round-trips byte for byte")) {
                 return false;
@@ -1180,8 +1186,8 @@ namespace {
         payloads.fuses = Bytes(0x60, 0x82);
         input.payloads = std::move(payloads);
 
-        const auto built = RunBuild(input);
-        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto built = run_build(input);
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
         return require(extracted.has_value() && extracted->payloads &&
                            extracted->payloads->xell == input.payloads->xell &&
                            extracted->payloads->rebooter == input.payloads->rebooter &&
@@ -1225,7 +1231,7 @@ namespace {
             payloads.xell = valid_xell();
             input.payloads = std::move(payloads);
 
-            const auto built = RunBuild(input);
+            const auto built = run_build(input);
             if (!require(
                     !built && built.error().code == BuildErrorCode::InvalidInput,
                     "oversized unpatched boot chain is rejected before fixed payload overwrite") ||
@@ -1246,7 +1252,7 @@ namespace {
             InputPatchFile{"automatic", glitch_patchset(0x70000, 0xDEADBEEF, 0x30, 0, Bytes{0xA0})};
         input.patches = std::move(patches);
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(!built && built.error().code == BuildErrorCode::PatchFailure,
                      "bootloader patch beyond chain capacity fails before resize")) {
             return false;
@@ -1258,7 +1264,7 @@ namespace {
         hostile_patches.automatic = InputPatchFile{
             "hostile", glitch_patchset(0xFFFFFFF8, 0xDEADBEEF, 0x30, 0, Bytes{0xA0})};
         hostile.patches = std::move(hostile_patches);
-        const auto hostile_result = RunBuild(hostile);
+        const auto hostile_result = run_build(hostile);
         return require(!hostile_result &&
                            hostile_result.error().code == BuildErrorCode::PatchFailure,
                        "near-UINT32_MAX patch end is rejected without allocation");
@@ -1299,7 +1305,7 @@ namespace {
         auto input = fresh_input(ImageType::SmallBlock);
         input.metadata.cpu_key.pop_back();
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         return require(!built.has_value(), "invalid input is rejected") &&
                require(built.error().code == BuildErrorCode::InvalidInput,
                        "invalid input has an InvalidInput build error");
@@ -1308,7 +1314,7 @@ namespace {
     // An eMMC anchor names four blobs, types 0x31-0x34. Those are laid; 0x35-0x39 are left
     // out with a warning and the build goes on.
     bool emmc_keeps_anchor_mobiles_only(const Input& input, std::string_view what) {
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto parsed = built ? parse_image(*built) : std::nullopt;
         if (!require(built.has_value() && parsed.has_value() && parsed->mobile_data.has_value(),
                      std::string(what) + ": eMMC build with mobile data succeeds")) {
@@ -1336,7 +1342,7 @@ namespace {
     }
 
     bool test_emmc_donor_lays_four_anchor_mobiles_and_drops_the_rest() {
-        const auto donor = RunBuild(fresh_input(ImageType::Emmc));
+        const auto donor = run_build(fresh_input(ImageType::Emmc));
         if (!require(donor.has_value(), "eMMC donor fixture builds")) {
             return false;
         }
@@ -1354,7 +1360,7 @@ namespace {
         input.metadata.nand_image = make_donor(input, {});
         *input.mobiles.slot(0x33) = Bytes{0x33, 0xCC};
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto parsed = built ? parse_image(*built) : std::nullopt;
         return require(built.has_value(),
                        built ? "NAND donor accepts high mobile input despite requested eMMC"
@@ -1375,7 +1381,7 @@ namespace {
             canonical_keyvault(input.metadata.cpu_key, Bytes(Keyvault::kSize, 0xB2));
         *input.mobiles.slot(0x32) = Bytes{9};
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value(), "donor overlay build succeeds")) {
             return false;
         }
@@ -1405,7 +1411,7 @@ namespace {
         input.metadata.nand_image = make_donor(input, {{0x32, Bytes(0x800, 2)}});
         *input.mobiles.slot(0x32) = Bytes(0x200, 9);
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value(), "long mobile overlay build succeeds")) {
             return false;
         }
@@ -1427,7 +1433,7 @@ namespace {
         input.metadata.nand_image = make_donor(input, {{0x32, Bytes(0x800, 2)}});
         *input.mobiles.slot(0x32) = Bytes(0x4001, 9);
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         return require(!built.has_value(), "a mobile overlay longer than a block is refused") &&
                require(built.error().code == BuildErrorCode::SerializationFailure,
                        "an over-long mobile reports SerializationFailure");
@@ -1441,7 +1447,7 @@ namespace {
         source.metadata.keyvault =
             canonical_keyvault(source.metadata.cpu_key, *source.metadata.keyvault);
         const auto donor = make_donor(source, {});
-        auto extracted = ExtractAll(donor, source.metadata.cpu_key);
+        auto extracted = extract_all(donor, source.metadata.cpu_key);
         if (!require(extracted.has_value() &&
                          extracted->metadata.keyvault == source.metadata.keyvault,
                      "extraction exposes the canonical plaintext keyvault")) {
@@ -1449,7 +1455,7 @@ namespace {
         }
 
         extracted->metadata.nand_image.reset();
-        const auto rebuilt = RunBuild(*extracted);
+        const auto rebuilt = run_build(*extracted);
         if (!require(rebuilt.has_value(),
                      "fresh layout rebuild with extracted keyvault succeeds")) {
             return false;
@@ -1472,7 +1478,7 @@ namespace {
         const auto wrong_key = different_valid_cpu_key(source.metadata.cpu_key);
         input.metadata.cpu_key.assign(wrong_key.begin(), wrong_key.end());
         input.metadata.nand_image = donor;
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         return require(!built.has_value(), "wrong valid CPU key rejects donor") &&
                require(built.error().code == BuildErrorCode::InvalidDonor,
                        "wrong valid CPU key maps to InvalidDonor");
@@ -1483,7 +1489,7 @@ namespace {
         input.payloads = InputPayloads{};
         input.payloads->payload = Bytes{0xC0, 0xDE};
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         return require(!built.has_value(), "mis-sized payload is rejected") &&
                require(built.error().code == BuildErrorCode::InvalidInput,
                        "mis-sized payload returns InvalidInput") &&
@@ -1495,7 +1501,7 @@ namespace {
         auto source = fresh_input(ImageType::SmallBlock);
         const auto donor = make_donor(source, {{0x31, Bytes{3}}, {0x39, Bytes{9}}});
 
-        const auto extracted = ExtractAll(donor, source.metadata.cpu_key);
+        const auto extracted = extract_all(donor, source.metadata.cpu_key);
         return require(extracted.has_value(), "donor baseline extracts") &&
                require(extracted->metadata.nand_image == donor,
                        "extraction retains backing donor image") &&
@@ -1524,8 +1530,8 @@ namespace {
         input.bootloaders.cf0 = cf0;
         input.bootloaders.cg0 = cg0;
 
-        const auto built = RunBuild(input);
-        const auto info = built ? ExtractSomeInfo(*built) : std::nullopt;
+        const auto built = run_build(input);
+        const auto info = built ? extract_some_info(*built) : std::nullopt;
         return require(info.has_value(), "public NAND metadata extracts without a CPU key") &&
                require(info->block_type == ImageType::BigBlock,
                        "public NAND metadata reports the detected block type") &&
@@ -1549,8 +1555,8 @@ namespace {
 
     bool test_extract_all_info_reports_the_detected_block_type() {
         const auto input = fresh_input(ImageType::NewSmallBlock);
-        const auto built = RunBuild(input);
-        const auto info = built ? ExtractAllInfo(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto built = run_build(input);
+        const auto info = built ? extract_all_info(*built, input.metadata.cpu_key) : std::nullopt;
         return require(info.has_value(), "full NAND metadata extracts") &&
                require(info->block_type == ImageType::NewSmallBlock,
                        "full NAND metadata reports the detected block type");
@@ -1589,7 +1595,7 @@ namespace {
     // that as a failure and lets no exception escape.
     bool test_extraction_reports_a_cd_record_shorter_than_its_header() {
         const auto input = fresh_input(ImageType::SmallBlock);
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value(), "the image to damage builds")) {
             return false;
         }
@@ -1606,16 +1612,16 @@ namespace {
             }
         };
         const auto& cpu_key = input.metadata.cpu_key;
-        const bool some_info = fails_without_throwing([&] { return ExtractSomeInfo(malformed); });
+        const bool some_info = fails_without_throwing([&] { return extract_some_info(malformed); });
         const bool metadata =
-            fails_without_throwing([&] { return ExtractMetadata(malformed, cpu_key); });
+            fails_without_throwing([&] { return extract_metadata(malformed, cpu_key); });
         const bool all_info =
-            fails_without_throwing([&] { return ExtractAllInfo(malformed, cpu_key); });
-        const bool all = fails_without_throwing([&] { return ExtractAll(malformed, cpu_key); });
-        bool passed = require(some_info, "ExtractSomeInfo refuses a short CD record");
-        passed = require(metadata, "ExtractMetadata refuses a short CD record") && passed;
-        passed = require(all_info, "ExtractAllInfo refuses a short CD record") && passed;
-        passed = require(all, "ExtractAll refuses a short CD record") && passed;
+            fails_without_throwing([&] { return extract_all_info(malformed, cpu_key); });
+        const bool all = fails_without_throwing([&] { return extract_all(malformed, cpu_key); });
+        bool passed = require(some_info, "extract_some_info refuses a short CD record");
+        passed = require(metadata, "extract_metadata refuses a short CD record") && passed;
+        passed = require(all_info, "extract_all_info refuses a short CD record") && passed;
+        passed = require(all, "extract_all refuses a short CD record") && passed;
         return passed;
     }
 
@@ -1632,8 +1638,9 @@ namespace {
             plain[0x1C] = static_cast<uint8_t>(features >> 8);
             plain[0x1D] = static_cast<uint8_t>(features);
             input.metadata.keyvault = canonical_keyvault(input.metadata.cpu_key, plain);
-            const auto built = RunBuild(input);
-            const auto info = built ? ExtractAllInfo(*built, input.metadata.cpu_key) : std::nullopt;
+            const auto built = run_build(input);
+            const auto info =
+                built ? extract_all_info(*built, input.metadata.cpu_key) : std::nullopt;
             passed = require(info.has_value() && info->keyvault.present &&
                                  info->keyvault.fcrt_required == required,
                              "full NAND metadata reports the keyvault's fcrt.bin flag") &&
@@ -1645,13 +1652,13 @@ namespace {
     bool test_sc_survives_extraction_and_backing_cleared_layout_override() {
         auto source = fresh_input(ImageType::SmallBlock);
         const auto donor = make_donor(source, {});
-        auto extracted = ExtractAll(donor, source.metadata.cpu_key);
+        auto extracted = extract_all(donor, source.metadata.cpu_key);
         if (!require(extracted.has_value() && extracted->bootloaders.sc == source.bootloaders.sc,
                      "extraction preserves exact SC bytes"))
             return false;
         extracted->metadata.nand_image.reset();
         extracted->image_type = ImageType::BigBlock;
-        const auto rebuilt = RunBuild(*extracted);
+        const auto rebuilt = run_build(*extracted);
         auto parsed = rebuilt ? parse_image(*rebuilt) : std::nullopt;
         return require(parsed.has_value() && parsed->cb_section.sc.has_value() &&
                            parsed->cb_section.sc->serialize() == *source.bootloaders.sc,
@@ -1667,7 +1674,7 @@ namespace {
         encrypted_sc.encrypt(BootloaderSc::kZeroSecret);
         encrypted_source.bootloaders.sc = encrypted_sc.serialize();
 
-        const auto encrypted_build = RunBuild(encrypted_source);
+        const auto encrypted_build = run_build(encrypted_source);
         auto encrypted_image = encrypted_build ? FlashImage::read(*encrypted_build) : std::nullopt;
         const bool encrypted_parsed = encrypted_image && encrypted_image->parse();
         const bool encrypted_decrypted =
@@ -1675,9 +1682,9 @@ namespace {
 
         auto plaintext_source = fresh_input(ImageType::SmallBlock);
         const auto expected_plaintext_sc = *plaintext_source.bootloaders.sc;
-        const auto plaintext_build = RunBuild(plaintext_source);
+        const auto plaintext_build = run_build(plaintext_source);
         const auto plaintext_extracted =
-            plaintext_build ? ExtractAll(*plaintext_build, plaintext_source.metadata.cpu_key)
+            plaintext_build ? extract_all(*plaintext_build, plaintext_source.metadata.cpu_key)
                             : std::nullopt;
 
         return require(encrypted_decrypted && encrypted_image->cb_section.sc.has_value() &&
@@ -1699,7 +1706,7 @@ namespace {
         }};
 
         for (const auto& [image_type, expected_mode] : layouts) {
-            const auto built = RunBuild(fresh_input(image_type));
+            const auto built = run_build(fresh_input(image_type));
             if (!require(built.has_value(), "fresh layout build succeeds")) {
                 return false;
             }
@@ -1722,7 +1729,7 @@ namespace {
         };
         for (const auto image_type :
              {ImageType::SmallBlock, ImageType::BigBlock, ImageType::Emmc}) {
-            const auto built = RunBuild(fresh_input(image_type));
+            const auto built = run_build(fresh_input(image_type));
             if (!require(built.has_value(), "header 0x74 fixture builds") ||
                 !require(zero_at_0x74(*built), "fresh image leaves header 0x74 zero"))
                 return false;
@@ -1740,7 +1747,7 @@ namespace {
     bool test_bigblock_flashfs_formats_and_roundtrips_an_empty_overlay() {
         auto input = fresh_input(ImageType::BigBlock);
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{};
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value(), "BigBlock empty FlashFS formats")) {
             return false;
         }
@@ -1758,7 +1765,7 @@ namespace {
 
         auto input = fresh_input(ImageType::BigBlock);
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"big-file.bin", expected}};
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto parsed = built ? parse_image(*built) : std::nullopt;
         const auto extracted = parsed && parsed->filesystem
                                    ? parsed->filesystem->get_file("big-file.bin")
@@ -1776,13 +1783,13 @@ namespace {
         auto input = fresh_input(ImageType::BigBlock);
         const Bytes expected(0x4003, 0x52);
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"data.bin", expected}};
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value(), "big-block filesystem donor builds"))
             return false;
 
         input.metadata.nand_image = *built;
         input.flashfs_sec.reset();
-        const auto rebuilt = RunBuild(input);
+        const auto rebuilt = run_build(input);
         const auto parsed = rebuilt ? parse_image(*rebuilt) : std::nullopt;
         return require(
             parsed && parsed->filesystem && parsed->filesystem->get_file("data.bin") == expected,
@@ -1823,11 +1830,11 @@ namespace {
         const auto secdata = clear_secdata(input, 0x31);
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"secdata.bin", secdata},
                                                                        {"extended.bin", extended}};
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value(), "secure FlashFS build succeeds")) {
             return false;
         }
-        auto extracted = ExtractAll(*built, cpu_key);
+        auto extracted = extract_all(*built, cpu_key);
         const auto file = [](const Input& from, std::string_view name) -> const Bytes* {
             if (!from.flashfs_sec) {
                 return nullptr;
@@ -1849,11 +1856,11 @@ namespace {
             return false;
         }
         extracted->metadata.nand_image.reset();
-        const auto rebuilt = RunBuild(*extracted);
+        const auto rebuilt = run_build(*extracted);
         if (!require(rebuilt.has_value(), "secure FlashFS rebuild succeeds")) {
             return false;
         }
-        const auto roundtrip = ExtractAll(*rebuilt, cpu_key);
+        const auto roundtrip = extract_all(*rebuilt, cpu_key);
         const auto* second_secdata = roundtrip ? file(*roundtrip, "secdata.bin") : nullptr;
         return require(
             roundtrip && file(*roundtrip, "extended.bin") &&
@@ -1910,8 +1917,8 @@ namespace {
         input.metadata.console_secured_files = {{"crl.bin", *own_crl}};
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
             {"crl.bin", clear_crl}, {"extended.bin", extended}, {"fcrt.bin", fcrt}};
-        const auto built = RunBuild(input);
-        const auto extracted = built ? ExtractAll(*built, cpu_key) : std::nullopt;
+        const auto built = run_build(input);
+        const auto extracted = built ? extract_all(*built, cpu_key) : std::nullopt;
         if (!require(extracted.has_value() && extracted->flashfs_sec.has_value(),
                      "a build with secured files extracts")) {
             return false;
@@ -1988,8 +1995,8 @@ namespace {
                       failed_opening.data() + 0x140, feed.data(), 0);
 
         const auto image_fcrt = [&](const Input& build) -> std::optional<Bytes> {
-            const auto built = RunBuild(build);
-            const auto extracted = built ? ExtractAll(*built, cpu_key) : std::nullopt;
+            const auto built = run_build(build);
+            const auto extracted = built ? extract_all(*built, cpu_key) : std::nullopt;
             if (!extracted || !extracted->flashfs_sec) {
                 return std::nullopt;
             }
@@ -2013,7 +2020,7 @@ namespace {
     bool test_flashfs_overlay_outranks_a_higher_sequence_donor_root() {
         auto first = fresh_input(ImageType::SmallBlock);
         first.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"first.bin", Bytes{1}}};
-        const auto first_build = RunBuild(first);
+        const auto first_build = run_build(first);
         if (!require(first_build.has_value(), "initial FlashFS donor build succeeds")) {
             return false;
         }
@@ -2022,7 +2029,7 @@ namespace {
         higher_sequence_donor.metadata.nand_image = *first_build;
         higher_sequence_donor.flashfs_sec =
             std::vector<std::pair<std::string, Bytes>>{{"donor-old.bin", Bytes{2}}};
-        const auto donor_build = RunBuild(higher_sequence_donor);
+        const auto donor_build = run_build(higher_sequence_donor);
         auto donor_image = donor_build ? parse_image(*donor_build) : std::nullopt;
         if (!require(donor_image.has_value() && donor_image->filesystem.has_value() &&
                          donor_image->filesystem->version() == 1,
@@ -2048,7 +2055,7 @@ namespace {
         overlay.metadata.nand_image = donor_bytes;
         overlay.flashfs_sec =
             std::vector<std::pair<std::string, Bytes>>{{"replacement.bin", Bytes{7, 8, 9}}};
-        const auto built = RunBuild(overlay);
+        const auto built = run_build(overlay);
         const auto parsed = built ? parse_image(*built) : std::nullopt;
         if (!require(parsed.has_value() && parsed->filesystem.has_value(),
                      "FlashFS overlay output parses")) {
@@ -2064,7 +2071,7 @@ namespace {
     }
 
     bool test_serialized_mobile_overlay_skips_a_bad_donor_block() {
-        const auto initial = RunBuild(fresh_input(ImageType::SmallBlock));
+        const auto initial = run_build(fresh_input(ImageType::SmallBlock));
         auto donor = initial ? FlashImage::read(*initial) : std::nullopt;
         if (!require(donor.has_value(), "bad-block donor image opens")) {
             return false;
@@ -2077,7 +2084,7 @@ namespace {
         auto overlay = fresh_input(ImageType::SmallBlock);
         overlay.metadata.nand_image = donor_bytes;
         *overlay.mobiles.slot(0x31) = Bytes(0x4000, 0x31);
-        const auto built = RunBuild(overlay);
+        const auto built = run_build(overlay);
         const auto parsed = built ? parse_image(*built) : std::nullopt;
 
         return require(built.has_value(), "bad-block mobile overlay builds") &&
@@ -2121,7 +2128,7 @@ namespace {
     bool test_flashfs_allocation_reports_exhaustion_before_the_smc_tail() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"probe.bin", Bytes{1}}};
-        const auto probe = RunBuild(input);
+        const auto probe = run_build(input);
         const auto probed = probe ? parse_image(*probe) : std::nullopt;
         const auto probe_entry =
             probed && probed->filesystem ? probed->filesystem->stat("probe.bin") : std::nullopt;
@@ -2133,7 +2140,7 @@ namespace {
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
             {"fills-tail.bin", Bytes((smc_tail_start - first_flashfs_block + 1) * 0x4000, 0xA5)}};
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         return require(!built.has_value(), "FlashFS allocation cannot enter the SMC tail") &&
                require(built.error().code == BuildErrorCode::SerializationFailure,
                        "FlashFS tail exhaustion reports SerializationFailure");
@@ -2142,7 +2149,7 @@ namespace {
     bool test_serialized_flashfs_retains_an_empty_file() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"empty.bin", Bytes{}}};
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto parsed = built ? parse_image(*built) : std::nullopt;
 
         return require(built.has_value(), "empty FlashFS file build succeeds") &&
@@ -2165,7 +2172,7 @@ namespace {
         for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
             *input.mobiles.slot(block_type) = Bytes(0x4000, block_type);
         }
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto parsed = built ? parse_image(*built) : std::nullopt;
         bool mobiles_intact = parsed.has_value() && parsed->mobile_data.has_value();
         for (uint8_t block_type = 0x31; mobiles_intact && block_type <= 0x39; ++block_type) {
@@ -2195,7 +2202,7 @@ namespace {
         input.flashfs_sec =
             std::vector<std::pair<std::string, Bytes>>{{"payload-safe.bin", Bytes(0x4000, 0x5A)}};
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto parsed = built ? parse_image(*built) : std::nullopt;
         return require(built.has_value(), "FlashFS and fixed payload image builds") &&
                require(parsed.has_value() && parsed->filesystem.has_value() &&
@@ -2219,7 +2226,7 @@ namespace {
             InputPayloads payloads{};
             payloads.rebooter = Bytes(size, 0x71);
             input.payloads = std::move(payloads);
-            if (!require(RunBuild(input).has_value(), "rebooter fitting its region is accepted")) {
+            if (!require(run_build(input).has_value(), "rebooter fitting its region is accepted")) {
                 return false;
             }
         }
@@ -2230,7 +2237,7 @@ namespace {
             InputPayloads payloads{};
             payloads.rebooter = Bytes(size, 0x71);
             input.payloads = std::move(payloads);
-            const auto built = RunBuild(input);
+            const auto built = run_build(input);
             if (!require(!built.has_value(), "oversized rebooter is rejected") ||
                 !require(built.error().code == BuildErrorCode::InvalidInput,
                          "oversized rebooter is an input error")) {
@@ -2244,7 +2251,7 @@ namespace {
             InputPayloads payloads{};
             payloads.fuses = Bytes(size, 0x72);
             input.payloads = std::move(payloads);
-            const auto built = RunBuild(input);
+            const auto built = run_build(input);
             if (!require(!built.has_value(), "noncanonical fuse size is rejected") ||
                 !require(built.error().code == BuildErrorCode::InvalidInput,
                          "noncanonical fuse size is an input error")) {
@@ -2260,7 +2267,7 @@ namespace {
         for (size_t index = 0; index < 256; ++index) {
             full.flashfs_sec->emplace_back("f" + std::to_string(index), Bytes{});
         }
-        const auto full_build = RunBuild(full);
+        const auto full_build = run_build(full);
         const auto full_image = full_build ? parse_image(*full_build) : std::nullopt;
         if (!require(full_build.has_value(), "256 FlashFS entries serialize successfully") ||
             !require(full_image.has_value() && full_image->filesystem.has_value() &&
@@ -2274,7 +2281,7 @@ namespace {
         for (size_t index = 0; index < 257; ++index) {
             overflow.flashfs_sec->emplace_back("f" + std::to_string(index), Bytes{});
         }
-        const auto overflow_build = RunBuild(overflow);
+        const auto overflow_build = run_build(overflow);
         return require(!overflow_build.has_value(), "257 FlashFS entries are rejected") &&
                require(overflow_build.error().code == BuildErrorCode::SerializationFailure,
                        "FlashFS directory overflow returns SerializationFailure");
@@ -2283,7 +2290,7 @@ namespace {
     bool test_bigblock_flashfs_overlay_handles_the_24_bit_sequence_limit() {
         auto first = fresh_input(ImageType::BigBlock);
         first.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{{"donor-old.bin", Bytes{2}}};
-        const auto first_build = RunBuild(first);
+        const auto first_build = run_build(first);
         auto max_sequence_donor = first_build ? FlashImage::read(*first_build) : std::nullopt;
         if (!require(max_sequence_donor.has_value() && max_sequence_donor->parse() &&
                          max_sequence_donor->filesystem.has_value(),
@@ -2303,7 +2310,7 @@ namespace {
         overlay.metadata.nand_image = donor_bytes;
         overlay.flashfs_sec =
             std::vector<std::pair<std::string, Bytes>>{{"replacement.bin", Bytes{7, 8, 9}}};
-        const auto built = RunBuild(overlay);
+        const auto built = run_build(overlay);
         const auto parsed = built ? parse_image(*built) : std::nullopt;
 
         return require(built.has_value(), "24-bit sequence overlay build succeeds") &&
@@ -2318,7 +2325,7 @@ namespace {
         auto donor_input = fresh_input(ImageType::Emmc);
         *donor_input.mobiles.slot(0x31) = donor_mobile_31;
         *donor_input.mobiles.slot(0x32) = donor_mobile_32;
-        const auto donor_bytes = RunBuild(donor_input);
+        const auto donor_bytes = run_build(donor_input);
         const auto parsed_donor = donor_bytes ? parse_image(*donor_bytes) : std::nullopt;
         if (!require(parsed_donor.has_value() && parsed_donor->mobile_data.has_value(),
                      "serialized eMMC mobiles parse")) {
@@ -2338,7 +2345,7 @@ namespace {
         auto removal = fresh_input(ImageType::Emmc);
         removal.metadata.nand_image = *donor_bytes;
         *removal.mobiles.slot(0x31) = Bytes{};
-        const auto rebuilt = RunBuild(removal);
+        const auto rebuilt = run_build(removal);
         const auto parsed_rebuilt = rebuilt ? parse_image(*rebuilt) : std::nullopt;
         return require(rebuilt.has_value(),
                        rebuilt ? "eMMC empty mobile overlay builds"
@@ -2371,7 +2378,7 @@ namespace {
             auto donor_input = fresh_input(layout);
             *donor_input.mobiles.slot(0x31) = Bytes{0x31};
             *donor_input.mobiles.slot(0x39) = Bytes{0x39};
-            const auto donor_bytes = RunBuild(donor_input);
+            const auto donor_bytes = run_build(donor_input);
             if (!require(donor_bytes.has_value(), "serialized NAND mobile donor builds")) {
                 return false;
             }
@@ -2379,7 +2386,7 @@ namespace {
             auto overlay = fresh_input(layout);
             overlay.metadata.nand_image = *donor_bytes;
             *overlay.mobiles.slot(0x39) = Bytes{0xA9, 0x39};
-            const auto rebuilt = RunBuild(overlay);
+            const auto rebuilt = run_build(overlay);
             const auto parsed = rebuilt ? parse_image(*rebuilt) : std::nullopt;
             if (!require(parsed.has_value() && parsed->mobile_data.has_value(),
                          "serialized NAND mobile overlay parses") ||
@@ -2419,7 +2426,7 @@ namespace {
         Bytes manufacturing(0x1000, 0xFF);
         std::fill_n(manufacturing.begin(), 0x40, uint8_t{0x4D});
         donor_input.metadata.manufacturing = manufacturing;
-        const auto donor = RunBuild(donor_input);
+        const auto donor = run_build(donor_input);
         if (!require(donor.has_value(), "settings donor builds")) {
             return false;
         }
@@ -2434,7 +2441,7 @@ namespace {
             {ImageType::Emmc, 0x2FFC000, 0x4000},
         };
         for (const auto& target : targets) {
-            auto extracted = ExtractAll(*donor, donor_input.metadata.cpu_key);
+            auto extracted = extract_all(*donor, donor_input.metadata.cpu_key);
             if (!require(extracted.has_value() &&
                              extracted->metadata.smc_config == donor_input.metadata.smc_config &&
                              extracted->metadata.statistics == donor_input.metadata.statistics &&
@@ -2444,7 +2451,7 @@ namespace {
             }
             extracted->metadata.nand_image.reset();
             extracted->image_type = target.type;
-            const auto built = RunBuild(*extracted);
+            const auto built = run_build(*extracted);
             const auto parsed = built ? parse_image(*built) : std::nullopt;
             if (!require(parsed.has_value(), "cross-layout build with settings blocks parses")) {
                 return false;
@@ -2470,7 +2477,7 @@ namespace {
     bool test_extraction_roundtrips_serialized_bootloaders_and_payloads() {
         auto source = fresh_input(ImageType::SmallBlock);
         const auto bootloader_donor = make_donor(source, {});
-        auto bootloaders = ExtractAll(bootloader_donor, source.metadata.cpu_key);
+        auto bootloaders = extract_all(bootloader_donor, source.metadata.cpu_key);
         const auto extracted_cd =
             bootloaders ? BootloaderCd::parse(bootloaders->bootloaders.cd) : BootloaderCd{};
         if (!require(bootloaders.has_value(), "serialized bootloader donor extracts") ||
@@ -2486,9 +2493,9 @@ namespace {
         }
 
         bootloaders->metadata.nand_image.reset();
-        const auto bootloader_rebuilt = RunBuild(*bootloaders);
+        const auto bootloader_rebuilt = run_build(*bootloaders);
         const auto bootloader_roundtrip =
-            bootloader_rebuilt ? ExtractAll(*bootloader_rebuilt, bootloaders->metadata.cpu_key)
+            bootloader_rebuilt ? extract_all(*bootloader_rebuilt, bootloaders->metadata.cpu_key)
                                : std::nullopt;
         const auto roundtrip_cd = bootloader_roundtrip
                                       ? BootloaderCd::parse(bootloader_roundtrip->bootloaders.cd)
@@ -2517,9 +2524,9 @@ namespace {
         payloads.fuses = Bytes(0x60, 0x72);
         payloads.xell = valid_xell();
         source.payloads = std::move(payloads);
-        const auto donor_bytes = RunBuild(source);
+        const auto donor_bytes = run_build(source);
         auto payload_extracted =
-            donor_bytes ? ExtractAll(*donor_bytes, source.metadata.cpu_key) : std::nullopt;
+            donor_bytes ? extract_all(*donor_bytes, source.metadata.cpu_key) : std::nullopt;
         if (!require(payload_extracted.has_value(), "serialized payload donor extracts") ||
             !require(payload_extracted->payloads.has_value() &&
                          payload_extracted->payloads->rebooter == source.payloads->rebooter,
@@ -2534,9 +2541,9 @@ namespace {
         }
 
         payload_extracted->metadata.nand_image.reset();
-        const auto rebuilt = RunBuild(*payload_extracted);
+        const auto rebuilt = run_build(*payload_extracted);
         const auto roundtrip =
-            rebuilt ? ExtractAll(*rebuilt, payload_extracted->metadata.cpu_key) : std::nullopt;
+            rebuilt ? extract_all(*rebuilt, payload_extracted->metadata.cpu_key) : std::nullopt;
         return require(roundtrip.has_value() && roundtrip->payloads.has_value() &&
                            roundtrip->payloads->rebooter == source.payloads->rebooter,
                        "rebuilt rebooter remains serialized-identical") &&
@@ -2582,7 +2589,7 @@ namespace {
             InputPatchFile{"automatic", glitch_patchset(0x100, 0x11223344, 0x30, 0, Bytes{0x91})};
         input.patches = std::move(patches);
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? FlashImage::read(*built) : std::nullopt;
         const bool parsed = image && image->parse();
         const bool decrypted = parsed && image->decrypt_all(input.metadata.cpu_key);
@@ -2637,7 +2644,7 @@ namespace {
             InputPatchFile{"automatic", glitch_patchset(0x100, 0x11223344, 0x30, 0, Bytes{0x91})};
         input.patches = std::move(patches);
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? FlashImage::read(*built) : std::nullopt;
         const bool decrypted =
             image && image->parse() && image->decrypt_all(input.metadata.cpu_key);
@@ -2645,7 +2652,7 @@ namespace {
                                  image->cb_section.cb_B->parse_perbox();
         const auto* perbox = cb_b_perbox ? &*image->cb_section.cb_B->perbox : nullptr;
         const auto* perbox_bytes = reinterpret_cast<const uint8_t*>(perbox);
-        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
         const Bytes* secdata = nullptr;
         if (extracted && extracted->flashfs_sec) {
             for (const auto& [name, data] : *extracted->flashfs_sec) {
@@ -2680,10 +2687,10 @@ namespace {
         auto source = fresh_input(ImageType::SmallBlock);
         const auto donor = make_donor(source, {});
         const Bytes zero_key(16, 0);
-        const auto extracted = ExtractAll(donor, zero_key);
+        const auto extracted = extract_all(donor, zero_key);
         if (!require(extracted.has_value() && !extracted->metadata.keyvault.has_value(),
                      "a donor extracts under the zero key without a keyvault") ||
-            !require(!ExtractMetadata(donor, zero_key).has_value(),
+            !require(!extract_metadata(donor, zero_key).has_value(),
                      "metadata extraction needs a keyvault that opens")) {
             return false;
         }
@@ -2691,7 +2698,7 @@ namespace {
         auto input = source;
         input.metadata.cpu_key = zero_key;
         input.metadata.nand_image = donor;
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? parse_image(*built) : std::nullopt;
         const bool opened =
             image && image->decrypt_all(zero_key) && image->keyvault && !image->keyvault->encrypted;
@@ -2706,7 +2713,7 @@ namespace {
     bool test_metadata_override_requires_writable_cb_perbox() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.bootloaders.cb_or_a = Bytes(sizeof(generic_header), 0);
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         return require(!built.has_value() &&
                            built.error().code == BuildErrorCode::InvalidBootloader,
                        "unwritable selected CB perbox is a structured bootloader error");
@@ -2725,7 +2732,7 @@ namespace {
         cb_b.header.header.size = sizeof(generic_header);
         input.bootloaders.cb_b = cb_b.serialize();
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         return require(
             !built.has_value() && built.error().code == BuildErrorCode::InvalidBootloader,
             "a present header-only CB_B is authoritative and fails metadata structurally");
@@ -2753,7 +2760,7 @@ namespace {
         donor_input.bootloaders.cg1 = valid_system_update(0x61).second;
         *donor_input.mobiles.slot(0x31) = Bytes{0xD1, 0x31};
 
-        const auto donor = RunBuild(donor_input);
+        const auto donor = run_build(donor_input);
         if (!require(donor.has_value(), "all-optional donor fixture builds")) {
             return false;
         }
@@ -2771,7 +2778,7 @@ namespace {
         input.bootloaders.cf1.reset();
         input.bootloaders.cg1.reset();
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? FlashImage::read(*built) : std::nullopt;
         const bool parsed = image && image->parse();
         const bool decrypted = parsed && image->decrypt_all(input.metadata.cpu_key);
@@ -2799,7 +2806,7 @@ namespace {
         const auto [donor_cf, donor_cg] = valid_system_update(0x51);
         donor_input.bootloaders.cf0 = donor_cf;
         donor_input.bootloaders.cg0 = donor_cg;
-        const auto donor = RunBuild(donor_input);
+        const auto donor = run_build(donor_input);
         if (!require(donor.has_value(), "donor CF/CG fixture builds")) {
             return false;
         }
@@ -2808,7 +2815,7 @@ namespace {
         input.metadata.nand_image = *donor;
         input.bootloaders.cf0 = donor_cf; // Same size as the donor CF.
         input.bootloaders.cg0.reset();
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? FlashImage::read(*built) : std::nullopt;
         const bool parsed = image && image->parse();
         return require(built.has_value() && parsed && image->system_update_0.cf.has_value(),
@@ -2825,7 +2832,7 @@ namespace {
         ce.header.header.size = sizeof(ce_header);
         ce.decrypted = true;
         donor_input.bootloaders.ce = ce.serialize();
-        const auto donor = RunBuild(donor_input);
+        const auto donor = run_build(donor_input);
         if (!require(donor.has_value(), "header-only CE donor fixture builds")) {
             return false;
         }
@@ -2833,7 +2840,7 @@ namespace {
         auto input = fresh_input(ImageType::SmallBlock);
         input.metadata.nand_image = *donor;
         input.bootloaders.ce.reset();
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? FlashImage::read(*built) : std::nullopt;
         const bool parsed = image && image->parse();
         return require(built.has_value() && parsed, "header-only CE replacement output parses") &&
@@ -2854,7 +2861,7 @@ namespace {
         const auto [donor_cf, donor_cg] = valid_system_update(0x51);
         donor_input.bootloaders.cf0 = donor_cf;
         donor_input.bootloaders.cg0 = donor_cg;
-        const auto donor = RunBuild(donor_input);
+        const auto donor = run_build(donor_input);
         if (!require(donor.has_value(), "shifted donor fixture builds")) {
             return false;
         }
@@ -2885,7 +2892,7 @@ namespace {
                 input.patches = std::move(patches);
             }
 
-            const auto built = RunBuild(input);
+            const auto built = run_build(input);
             auto image = built ? FlashImage::read(*built) : std::nullopt;
             const bool parsed = image && image->parse();
             const auto xell_magic =
@@ -2919,7 +2926,7 @@ namespace {
         input.metadata.cf_ldv = 10;
         input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? FlashImage::read(*built) : std::nullopt;
         const bool parsed = image && image->parse();
         const bool decrypted = parsed && image->decrypt_all(input.metadata.cpu_key);
@@ -2948,7 +2955,7 @@ namespace {
         input.bootloaders.cg1 = valid_system_update(0x61).second;
         input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? FlashImage::read(*built) : std::nullopt;
         const bool parsed = image && image->parse();
         const bool decrypted = parsed && image->decrypt_all(input.metadata.cpu_key);
@@ -2988,7 +2995,7 @@ namespace {
         input.metadata.cf_ldv = 9;
         input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? FlashImage::read(*built) : std::nullopt;
         const bool parsed = image && image->parse();
         const bool decrypted = parsed && image->decrypt_all(input.metadata.cpu_key);
@@ -3032,7 +3039,7 @@ namespace {
         cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
         input.bootloaders.cf0 = cf.serialize();
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         return require(!built.has_value() &&
                            built.error().code == BuildErrorCode::InvalidBootloader,
                        "pairing-only metadata reports an unwritable CF perbox structurally");
@@ -3267,15 +3274,15 @@ namespace {
         cd.header.header.version = 1;
         cd.header.header.size = sizeof(cd_header);
         header_only_cd.bootloaders.cd = cd.serialize();
-        const auto missing_cd_payload = RunBuild(header_only_cd);
+        const auto missing_cd_payload = run_build(header_only_cd);
 
         auto cg0_without_cf0 = fresh_input(ImageType::SmallBlock);
         cg0_without_cf0.bootloaders.cg0 = valid_system_update(0x51).second;
-        const auto orphan_cg0 = RunBuild(cg0_without_cf0);
+        const auto orphan_cg0 = run_build(cg0_without_cf0);
 
         auto cg1_without_cf1 = fresh_input(ImageType::SmallBlock);
         cg1_without_cf1.bootloaders.cg1 = valid_system_update(0x61).second;
-        const auto orphan_cg1 = RunBuild(cg1_without_cf1);
+        const auto orphan_cg1 = run_build(cg1_without_cf1);
 
         return require(!missing_cd_payload &&
                            missing_cd_payload.error().code == BuildErrorCode::InvalidBootloader,
@@ -3313,9 +3320,9 @@ namespace {
         const auto stamp = gxbuild3::nand::secured_file_stamp(kSeconds);
         const auto build_and_open = [&](const Input& build) -> std::optional<Input> {
             set_source_date_epoch("1791105722");
-            const auto image = RunBuild(build);
+            const auto image = run_build(build);
             set_source_date_epoch(nullptr);
-            return image ? ExtractAll(*image, cpu_key) : std::nullopt;
+            return image ? extract_all(*image, cpu_key) : std::nullopt;
         };
         const auto file = [](const std::optional<Input>& from,
                              std::string_view name) -> const Bytes* {
@@ -3418,7 +3425,7 @@ namespace {
         const auto built = [&] {
             const ScopedTimeZone utc{"UTC0"};
             set_source_date_epoch("1791105722");
-            auto result = RunBuild(input);
+            auto result = run_build(input);
             set_source_date_epoch(nullptr);
             return result;
         }();
@@ -3478,7 +3485,7 @@ namespace {
         input.bootloaders.cg1 = cg1;
 
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{};
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? FlashImage::read(*built) : std::nullopt;
         return require(image && image->parse() && image->header.patch_slots == 2 &&
                            !image->system_update_0.cg_spill_blocks.empty() &&
@@ -3493,7 +3500,7 @@ namespace {
 
     bool test_replacement_layout_overrides_a_one_slot_donor_header() {
         auto donor_input = fresh_input(ImageType::SmallBlock);
-        const auto donor = RunBuild(donor_input);
+        const auto donor = run_build(donor_input);
         auto donor_image = donor ? FlashImage::read(*donor) : std::nullopt;
         const bool donor_parsed = donor_image && donor_image->parse();
         const std::array<uint8_t, 2> one_slot{{0x00, 0x01}};
@@ -3513,7 +3520,7 @@ namespace {
         input.bootloaders.cf1 = cf1;
         input.bootloaders.cg1 = cg1;
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? FlashImage::read(*built) : std::nullopt;
         const bool parsed = image && image->parse();
         return require(patched_donor_parsed && patched_donor->header.patch_slots == 1,
@@ -3553,8 +3560,8 @@ namespace {
     bool test_fresh_build_seals_stages_under_random_nonces() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.bootloaders.ce = valid_ce();
-        const auto first = RunBuild(input);
-        const auto second = RunBuild(input);
+        const auto first = run_build(input);
+        const auto second = run_build(input);
         auto one = first ? parse_image(*first) : std::nullopt;
         auto two = second ? parse_image(*second) : std::nullopt;
         if (!require(one && two && one->kernel_section.ce && two->kernel_section.ce,
@@ -3598,7 +3605,7 @@ namespace {
         nonces.cg = filled_nonce(0xC1);
         input.metadata.donor_nonces = nonces;
 
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? parse_image(*built) : std::nullopt;
         if (!require(image && image->kernel_section.ce && image->system_update_0.cf &&
                          image->system_update_0.cg && image->system_update_1.cf &&
@@ -3632,7 +3639,7 @@ namespace {
         source.bootloaders.cf1 = decrypted_cf(7, {0x11, 0x12, 0x13});
         source.bootloaders.cg1 = valid_system_update(0x61).second;
         source.metadata.pairing_data = {0x21, 0x22, 0x23};
-        const auto built = RunBuild(source);
+        const auto built = run_build(source);
 
         // Slot 1 states its own pairing, as after an update installed under other pairing.
         auto staged = built ? parse_image(*built) : std::nullopt;
@@ -3650,8 +3657,8 @@ namespace {
         }
         const auto donor = staged->write();
         auto donor_image = parse_image(donor);
-        const auto extracted = ExtractAll(donor, source.metadata.cpu_key);
-        const auto metadata = ExtractMetadata(donor, source.metadata.cpu_key);
+        const auto extracted = extract_all(donor, source.metadata.cpu_key);
+        const auto metadata = extract_metadata(donor, source.metadata.cpu_key);
         if (!require(donor_image && extracted && metadata && extracted->metadata.donor_nonces &&
                          metadata->donor_nonces,
                      "max-LDV donor fixture extracts")) {
@@ -3676,7 +3683,7 @@ namespace {
 
         auto rebuild = *extracted;
         rebuild.bootloaders = source.bootloaders;
-        const auto rebuilt = RunBuild(rebuild);
+        const auto rebuilt = run_build(rebuild);
         auto image = rebuilt ? parse_image(*rebuilt) : std::nullopt;
         const bool rebuilt_decrypts = image && image->decrypt_all(source.metadata.cpu_key);
         return require(cf_metadata, "CF LDV and pairing come from the max-LDV donor slot") &&
@@ -3717,7 +3724,7 @@ namespace {
         auto input = fresh_input(ImageType::SmallBlock);
         input.metadata.pairing_data = {0x63, 0xDB, 0x01};
         input.console = ConsoleType::Trinity;
-        const auto trinity = RunBuild(input);
+        const auto trinity = run_build(input);
         if (!require(trinity.has_value(), "header fixture builds") ||
             !require((*trinity)[4] == 0 && (*trinity)[5] == 0, "header 0x04 states no pairing") ||
             !require(header_copyright(*trinity) == copyright("2010"),
@@ -3728,7 +3735,7 @@ namespace {
         // The fixture SMC names a Xenon board, so a Xenon donor is the same board.
         const auto smc = Smc::parse(*input.metadata.smc);
         input.console = ConsoleType::Xenon;
-        const auto xenon = RunBuild(input);
+        const auto xenon = run_build(input);
         auto custom = xenon ? parse_image(*xenon) : std::nullopt;
         if (!require(smc && smc->motherboard == gxbuild3::nand::SmcMotherboard::Xenon,
                      "header fixture SMC names a Xenon board") ||
@@ -3743,10 +3750,10 @@ namespace {
 
         auto same_board = input;
         same_board.metadata.nand_image = donor;
-        const auto kept = RunBuild(same_board);
+        const auto kept = run_build(same_board);
         auto other_board = same_board;
         other_board.console = ConsoleType::Falcon;
-        const auto replaced = RunBuild(other_board);
+        const auto replaced = run_build(other_board);
         if (!require(kept && header_copyright(*kept) == donor_copyright,
                      "a donor of the same board keeps its own notice") ||
             !require(replaced && header_copyright(*replaced) == copyright("2007"),
@@ -3758,21 +3765,21 @@ namespace {
         auto jasper = fresh_input(ImageType::SmallBlock);
         (*jasper.metadata.smc)[0x100] = 0x40;
         jasper.console = ConsoleType::Jasper;
-        const auto retail_jasper = RunBuild(jasper);
+        const auto retail_jasper = run_build(jasper);
         auto jasper_donor = retail_jasper ? parse_image(*retail_jasper) : std::nullopt;
         if (!require(jasper_donor.has_value(), "Jasper header donor builds and parses")) {
             return false;
         }
         std::copy(donor_copyright.begin(), donor_copyright.end(), jasper_donor->header.copyright);
         jasper.metadata.nand_image = jasper_donor->write();
-        const auto kept_jasper = RunBuild(jasper);
+        const auto kept_jasper = run_build(jasper);
         auto jtag = jasper;
         jtag.build_type = BuildType::Jtag;
         mark_jtag_smc(*jtag.metadata.smc);
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13})};
         jtag.patches = std::move(patches);
-        const auto jtag_jasper = RunBuild(jtag);
+        const auto jtag_jasper = run_build(jtag);
         return require(kept_jasper && header_copyright(*kept_jasper) == donor_copyright,
                        "a retail Jasper keeps its Jasper donor's notice") &&
                require(jtag_jasper && header_copyright(*jtag_jasper) == copyright("2008"),
@@ -3793,7 +3800,7 @@ namespace {
                 InputPatchFile{"automatic", glitch_patchset(0x20, 0, 0x30, 0, Bytes{0x92})};
             input.patches = std::move(patches);
             input.options = std::move(options);
-            return RunBuild(input);
+            return run_build(input);
         };
         const auto jtag = [](OptionsArgs options) {
             auto input = fresh_input(ImageType::SmallBlock);
@@ -3803,7 +3810,7 @@ namespace {
             patches.automatic = InputPatchFile{"automatic", jtag_patchset(Bytes{0x13})};
             input.patches = std::move(patches);
             input.options = std::move(options);
-            return RunBuild(input);
+            return run_build(input);
         };
 
         // Glitch2 with no options: XeLL on eject, two slots, and the KHV patch slot (0x80000,
@@ -3862,7 +3869,7 @@ namespace {
 
         // Retail states neither word, whatever the options and whatever its donor held.
         auto donor_input = fresh_input(ImageType::SmallBlock);
-        const auto donor = RunBuild(donor_input);
+        const auto donor = run_build(donor_input);
         auto donor_image = donor ? FlashImage::read(*donor) : std::nullopt;
         const std::array<uint8_t, 8> hacked{{0, 0, 0, 1, 0x11, 0x04, 0x00, 0x12}};
         const bool donor_patched =
@@ -3872,7 +3879,7 @@ namespace {
         retail.metadata.nand_image =
             donor_patched ? donor_image->flash_driver.serialize() : Bytes{};
         retail.options = buttons;
-        const auto rebuilt = RunBuild(retail);
+        const auto rebuilt = run_build(retail);
         return require(donor_patched, "hacked-header donor fixture is created") &&
                require(header_words(rebuilt) == std::pair{0u, 0u},
                        "a retail image over a hacked donor states 0x48 and 0x4C zero") &&
@@ -3880,7 +3887,7 @@ namespace {
     }
 
     bool test_clear_bootloader_chain_clears_header_only_cb_and_cd_records() {
-        const auto source = RunBuild(fresh_input(ImageType::SmallBlock));
+        const auto source = run_build(fresh_input(ImageType::SmallBlock));
         auto donor = source ? FlashImage::read(*source) : std::nullopt;
         if (!require(donor.has_value() && donor->parse(),
                      "source donor for header-only chain parses")) {
@@ -3919,7 +3926,7 @@ namespace {
 
         auto invalid_replacement = fresh_input(ImageType::SmallBlock);
         invalid_replacement.bootloaders.cd = cd_bytes;
-        const auto rejected = RunBuild(invalid_replacement);
+        const auto rejected = run_build(invalid_replacement);
         return require(donor_written && records_are_header_only,
                        "raw donor exposes valid parsed header-only CB and CD records") &&
                require(cleared && all_zero,
@@ -3945,7 +3952,7 @@ namespace {
     }
 
     bool test_donor_build_leaves_unlaid_space_erased() {
-        const auto initial = RunBuild(fresh_input(ImageType::SmallBlock));
+        const auto initial = run_build(fresh_input(ImageType::SmallBlock));
         auto donor = initial ? FlashImage::read(*initial) : std::nullopt;
         if (!require(donor.has_value(), "erased-fill donor image opens")) {
             return false;
@@ -3968,7 +3975,7 @@ namespace {
 
         auto input = fresh_input(ImageType::SmallBlock);
         input.metadata.nand_image = donor->flash_driver.serialize();
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto image = built ? parse_image(*built) : std::nullopt;
         if (!require(image.has_value(), "a build over a donor with old data parses")) {
             return false;
@@ -4021,7 +4028,7 @@ namespace {
 
     bool test_emmc_build_leaves_anchor_tails_and_unused_blocks_erased() {
         using gxbuild3::nand::CoronaConfig;
-        const auto built = RunBuild(fresh_input(ImageType::Emmc));
+        const auto built = run_build(fresh_input(ImageType::Emmc));
         if (!require(built.has_value() && built->size() == 0x3000000, "an eMMC image builds")) {
             return false;
         }
@@ -4049,7 +4056,7 @@ namespace {
         auto input = fresh_input(ImageType::BigBlock);
         input.flashfs_sec =
             std::vector<std::pair<std::string, Bytes>>{{"small.bin", Bytes(0x100, 0x6B)}};
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto image = built ? parse_image(*built) : std::nullopt;
         const auto entry =
             image && image->filesystem ? image->filesystem->stat("small.bin") : std::nullopt;
@@ -4141,7 +4148,7 @@ namespace {
 
     bool test_devkit_chain_is_sealed_from_the_zero_secret() {
         const auto input = devkit_input(ImageType::NewSmallBlock);
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value() && built->size() == 0x4200000,
                      "a small-block devkit image is 64 MB with spare")) {
             return false;
@@ -4211,8 +4218,8 @@ namespace {
 
     bool test_devkit_image_reads_back_and_rebuilds_its_chain() {
         const auto input = devkit_input(ImageType::NewSmallBlock);
-        const auto built = RunBuild(input);
-        const auto extracted = built ? ExtractAll(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto built = run_build(input);
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
         if (!require(extracted.has_value(), "a devkit image parses and opens") ||
             !require(extracted->build_type == BuildType::Devkit &&
                          extracted->image_type == ImageType::NewSmallBlock,
@@ -4239,7 +4246,7 @@ namespace {
 
         // Rebuilt over itself, every stage keeps the nonce at its position, so the sealed chain
         // comes out byte for byte.
-        const auto rebuilt = RunBuild(*extracted);
+        const auto rebuilt = run_build(*extracted);
         const auto header = read_logical(*built, 0, 0x80);
         const uint32_t slot = header ? read_be32(*header, 0x64) : 0;
         const auto chain = read_logical(*built, 0, slot);
@@ -4259,7 +4266,7 @@ namespace {
             donor.stages[index] = nonce;
         }
         input.metadata.donor_nonces = donor;
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value() && built->size() == 0x4200000,
                      "a big-block devkit image builds")) {
             return false;
@@ -4294,13 +4301,13 @@ namespace {
         ce.header.header.size = static_cast<uint32_t>(sizeof(ce_header) + ce.data.size());
         ce.decrypted = true;
         donor_input.bootloaders.ce = ce.serialize();
-        const auto donor = RunBuild(donor_input);
+        const auto donor = run_build(donor_input);
         if (!require(donor.has_value() && donor->size() == 0x1080000, "16 MB donor builds")) {
             return false;
         }
         auto input = devkit_input(ImageType::NewSmallBlock);
         input.metadata.nand_image = *donor;
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         auto image = built ? parse_image(*built) : std::nullopt;
         const auto donor_cb = read_logical(*donor, 0x8010, 0x10);
         const auto sb_nonce = built ? read_logical(*built, 0x8010, 0x10) : std::nullopt;
@@ -4317,7 +4324,7 @@ namespace {
         auto input = devkit_input(ImageType::NewSmallBlock);
         input.raw_patches.push_back(InputRawPatch{"reason.bin", 0x4E, Bytes{0x12}});
         input.raw_patches.push_back(InputRawPatch{"khv.bin", 0xE4000, Bytes(0x20, 0x77)});
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         const auto reason = built ? read_logical(*built, 0x4E, 1) : std::nullopt;
         const auto khv = built ? read_logical(*built, 0xE4000, 0x20) : std::nullopt;
         if (!require(reason == Bytes{0x12}, "a raw patch overwrites the header byte it names") ||
@@ -4326,7 +4333,7 @@ namespace {
         }
         auto outside = devkit_input(ImageType::NewSmallBlock);
         outside.raw_patches.push_back(InputRawPatch{"far.bin", 0x3FFFFFF, Bytes{1, 2}});
-        const auto refused = RunBuild(outside);
+        const auto refused = run_build(outside);
         return require(!refused && refused.error().code == BuildErrorCode::SerializationFailure,
                        "a raw patch running past the image is refused");
     }
@@ -4364,7 +4371,7 @@ namespace {
 
     bool test_devgl_image_patches_and_signs_its_sd() {
         const auto input = devgl_input(ImageType::NewSmallBlock);
-        const auto built = RunBuild(input);
+        const auto built = run_build(input);
         if (!require(built.has_value() && built->size() == 0x1080000,
                      "a Jasper devgl image keeps the console's 16 MB shape")) {
             return false;
@@ -4426,7 +4433,7 @@ namespace {
     }
 
     bool test_big_block_devgl_slots_follow_the_big_block_step() {
-        const auto built = RunBuild(devgl_input(ImageType::BigBlock));
+        const auto built = run_build(devgl_input(ImageType::BigBlock));
         const auto header = built ? read_logical(*built, 0, 0x80) : std::nullopt;
         const auto fuses = built ? read_logical(*built, 0x100000, 0x60) : std::nullopt;
         return require(header && read_be32(*header, 0x64) == 0xE0000 &&
@@ -4440,8 +4447,8 @@ namespace {
         missing.sb_private_key.reset();
         auto malformed = devgl_input(ImageType::NewSmallBlock);
         malformed.sb_private_key = Bytes(gxbuild3::utils::kXeRsa2048PrivateKeySize, 0);
-        const auto refused_missing = RunBuild(missing);
-        const auto refused_malformed = RunBuild(malformed);
+        const auto refused_missing = run_build(missing);
+        const auto refused_malformed = run_build(malformed);
         return require(!refused_missing &&
                            refused_missing.error().code == BuildErrorCode::InvalidInput &&
                            refused_missing.error().message.find("SB private key") !=
