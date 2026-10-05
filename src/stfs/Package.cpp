@@ -12,7 +12,7 @@
 #include <fstream>
 #include <stdexcept>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
     namespace {
 
@@ -105,4 +105,4 @@ namespace stfs {
         }
     }
 
-} // namespace stfs
+} // namespace gxbuild3::stfs

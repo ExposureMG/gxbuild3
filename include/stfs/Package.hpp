@@ -6,7 +6,7 @@
 #include <span>
 #include <vector>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
     class Package {
       public:
@@ -35,4 +35,4 @@ namespace stfs {
         std::vector<FileEntry> files_;
     };
 
-} // namespace stfs
+} // namespace gxbuild3::stfs

@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
     // Byte offset of a physical block. Offsets are 64-bit so large block numbers cannot wrap.
     [[nodiscard]] std::uint64_t blockToOffset(std::uint32_t block, std::uint32_t header_size);
@@ -13,4 +13,4 @@ namespace stfs {
 
     [[nodiscard]] std::uint32_t computeLevelNHashBlockNumber(std::uint32_t block, int level);
 
-} // namespace stfs
+} // namespace gxbuild3::stfs

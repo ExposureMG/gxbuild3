@@ -5,8 +5,8 @@
 #include <span>
 #include <vector>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
     [[nodiscard]] std::vector<FileEntry> parseFileListing(std::span<const std::byte> data);
 
-} // namespace stfs
+} // namespace gxbuild3::stfs

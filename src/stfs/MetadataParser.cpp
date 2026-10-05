@@ -9,7 +9,7 @@
 #include <cstring>
 #include <stdexcept>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
     namespace {
 
@@ -193,4 +193,4 @@ namespace stfs {
 
         return meta;
     }
-} // namespace stfs
+} // namespace gxbuild3::stfs

@@ -4,7 +4,7 @@
 
 #include <stdexcept>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
     namespace {
 
@@ -69,4 +69,4 @@ namespace stfs {
         return static_cast<std::uint32_t>(result);
     }
 
-} // namespace stfs
+} // namespace gxbuild3::stfs

@@ -8,7 +8,7 @@
 #include <cstring>
 #include <stdexcept>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
     namespace {
 
@@ -81,4 +81,4 @@ namespace stfs {
         return blockHashMatches(package, blockToOffset(data_block, header_size), expected);
     }
 
-} // namespace stfs
+} // namespace gxbuild3::stfs

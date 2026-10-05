@@ -21,6 +21,7 @@
 
 namespace {
     namespace fs = std::filesystem;
+    namespace stfs = gxbuild3::stfs;
     using Bytes = std::vector<std::byte>;
 
     void require(bool condition, std::string_view message) {
@@ -290,7 +291,7 @@ namespace {
         TempDir dir;
         const auto bytes =
             make_package({{"..", {}, true, -1, true}, {"escaped", pattern(10, 2), true, 0}});
-        const Stfs::StfsContainer container{bytes};
+        const stfs::StfsContainer container{bytes};
         require_throws([&] { container.extractAll(dir.root / "out"); },
                        "StfsContainer rejects a .. entry path");
         require(!fs::exists(dir.root / "escaped"), "container writes nothing outside");
@@ -328,7 +329,7 @@ namespace {
                        "a parent cycle through a later entry is rejected");
 
         const auto bytes = make_package({{"a", {}, true, 1, true}, {"b", {}, true, 0, true}});
-        const Stfs::StfsContainer container{bytes};
+        const stfs::StfsContainer container{bytes};
         require_throws([&] { container.extractAll(dir.root / "out"); },
                        "StfsContainer rejects a forward parent reference");
     }
@@ -472,7 +473,7 @@ namespace {
         require(package.extractFile(package.files().back(), true) == data,
                 "an entry from the second table block extracts");
 
-        const Stfs::StfsContainer container{bytes};
+        const stfs::StfsContainer container{bytes};
         require(container.extractFileByName("second.bin") == data,
                 "StfsContainer reads the same file table");
     }
@@ -501,7 +502,7 @@ namespace {
         bytes[kVolumeDescriptor + 0x02] = std::byte{0x00}; // block_separation bit 0 clear
         require_throws([&] { (void) stfs::Package::fromData(bytes); },
                        "Package rejects block_separation bit 0 clear");
-        require_throws([&] { const Stfs::StfsContainer container{bytes}; },
+        require_throws([&] { const stfs::StfsContainer container{bytes}; },
                        "StfsContainer rejects block_separation bit 0 clear");
 
         bytes[kVolumeDescriptor + 0x02] = std::byte{0x03};
@@ -576,7 +577,7 @@ namespace {
         TempDir dir;
         fs::create_directories(dir.root / "out");
         fs::create_symlink(full, dir.root / "out" / "a.bin");
-        const Stfs::StfsContainer container{bytes};
+        const stfs::StfsContainer container{bytes};
         require_throws([&] { container.extractAll(dir.root / "out"); },
                        "StfsContainer::extractAll reports a failed write");
 
@@ -658,7 +659,7 @@ namespace {
         require(std::string(display_name.begin(), display_name.end()) == "System Update",
                 "fixture display_name decodes from UTF-16BE");
 
-        const Stfs::StfsContainer container{bytes};
+        const stfs::StfsContainer container{bytes};
         const auto in_memory = container.extractToMemory();
         for (const auto& entry : package.files()) {
             const auto verified = package.extractFile(entry, true);

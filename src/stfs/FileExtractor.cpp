@@ -10,7 +10,7 @@
 #include <format>
 #include <stdexcept>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
     namespace {
 
@@ -179,4 +179,4 @@ namespace stfs {
         detail::writeFile(output_path, data);
     }
 
-} // namespace stfs
+} // namespace gxbuild3::stfs

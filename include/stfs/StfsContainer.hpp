@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace Stfs {
+namespace gxbuild3::stfs {
 
     using ExtractedFiles = std::unordered_map<std::string, std::vector<std::byte>>;
 
@@ -31,7 +31,7 @@ namespace Stfs {
       private:
         std::span<const std::byte> data_;
         std::uint32_t header_size_;
-        std::vector<::stfs::FileEntry> entries_;
+        std::vector<FileEntry> entries_;
     };
 
-} // namespace Stfs
+} // namespace gxbuild3::stfs

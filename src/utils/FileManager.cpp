@@ -200,7 +200,7 @@ namespace gxbuild3::utils {
         struct CachedPackage {
             std::filesystem::path path; // Empty for in-memory packages
             std::vector<uint8_t> raw_data;
-            std::unique_ptr<Stfs::StfsContainer> container;
+            std::unique_ptr<stfs::StfsContainer> container;
             std::unordered_map<std::string, std::vector<uint8_t>> extracted_files;
             bool xboxupd_attempted = false;
             std::optional<bootloaders::XboxupdParts> xboxupd_parts;
@@ -331,7 +331,7 @@ namespace gxbuild3::utils {
             pkg->raw_data = std::move(*data);
             try {
                 pkg->container =
-                    std::make_unique<Stfs::StfsContainer>(std::as_bytes(std::span(pkg->raw_data)));
+                    std::make_unique<stfs::StfsContainer>(std::as_bytes(std::span(pkg->raw_data)));
             } catch (const std::exception& e) {
                 std::lock_guard<std::mutex> lock(g_stfs_cache_mutex);
                 g_disk_package_cache[key] = DiskCacheEntry{.mtime = mtime,
@@ -392,7 +392,7 @@ namespace gxbuild3::utils {
             pkg->path = std::filesystem::path{};
             pkg->raw_data = mem_pkg.data;
             pkg->container =
-                std::make_unique<Stfs::StfsContainer>(std::as_bytes(std::span(pkg->raw_data)));
+                std::make_unique<stfs::StfsContainer>(std::as_bytes(std::span(pkg->raw_data)));
 
             {
                 std::lock_guard<std::mutex> lock(g_stfs_cache_mutex);

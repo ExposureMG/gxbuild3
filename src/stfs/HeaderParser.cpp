@@ -6,7 +6,7 @@
 #include <fstream>
 #include <stdexcept>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
     namespace {
 
@@ -102,4 +102,4 @@ namespace stfs {
         return parseHeader(buffer);
     }
 
-} // namespace stfs
+} // namespace gxbuild3::stfs

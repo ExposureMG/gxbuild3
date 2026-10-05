@@ -6,7 +6,7 @@
 #include <fstream>
 #include <stdexcept>
 
-namespace stfs::detail {
+namespace gxbuild3::stfs::detail {
 
     std::vector<std::byte> readFileTable(std::span<const std::byte> package,
                                          std::uint32_t header_size,
@@ -96,4 +96,4 @@ namespace stfs::detail {
         return parent / normalized;
     }
 
-} // namespace stfs::detail
+} // namespace gxbuild3::stfs::detail

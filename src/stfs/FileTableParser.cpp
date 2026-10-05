@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
     std::vector<FileEntry> parseFileListing(std::span<const std::byte> data) {
         std::vector<FileEntry> entries;
@@ -70,4 +70,4 @@ namespace stfs {
         return entries;
     }
 
-} // namespace stfs
+} // namespace gxbuild3::stfs

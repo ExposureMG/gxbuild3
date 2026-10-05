@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
     [[nodiscard]] std::vector<std::uint32_t> followBlockChain(std::span<const std::byte> package,
                                                               std::uint32_t starting_block,
@@ -26,4 +26,4 @@ namespace stfs {
                            const std::array<std::byte, 0x14>* top_hash = nullptr,
                            std::uint32_t total_blocks = 0);
 
-} // namespace stfs
+} // namespace gxbuild3::stfs

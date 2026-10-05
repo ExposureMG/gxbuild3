@@ -1,6 +1,6 @@
 #pragma once
 
-// Internal helpers shared by stfs::Package and Stfs::StfsContainer.
+// Internal helpers shared by stfs::Package and stfs::StfsContainer.
 
 #include "stfs/Commons.hpp"
 
@@ -9,7 +9,7 @@
 #include <span>
 #include <vector>
 
-namespace stfs::detail {
+namespace gxbuild3::stfs::detail {
 
     // Reads the file table through its hash chain after checking that the volume descriptor
     // describes a layout this reader supports.
@@ -30,4 +30,4 @@ namespace stfs::detail {
     [[nodiscard]] std::filesystem::path safeJoin(const std::filesystem::path& parent,
                                                  const std::filesystem::path& relative);
 
-} // namespace stfs::detail
+} // namespace gxbuild3::stfs::detail

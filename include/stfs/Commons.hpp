@@ -9,7 +9,7 @@
 #include <variant>
 #include <vector>
 
-namespace stfs {
+namespace gxbuild3::stfs {
 
     enum class Magic {
         CON,
@@ -180,4 +180,4 @@ namespace stfs {
 
     Metadata parseMetadata(std::span<const std::byte> data);
 
-} // namespace stfs
+} // namespace gxbuild3::stfs
