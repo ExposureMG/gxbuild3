@@ -295,6 +295,35 @@ namespace {
         require(read == data, "a nested file extracts with verification");
     }
 
+    // --- File extraction -------------------------------------------------------------------
+
+    void test_truncated_chain_throws() {
+        // A chained (non-consecutive) two-block file whose chain ends after the first block.
+        auto bytes = make_package({{"a.bin", pattern(0x1800, 1), false}});
+        put_be(bytes, hash_offset(1) + 0x15, 0xFFFFFF, 3);
+        const auto package = stfs::Package::fromData(bytes);
+        require_throws([&] { (void) package.extractFile(package.files().at(0)); },
+                       "a chain shorter than file_size must throw, not return a short buffer");
+    }
+
+    void test_longer_chain_is_cut_at_file_size() {
+        // The chain may be longer than needed; extraction stops at file_size.
+        const auto data = pattern(0x1800, 4);
+        auto bytes = make_package({{"a.bin", data, false}, {"b.bin", pattern(0x10, 5), false}});
+        put_be(bytes, hash_offset(2) + 0x15, 3, 3); // a.bin's last block links on into b.bin
+        const auto package = stfs::Package::fromData(bytes);
+        require(package.extractFile(package.files().at(0)) == data,
+                "a longer chain yields exactly file_size bytes");
+    }
+
+    void test_zero_size_file_skips_chain() {
+        auto bytes = make_package({{"a.bin", pattern(10, 1)}, {"empty.bin", {}}});
+        put_le(bytes, entry_offset(1) + 0x2F, 3000, 3); // starting block far out of range
+        const auto package = stfs::Package::fromData(bytes);
+        require(package.extractFile(package.files().at(1)).empty(),
+                "a zero-size file returns no bytes without walking its chain");
+    }
+
 } // namespace
 
 int main() {
@@ -307,6 +336,9 @@ int main() {
         {"StfsContainer rejects escape", test_container_rejects_escape},
         {"parent cycle rejected", test_parent_cycle_rejected},
         {"nested extraction", test_nested_extraction},
+        {"truncated chain throws", test_truncated_chain_throws},
+        {"longer chain is cut at file_size", test_longer_chain_is_cut_at_file_size},
+        {"zero-size file skips chain", test_zero_size_file_skips_chain},
     };
     int failed = 0;
     for (const auto& [name, test] : tests) {

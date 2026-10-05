@@ -3,6 +3,7 @@
 #include <Endian.hpp>
 #include <FileExtractor.hpp>
 #include <HashVerifier.hpp>
+#include <algorithm>
 #include <fstream>
 #include <stdexcept>
 
@@ -88,10 +89,14 @@ namespace stfs {
             throw std::runtime_error("Verification requested but no top_hash provided");
         }
 
+        if (entry.file_size == 0) {
+            return {};
+        }
+
         auto chain = followBlockChain(package, entry.starting_block, header_size);
 
         std::vector<std::byte> result;
-        result.reserve(entry.file_size);
+        result.reserve(std::min<std::size_t>(entry.file_size, chain.size() * kBlockSize));
 
         for (std::uint32_t logical_block : chain) {
             if (verify &&
@@ -116,6 +121,12 @@ namespace stfs {
             if (result.size() >= entry.file_size) {
                 break;
             }
+        }
+
+        if (result.size() < entry.file_size) {
+            throw std::runtime_error("Block chain of " + entry.name + " ends after " +
+                                     std::to_string(result.size()) + " of " +
+                                     std::to_string(entry.file_size) + " bytes");
         }
 
         return result;
