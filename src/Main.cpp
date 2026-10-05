@@ -2,6 +2,7 @@
 #include "cli/CommandLine.hpp"
 #include "utils/Log.hpp"
 
+#include <exception>
 #include <filesystem>
 #include <iostream>
 #include <string_view>
@@ -34,7 +35,7 @@ namespace {
 
 } // namespace
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[]) try {
     Log::Init();
 
     std::vector<std::string_view> arguments;
@@ -68,4 +69,10 @@ int main(int argc, char* argv[]) {
         std::cerr << kProgramName << ": " << result.message << '\n';
     }
     return result.exit_code;
+} catch (const std::exception& exception) {
+    std::cerr << kProgramName << ": " << exception.what() << '\n';
+    return 1;
+} catch (...) {
+    std::cerr << kProgramName << ": unknown error\n";
+    return 1;
 }

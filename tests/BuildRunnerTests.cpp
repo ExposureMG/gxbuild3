@@ -1556,6 +1556,69 @@ namespace {
                        "full NAND metadata reports the detected block type");
     }
 
+    // The image with its CD record's header stating 0x20 bytes, which is shorter than a CD header.
+    // Empty when the chain from the entry offset reaches no CD record.
+    Bytes with_short_cd_record(Bytes image) {
+        constexpr size_t kEntryOffset = 0x8000;
+        constexpr uint16_t kCdMagic = 0x4344;
+        constexpr size_t kMaxRecords = 8;
+        Driver driver(std::move(image));
+        size_t cursor = kEntryOffset;
+        for (size_t record = 0; record < kMaxRecords; ++record) {
+            const auto header = driver.read_clean(cursor, sizeof(generic_header));
+            if (header.size() < sizeof(generic_header)) {
+                return {};
+            }
+            const uint32_t size = read_be32(header, offsetof(generic_header, size));
+            if (read_be16(header, offsetof(generic_header, magic)) == kCdMagic) {
+                const std::array<uint8_t, 4> short_size{0x00, 0x00, 0x00, 0x20};
+                if (!driver.write_offset(cursor + offsetof(generic_header, size), short_size)) {
+                    return {};
+                }
+                return driver.serialize();
+            }
+            if (size == 0) {
+                return {};
+            }
+            cursor += align_16(size);
+        }
+        return {};
+    }
+
+    // A malformed bootloader record makes its parser throw. Each extraction entry point reports
+    // that as a failure and lets no exception escape.
+    bool test_extraction_reports_a_cd_record_shorter_than_its_header() {
+        const auto input = fresh_input(ImageType::SmallBlock);
+        const auto built = RunBuild(input);
+        if (!require(built.has_value(), "the image to damage builds")) {
+            return false;
+        }
+        const auto malformed = with_short_cd_record(*built);
+        if (!require(!malformed.empty(), "the built image has a CD record to damage")) {
+            return false;
+        }
+
+        const auto fails_without_throwing = [](const auto& extract) {
+            try {
+                return !extract().has_value();
+            } catch (...) {
+                return false;
+            }
+        };
+        const auto& cpu_key = input.metadata.cpu_key;
+        const bool some_info = fails_without_throwing([&] { return ExtractSomeInfo(malformed); });
+        const bool metadata =
+            fails_without_throwing([&] { return ExtractMetadata(malformed, cpu_key); });
+        const bool all_info =
+            fails_without_throwing([&] { return ExtractAllInfo(malformed, cpu_key); });
+        const bool all = fails_without_throwing([&] { return ExtractAll(malformed, cpu_key); });
+        bool passed = require(some_info, "ExtractSomeInfo refuses a short CD record");
+        passed = require(metadata, "ExtractMetadata refuses a short CD record") && passed;
+        passed = require(all_info, "ExtractAllInfo refuses a short CD record") && passed;
+        passed = require(all, "ExtractAll refuses a short CD record") && passed;
+        return passed;
+    }
+
     // The keyvault's fcrt.bin flag is read as xeBuild 1.21 reads it: bits 0x0320 of the big-endian
     // OddFeatures word at 0x1C.
     bool test_extract_all_info_reads_the_fcrt_flag_big_endian() {
@@ -4441,6 +4504,7 @@ int main() {
     passed = test_extract_all_preserves_complete_donor_baseline() && passed;
     passed = test_extract_some_info_reads_public_nand_metadata_without_cpu_key() && passed;
     passed = test_extract_all_info_reports_the_detected_block_type() && passed;
+    passed = test_extraction_reports_a_cd_record_shorter_than_its_header() && passed;
     passed = test_extract_all_info_reads_the_fcrt_flag_big_endian() && passed;
     passed = test_sc_survives_extraction_and_backing_cleared_layout_override() && passed;
     passed = test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() && passed;

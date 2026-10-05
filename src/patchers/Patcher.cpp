@@ -6,25 +6,6 @@
 #include <cstdint>
 #include <cstring>
 
-namespace Source {
-
-    bool ApplyPatch(uint8_t* data, uint32_t dataSize, uint32_t offset, const uint8_t* payload,
-                    uint32_t payloadSize) {
-        if (!data || !payload || payloadSize == 0) {
-            return false;
-        }
-
-        uint64_t endOffset = static_cast<uint64_t>(offset) + static_cast<uint64_t>(payloadSize);
-        if (endOffset > dataSize) {
-            return false;
-        }
-
-        memcpy(data + offset, payload, payloadSize);
-        return true;
-    }
-
-} // namespace Source
-
 namespace XePatch {
 
     bool ApplyPatch(uint8_t* data, uint32_t dataSize, uint32_t address, uint32_t length,
@@ -37,9 +18,9 @@ namespace XePatch {
 
         uint64_t endOffset = static_cast<uint64_t>(address) + static_cast<uint64_t>(length) * 4;
         if (endOffset > dataSize) {
-            Log::Error(
-                "Patch write out of range (address=0x{:X}, length=0x{:X} words, end=0x{:X}, buffer=0x{:X})",
-                address, length, endOffset, dataSize);
+            Log::Error("Patch write out of range (address=0x{:X}, length=0x{:X} words, end=0x{:X}, "
+                       "buffer=0x{:X})",
+                       address, length, endOffset, dataSize);
             return false;
         }
 
@@ -55,9 +36,9 @@ namespace XePatch {
 
     bool ApplyPatchEntry(uint8_t* data, uint32_t dataSize, const XePatchEntry& entry) {
         if (entry.words.size() < entry.length) {
-            Log::Error(
-                "Entry word count mismatch (address=0x{:X}, length_words=0x{:X}, words_available=0x{:X})",
-                entry.address, entry.length, entry.words.size());
+            Log::Error("Entry word count mismatch (address=0x{:X}, length_words=0x{:X}, "
+                       "words_available=0x{:X})",
+                       entry.address, entry.length, entry.words.size());
             return false;
         }
 
@@ -75,9 +56,9 @@ namespace XePatch {
                 section.identifier, entry_index, entry.address, entry.length, entry.length * 4U);
 
             if (!ApplyPatchEntry(data, dataSize, entry)) {
-                Log::Error(
-                    "Section '{}' failed at entry {} (address=0x{:X}, length_words=0x{:X}, buffer=0x{:X})",
-                    section.identifier, entry_index, entry.address, entry.length, dataSize);
+                Log::Error("Section '{}' failed at entry {} (address=0x{:X}, length_words=0x{:X}, "
+                           "buffer=0x{:X})",
+                           section.identifier, entry_index, entry.address, entry.length, dataSize);
                 return false;
             }
         }

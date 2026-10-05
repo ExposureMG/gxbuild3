@@ -31,6 +31,7 @@
 #include <array>
 #include <cctype>
 #include <cstring>
+#include <exception>
 #include <expected>
 #include <limits>
 #include <span>
@@ -792,7 +793,7 @@ namespace {
 
 } // namespace
 
-BuildResult RunBuild(const Input& input) {
+BuildResult RunBuild(const Input& input) try {
     if (const auto validation = ValidateInput(input); !validation) {
         return build_error(BuildErrorCode::InvalidInput, validation.error().message);
     }
@@ -1453,9 +1454,12 @@ BuildResult RunBuild(const Input& input) {
     }
 
     return output;
+} catch (const std::exception& exception) {
+    return build_error(BuildErrorCode::InvalidInput,
+                       std::string("internal error: ") + exception.what());
 }
 
-std::optional<AllNandInfo> ExtractSomeInfo(std::span<const uint8_t> nand_image) {
+std::optional<AllNandInfo> ExtractSomeInfo(std::span<const uint8_t> nand_image) try {
     if (nand_image.empty()) {
         Log::Error("Cannot extract public NAND info: NAND image is empty");
         return std::nullopt;
@@ -1531,6 +1535,9 @@ std::optional<AllNandInfo> ExtractSomeInfo(std::span<const uint8_t> nand_image) 
     }
 
     return info;
+} catch (const std::exception& exception) {
+    Log::Error("Failed to extract public NAND info: {}", exception.what());
+    return std::nullopt;
 }
 
 std::optional<AllNandInfo> ExtractSomeInfo(const std::vector<uint8_t>& nand_image) {
@@ -1538,7 +1545,7 @@ std::optional<AllNandInfo> ExtractSomeInfo(const std::vector<uint8_t>& nand_imag
 }
 
 std::optional<InputMetadata> ExtractMetadata(std::span<const uint8_t> nand_image,
-                                             std::span<const uint8_t> cpu_key) {
+                                             std::span<const uint8_t> cpu_key) try {
     if (cpu_key.size() != 16) {
         Log::Error("Cannot extract metadata: CPU key must be 16 bytes (got {})", cpu_key.size());
         return std::nullopt;
@@ -1620,6 +1627,9 @@ std::optional<InputMetadata> ExtractMetadata(std::span<const uint8_t> nand_image
                meta.console_sequence);
 
     return meta;
+} catch (const std::exception& exception) {
+    Log::Error("Failed to extract metadata: {}", exception.what());
+    return std::nullopt;
 }
 
 std::optional<InputMetadata> ExtractMetadata(const std::vector<uint8_t>& nand_image,
@@ -1628,7 +1638,7 @@ std::optional<InputMetadata> ExtractMetadata(const std::vector<uint8_t>& nand_im
 }
 
 std::optional<AllNandInfo> ExtractAllInfo(std::span<const uint8_t> nand_image,
-                                          std::span<const uint8_t> cpu_key) {
+                                          std::span<const uint8_t> cpu_key) try {
     if (cpu_key.size() != 16) {
         Log::Error("Cannot extract NAND info: CPU key must be 16 bytes (got {})", cpu_key.size());
         return std::nullopt;
@@ -1930,6 +1940,9 @@ std::optional<AllNandInfo> ExtractAllInfo(std::span<const uint8_t> nand_image,
     }
 
     return info;
+} catch (const std::exception& exception) {
+    Log::Error("Failed to extract NAND info: {}", exception.what());
+    return std::nullopt;
 }
 
 std::optional<AllNandInfo> ExtractAllInfo(const std::vector<uint8_t>& nand_image,
@@ -1938,7 +1951,7 @@ std::optional<AllNandInfo> ExtractAllInfo(const std::vector<uint8_t>& nand_image
 }
 
 std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
-                                std::span<const uint8_t> cpu_key) {
+                                std::span<const uint8_t> cpu_key) try {
     if (cpu_key.size() != 16) {
         Log::Error("Cannot extract NAND: CPU key must be 16 bytes (got {})", cpu_key.size());
         return std::nullopt;
@@ -2116,6 +2129,9 @@ std::optional<Input> ExtractAll(std::span<const uint8_t> nand_image,
     }
 
     return out;
+} catch (const std::exception& exception) {
+    Log::Error("Failed to extract NAND: {}", exception.what());
+    return std::nullopt;
 }
 
 std::optional<Input> ExtractAll(const std::vector<uint8_t>& nand_image,

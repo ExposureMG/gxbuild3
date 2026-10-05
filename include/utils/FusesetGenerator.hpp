@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <optional>
 #include <span>
-#include <string_view>
 #include <vector>
 
 namespace gxbuild3::utils {
@@ -30,8 +29,6 @@ namespace gxbuild3::utils {
     };
 
     std::optional<uint32_t> read_cb_word(std::span<const uint8_t> cb);
-
-    std::optional<std::array<uint8_t, kFuseLineSize>> parse_fuse_line(std::string_view hex_line);
 
     std::optional<std::array<uint8_t, kFuseLineSize>>
     encode_console_type_line(uint8_t console_type);

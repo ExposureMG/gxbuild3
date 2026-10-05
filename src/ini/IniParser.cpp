@@ -1,4 +1,5 @@
 #include "ini/IniParser.hpp"
+
 #include "utils/Log.hpp"
 
 #include <algorithm>
@@ -7,7 +8,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
-#include <variant>
 
 namespace Ini {
 
@@ -38,13 +38,6 @@ namespace Ini {
     const Section* Document::get(std::string_view name) const {
         auto it = sections.find(ToLower(std::string(name)));
         return it != sections.end() ? &it->second : nullptr;
-    }
-
-    std::expected<const Section*, ParseError> Document::require(std::string_view name) const {
-        const Section* s = get(name);
-        if (!s)
-            return std::unexpected(ParseError::SectionNotFound);
-        return s;
     }
 
     std::expected<Document, ParseError> Parse(std::string_view content) {
@@ -153,77 +146,6 @@ namespace Ini {
             Log::Debug("Parsed INI file '{}' ({} sections)", path.string(), res->sections.size());
         }
         return res;
-    }
-
-
-
-    void ApplyOption(OptionsArgs& opt, std::string_view key_sv, std::string_view value_sv) {
-        OptionsManager mgr(opt);
-        mgr.set(key_sv, value_sv);
-        opt = mgr.data();
-    }
-
-    std::expected<OptionsArgs, OptionsError> ParseOptionsIni(std::string_view content) {
-        OptionsArgs opt{};
-
-        std::string_view remaining = content;
-
-        while (!remaining.empty()) {
-            auto newline = remaining.find('\n');
-            std::string_view raw =
-                (newline != std::string_view::npos) ? remaining.substr(0, newline) : remaining;
-            remaining = (newline != std::string_view::npos) ? remaining.substr(newline + 1) : "";
-
-            if (!raw.empty() && raw.back() == '\r')
-                raw.remove_suffix(1);
-
-            std::string_view line = Trim(raw);
-
-            if (line.empty() || line.front() == ';' || line.front() == '#')
-                continue;
-
-            if (line.front() == '[' && line.back() == ']')
-                return std::unexpected(OptionsError::BadFormat);
-
-            std::string_view key_sv, val_sv;
-            {
-                constexpr std::string_view kDelimSpaced = " = ";
-                auto pos = line.find(kDelimSpaced);
-                if (pos != std::string_view::npos) {
-                    key_sv = Trim(line.substr(0, pos));
-                    val_sv = Trim(line.substr(pos + kDelimSpaced.size()));
-                } else if (auto eq = line.find('='); eq != std::string_view::npos) {
-                    key_sv = Trim(line.substr(0, eq));
-                    val_sv = Trim(line.substr(eq + 1));
-                } else {
-                    continue;
-                }
-            }
-
-            val_sv = StripInlineSemicolon(val_sv);
-            ApplyOption(opt, key_sv, val_sv);
-        }
-
-        return opt;
-    }
-
-    OptionsResult ParseOptionsIniFile(const std::filesystem::path& path) {
-        if (!std::filesystem::exists(path))
-            return std::unexpected(ParseError::FileNotFound);
-
-        std::ifstream file(path, std::ios::binary);
-        if (!file)
-            return std::unexpected(ParseError::ReadError);
-
-        std::ostringstream ss;
-        ss << file.rdbuf();
-        if (file.fail() && !file.eof())
-            return std::unexpected(ParseError::ReadError);
-
-        auto result = ParseOptionsIni(ss.str());
-        if (!result)
-            return std::unexpected(result.error());
-        return result.value();
     }
 
 } // namespace Ini

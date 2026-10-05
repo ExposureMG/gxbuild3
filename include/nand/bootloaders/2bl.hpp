@@ -21,6 +21,8 @@ class BootloaderCb {
     void decrypt_v1(const uint8_t cb_a_key[16], const uint8_t cpu_key[16]);
     void decrypt_v2(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
                     const uint8_t cpu_key[16]);
+    // Not yet wired: manufacturing CB keyed over its nonce and CB_A's key with a zero HMAC
+    // key. No caller yet; kept for manufacturing images (see cba_9188_mfg.bin fixture).
     void decrypt_mfg(const uint8_t cb_a_key[16]);
 
     void encrypt(const uint8_t onebl_key[16]) { decrypt(onebl_key); }
@@ -31,6 +33,7 @@ class BootloaderCb {
                     const uint8_t cpu_key[16]) {
         decrypt_v2(cb_a_hdr, cb_a_key, cpu_key);
     }
+    // Not yet wired: inverse of decrypt_mfg.
     void encrypt_mfg(const uint8_t cb_a_key[16]) { decrypt_mfg(cb_a_key); }
 
     // CB_B keyed as its CB_A's flags select. Bit 0 (manufacturing) keys it over its nonce

@@ -4,11 +4,6 @@
 
 #include <cstdint>
 
-namespace Source {
-    bool ApplyPatch(uint8_t* data, uint32_t dataSize, uint32_t offset, const uint8_t* payload,
-                    uint32_t payloadSize);
-}
-
 namespace XePatch {
     bool ApplyPatch(uint8_t* data, uint32_t dataSize, uint32_t address, uint32_t length,
                     const uint32_t* patchWords);

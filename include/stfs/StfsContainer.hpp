@@ -12,14 +12,7 @@
 
 namespace Stfs {
 
-    struct XboxupdRawParts {
-        std::vector<std::byte> cf_raw;
-        std::vector<std::byte> cg_raw;
-    };
-
     using ExtractedFiles = std::unordered_map<std::string, std::vector<std::byte>>;
-
-    [[nodiscard]] XboxupdRawParts splitXboxupdRaw(std::span<const std::byte> xboxupd_bytes);
 
     class StfsContainer {
       public:
@@ -39,7 +32,5 @@ namespace Stfs {
         std::uint32_t header_size_;
         std::vector<::stfs::FileEntry> entries_;
     };
-
-    [[nodiscard]] XboxupdRawParts extractXboxupdRaw(std::span<const std::byte> pirs_data);
 
 } // namespace Stfs

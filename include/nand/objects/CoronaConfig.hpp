@@ -53,6 +53,4 @@ namespace gxbuild3::NAND {
         [[nodiscard]] std::vector<uint8_t> serialize() const;
     };
 
-    using XeCoronaFsData = CoronaConfig;
-
 } // namespace gxbuild3::NAND

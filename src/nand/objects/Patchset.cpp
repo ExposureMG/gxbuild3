@@ -4,37 +4,13 @@
 #include "utils/Utils.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <cstring>
-#include <fstream>
 #include <span>
 
 namespace {
 
     constexpr uint32_t kSectionDelimiter = 0xFFFFFFFFU;
-
-    bool ReadFileBytes(const std::string& filePath, std::vector<uint8_t>& outData) {
-        outData.clear();
-
-        if (filePath.length() < 4) {
-            return false;
-        }
-        std::string ext = filePath.substr(filePath.length() - 4);
-        std::transform(ext.begin(), ext.end(), ext.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (ext != ".bin" && ext != "rglp") {
-            return false;
-        }
-
-        std::ifstream file(filePath, std::ios::binary);
-        if (!file.is_open()) {
-            return false;
-        }
-
-        outData.assign(std::istreambuf_iterator<char>(file), {});
-        return static_cast<bool>(file) || file.eof();
-    }
 
     bool ReadBe32(std::span<const uint8_t> data, size_t offset, uint32_t& outValue) {
         if (offset + sizeof(uint32_t) > data.size()) {
@@ -148,42 +124,6 @@ namespace {
 
 namespace BinaryParser {
 
-    bool ParsePatchFile(const std::string& filePath, std::vector<XePatchSection>& outSections) {
-        outSections.clear();
-
-        std::vector<uint8_t> fileData;
-        if (!ReadFileBytes(filePath, fileData)) {
-            Log::Error("Failed to read patch file '{}'", filePath);
-            return false;
-        }
-
-        XePatchSection currentSection;
-        size_t cursor = 0;
-        while (cursor < fileData.size()) {
-            std::vector<XePatchEntry> entries;
-            size_t consumed = 0;
-            if (!ParseXePatchSectionBytes(fileData, cursor, entries, consumed)) {
-                if (cursor == fileData.size()) {
-                    break;
-                }
-                Log::Error("Malformed XePatch section in '{}' at offset 0x{:X}", filePath, cursor);
-                return false;
-            }
-            cursor += consumed;
-            currentSection.entries = std::move(entries);
-            if (!currentSection.entries.empty()) {
-                outSections.push_back(currentSection);
-                currentSection.entries.clear();
-            }
-            if (cursor >= fileData.size()) {
-                break;
-            }
-        }
-
-        Log::Debug("Parsed patch file '{}' ({} sections)", filePath, outSections.size());
-        return true;
-    }
-
     bool ParsePatchSet(std::span<const uint8_t> fileData, BuildType buildType,
                        ParsedPatchSet& outPatchSet) {
         outPatchSet = ParsedPatchSet{};
@@ -267,16 +207,6 @@ namespace BinaryParser {
         Log::Debug("Parsed Glitch patchset bytes ({} sections)", glitchSections.size());
         outPatchSet = std::move(parsed);
         return true;
-    }
-
-    bool ParsePatchSet(const std::string& filePath, BuildType buildType,
-                       ParsedPatchSet& outPatchSet) {
-        std::vector<uint8_t> fileData;
-        if (!ReadFileBytes(filePath, fileData)) {
-            Log::Error("Failed to read patchset file '{}'", filePath);
-            return false;
-        }
-        return ParsePatchSet(fileData, buildType, outPatchSet);
     }
 
     std::expected<ParsedPatchSet, PatchError> ParseAndMergePatchSet(const InputPatches& patches,

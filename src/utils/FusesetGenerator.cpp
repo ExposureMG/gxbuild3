@@ -5,9 +5,7 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstring>
-#include <string>
 
 namespace gxbuild3::utils {
     namespace {
@@ -41,35 +39,6 @@ namespace gxbuild3::utils {
         uint32_t wire_value = 0;
         std::memcpy(&wire_value, cb.data() + kCbWordOffset, sizeof(wire_value));
         return bswap32(wire_value);
-    }
-
-    std::optional<std::array<uint8_t, kFuseLineSize>> parse_fuse_line(std::string_view hex_line) {
-        std::string cleaned;
-        cleaned.reserve(hex_line.size());
-
-        for (const char c : hex_line) {
-            if (std::isxdigit(static_cast<unsigned char>(c))) {
-                cleaned.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-            }
-        }
-
-        if (cleaned.size() != (kFuseLineSize * 2)) {
-            Log::Error("Expected {} hex digits for fuse line, got {}", kFuseLineSize * 2,
-                       cleaned.size());
-            return std::nullopt;
-        }
-
-        std::array<uint8_t, kFuseLineSize> line = {};
-        for (size_t i = 0; i < kFuseLineSize; ++i) {
-            try {
-                line[i] = static_cast<uint8_t>(std::stoul(cleaned.substr(i * 2, 2), nullptr, 16));
-            } catch (const std::exception&) {
-                Log::Error("Invalid fuse byte at index {}", i);
-                return std::nullopt;
-            }
-        }
-
-        return line;
     }
 
     std::optional<std::array<uint8_t, kFuseLineSize>>
