@@ -136,10 +136,6 @@ namespace gxbuild3::NAND {
         return m_image_size;
     }
 
-    size_t Driver::page_size() const {
-        return m_page_size;
-    }
-
     size_t Driver::pages_per_block() const {
         switch (m_driver_mode) {
             case DriverMode::Big:
@@ -212,13 +208,6 @@ namespace gxbuild3::NAND {
         return BlockRange{start_block, end_block - start_block};
     }
 
-    void Driver::input(std::vector<uint8_t> image) {
-        m_nand_image = std::move(image);
-        m_driver_mode = detect_driver_mode(m_nand_image);
-        m_image_size = detect_image_size(m_nand_image);
-        m_page_size = (m_driver_mode == DriverMode::Emmc) ? 512 : 528;
-    }
-
     std::span<const uint8_t> Driver::read_page(size_t page) const {
         size_t offset = page * m_page_size;
         if (offset + 512 > m_nand_image.size()) {
@@ -261,21 +250,6 @@ namespace gxbuild3::NAND {
         }
     }
 
-    std::vector<uint8_t> Driver::read_data(size_t start_page, size_t num_pages) const {
-        std::vector<uint8_t> result;
-        result.reserve(num_pages * 512);
-
-        for (size_t i = 0; i < num_pages; ++i) {
-            auto page_span = read_page(start_page + i);
-            if (page_span.empty()) {
-                break;
-            }
-            result.insert(result.end(), page_span.begin(), page_span.end());
-        }
-
-        return result;
-    }
-
     std::span<const uint8_t> Driver::read_page_raw(size_t page, size_t length) const {
         size_t offset = page * m_page_size;
         size_t size = length * m_page_size;
@@ -292,14 +266,6 @@ namespace gxbuild3::NAND {
             return {};
         }
         return {m_nand_image.data() + offset, size};
-    }
-
-    void Driver::write_page_raw(size_t page, std::span<const uint8_t> data) {
-        size_t offset = page * m_page_size;
-        if (offset + data.size() > m_nand_image.size()) {
-            return;
-        }
-        std::copy(data.begin(), data.end(), m_nand_image.begin() + offset);
     }
 
     std::span<const uint8_t> Driver::read_page_spare(size_t page) const {
@@ -336,18 +302,6 @@ namespace gxbuild3::NAND {
         std::copy_n(spare.data(), write_len, m_nand_image.data() + offset);
     }
 
-    std::vector<uint8_t> Driver::read_block(size_t block_idx) const {
-        if (m_driver_mode == DriverMode::Emmc) {
-            size_t offset = block_idx * 0x4000;
-            if (offset + 0x4000 > m_nand_image.size()) {
-                return {};
-            }
-            return {m_nand_image.begin() + offset, m_nand_image.begin() + offset + 0x4000};
-        }
-        size_t ppb = pages_per_block();
-        return read_data(block_idx * ppb, ppb);
-    }
-
     bool Driver::write_block(size_t block_idx, std::span<const uint8_t> data) {
         if (block_idx >= block_count() || data.size() > block_size_clean()) {
             return false;
@@ -376,15 +330,6 @@ namespace gxbuild3::NAND {
     std::span<uint8_t> Driver::read_block_raw(size_t block_idx) {
         size_t ppb = pages_per_block();
         return read_page_raw(block_idx * ppb, ppb);
-    }
-
-    void Driver::write_block_raw(size_t block_idx, std::span<const uint8_t> data) {
-        size_t raw_size = block_size_raw();
-        size_t start_offset = block_idx * raw_size;
-        if (start_offset + data.size() > m_nand_image.size()) {
-            return;
-        }
-        std::copy(data.begin(), data.end(), m_nand_image.begin() + start_offset);
     }
 
     BlockMetadata Driver::interpret_block(size_t block_idx) const {
@@ -597,55 +542,6 @@ namespace gxbuild3::NAND {
         }
     }
 
-    bool Driver::is_block_free(size_t block_idx) const {
-        if (block_idx >= block_count() || is_bad_block(block_idx)) {
-            return false;
-        }
-
-        if (m_driver_mode == DriverMode::Emmc) {
-            size_t offset = block_idx * 0x4000;
-            if (offset + 0x4000 > m_nand_image.size()) {
-                return false;
-            }
-            return std::all_of(m_nand_image.begin() + offset,
-                               m_nand_image.begin() + offset + 0x4000,
-                               [](uint8_t b) { return b == 0x00 || b == 0xFF; });
-        }
-
-        auto meta = interpret_block(block_idx);
-        return meta.logical_block_id == 0 && (meta.block_type == 0 || meta.block_type == 0x3F);
-    }
-
-    std::optional<size_t> Driver::find_next_free_block(size_t start_block) const {
-        const size_t total_blocks = block_count();
-        for (size_t i = start_block; i < total_blocks; ++i) {
-            if (is_block_free(i)) {
-                return i;
-            }
-        }
-        return std::nullopt;
-    }
-
-    std::optional<size_t> Driver::allocate_block(size_t start_block, uint8_t block_type,
-                                                 uint32_t sequence) {
-        auto free_block = find_next_free_block(start_block);
-        if (!free_block) {
-            return std::nullopt;
-        }
-
-        if (m_driver_mode != DriverMode::Emmc) {
-            BlockMetadata meta{};
-            meta.logical_block_id = static_cast<uint16_t>(*free_block);
-            meta.sequence = sequence;
-            meta.block_type = block_type;
-            meta.page_count = 0;
-            meta.is_bad = false;
-            write_block_metadata(*free_block, meta);
-        }
-
-        return free_block;
-    }
-
     std::vector<uint8_t> Driver::read_clean(size_t offset, size_t length) const {
         std::vector<uint8_t> result;
         if (length == 0) {
@@ -714,33 +610,6 @@ namespace gxbuild3::NAND {
             return {};
         }
         return {m_offset_scratch.data(), m_offset_scratch.size()};
-    }
-
-    std::span<uint8_t> Driver::read_offset(size_t offset, size_t length) {
-        if (m_driver_mode == DriverMode::Emmc || m_page_size == 512) {
-            if (offset + length > m_nand_image.size()) {
-                return {};
-            }
-            return {m_nand_image.data() + offset, length};
-        }
-
-        size_t offintopage = offset % 512;
-        size_t pageinimage = offset / 512;
-
-        // A mutable span must alias the real backing storage so writes
-        // through it land in m_nand_image — only possible when the whole
-        // range fits inside one page's clean region. Ranges spanning spare
-        // gaps have no contiguous mutable representation; use write_offset()
-        // for those instead.
-        if (offintopage + length > 512) {
-            return {};
-        }
-
-        size_t raw_pos = pageinimage * m_page_size + offintopage;
-        if (raw_pos + length > m_nand_image.size()) {
-            return {};
-        }
-        return {m_nand_image.data() + raw_pos, length};
     }
 
     bool Driver::write_offset(size_t offset, std::span<const uint8_t> data) {
@@ -827,8 +696,8 @@ namespace gxbuild3::NAND {
 
                 if (m_layout.fs_root_block && blk == *m_layout.fs_root_block) {
                     const bool big_block = m_driver_mode == DriverMode::Big;
-                    meta.block_type = big_block ? FlashFsMetadata::kRootTypeBig
-                                                : FlashFsMetadata::kRootTypeSmall;
+                    meta.block_type =
+                        big_block ? FlashFsMetadata::kRootTypeBig : FlashFsMetadata::kRootTypeSmall;
                     meta.sequence = m_layout.fs_version;
                     // A small-block root states no size, as real dumps and xeBuild leave it.
                     meta.fs_size =
@@ -903,10 +772,6 @@ namespace gxbuild3::NAND {
 
     const std::vector<uint8_t>& Driver::serialize() const {
         return m_nand_image;
-    }
-
-    void Driver::clean() {
-        m_nand_image.clear();
     }
 
 } // namespace gxbuild3::NAND
