@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace Ini {
+namespace gxbuild3::ini {
 
     enum class ParseError {
         FileNotFound,
@@ -46,4 +46,4 @@ namespace Ini {
     [[nodiscard]] std::expected<Document, ParseError> Parse(std::string_view content);
     [[nodiscard]] std::expected<Document, ParseError> ParseFile(const std::filesystem::path& path);
 
-} // namespace Ini
+} // namespace gxbuild3::ini

@@ -218,9 +218,8 @@ namespace gxbuild3::utils {
         std::mutex g_stfs_cache_mutex;
         std::unordered_map<std::string, DiskCacheEntry> g_disk_package_cache;
         std::unordered_map<std::string, std::shared_ptr<CachedPackage>> g_memory_package_cache;
-        std::unordered_map<
-            std::string,
-            std::pair<std::filesystem::file_time_type, std::optional<std::filesystem::path>>>
+        std::unordered_map<std::string, std::pair<std::filesystem::file_time_type,
+                                                  std::optional<std::filesystem::path>>>
             g_dir_stfs_cache;
 
         const std::vector<uint8_t>* get_package_file(CachedPackage& pkg, const std::string& key) {
@@ -460,8 +459,11 @@ namespace gxbuild3::utils {
                                         if (p_data)
                                             data = *p_data;
                                     }
-                                    return LocatedFile{{}, std::move(data), mem_idx,
-                                                       AssetSource::Stfs, {mem_idx, 1}};
+                                    return LocatedFile{{},
+                                                       std::move(data),
+                                                       mem_idx,
+                                                       AssetSource::Stfs,
+                                                       {mem_idx, 1}};
                                 }
 
                                 if (kind == AssetKind::Bootloader && wants_xboxupd_part &&
@@ -504,8 +506,11 @@ namespace gxbuild3::utils {
                             return LocatedFile{
                                 candidate, {}, index, AssetSource::Loose, {mem_offset + index, 0}};
                         if (auto data = read_file(candidate))
-                            return LocatedFile{candidate, std::move(*data), index,
-                                               AssetSource::Loose, {mem_offset + index, 0}};
+                            return LocatedFile{candidate,
+                                               std::move(*data),
+                                               index,
+                                               AssetSource::Loose,
+                                               {mem_offset + index, 0}};
                     }
                     if (options_.nosu || excluded)
                         continue;
@@ -533,8 +538,11 @@ namespace gxbuild3::utils {
                                     if (p_data)
                                         data = *p_data;
                                 }
-                                return LocatedFile{*package, std::move(data), index,
-                                                   AssetSource::Stfs, {mem_offset + index, 1}};
+                                return LocatedFile{*package,
+                                                   std::move(data),
+                                                   index,
+                                                   AssetSource::Stfs,
+                                                   {mem_offset + index, 1}};
                             }
 
                             if (kind == AssetKind::Bootloader && wants_xboxupd_part &&
@@ -544,7 +552,8 @@ namespace gxbuild3::utils {
                                     const auto* part = xboxupd_part_for(*parts, key, stem);
                                     if (part && !part->empty()) {
                                         return LocatedFile{*package,
-                                                           contents ? *part : std::vector<uint8_t>{},
+                                                           contents ? *part
+                                                                    : std::vector<uint8_t>{},
                                                            index,
                                                            AssetSource::Xboxupd,
                                                            {mem_offset + index, 2}};
@@ -644,8 +653,8 @@ namespace gxbuild3::utils {
                         if (pkg->container->containsFileByName(key)) {
                             const auto* data = get_package_file(*pkg, key);
                             if (data) {
-                                return ResolvedFile{std::string(filename), {}, *data, mem_idx,
-                                                    AssetSource::Stfs};
+                                return ResolvedFile{
+                                    std::string(filename), {}, *data, mem_idx, AssetSource::Stfs};
                             }
                         }
                         if (kind == AssetKind::Bootloader && wants_xboxupd_part &&
@@ -654,8 +663,11 @@ namespace gxbuild3::utils {
                             if (parts) {
                                 const auto* part = xboxupd_part_for(*parts, key, stem);
                                 if (part && !part->empty()) {
-                                    return ResolvedFile{std::string(filename), {}, *part,
-                                                        mem_idx, AssetSource::Xboxupd};
+                                    return ResolvedFile{std::string(filename),
+                                                        {},
+                                                        *part,
+                                                        mem_idx,
+                                                        AssetSource::Xboxupd};
                                 }
                             }
                         }
@@ -703,8 +715,8 @@ namespace gxbuild3::utils {
                     try {
                         const auto* data = get_package_file(*pkg, key);
                         if (data) {
-                            return ResolvedFile{std::string(filename), *package, *data,
-                                                root_index, AssetSource::Stfs};
+                            return ResolvedFile{std::string(filename), *package, *data, root_index,
+                                                AssetSource::Stfs};
                         }
                     } catch (const std::exception& exception) {
                         Log::Warn("Failed to extract '{}' from STFS '{}': {}", filename,
@@ -754,11 +766,11 @@ namespace gxbuild3::utils {
                                           const std::vector<std::filesystem::path>& search_paths,
                                           ScanOptions options, AssetKind kind) {
         if (!safe_asset_name(filename)) {
-            return std::unexpected(FileLookupError{
-                .code = FileLookupErrorCode::InspectionFailed,
-                .message = "Asset name must be a confined relative path",
-                .source_path = entry_to_lookup_path(filename),
-                .root_path = {}});
+            return std::unexpected(
+                FileLookupError{.code = FileLookupErrorCode::InspectionFailed,
+                                .message = "Asset name must be a confined relative path",
+                                .source_path = entry_to_lookup_path(filename),
+                                .root_path = {}});
         }
         const auto relative = entry_to_lookup_path(filename);
         const auto key = normalize_file_key(std::string(filename));
@@ -778,22 +790,22 @@ namespace gxbuild3::utils {
                 try {
                     pkg = get_or_load_memory_package(mem_pkg);
                 } catch (const std::exception& exception) {
-                    return std::unexpected(FileLookupError{
-                        .code = FileLookupErrorCode::InspectionFailed,
-                        .message = "Could not inspect in-memory STFS package: " +
-                                   std::string(exception.what()),
-                        .source_path = {},
-                        .root_path = {},
-                        .root_index = mem_idx,
-                        .source = AssetSource::Stfs});
+                    return std::unexpected(
+                        FileLookupError{.code = FileLookupErrorCode::InspectionFailed,
+                                        .message = "Could not inspect in-memory STFS package: " +
+                                                   std::string(exception.what()),
+                                        .source_path = {},
+                                        .root_path = {},
+                                        .root_index = mem_idx,
+                                        .source = AssetSource::Stfs});
                 } catch (...) {
-                    return std::unexpected(FileLookupError{
-                        .code = FileLookupErrorCode::InspectionFailed,
-                        .message = "Could not inspect in-memory STFS package",
-                        .source_path = {},
-                        .root_path = {},
-                        .root_index = mem_idx,
-                        .source = AssetSource::Stfs});
+                    return std::unexpected(
+                        FileLookupError{.code = FileLookupErrorCode::InspectionFailed,
+                                        .message = "Could not inspect in-memory STFS package",
+                                        .source_path = {},
+                                        .root_path = {},
+                                        .root_index = mem_idx,
+                                        .source = AssetSource::Stfs});
                 }
 
                 if (pkg && pkg->container) {
@@ -814,13 +826,13 @@ namespace gxbuild3::utils {
                                 .root_index = mem_idx,
                                 .source = AssetSource::Stfs});
                         } catch (...) {
-                            return std::unexpected(FileLookupError{
-                                .code = FileLookupErrorCode::InspectionFailed,
-                                .message = "Could not extract requested STFS entry",
-                                .source_path = {},
-                                .root_path = {},
-                                .root_index = mem_idx,
-                                .source = AssetSource::Stfs});
+                            return std::unexpected(
+                                FileLookupError{.code = FileLookupErrorCode::InspectionFailed,
+                                                .message = "Could not extract requested STFS entry",
+                                                .source_path = {},
+                                                .root_path = {},
+                                                .root_index = mem_idx,
+                                                .source = AssetSource::Stfs});
                         }
                     }
 
@@ -841,9 +853,12 @@ namespace gxbuild3::utils {
                             }
                             const auto* part = xboxupd_part_for(*parts, key, stem);
                             if (part && !part->empty()) {
-                                return std::optional<ResolvedFile>{ResolvedFile{
-                                    std::string(filename), {}, *part, mem_idx,
-                                    AssetSource::Xboxupd}};
+                                return std::optional<ResolvedFile>{
+                                    ResolvedFile{std::string(filename),
+                                                 {},
+                                                 *part,
+                                                 mem_idx,
+                                                 AssetSource::Xboxupd}};
                             }
                         } catch (const std::exception& exception) {
                             return std::unexpected(FileLookupError{
@@ -858,8 +873,7 @@ namespace gxbuild3::utils {
                         } catch (...) {
                             return std::unexpected(FileLookupError{
                                 .code = FileLookupErrorCode::InspectionFailed,
-                                .message =
-                                    "Could not derive requested bootloader from xboxupd.bin",
+                                .message = "Could not derive requested bootloader from xboxupd.bin",
                                 .source_path = {},
                                 .root_path = {},
                                 .root_index = mem_idx,
@@ -973,9 +987,9 @@ namespace gxbuild3::utils {
                     try {
                         const auto* data = get_package_file(*pkg, key);
                         if (data) {
-                            return std::optional<ResolvedFile>{ResolvedFile{
-                                std::string(filename), *package, *data, root_index,
-                                AssetSource::Stfs}};
+                            return std::optional<ResolvedFile>{
+                                ResolvedFile{std::string(filename), *package, *data, root_index,
+                                             AssetSource::Stfs}};
                         }
                     } catch (const std::exception& exception) {
                         return std::unexpected(
@@ -1073,13 +1087,13 @@ namespace gxbuild3::utils {
     ReadIniFiles(const std::filesystem::path& ini_path, std::string_view target_section,
                  const std::vector<std::filesystem::path>& search_paths, ScanOptions options,
                  BuildType build_type) {
-        auto doc_res = Ini::ParseFile(ini_path);
+        auto doc_res = ini::ParseFile(ini_path);
         if (!doc_res) {
             Log::Error("Could not parse INI file at '{}'", ini_path.string());
             return std::nullopt;
         }
         const auto& doc = *doc_res;
-        const Ini::Section* bl_sec = doc.get(target_section);
+        const ini::Section* bl_sec = doc.get(target_section);
         if (!bl_sec) {
             std::string alt{target_section};
             if (const auto pos = alt.find('_'); pos != std::string::npos) {
@@ -1202,16 +1216,15 @@ namespace gxbuild3::utils {
                 found = loose_search.find(display_basename(name));
             return found;
         };
-        auto process_payload_entry = [&](const Ini::Entry& entry, bool optional) {
+        auto process_payload_entry = [&](const ini::Entry& entry, bool optional) {
             const auto key = normalize_file_key(entry.key);
             if (key.empty() || key == "none")
                 return;
             if (auto found = find_listed(entry.key)) {
                 std::string stored = flashfs_patch_suffix(display_basename(entry.key), build_type,
                                                           states_checksum(entry.value));
-                const auto [it, inserted] =
-                    payloads.emplace(normalize_file_key(stored),
-                                     std::pair{result.flashfs_sec.size(), found->rank});
+                const auto [it, inserted] = payloads.emplace(
+                    normalize_file_key(stored), std::pair{result.flashfs_sec.size(), found->rank});
                 if (inserted) {
                     result.flashfs_sec.emplace_back(std::move(stored), std::move(found->data));
                 } else if (found->rank < it->second.second) {

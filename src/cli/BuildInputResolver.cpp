@@ -526,7 +526,7 @@ namespace gxbuild3::cli {
         // console's the INI does not name. A patch file stored with its slot suffix
         // ("aac.xexp1") takes the place of the INI entry it came from ("aac.xexp").
         void order_flashfs(std::vector<std::pair<std::string, std::vector<uint8_t>>>& files,
-                           const Ini::Document& ini) {
+                           const ini::Document& ini) {
             std::unordered_map<std::string, size_t> ranks;
             for (const auto section_name : {"flashfs", "security"}) {
                 if (const auto* section = ini.get(section_name)) {
@@ -567,7 +567,7 @@ namespace gxbuild3::cli {
         // lacks: for a listed one xeBuild reports an error when the keyvault requires it, with a
         // note for hacked images on what a nofcrt patch can do, and passes over it otherwise. A
         // required fcrt.bin the INI does not list is warned about here; xeBuild says nothing.
-        void weigh_missing_fcrt(const Ini::Document& ini,
+        void weigh_missing_fcrt(const ini::Document& ini,
                                 const std::optional<std::vector<uint8_t>>& keyvault,
                                 BuildType build_type) {
             bool listed = false;
@@ -759,12 +759,12 @@ namespace gxbuild3::cli {
                     error(ResolutionErrorCode::BuildIniReadFailed, std::move(message), ini_path));
             }
 
-            const auto ini_document = Ini::ParseFile(ini_path);
+            const auto ini_document = ini::ParseFile(ini_path);
             if (!ini_document) {
                 return std::unexpected(
                     error(ResolutionErrorCode::BuildIniReadFailed,
                           "Could not read build INI: " +
-                              std::string(Ini::ParseErrorString(ini_document.error())),
+                              std::string(ini::ParseErrorString(ini_document.error())),
                           ini_path));
             }
             if (args.section.empty()) {

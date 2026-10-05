@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
-namespace Ini {
+namespace gxbuild3::ini {
 
     namespace {
 
@@ -148,4 +148,4 @@ namespace Ini {
         return res;
     }
 
-} // namespace Ini
+} // namespace gxbuild3::ini
