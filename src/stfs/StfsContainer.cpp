@@ -17,28 +17,6 @@
 namespace Stfs {
     namespace {
 
-        constexpr std::size_t kBootloaderHeaderSize = 0x10;
-
-        [[nodiscard]] std::uint16_t readBe16(std::span<const std::byte> data, std::size_t offset) {
-            if (offset + 2 > data.size())
-                throw std::runtime_error("Unexpected end of buffer while reading u16");
-
-            return (static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(data[offset])) << 8) |
-                   static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(data[offset + 1]));
-        }
-
-        [[nodiscard]] std::uint32_t readBe32(std::span<const std::byte> data, std::size_t offset) {
-            if (offset + 4 > data.size())
-                throw std::runtime_error("Unexpected end of buffer while reading u32");
-
-            return (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(data[offset])) << 24) |
-                   (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(data[offset + 1]))
-                    << 16) |
-                   (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(data[offset + 2]))
-                    << 8) |
-                   static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(data[offset + 3]));
-        }
-
         [[nodiscard]] bool startsWithPirs(std::span<const std::byte> data) {
             return data.size() >= 4 && data[0] == std::byte{static_cast<unsigned char>('P')} &&
                    data[1] == std::byte{static_cast<unsigned char>('I')} &&
@@ -62,39 +40,6 @@ namespace Stfs {
         }
 
     } // namespace
-
-    XboxupdRawParts splitXboxupdRaw(std::span<const std::byte> xboxupd_bytes) {
-        if (xboxupd_bytes.size() < 0x20) {
-            throw std::runtime_error("xboxupd buffer too small to split");
-        }
-
-        if (xboxupd_bytes[0] != std::byte{static_cast<unsigned char>('C')} ||
-            xboxupd_bytes[1] != std::byte{static_cast<unsigned char>('F')}) {
-            throw std::runtime_error("Invalid xboxupd magic: expected CF");
-        }
-
-        const std::uint32_t cf_size = readBe32(xboxupd_bytes, 0x0C);
-        if (cf_size < kBootloaderHeaderSize || xboxupd_bytes.size() < cf_size) {
-            throw std::runtime_error("xboxupd buffer too small to contain full CF");
-        }
-
-        const std::uint32_t cg_size = readBe32(xboxupd_bytes, 0x1C);
-        const std::size_t cg_offset = cf_size;
-        if (cg_size < kBootloaderHeaderSize || xboxupd_bytes.size() < cg_offset + cg_size) {
-            throw std::runtime_error("xboxupd buffer too small to contain full CG");
-        }
-
-        const std::uint16_t cg_magic = readBe16(xboxupd_bytes.subspan(cg_offset), 0);
-        if ((cg_magic & 0x0FFF) != 0x347) {
-            throw std::runtime_error("CG header not found. invalid xboxupd.bin?");
-        }
-
-        XboxupdRawParts parts;
-        parts.cf_raw.assign(xboxupd_bytes.begin(), xboxupd_bytes.begin() + cf_size);
-        parts.cg_raw.assign(xboxupd_bytes.begin() + cg_offset,
-                            xboxupd_bytes.begin() + cg_offset + cg_size);
-        return parts;
-    }
 
     StfsContainer::StfsContainer(std::span<const std::byte> data) : data_(data) {
         if (!startsWithPirs(data_)) {
@@ -200,11 +145,6 @@ namespace Stfs {
         }
 
         throw std::runtime_error("STFS file not found: " + std::string{name});
-    }
-
-    XboxupdRawParts extractXboxupdRaw(std::span<const std::byte> pirs_data) {
-        const StfsContainer container{pirs_data};
-        return splitXboxupdRaw(container.extractFileByName("xboxupd.bin"));
     }
 
 } // namespace Stfs
