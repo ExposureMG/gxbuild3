@@ -10,6 +10,15 @@
 #include <string>
 #include <utility>
 
+using GxBuild::BootloaderNonce;
+using GxBuild::BuildErrorCode;
+using GxBuild::BuildType;
+using GxBuild::DonorNonces;
+using GxBuild::ImageType;
+using GxBuild::Input;
+using GxBuild::InputPatches;
+using GxBuild::InputPatchFile;
+
 using gxbuild3::extract_all;
 using gxbuild3::extract_all_info;
 using gxbuild3::extract_metadata;

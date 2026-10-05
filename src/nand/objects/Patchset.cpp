@@ -8,6 +8,9 @@
 #include <cstring>
 #include <span>
 
+using GxBuild::BuildType;
+using GxBuild::InputPatches;
+
 namespace {
 
     constexpr uint32_t kSectionDelimiter = 0xFFFFFFFFU;

@@ -7,6 +7,10 @@
 #include <string_view>
 #include <vector>
 
+using GxBuild::BuildType;
+using GxBuild::InputPatches;
+using GxBuild::InputPatchFile;
+
 namespace {
 
     using Bytes = std::vector<uint8_t>;
@@ -145,8 +149,7 @@ namespace {
 
             InputPatches patches{};
             patches.automatic = InputPatchFile{"unused", bytes};
-            const auto merged =
-                BinaryParser::ParseAndMergePatchSet(patches, BuildType::Glitch);
+            const auto merged = BinaryParser::ParseAndMergePatchSet(patches, BuildType::Glitch);
             if (!require(!merged.has_value() && !merged.error().message.empty(),
                          "merge reports deterministic malformed-byte error")) {
                 return false;
@@ -173,10 +176,9 @@ namespace {
 
         parsed.sections.push_back(
             ParsedPatchSection{PatchSectionTarget::Khv, "sentinel", {0xAA}, {}});
-        return require(
-                   !BinaryParser::ParsePatchSet(glitch_patchset(Bytes{0x10}), BuildType::Retail,
-                                                parsed),
-                   "unsupported build type fails") &&
+        return require(!BinaryParser::ParsePatchSet(glitch_patchset(Bytes{0x10}), BuildType::Retail,
+                                                    parsed),
+                       "unsupported build type fails") &&
                require(parsed.sections.empty(), "unsupported type leaves no partial sections");
     }
 

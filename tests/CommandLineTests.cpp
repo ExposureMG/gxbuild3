@@ -6,6 +6,10 @@
 #include <variant>
 #include <vector>
 
+using GxBuild::BuildType;
+using GxBuild::ConsoleType;
+using GxBuild::ImageType;
+
 namespace {
 
     bool require(bool condition, std::string_view message) {
@@ -132,26 +136,26 @@ namespace {
     }
 
     bool test_patch_extension_allows_internal_underscore_only() {
-        const std::vector<std::string_view> valid{"gxbuild", "-b", "build.ini", "-s", "falcon",
-                                                  "-t",      "retail",    "-d", "firmware", "-e",
-                                                  "test_alt"};
-        const std::vector<std::string_view> leading_underscore{
-            "gxbuild", "-b", "build.ini", "-s", "falcon", "-t", "retail", "-d", "firmware",
-            "-e",     "_test"};
-        const std::vector<std::string_view> unsafe_character{
-            "gxbuild", "-b", "build.ini", "-s", "falcon", "-t", "retail", "-d", "firmware",
-            "-e",     "test.alt"};
+        const std::vector<std::string_view> valid{"gxbuild",  "-b", "build.ini", "-s",
+                                                  "falcon",   "-t", "retail",    "-d",
+                                                  "firmware", "-e", "test_alt"};
+        const std::vector<std::string_view> leading_underscore{"gxbuild",  "-b", "build.ini", "-s",
+                                                               "falcon",   "-t", "retail",    "-d",
+                                                               "firmware", "-e", "_test"};
+        const std::vector<std::string_view> unsafe_character{"gxbuild",  "-b", "build.ini", "-s",
+                                                             "falcon",   "-t", "retail",    "-d",
+                                                             "firmware", "-e", "test.alt"};
         const auto valid_result = gxbuild3::cli::ParseCommandLine(valid);
         const auto invalid_result = gxbuild3::cli::ParseCommandLine(leading_underscore);
         const auto unsafe_result = gxbuild3::cli::ParseCommandLine(unsafe_character);
         const auto* args = valid_result ? build_args(*valid_result) : nullptr;
         return require(args && args->patch_extension && *args->patch_extension == "test_alt",
                        "patch extension accepts a safe internal underscore") &&
-               require(!invalid_result &&
-                           invalid_result.error().code == gxbuild3::cli::ParseErrorCode::InvalidExtension,
+               require(!invalid_result && invalid_result.error().code ==
+                                              gxbuild3::cli::ParseErrorCode::InvalidExtension,
                        "patch extension rejects a leading underscore") &&
-               require(!unsafe_result &&
-                           unsafe_result.error().code == gxbuild3::cli::ParseErrorCode::InvalidExtension,
+               require(!unsafe_result && unsafe_result.error().code ==
+                                             gxbuild3::cli::ParseErrorCode::InvalidExtension,
                        "patch extension rejects unsafe characters");
     }
 

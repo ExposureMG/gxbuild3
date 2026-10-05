@@ -28,4 +28,4 @@ struct InputError {
     std::string message;
 };
 
-std::expected<void, InputError> ValidateInput(const Input& input);
+std::expected<void, InputError> ValidateInput(const GxBuild::Input& input);

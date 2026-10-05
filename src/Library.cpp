@@ -1,5 +1,7 @@
 #include "Library.hpp"
 
+#include "BuildRunner.hpp"
+
 namespace GxBuild {
 
     BuildResult RunBuild(const Input& input) {

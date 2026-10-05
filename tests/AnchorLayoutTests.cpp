@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <iostream>
 #include <utility>
+
+using GxBuild::BuildType;
 using namespace gxbuild3::nand;
 using Bytes = std::vector<uint8_t>;
 static bool check(bool ok, const char* message) {

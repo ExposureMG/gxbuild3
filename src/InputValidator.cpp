@@ -4,6 +4,9 @@
 #include <string>
 #include <utility>
 
+using GxBuild::BuildType;
+using GxBuild::Input;
+
 namespace {
 
     bool requires_automatic_patchset(BuildType build_type) {
@@ -61,8 +64,8 @@ std::expected<void, InputError> ValidateInput(const Input& input) {
     }
     if (!requires_automatic_patchset(input.build_type) &&
         (has_automatic || (input.patches && !input.patches->addons.empty()))) {
-        return std::unexpected(InputError{InputErrorCode::UnexpectedPatchset,
-                                          "Build type does not allow patch data"});
+        return std::unexpected(
+            InputError{InputErrorCode::UnexpectedPatchset, "Build type does not allow patch data"});
     }
 
     if (input.payloads && input.payloads->payload && input.payloads->payload->size() != 0x200) {
@@ -75,9 +78,8 @@ std::expected<void, InputError> ValidateInput(const Input& input) {
                        "Rebooter payload must not exceed the 0x1000-byte region"});
     }
     if (input.payloads && input.payloads->fuses && input.payloads->fuses->size() != 0x60) {
-        return std::unexpected(
-            InputError{InputErrorCode::InvalidFusesSize,
-                       "Virtual fuses payload must contain exactly 0x60 bytes"});
+        return std::unexpected(InputError{InputErrorCode::InvalidFusesSize,
+                                          "Virtual fuses payload must contain exactly 0x60 bytes"});
     }
     if (input.metadata.smc_config && input.metadata.smc_config->size() != 0x400) {
         return std::unexpected(InputError{InputErrorCode::InvalidSettingsBlockSize,

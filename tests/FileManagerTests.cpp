@@ -10,6 +10,8 @@
 #include <string_view>
 #include <vector>
 
+using GxBuild::BuildType;
+
 namespace {
     namespace fs = std::filesystem;
     namespace utils = gxbuild3::utils;

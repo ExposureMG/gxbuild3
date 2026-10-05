@@ -39,6 +39,24 @@
 #include <string_view>
 #include <utility>
 
+using GxBuild::AllNandInfo;
+using GxBuild::BootloaderEntryInfo;
+using GxBuild::BootloaderNonce;
+using GxBuild::BuildError;
+using GxBuild::BuildErrorCode;
+using GxBuild::BuildResult;
+using GxBuild::BuildType;
+using GxBuild::ConsoleType;
+using GxBuild::DonorNonces;
+using GxBuild::FlashFsFileInfo;
+using GxBuild::ImageType;
+using GxBuild::Input;
+using GxBuild::InputMetadata;
+using GxBuild::InputPatches;
+using GxBuild::InputPatchFile;
+using GxBuild::InputPayloads;
+using GxBuild::OptionsArgs;
+
 using namespace gxbuild3::nand;
 
 namespace {
@@ -1448,8 +1466,7 @@ BuildResult gxbuild3::run_build(const Input& input) try {
 
     return output;
 } catch (const std::exception& exception) {
-    return build_error(BuildErrorCode::InvalidInput,
-                       std::string("internal error: ") + exception.what());
+    return build_error(BuildErrorCode::Internal, exception.what());
 }
 
 std::optional<AllNandInfo> gxbuild3::extract_some_info(std::span<const uint8_t> nand_image) try {

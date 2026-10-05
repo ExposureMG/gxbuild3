@@ -5,6 +5,8 @@
 #include <cctype>
 #include <utility>
 
+using GxBuild::OptionsArgs;
+
 namespace {
 
     std::string normalize_key(std::string_view raw) {

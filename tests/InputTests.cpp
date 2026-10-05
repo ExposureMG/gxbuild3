@@ -6,6 +6,15 @@
 #include <string_view>
 #include <vector>
 
+using GxBuild::BuildType;
+using GxBuild::ImageType;
+using GxBuild::Input;
+using GxBuild::InputMobileData;
+using GxBuild::InputPatches;
+using GxBuild::InputPatchFile;
+using GxBuild::InputPayloads;
+using GxBuild::OptionsArgs;
+
 namespace {
 
     bool require(bool condition, std::string_view message) {

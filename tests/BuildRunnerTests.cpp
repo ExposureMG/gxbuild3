@@ -30,6 +30,21 @@
 #include <utility>
 #include <vector>
 
+using GxBuild::BootloaderNonce;
+using GxBuild::BuildErrorCode;
+using GxBuild::BuildResult;
+using GxBuild::BuildType;
+using GxBuild::ConsoleType;
+using GxBuild::DonorNonces;
+using GxBuild::ImageType;
+using GxBuild::Input;
+using GxBuild::InputBootloaders;
+using GxBuild::InputPatches;
+using GxBuild::InputPatchFile;
+using GxBuild::InputPayloads;
+using GxBuild::InputRawPatch;
+using GxBuild::OptionsArgs;
+
 using gxbuild3::extract_all;
 using gxbuild3::extract_all_info;
 using gxbuild3::extract_metadata;

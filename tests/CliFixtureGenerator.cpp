@@ -17,6 +17,10 @@
 #include <string_view>
 #include <vector>
 
+using GxBuild::ImageType;
+using GxBuild::Input;
+using GxBuild::InputBootloaders;
+
 namespace {
 
     using Bytes = std::vector<uint8_t>;

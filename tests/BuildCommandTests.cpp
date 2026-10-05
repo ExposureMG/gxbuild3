@@ -7,6 +7,11 @@
 #include <system_error>
 #include <vector>
 
+using GxBuild::BuildError;
+using GxBuild::BuildErrorCode;
+using GxBuild::BuildResult;
+using GxBuild::Input;
+
 namespace {
 
     using Bytes = std::vector<uint8_t>;

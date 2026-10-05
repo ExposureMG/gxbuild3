@@ -3,29 +3,9 @@
 #include "Args.hpp"
 
 #include <cstdint>
-#include <expected>
 #include <optional>
 #include <span>
-#include <string>
 #include <vector>
-
-enum class BuildErrorCode {
-    InvalidInput,
-    InvalidDonor,
-    InvalidSmc,
-    InvalidKeyvault,
-    InvalidBootloader,
-    PatchFailure,
-    EncryptionFailure,
-    SerializationFailure,
-};
-
-struct BuildError {
-    BuildErrorCode code;
-    std::string message;
-};
-
-using BuildResult = std::expected<std::vector<uint8_t>, BuildError>;
 
 namespace gxbuild3 {
 
