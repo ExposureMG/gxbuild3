@@ -6,7 +6,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     struct MobileData {
         std::optional<std::vector<uint8_t>> x31;
@@ -30,4 +30,4 @@ namespace gxbuild3::NAND {
         return block_type >= 0x31 && block_type <= 0x39;
     }
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

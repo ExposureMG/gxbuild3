@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     // Embedded freeBOOT JTAG arrays (freeboot/freeboot.h, freeboot/payload.h), the loaders
     // xeBuild 1.21 carries inside itself.
@@ -21,4 +21,4 @@ namespace gxbuild3::NAND {
     // `li r4` at +0x50 (xeBuild 1.21 "patching payload.bin to load size").
     std::vector<uint8_t> freeboot_payload_for(size_t core_length);
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

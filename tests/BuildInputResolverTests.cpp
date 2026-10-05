@@ -967,7 +967,7 @@ namespace {
         fixture.write_binary("first/launch.ini", Bytes{0x41});
         const auto plaintext_secdata = Bytes(0x20, 0x51);
         auto encrypted_secdata = plaintext_secdata;
-        if (!gxbuild3::NAND::crypt_secfile(key, encrypted_secdata)) {
+        if (!gxbuild3::nand::crypt_secfile(key, encrypted_secdata)) {
             return require(false, "secure fixture encrypts");
         }
         fixture.write_binary("first/secdata.bin", encrypted_secdata);
@@ -1239,7 +1239,7 @@ namespace {
                            "[falconbl]\ncb_1.bin\ncd.bin\n[security]\nsecdata.bin\n");
         std::filesystem::create_directory(fixture.path("first/secdata.bin"));
         auto later = Bytes(0x20, 0x63);
-        if (!gxbuild3::NAND::crypt_secfile(valid_cpu_key(), later)) {
+        if (!gxbuild3::nand::crypt_secfile(valid_cpu_key(), later)) {
             return require(false, "later secure fixture encrypts");
         }
         fixture.write_binary("second/secdata.bin", later);
@@ -1390,11 +1390,11 @@ namespace {
                        "xell-2f.bin is loaded verbatim") &&
                require(payloads->rebooter && payloads->rebooter->size() == 0xd40,
                        "the embedded freeBOOT rebooter is loaded at 0xd40 bytes") &&
-               require(*payloads->rebooter == gxbuild3::NAND::freeboot_rebooter_for("17559"),
+               require(*payloads->rebooter == gxbuild3::nand::freeboot_rebooter_for("17559"),
                        "the rebooter states the INI's kernel version") &&
                require(payloads->payload && payloads->payload->size() == 0x200,
                        "the embedded SMC payload is loaded at 0x200 bytes") &&
-               require(*payloads->payload == gxbuild3::NAND::freeboot_payload_for(0xd40),
+               require(*payloads->payload == gxbuild3::nand::freeboot_payload_for(0xd40),
                        "the payload loads exactly the rebooter") &&
                require(payloads->fuses && payloads->fuses->size() == 0x60,
                        "generated virtual fuses fill the 0x60-byte region") &&

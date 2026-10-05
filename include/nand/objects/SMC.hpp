@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     enum class SmcMotherboard {
         Unknown = 0,
@@ -61,4 +61,4 @@ namespace gxbuild3::NAND {
     // for a JTAG image.
     bool smc_has_jtag_mark(std::span<const uint8_t> data);
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

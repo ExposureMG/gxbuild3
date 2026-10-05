@@ -576,9 +576,9 @@ namespace gxbuild3::cli {
                     return lowercase_basename(utils::IniAssetName(entry.key)) == "fcrt.bin";
                 });
             }
-            const auto requirement = keyvault ? gxbuild3::NAND::fcrt_requirement(*keyvault)
-                                              : gxbuild3::NAND::FcrtRequirement::NotRequired;
-            if (requirement == gxbuild3::NAND::FcrtRequirement::NotRequired) {
+            const auto requirement = keyvault ? gxbuild3::nand::fcrt_requirement(*keyvault)
+                                              : gxbuild3::nand::FcrtRequirement::NotRequired;
+            if (requirement == gxbuild3::nand::FcrtRequirement::NotRequired) {
                 if (listed) {
                     Log::Info("fcrt.bin was not found and the keyvault does not require it; it "
                               "is left out");
@@ -593,7 +593,7 @@ namespace gxbuild3::cli {
             Log::Error("fcrt.bin was not found; the keyvault flags it as required, and it is left "
                        "out");
             if (build_type != BuildType::Retail && build_type != BuildType::Devkit) {
-                if (requirement == gxbuild3::NAND::FcrtRequirement::Required) {
+                if (requirement == gxbuild3::nand::FcrtRequirement::Required) {
                     Log::Warn("On a hacked image a nofcrt patch (-a nofcrt) should let the drive "
                               "and the console work");
                 } else {
@@ -911,14 +911,14 @@ namespace gxbuild3::cli {
             // looks sealed (most likely for another console) as an error, and so does this.
             if (*keyvault) {
                 auto opened =
-                    gxbuild3::NAND::open_loose_keyvault(foundations->cpu_key, (**keyvault).data);
+                    gxbuild3::nand::open_loose_keyvault(foundations->cpu_key, (**keyvault).data);
                 if (!opened) {
                     return std::unexpected(
                         error(ResolutionErrorCode::InvalidInput,
                               "kv.bin is not 0x4000 bytes, nor 0x3FF0 without its nonce",
                               (**keyvault).source_path, "kv.bin"));
                 }
-                using Form = gxbuild3::NAND::LooseKeyvault::Form;
+                using Form = gxbuild3::nand::LooseKeyvault::Form;
                 if (opened->form == Form::StaleNonce) {
                     Log::Warn("kv.bin is in the clear, but its nonce is not one the CPU key "
                               "derives; it is taken as it stands. Make sure it is this console's");
@@ -986,8 +986,8 @@ namespace gxbuild3::cli {
                 if ((key == "secdata.bin" || key == "extended.bin") && file.second.size() >= 0x10) {
                     auto opened =
                         key == "extended.bin"
-                            ? gxbuild3::NAND::open_loose_extended(file.second, foundations->cpu_key)
-                            : gxbuild3::NAND::open_loose_secdata(file.second, foundations->cpu_key);
+                            ? gxbuild3::nand::open_loose_extended(file.second, foundations->cpu_key)
+                            : gxbuild3::nand::open_loose_secdata(file.second, foundations->cpu_key);
                     if (!opened) {
                         return std::unexpected(
                             error(ResolutionErrorCode::InvalidInput,
@@ -1128,9 +1128,9 @@ namespace gxbuild3::cli {
                         version_section && !version_section->empty()) {
                         firmware_version = version_section->front().key;
                     }
-                    payloads.rebooter = gxbuild3::NAND::freeboot_rebooter_for(firmware_version);
+                    payloads.rebooter = gxbuild3::nand::freeboot_rebooter_for(firmware_version);
                     payloads.payload =
-                        gxbuild3::NAND::freeboot_payload_for(payloads.rebooter->size());
+                        gxbuild3::nand::freeboot_payload_for(payloads.rebooter->size());
                 }
 
                 if (needs_fuses) {

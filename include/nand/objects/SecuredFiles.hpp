@@ -28,7 +28,7 @@
 // sealed part in the clear; the sealed part runs to the end under AES-128-CBC with the CPU key. A
 // sealed part that is not whole blocks is left as it stands by both directions, as XeCrypt leaves
 // it.
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     // The vector and file key a crl.bin is sealed under.
     struct CrlSealing {
@@ -184,4 +184,4 @@ namespace gxbuild3::NAND {
     [[nodiscard]] std::optional<std::array<uint8_t, 8>>
     secdata_head(std::span<const uint8_t> clear);
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

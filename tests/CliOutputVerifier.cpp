@@ -12,7 +12,7 @@
 namespace {
 
     using Bytes = std::vector<uint8_t>;
-    using gxbuild3::NAND::FlashImage;
+    using gxbuild3::nand::FlashImage;
 
     constexpr std::array<uint8_t, 16> kCpuKey{
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f, 0x00,
@@ -70,9 +70,7 @@ namespace {
         return require(stage->data.size() == expected_size,
                        std::string(name) + " has the wrong plaintext payload size") &&
                require(std::all_of(stage->data.begin(), stage->data.end(),
-                                   [expected_byte](uint8_t byte) {
-                                       return byte == expected_byte;
-                                   }),
+                                   [expected_byte](uint8_t byte) { return byte == expected_byte; }),
                        std::string(name) + " has the wrong plaintext payload bytes");
     }
 
@@ -91,8 +89,7 @@ namespace {
                        std::string(name) + " has the wrong plaintext payload size") &&
                require(stage->data[0] == 0x00 && stage->data[1] == 0x00 &&
                            stage->data[2] == expected_marker &&
-                           std::all_of(stage->data.begin() + 3,
-                                       stage->data.begin() + 0x1C0,
+                           std::all_of(stage->data.begin() + 3, stage->data.begin() + 0x1C0,
                                        [](uint8_t byte) { return byte == 0x00; }),
                        std::string(name) + " has the wrong plaintext payload prefix");
     }
@@ -133,42 +130,48 @@ int main(int argc, char* argv[]) {
     bool valid = true;
     valid = verify_stage("CB", &image->cb_section.cb_or_A, NANDBootloaderMagic::CB, 1) && valid;
     valid = verify_stage("SC", image->cb_section.sc ? &*image->cb_section.sc : nullptr,
-                         NANDBootloaderMagic::SC, 2) && valid;
+                         NANDBootloaderMagic::SC, 2) &&
+            valid;
     valid = verify_stage("CD", &image->kernel_section.cd, NANDBootloaderMagic::CD, 3) && valid;
     valid = verify_stage("CE", image->kernel_section.ce ? &*image->kernel_section.ce : nullptr,
-                         NANDBootloaderMagic::CE, 4) && valid;
+                         NANDBootloaderMagic::CE, 4) &&
+            valid;
     valid = verify_stage("CF0", image->system_update_0.cf ? &*image->system_update_0.cf : nullptr,
-                         NANDBootloaderMagic::CF, 5) && valid;
+                         NANDBootloaderMagic::CF, 5) &&
+            valid;
     valid = verify_stage("CG0", image->system_update_0.cg ? &*image->system_update_0.cg : nullptr,
-                         NANDBootloaderMagic::CG, 6) && valid;
+                         NANDBootloaderMagic::CG, 6) &&
+            valid;
     valid = verify_stage("CF1", image->system_update_1.cf ? &*image->system_update_1.cf : nullptr,
-                         NANDBootloaderMagic::CF, 7) && valid;
+                         NANDBootloaderMagic::CF, 7) &&
+            valid;
     valid = verify_stage("CG1", image->system_update_1.cg ? &*image->system_update_1.cg : nullptr,
-                         NANDBootloaderMagic::CG, 8) && valid;
+                         NANDBootloaderMagic::CG, 8) &&
+            valid;
 
     valid = verify_literal_payload("CB", &image->cb_section.cb_or_A, 0x380, 0x00) && valid;
     valid = verify_literal_payload("SC", image->cb_section.sc ? &*image->cb_section.sc : nullptr,
-                                   0x20, 0x53) && valid;
+                                   0x20, 0x53) &&
+            valid;
     valid = verify_literal_payload("CD", &image->kernel_section.cd, 0x20, 0x42) && valid;
-    valid = verify_literal_payload("CE", image->kernel_section.ce ? &*image->kernel_section.ce
-                                                                  : nullptr,
-                                   0x20, 0x45) && valid;
-    valid = verify_cf_plaintext("CF0", image->system_update_0.cf
-                                           ? &*image->system_update_0.cf
-                                           : nullptr,
-                                0x50, 0x50) && valid;
-    valid = verify_cg_plaintext("CG0", image->system_update_0.cg
-                                           ? &*image->system_update_0.cg
-                                           : nullptr,
-                                0x60) && valid;
-    valid = verify_cf_plaintext("CF1", image->system_update_1.cf
-                                           ? &*image->system_update_1.cf
-                                           : nullptr,
-                                0x70, 0x70) && valid;
-    valid = verify_cg_plaintext("CG1", image->system_update_1.cg
-                                           ? &*image->system_update_1.cg
-                                           : nullptr,
-                                0x80) && valid;
+    valid = verify_literal_payload("CE",
+                                   image->kernel_section.ce ? &*image->kernel_section.ce : nullptr,
+                                   0x20, 0x45) &&
+            valid;
+    valid = verify_cf_plaintext("CF0",
+                                image->system_update_0.cf ? &*image->system_update_0.cf : nullptr,
+                                0x50, 0x50) &&
+            valid;
+    valid = verify_cg_plaintext(
+                "CG0", image->system_update_0.cg ? &*image->system_update_0.cg : nullptr, 0x60) &&
+            valid;
+    valid = verify_cf_plaintext("CF1",
+                                image->system_update_1.cf ? &*image->system_update_1.cf : nullptr,
+                                0x70, 0x70) &&
+            valid;
+    valid = verify_cg_plaintext(
+                "CG1", image->system_update_1.cg ? &*image->system_update_1.cg : nullptr, 0x80) &&
+            valid;
 
     valid = require(image->filesystem.has_value(), "FlashFS is absent") && valid;
     if (image->filesystem) {

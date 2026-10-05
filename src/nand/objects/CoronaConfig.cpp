@@ -1,10 +1,11 @@
 #include "nand/objects/CoronaConfig.hpp"
-#include "utils/Log.hpp"
+
 #include "excrypt.h"
+#include "utils/Log.hpp"
 
 #include <cstring>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     namespace {
 
@@ -38,60 +39,60 @@ namespace gxbuild3::NAND {
 
     } // namespace
 
-std::optional<CoronaConfig> CoronaConfig::parse(std::span<const uint8_t> bytes) {
-    if (bytes.size() < kSize) {
-        Log::Error("Invalid anchor block size: expected {} bytes, got {}", kSize, bytes.size());
-        return std::nullopt;
-    }
-
-    uint8_t digest[kDigestLength];
-    digest_of(bytes.data(), digest);
-    if (std::memcmp(digest, bytes.data(), kDigestLength) != 0) {
-        Log::Debug("Anchor block digest does not match what follows it");
-        return std::nullopt;
-    }
-
-    CoronaConfig cfg;
-    cfg.number = load32(bytes.data() + kNumberOffset);
-    cfg.table = load16(bytes.data() + kTableOffset);
-    for (size_t slot = 0; slot < kBlobSlots; ++slot) {
-        cfg.blobs[slot].block = load16(bytes.data() + kBlobsOffset + slot * 4);
-        cfg.blobs[slot].length = load16(bytes.data() + kBlobsOffset + slot * 4 + 2);
-    }
-
-    Log::Debug("Parsed anchor block {}: filesystem table at block {}", cfg.number, cfg.table);
-    return cfg;
-}
-
-std::optional<CoronaConfig> CoronaConfig::parse(const std::vector<uint8_t>& bytes) {
-    return parse(std::span<const uint8_t>(bytes.data(), bytes.size()));
-}
-
-std::optional<CoronaConfig>
-CoronaConfig::choose(const std::array<std::span<const uint8_t>, 2>& copies) {
-    std::optional<CoronaConfig> best;
-    for (const auto& copy : copies) {
-        if (copy.size() < kSize) {
-            continue;
+    std::optional<CoronaConfig> CoronaConfig::parse(std::span<const uint8_t> bytes) {
+        if (bytes.size() < kSize) {
+            Log::Error("Invalid anchor block size: expected {} bytes, got {}", kSize, bytes.size());
+            return std::nullopt;
         }
-        auto parsed = parse(copy);
-        if (parsed && (!best || parsed->number > best->number)) {
-            best = parsed;
+
+        uint8_t digest[kDigestLength];
+        digest_of(bytes.data(), digest);
+        if (std::memcmp(digest, bytes.data(), kDigestLength) != 0) {
+            Log::Debug("Anchor block digest does not match what follows it");
+            return std::nullopt;
         }
-    }
-    return best;
-}
 
-std::vector<uint8_t> CoronaConfig::serialize() const {
-    std::vector<uint8_t> out(kSize, 0);
-    store32(out.data() + kNumberOffset, number);
-    store16(out.data() + kTableOffset, table);
-    for (size_t slot = 0; slot < kBlobSlots; ++slot) {
-        store16(out.data() + kBlobsOffset + slot * 4, blobs[slot].block);
-        store16(out.data() + kBlobsOffset + slot * 4 + 2, blobs[slot].length);
-    }
-    digest_of(out.data(), out.data());
-    return out;
-}
+        CoronaConfig cfg;
+        cfg.number = load32(bytes.data() + kNumberOffset);
+        cfg.table = load16(bytes.data() + kTableOffset);
+        for (size_t slot = 0; slot < kBlobSlots; ++slot) {
+            cfg.blobs[slot].block = load16(bytes.data() + kBlobsOffset + slot * 4);
+            cfg.blobs[slot].length = load16(bytes.data() + kBlobsOffset + slot * 4 + 2);
+        }
 
-} // namespace gxbuild3::NAND
+        Log::Debug("Parsed anchor block {}: filesystem table at block {}", cfg.number, cfg.table);
+        return cfg;
+    }
+
+    std::optional<CoronaConfig> CoronaConfig::parse(const std::vector<uint8_t>& bytes) {
+        return parse(std::span<const uint8_t>(bytes.data(), bytes.size()));
+    }
+
+    std::optional<CoronaConfig>
+    CoronaConfig::choose(const std::array<std::span<const uint8_t>, 2>& copies) {
+        std::optional<CoronaConfig> best;
+        for (const auto& copy : copies) {
+            if (copy.size() < kSize) {
+                continue;
+            }
+            auto parsed = parse(copy);
+            if (parsed && (!best || parsed->number > best->number)) {
+                best = parsed;
+            }
+        }
+        return best;
+    }
+
+    std::vector<uint8_t> CoronaConfig::serialize() const {
+        std::vector<uint8_t> out(kSize, 0);
+        store32(out.data() + kNumberOffset, number);
+        store16(out.data() + kTableOffset, table);
+        for (size_t slot = 0; slot < kBlobSlots; ++slot) {
+            store16(out.data() + kBlobsOffset + slot * 4, blobs[slot].block);
+            store16(out.data() + kBlobsOffset + slot * 4 + 2, blobs[slot].length);
+        }
+        digest_of(out.data(), out.data());
+        return out;
+    }
+
+} // namespace gxbuild3::nand

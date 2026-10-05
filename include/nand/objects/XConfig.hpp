@@ -321,7 +321,7 @@ typedef struct _xconfig_system_settings {
 
 #pragma pack(pop)
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     struct SmcConfig {
         xconfig_static_settings_t Static{};
@@ -346,7 +346,7 @@ namespace gxbuild3::NAND {
 
     using xconfig_master_t = SmcConfig;
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand
 
 namespace XConfig {
 
@@ -357,10 +357,10 @@ namespace XConfig {
 
     [[nodiscard]] std::string_view ParseErrorString(ParseError e) noexcept;
 
-    [[nodiscard]] std::expected<gxbuild3::NAND::SmcConfig, ParseError>
+    [[nodiscard]] std::expected<gxbuild3::nand::SmcConfig, ParseError>
     Parse(std::span<const uint8_t> buf, size_t base_offset = 0xC000) noexcept;
 
-    [[nodiscard]] std::vector<uint8_t> Serialize(const gxbuild3::NAND::SmcConfig& cfg,
+    [[nodiscard]] std::vector<uint8_t> Serialize(const gxbuild3::nand::SmcConfig& cfg,
                                                  size_t total_size = 0x10000,
                                                  size_t base_offset = 0xC000) noexcept;
 

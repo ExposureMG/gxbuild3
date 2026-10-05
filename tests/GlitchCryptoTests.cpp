@@ -10,8 +10,8 @@
 #include <string>
 #include <utility>
 
-using gxbuild3::NAND::FlashImage;
-using gxbuild3::NAND::Keyvault;
+using gxbuild3::nand::FlashImage;
+using gxbuild3::nand::Keyvault;
 
 namespace {
     using Bytes = std::vector<uint8_t>;

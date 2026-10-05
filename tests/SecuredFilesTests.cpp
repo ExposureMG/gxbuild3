@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-using namespace gxbuild3::NAND;
+using namespace gxbuild3::nand;
 
 namespace {
 

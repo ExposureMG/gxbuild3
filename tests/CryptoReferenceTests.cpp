@@ -108,7 +108,7 @@ namespace {
     // plaintext motherboard nibble. Plaintext SMCs end in four zero bytes (xerunner
     // smc.py `handed_in`), so the decrypted tail decides.
     bool test_smc_encryption_is_detected_by_zero_tail() {
-        using namespace gxbuild3::NAND;
+        using namespace gxbuild3::nand;
         Bytes plain(0x3000, 0);
         for (size_t i = 0; i < 0x2F00; ++i)
             plain[i] = static_cast<uint8_t>(i * 7 + 3);

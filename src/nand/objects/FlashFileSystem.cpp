@@ -9,7 +9,7 @@
 #include <map>
 #include <unordered_set>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     void FlashFileSystem::set_driver(Driver* driver) {
         m_driver = driver;
@@ -764,4 +764,4 @@ namespace gxbuild3::NAND {
         return nullptr;
     }
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

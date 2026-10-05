@@ -7,7 +7,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     // An anchor block: what an eMMC image keeps in place of the spare bytes a NAND is scanned
     // by. Two copies sit at fixed offsets near the top of the 48 MB image. Big-endian on disk:
@@ -53,4 +53,4 @@ namespace gxbuild3::NAND {
         [[nodiscard]] std::vector<uint8_t> serialize() const;
     };
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

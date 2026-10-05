@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     struct FlashFileSystemTestAccess;
 
@@ -22,18 +22,18 @@ namespace gxbuild3::NAND {
     inline constexpr size_t kBlocksPerPage = 256;
     inline constexpr size_t kCleanBlockSize = 0x4000;
 
-    namespace BlockMapStatus {
-        inline constexpr uint16_t Free = 0x1FFE;
-        inline constexpr uint16_t EndOfChain = 0x1FFF;
-        inline constexpr uint16_t Reserved = 0x1FFB;
-        inline constexpr uint16_t BadBlock = 0x1FF0;
+    struct BlockMapStatus {
+        static constexpr uint16_t Free = 0x1FFE;
+        static constexpr uint16_t EndOfChain = 0x1FFF;
+        static constexpr uint16_t Reserved = 0x1FFB;
+        static constexpr uint16_t BadBlock = 0x1FF0;
         // The cluster the root (the table itself) occupies.
-        inline constexpr uint16_t Table = 0x1FFD;
+        static constexpr uint16_t Table = 0x1FFD;
         // A cluster the table never names: the remap pool past the reserved settings blocks,
         // and the clusters a big-block build steps over to start the settings blobs on an
         // erase block.
-        inline constexpr uint16_t Unnamed = 0x0000;
-    } // namespace BlockMapStatus
+        static constexpr uint16_t Unnamed = 0x0000;
+    };
 
 #pragma pack(push, 1)
     struct FlashFileSystemEntry {
@@ -153,4 +153,4 @@ namespace gxbuild3::NAND {
         [[nodiscard]] const FlashFileSystemEntry* find_entry(std::string_view filename) const;
     };
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

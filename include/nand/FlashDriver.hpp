@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     struct BlockMetadata {
         uint16_t logical_block_id = 0;
@@ -25,18 +25,18 @@ namespace gxbuild3::NAND {
     // as type 0x00 with sequence 0, as real 16 MB dumps and xeBuild do. The big constants
     // were derived byte-for-byte from retail and xeBuild big-block references, whose
     // filesystem the stock kernel only mounts when these values are present.
-    namespace FlashFsMetadata {
-        inline constexpr uint8_t kRootTypeSmall = 0x30;
-        inline constexpr uint8_t kRootTypeBig = 0x2C;
-        inline constexpr uint8_t kDataTypeSmall = 0x00;
-        inline constexpr uint8_t kDataTypeBig = 0x2A;
-        inline constexpr uint16_t kBigFsSize = 0x2006;
+    struct FlashFsMetadata {
+        static constexpr uint8_t kRootTypeSmall = 0x30;
+        static constexpr uint8_t kRootTypeBig = 0x2C;
+        static constexpr uint8_t kDataTypeSmall = 0x00;
+        static constexpr uint8_t kDataTypeBig = 0x2A;
+        static constexpr uint16_t kBigFsSize = 0x2006;
         // The stamp of the larger filesystem a big-block devkit image takes: spare byte 7
         // states a 0x10-block system area and byte 8 the filesystem's 0xC00 blocks over 32
         // (xeBuild 1.21 devkit jasperbb).
-        inline constexpr uint16_t kBigFsSizeLarger = 0x6010;
-        inline constexpr uint8_t kBigPageCount = 0x04;
-    } // namespace FlashFsMetadata
+        static constexpr uint16_t kBigFsSizeLarger = 0x6010;
+        static constexpr uint8_t kBigPageCount = 0x04;
+    };
 
     struct BlockRange {
         size_t start_block = 0;
@@ -133,4 +133,4 @@ namespace gxbuild3::NAND {
         mutable std::vector<uint8_t> m_offset_scratch;
     };
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

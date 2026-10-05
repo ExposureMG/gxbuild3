@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
 #pragma pack(push, 1)
 
@@ -232,15 +232,15 @@ namespace gxbuild3::NAND {
     std::optional<LooseKeyvault> open_loose_keyvault(std::span<const uint8_t> cpu_key,
                                                      std::span<const uint8_t> data);
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand
 
-using gxbuild3::NAND::CpuKeyResult;
-using gxbuild3::NAND::CpuKeyStatus;
-using gxbuild3::NAND::is_zero_cpu_key;
-using gxbuild3::NAND::Keyvault;
-using gxbuild3::NAND::keyvault_decrypt;
-using gxbuild3::NAND::keyvault_encrypt;
-using gxbuild3::NAND::LooseKeyvault;
-using gxbuild3::NAND::open_loose_keyvault;
-using gxbuild3::NAND::validate_cpu_key;
-using gxbuild3::NAND::validate_cpu_key_hex;
+using gxbuild3::nand::CpuKeyResult;
+using gxbuild3::nand::CpuKeyStatus;
+using gxbuild3::nand::is_zero_cpu_key;
+using gxbuild3::nand::Keyvault;
+using gxbuild3::nand::keyvault_decrypt;
+using gxbuild3::nand::keyvault_encrypt;
+using gxbuild3::nand::LooseKeyvault;
+using gxbuild3::nand::open_loose_keyvault;
+using gxbuild3::nand::validate_cpu_key;
+using gxbuild3::nand::validate_cpu_key_hex;

@@ -23,18 +23,18 @@ namespace {
         std::array<uint8_t, 32> encrypted;
     };
     constexpr Vector vectors[]{
-        {0x0712, {
-            0x78, 0x79, 0xd3, 0xd4, 0xd4, 0xe3, 0xa9, 0x1f,
-            0xa8, 0x5d, 0x1c, 0x88, 0x62, 0x33, 0x61, 0x1b,
-            0xf2, 0x58, 0xb6, 0x8d, 0xf1, 0xff, 0xef, 0x2e,
-            0x4e, 0xb8, 0xde, 0x6f, 0xc8, 0xbc, 0x44, 0xd2,
-        }},
-        {0x1234, {
-            0xff, 0xda, 0xb6, 0x58, 0xd2, 0xb5, 0xf5, 0x1f,
-            0xbf, 0x3b, 0xc1, 0xaf, 0xa2, 0x5e, 0xdb, 0xe6,
-            0x17, 0x90, 0x39, 0x2a, 0x46, 0x2c, 0x67, 0x95,
-            0xb4, 0xf9, 0x7c, 0x3a, 0xe5, 0x46, 0x1d, 0xf2,
-        }},
+        {0x0712,
+         {
+             0x78, 0x79, 0xd3, 0xd4, 0xd4, 0xe3, 0xa9, 0x1f, 0xa8, 0x5d, 0x1c,
+             0x88, 0x62, 0x33, 0x61, 0x1b, 0xf2, 0x58, 0xb6, 0x8d, 0xf1, 0xff,
+             0xef, 0x2e, 0x4e, 0xb8, 0xde, 0x6f, 0xc8, 0xbc, 0x44, 0xd2,
+         }},
+        {0x1234,
+         {
+             0xff, 0xda, 0xb6, 0x58, 0xd2, 0xb5, 0xf5, 0x1f, 0xbf, 0x3b, 0xc1,
+             0xaf, 0xa2, 0x5e, 0xdb, 0xe6, 0x17, 0x90, 0x39, 0x2a, 0x46, 0x2c,
+             0x67, 0x95, 0xb4, 0xf9, 0x7c, 0x3a, 0xe5, 0x46, 0x1d, 0xf2,
+         }},
     };
 
     bool require(bool condition, std::string_view message) {
@@ -52,7 +52,7 @@ namespace {
                    parsed.status == CpuKeyStatus::Valid &&
                        std::equal(parsed.key.begin(), parsed.key.end(), zero.begin(), zero.end()),
                    "the all-zero CPU key validates") &&
-               require(gxbuild3::NAND::cpukey_valid(zero) && is_zero_cpu_key(zero) &&
+               require(gxbuild3::nand::cpukey_valid(zero) && is_zero_cpu_key(zero) &&
                            !is_zero_cpu_key(cpu_key),
                        "the all-zero CPU key is usable and recognised") &&
                require(validate_cpu_key_hex("00000000000000000000000000000001").status ==
@@ -91,8 +91,7 @@ namespace {
                        "a sealed kv.bin is opened") &&
                require(stale && stale->form == Form::StaleNonce && stale->plain == plain,
                        "a kv.bin in the clear under a stale nonce is taken as it stands") &&
-               require(own_nonce && own_nonce->form == Form::Clear &&
-                           own_nonce->plain == canonical,
+               require(own_nonce && own_nonce->form == Form::Clear && own_nonce->plain == canonical,
                        "a kv.bin in the clear under its own nonce is taken as it stands") &&
                require(bare && bare->form == Form::Clear && bare->plain == zero_nonce,
                        "a 0x3FF0 kv.bin gets sixteen zero bytes in front") &&
@@ -119,8 +118,8 @@ int main() {
         }
         try {
             const auto encrypted = keyvault_encrypt(cpu_key, plaintext, vector.version);
-            if (!std::equal(encrypted.begin(), encrypted.end(),
-                            vector.encrypted.begin(), vector.encrypted.end())) {
+            if (!std::equal(encrypted.begin(), encrypted.end(), vector.encrypted.begin(),
+                            vector.encrypted.end())) {
                 std::cerr << "FAIL: encryption must include the big-endian version\n";
                 passed = false;
             }
@@ -129,7 +128,7 @@ int main() {
                 passed = false;
             }
             try {
-                (void)keyvault_decrypt(cpu_key, vector.encrypted, vector.version ^ 1);
+                (void) keyvault_decrypt(cpu_key, vector.encrypted, vector.version ^ 1);
                 std::cerr << "FAIL: wrong version must fail authentication\n";
                 passed = false;
             } catch (const std::runtime_error& error) {

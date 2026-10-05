@@ -7,12 +7,13 @@
 #include <string>
 #include <vector>
 
-using namespace gxbuild3::NAND;
+using namespace gxbuild3::nand;
 using Bytes = std::vector<uint8_t>;
 
 namespace {
     bool check(bool condition, const char* message) {
-        if (!condition) std::cerr << "FAIL: " << message << '\n';
+        if (!condition)
+            std::cerr << "FAIL: " << message << '\n';
         return condition;
     }
 
@@ -54,9 +55,11 @@ namespace {
         FlashFileSystem fs;
         if (!check(fs.load(driver, 380), "independent big-block root loads") ||
             !check(fs.get_file("secdata.bin") == expected,
-                   "big-block file chains use 16 KiB cluster addresses and lengths")) return false;
+                   "big-block file chains use 16 KiB cluster addresses and lengths"))
+            return false;
         put16(root, map_offset(988), BlockMapStatus::EndOfChain);
-        if (!driver.write_block(380, root)) return false;
+        if (!driver.write_block(380, root))
+            return false;
         FlashFileSystem truncated;
         return check(!truncated.load(driver, 380),
                      "a truncated chain must not be cached as a successfully read file");
@@ -79,15 +82,16 @@ namespace {
             !check(!fs.set_root_block(first_entry->block_number / 8),
                    "root cannot overwrite an occupied physical block") ||
             !check(fs.reserve_blocks(200, 1), "physical block reservation succeeds") ||
-            !check(std::all_of(fs.blockmap().begin() + 200 * 8,
-                               fs.blockmap().begin() + 201 * 8,
+            !check(std::all_of(fs.blockmap().begin() + 200 * 8, fs.blockmap().begin() + 201 * 8,
                                [](uint16_t value) { return value == BlockMapStatus::Reserved; }),
                    "physical reservation covers all eight clusters") ||
             !check(fs.set_root_block(350) && fs.is_block_free(380) && !fs.is_block_free(350),
-                   "root relocation reserves and releases whole erase blocks")) return false;
+                   "root relocation reserves and releases whole erase blocks"))
+            return false;
         if (!check(fs.get_chain(first_entry->block_number).size() == 2,
                    "a 16 KiB plus three byte file requires two clusters") ||
-            !check(fs.save(), "big-block files save")) return false;
+            !check(fs.save(), "big-block files save"))
+            return false;
         const auto first_address = static_cast<size_t>(first_entry->block_number) * 0x4000;
         const auto second_address = static_cast<size_t>(second_entry->block_number) * 0x4000;
         return check(driver.read_clean(first_address, first.size()) == first,
@@ -485,7 +489,7 @@ namespace {
                check(padding_pages, "its padding pages keep erased fields") &&
                check(long_pages, "a longer file's last cluster carries its spare on every page");
     }
-}
+} // namespace
 
 int main() {
     bool passed = test_load_independent_big_block_layout();

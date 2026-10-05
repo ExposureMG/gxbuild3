@@ -25,7 +25,7 @@
 #include <string>
 #include <vector>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     struct CbSection {
         BootloaderCb cb_or_A;
@@ -132,4 +132,4 @@ namespace gxbuild3::NAND {
     using mobile_data = MobileData;
     using flash_image = FlashImage;
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

@@ -30,12 +30,12 @@
 #include <utility>
 #include <vector>
 
-using gxbuild3::NAND::BlockMetadata;
-using gxbuild3::NAND::Driver;
-using gxbuild3::NAND::FlashImage;
-using gxbuild3::NAND::Keyvault;
-using gxbuild3::NAND::MobileData;
-using gxbuild3::NAND::Smc;
+using gxbuild3::nand::BlockMetadata;
+using gxbuild3::nand::Driver;
+using gxbuild3::nand::FlashImage;
+using gxbuild3::nand::Keyvault;
+using gxbuild3::nand::MobileData;
+using gxbuild3::nand::Smc;
 
 namespace {
 
@@ -57,8 +57,8 @@ namespace {
                 candidate[bit / 8] |= static_cast<uint8_t>(1U << (bit % 8));
             }
             XeCryptUidEccEncode(candidate.data());
-            if (!gxbuild3::NAND::is_zero_cpu_key(candidate) &&
-                gxbuild3::NAND::cpukey_valid(candidate)) {
+            if (!gxbuild3::nand::is_zero_cpu_key(candidate) &&
+                gxbuild3::nand::cpukey_valid(candidate)) {
                 return candidate;
             }
         }
@@ -71,7 +71,7 @@ namespace {
             candidate[bit / 8] |= static_cast<uint8_t>(1U << (bit % 8));
         }
         XeCryptUidEccEncode(candidate.data());
-        if (gxbuild3::NAND::cpukey_valid(candidate) &&
+        if (gxbuild3::nand::cpukey_valid(candidate) &&
             !std::equal(candidate.begin(), candidate.end(), reference.begin(), reference.end())) {
             return candidate;
         }
@@ -690,7 +690,7 @@ namespace {
         auto cygnos_smc = make_smc(0x11);
         const Bytes cygnos_mark{0x78, 0xBA, 0xB6};
         std::copy(cygnos_mark.begin(), cygnos_mark.end(), cygnos_smc.begin() + 0x180);
-        const auto sealed = RunBuild(jtag_input(gxbuild3::NAND::smc_encrypt(cygnos_smc)));
+        const auto sealed = RunBuild(jtag_input(gxbuild3::nand::smc_encrypt(cygnos_smc)));
         auto retail_input = fresh_input(ImageType::SmallBlock);
         retail_input.build_type = BuildType::Retail;
         const auto retail = RunBuild(retail_input);
@@ -1793,7 +1793,7 @@ namespace {
     // keyvault's.
     Bytes clear_extended(const Input& input, uint8_t fill) {
         const auto& cpu_key = input.metadata.cpu_key;
-        Bytes plain(gxbuild3::NAND::kExtendedSize - 0x10, fill);
+        Bytes plain(gxbuild3::nand::kExtendedSize - 0x10, fill);
         std::copy_n(input.metadata.keyvault->begin() + 0x10, 8, plain.begin());
         const uint8_t tail[2] = {0x07, 0x12};
         uint8_t digest[20]{};
@@ -1807,7 +1807,7 @@ namespace {
     // A secdata.bin in the clear behind the nonce its plaintext derives.
     Bytes clear_secdata(const Input& input, uint8_t fill) {
         const auto& cpu_key = input.metadata.cpu_key;
-        Bytes plain(gxbuild3::NAND::kSecdataSize - 0x10, fill);
+        Bytes plain(gxbuild3::nand::kSecdataSize - 0x10, fill);
         uint8_t digest[20]{};
         ExCryptHmacSha(cpu_key.data(), 16, plain.data(), static_cast<uint32_t>(plain.size()),
                        nullptr, 0, nullptr, 0, digest, sizeof(digest));
@@ -1842,7 +1842,7 @@ namespace {
         const auto* first_secdata = extracted ? file(*extracted, "secdata.bin") : nullptr;
         if (!require(extracted && file(*extracted, "extended.bin") &&
                          *file(*extracted, "extended.bin") == extended && first_secdata &&
-                         gxbuild3::NAND::secdata_opened(*first_secdata, cpu_key) &&
+                         gxbuild3::nand::secdata_opened(*first_secdata, cpu_key) &&
                          std::equal(secdata.begin() + 0x10, secdata.begin() + 0x18,
                                     first_secdata->begin() + 0x10),
                      "extraction returns plaintext secure FlashFS files")) {
@@ -1858,7 +1858,7 @@ namespace {
         return require(
             roundtrip && file(*roundtrip, "extended.bin") &&
                 *file(*roundtrip, "extended.bin") == extended && second_secdata &&
-                gxbuild3::NAND::secdata_opened(*second_secdata, cpu_key) &&
+                gxbuild3::nand::secdata_opened(*second_secdata, cpu_key) &&
                 std::equal(secdata.begin() + 0x10, secdata.begin() + 0x18,
                            second_secdata->begin() + 0x10) &&
                 std::equal(secdata.begin() + 0x28, secdata.end(), second_secdata->begin() + 0x28),
@@ -1884,12 +1884,12 @@ namespace {
         const auto& cpu_key = input.metadata.cpu_key;
         input.metadata.cf_ldv = 9;
         const auto clear_crl = clear_signed_record("CRLP", 0xA00);
-        const gxbuild3::NAND::CrlSealing own_sealing{
+        const gxbuild3::nand::CrlSealing own_sealing{
             {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD,
              0xAE, 0xAF},
             {0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
              0x11, 0x12}};
-        const auto own_crl = gxbuild3::NAND::reseal_crl(clear_crl, cpu_key, own_sealing, {0, 3});
+        const auto own_crl = gxbuild3::nand::reseal_crl(clear_crl, cpu_key, own_sealing, {0, 3});
         if (!require(own_crl.has_value(), "the console's crl.bin fixture seals")) {
             return false;
         }
@@ -1930,7 +1930,7 @@ namespace {
         if (!require(crl && opened_extended && sealed_fcrt, "the three files are in the image")) {
             return false;
         }
-        const auto sealing = gxbuild3::NAND::crl_sealing(*crl, cpu_key);
+        const auto sealing = gxbuild3::nand::crl_sealing(*crl, cpu_key);
         alignas(16) EXCRYPT_AES_STATE state{};
         ExCryptAesKey(&state, own_sealing.file_key.data());
         auto feed = own_sealing.iv;
@@ -1953,7 +1953,7 @@ namespace {
                require(extracted->metadata.console_secured_files.size() == 1 &&
                            extracted->metadata.console_secured_files.front().second == *crl,
                        "extraction keeps the console's own crl.bin") &&
-               require(gxbuild3::NAND::extended_opened(*opened_extended, cpu_key),
+               require(gxbuild3::nand::extended_opened(*opened_extended, cpu_key),
                        "extended.bin carries the nonce its plaintext derives") &&
                require(std::equal(keyvault.begin() + 0x10, keyvault.begin() + 0x18,
                                   opened_extended->begin() + 0x10),
@@ -2094,10 +2094,10 @@ namespace {
         FlashImage image{};
         image.flash_driver = Driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
         const size_t limit = image.flash_driver.data_block_limit();
-        gxbuild3::NAND::FlashFileSystem filesystem{};
+        gxbuild3::nand::FlashFileSystem filesystem{};
         filesystem.set_driver(&image.flash_driver);
         if (!require(filesystem.format(image.flash_driver.block_count(),
-                                       gxbuild3::NAND::FlashFileSystem::kDeferRoot) &&
+                                       gxbuild3::nand::FlashFileSystem::kDeferRoot) &&
                          filesystem.reserve_blocks(0, limit),
                      "a FlashFS holding every data block formats")) {
             return false;
@@ -2667,8 +2667,8 @@ namespace {
                        "the zero-key CF states no pairing and LDV 0") &&
                require(extracted && extracted->metadata.keyvault == input.metadata.keyvault,
                        "the keyvault is sealed under the zero key") &&
-               require(secdata && secdata->size() == gxbuild3::NAND::kSecdataSize &&
-                           gxbuild3::NAND::secdata_opened(*secdata, input.metadata.cpu_key) &&
+               require(secdata && secdata->size() == gxbuild3::nand::kSecdataSize &&
+                           gxbuild3::nand::secdata_opened(*secdata, input.metadata.cpu_key) &&
                            (*secdata)[0x19] == 0,
                        "the made-up secdata.bin states LDV 0");
     }
@@ -3310,7 +3310,7 @@ namespace {
         const auto keyvault = *input.metadata.keyvault;
         input.metadata.cf_ldv = 9;
         constexpr int64_t kSeconds = 1791105722;
-        const auto stamp = gxbuild3::NAND::secured_file_stamp(kSeconds);
+        const auto stamp = gxbuild3::nand::secured_file_stamp(kSeconds);
         const auto build_and_open = [&](const Input& build) -> std::optional<Input> {
             set_source_date_epoch("1791105722");
             const auto image = RunBuild(build);
@@ -3334,15 +3334,15 @@ namespace {
                                [](uint8_t value) { return value == 0; });
         };
         const auto clean_extended_file = [&](const Bytes* data) {
-            return data && data->size() == gxbuild3::NAND::kExtendedSize &&
-                   gxbuild3::NAND::extended_opened(*data, cpu_key) &&
+            return data && data->size() == gxbuild3::nand::kExtendedSize &&
+                   gxbuild3::nand::extended_opened(*data, cpu_key) &&
                    std::equal(keyvault.begin() + 0x10, keyvault.begin() + 0x18,
                               data->begin() + 0x10) &&
                    zero_from(*data, 0x18);
         };
         const auto clean_secdata_file = [&](const Bytes* data) {
-            return data && data->size() == gxbuild3::NAND::kSecdataSize &&
-                   gxbuild3::NAND::secdata_opened(*data, cpu_key) && (*data)[0x18] == 0x01 &&
+            return data && data->size() == gxbuild3::nand::kSecdataSize &&
+                   gxbuild3::nand::secdata_opened(*data, cpu_key) && (*data)[0x18] == 0x01 &&
                    (*data)[0x19] == 9 &&
                    std::all_of(data->begin() + 0x1A, data->begin() + 0x20,
                                [](uint8_t value) { return value == 0; }) &&
@@ -3366,13 +3366,13 @@ namespace {
 
         // An extended.bin that opens under no key and the console's own secdata.bin that does
         // not open are made up clean; another secdata.bin that does not open stands.
-        const Bytes unopened_secdata(gxbuild3::NAND::kSecdataSize, 0x31);
+        const Bytes unopened_secdata(gxbuild3::nand::kSecdataSize, 0x31);
         input.metadata.console_secured_files = {{"secdata.bin", unopened_secdata}};
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
-            {"extended.bin", Bytes(gxbuild3::NAND::kExtendedSize, 0x42)},
+            {"extended.bin", Bytes(gxbuild3::nand::kExtendedSize, 0x42)},
             {"secdata.bin", unopened_secdata}};
         const auto unopened = build_and_open(input);
-        input.flashfs_sec->back().second = Bytes(gxbuild3::NAND::kSecdataSize, 0x32);
+        input.flashfs_sec->back().second = Bytes(gxbuild3::nand::kSecdataSize, 0x32);
         const auto supplied_unopened = build_and_open(input);
 
         return require(clean_extended_file(file(wrong_length, "extended.bin")) &&
@@ -3390,7 +3390,7 @@ namespace {
                        "up clean") &&
                require(file(supplied_unopened, "secdata.bin") &&
                            *file(supplied_unopened, "secdata.bin") ==
-                               Bytes(gxbuild3::NAND::kSecdataSize, 0x32),
+                               Bytes(gxbuild3::nand::kSecdataSize, 0x32),
                        "a supplied secdata.bin that does not open is written as it stands");
     }
 
@@ -3400,7 +3400,7 @@ namespace {
     // table states the root as itself, the blobs free, the four settings blocks reserved and
     // the remap pool after them as nothing.
     bool test_flashfs_is_laid_as_xebuild_lays_it() {
-        namespace BlockMapStatus = gxbuild3::NAND::BlockMapStatus;
+        using BlockMapStatus = gxbuild3::nand::BlockMapStatus;
         auto input = fresh_input(ImageType::SmallBlock);
         const auto [cf0, ignored_cg0] = valid_system_update(0x51);
         BootloaderCg cg0{};
@@ -3730,7 +3730,7 @@ namespace {
         input.console = ConsoleType::Xenon;
         const auto xenon = RunBuild(input);
         auto custom = xenon ? parse_image(*xenon) : std::nullopt;
-        if (!require(smc && smc->motherboard == gxbuild3::NAND::SmcMotherboard::Xenon,
+        if (!require(smc && smc->motherboard == gxbuild3::nand::SmcMotherboard::Xenon,
                      "header fixture SMC names a Xenon board") ||
             !require(xenon && header_copyright(*xenon) == copyright("2005"),
                      "a fresh Xenon image states 2004-2005") ||
@@ -4020,7 +4020,7 @@ namespace {
     }
 
     bool test_emmc_build_leaves_anchor_tails_and_unused_blocks_erased() {
-        using gxbuild3::NAND::CoronaConfig;
+        using gxbuild3::nand::CoronaConfig;
         const auto built = RunBuild(fresh_input(ImageType::Emmc));
         if (!require(built.has_value() && built->size() == 0x3000000, "an eMMC image builds")) {
             return false;

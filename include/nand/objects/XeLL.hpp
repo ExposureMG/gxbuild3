@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     struct XeLLMetadata {
         std::string version;
@@ -25,4 +25,4 @@ namespace gxbuild3::NAND {
         static std::optional<XeLL> parse(const std::vector<uint8_t>& bytes);
     };
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

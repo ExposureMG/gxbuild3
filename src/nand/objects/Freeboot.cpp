@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <array>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     namespace {
 
@@ -59,4 +59,4 @@ namespace gxbuild3::NAND {
         return out;
     }
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

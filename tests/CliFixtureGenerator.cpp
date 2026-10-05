@@ -20,7 +20,7 @@
 namespace {
 
     using Bytes = std::vector<uint8_t>;
-    using gxbuild3::NAND::Keyvault;
+    using gxbuild3::nand::Keyvault;
 
     constexpr std::array<uint8_t, 16> kCpuKey{
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f, 0x00,
@@ -129,8 +129,8 @@ namespace {
         input.metadata.cpu_key.assign(kCpuKey.begin(), kCpuKey.end());
         input.metadata.smc = Bytes(0x300, 0x61);
         (*input.metadata.smc)[0x100] = 0x10;
-        input.metadata.keyvault = keyvault_decrypt(
-            kCpuKey, keyvault_encrypt(kCpuKey, Bytes(Keyvault::kSize, 0x72)));
+        input.metadata.keyvault =
+            keyvault_decrypt(kCpuKey, keyvault_encrypt(kCpuKey, Bytes(Keyvault::kSize, 0x72)));
         input.bootloaders = bootloaders;
 
         const auto built = RunBuild(input);
@@ -147,7 +147,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "usage: gxbuild3_cli_fixture_generator <fixture-root>\n";
         return 2;
     }
-    if (!gxbuild3::NAND::cpukey_valid(kCpuKey)) {
+    if (!gxbuild3::nand::cpukey_valid(kCpuKey)) {
         std::cerr << "fixture CPU key is invalid\n";
         return 3;
     }

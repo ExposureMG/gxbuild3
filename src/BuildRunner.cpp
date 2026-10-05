@@ -39,7 +39,7 @@
 #include <string_view>
 #include <utility>
 
-using namespace gxbuild3::NAND;
+using namespace gxbuild3::nand;
 
 namespace {
 

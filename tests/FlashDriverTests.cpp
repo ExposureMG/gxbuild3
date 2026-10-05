@@ -16,13 +16,13 @@
 #include <utility>
 #include <vector>
 
-using gxbuild3::NAND::BlockMetadata;
-using gxbuild3::NAND::Driver;
-using gxbuild3::NAND::FlashFileSystem;
-using gxbuild3::NAND::FlashImage;
-using gxbuild3::NAND::Smc;
+using gxbuild3::nand::BlockMetadata;
+using gxbuild3::nand::Driver;
+using gxbuild3::nand::FlashFileSystem;
+using gxbuild3::nand::FlashImage;
+using gxbuild3::nand::Smc;
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     struct FlashFileSystemTestAccess {
         static std::optional<size_t> checked_block_count(size_t bytes_needed,
@@ -31,7 +31,7 @@ namespace gxbuild3::NAND {
         }
     };
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand
 
 static_assert(sizeof(cd_header) == 0x260);
 static_assert(offsetof(cd_header, nonce_6bl) == 0x230);
@@ -240,7 +240,7 @@ namespace {
     // Vectors from xerunner's Anchor.encoded, which was measured on images the original
     // built: only the first 0x30 bytes are non-zero.
     bool test_anchor_block_matches_reference_layout() {
-        using gxbuild3::NAND::CoronaConfig;
+        using gxbuild3::nand::CoronaConfig;
         bool ok = true;
 
         CoronaConfig first{};
@@ -290,7 +290,7 @@ namespace {
 
     // The anchor a console believes is decided by its number, not by where it sits.
     bool test_anchor_choice_follows_the_number() {
-        using gxbuild3::NAND::CoronaConfig;
+        using gxbuild3::nand::CoronaConfig;
         CoronaConfig low{};
         low.number = 1;
         low.table = 0x111;
@@ -324,10 +324,10 @@ namespace {
     }
 
     bool test_emmc_write_lays_both_anchors() {
-        using gxbuild3::NAND::CoronaConfig;
+        using gxbuild3::nand::CoronaConfig;
         FlashImage image{};
         image.flash_driver = Driver(Driver::Emmcblock, Driver::DriverMode::Emmc);
-        gxbuild3::NAND::MobileData mobile;
+        gxbuild3::nand::MobileData mobile;
         mobile.x31 = std::vector<uint8_t>(0x800, 0x31);
         mobile.x32 = std::vector<uint8_t>(0x200, 0x32);
         image.mobile_data = mobile;
@@ -490,7 +490,7 @@ namespace {
         for (const auto& shape : kShapes) {
             FlashImage image{};
             image.flash_driver = Driver(shape.size, shape.mode);
-            gxbuild3::NAND::MobileData mobile;
+            gxbuild3::nand::MobileData mobile;
             mobile.x31 = mobile_b;
             mobile.x32 = mobile_c;
             image.mobile_data = mobile;
@@ -558,7 +558,7 @@ namespace {
     bool test_mobile_longer_than_one_copy_is_refused() {
         FlashImage image{};
         image.flash_driver = Driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
-        gxbuild3::NAND::MobileData mobile;
+        gxbuild3::nand::MobileData mobile;
         mobile.x31 = std::vector<uint8_t>(0x4001, 0x31);
         image.mobile_data = mobile;
         return check(image.write().empty(),
@@ -759,21 +759,21 @@ namespace {
     }
 
     bool test_flash_filesystem_block_count_handles_boundaries() {
-        constexpr size_t block_size = gxbuild3::NAND::kCleanBlockSize;
-        const auto max_blocks = gxbuild3::NAND::FlashFileSystemTestAccess::checked_block_count(
+        constexpr size_t block_size = gxbuild3::nand::kCleanBlockSize;
+        const auto max_blocks = gxbuild3::nand::FlashFileSystemTestAccess::checked_block_count(
             std::numeric_limits<size_t>::max(), block_size);
         return check(max_blocks.has_value() && *max_blocks != 1,
                      "FlashFS SIZE_MAX allocation must not wrap into one block") &&
-               check(gxbuild3::NAND::FlashFileSystemTestAccess::checked_block_count(
+               check(gxbuild3::nand::FlashFileSystemTestAccess::checked_block_count(
                          0, block_size) == std::optional<size_t>{1},
                      "FlashFS zero-length allocation must use one block") &&
-               check(gxbuild3::NAND::FlashFileSystemTestAccess::checked_block_count(
+               check(gxbuild3::nand::FlashFileSystemTestAccess::checked_block_count(
                          block_size * 2, block_size) == std::optional<size_t>{2},
                      "FlashFS exact multiples must use the exact block count") &&
-               check(gxbuild3::NAND::FlashFileSystemTestAccess::checked_block_count(
+               check(gxbuild3::nand::FlashFileSystemTestAccess::checked_block_count(
                          block_size * 2 + 1, block_size) == std::optional<size_t>{3},
                      "FlashFS one-over multiples must round up one block") &&
-               check(!gxbuild3::NAND::FlashFileSystemTestAccess::checked_block_count(1, 0)
+               check(!gxbuild3::nand::FlashFileSystemTestAccess::checked_block_count(1, 0)
                           .has_value(),
                      "FlashFS must reject a zero clean block size");
     }

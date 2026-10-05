@@ -8,7 +8,7 @@
 #include <cstring>
 #include <string_view>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     namespace {
 
@@ -509,4 +509,4 @@ namespace gxbuild3::NAND {
         return head;
     }
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand
