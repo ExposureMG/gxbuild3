@@ -1,3 +1,5 @@
+#include "PackageCommon.hpp"
+
 #include <BlockParser.hpp>
 #include <Commons.hpp>
 #include <Endian.hpp>
@@ -5,7 +7,6 @@
 #include <HashVerifier.hpp>
 #include <algorithm>
 #include <format>
-#include <fstream>
 #include <stdexcept>
 
 namespace stfs {
@@ -169,15 +170,9 @@ namespace stfs {
                            std::uint32_t header_size, const std::filesystem::path& output_path,
                            bool verify, const std::array<std::byte, 0x14>* top_hash,
                            std::uint32_t total_blocks) {
-        auto data = extractFile(package, entry, magic, header_size, verify, top_hash, total_blocks);
-
-        std::ofstream out(output_path, std::ios::binary);
-        if (!out) {
-            throw std::runtime_error("Cannot open output file: " + output_path.string());
-        }
-
-        out.write(reinterpret_cast<const char*>(data.data()),
-                  static_cast<std::streamsize>(data.data() != nullptr ? data.size() : 0));
+        const auto data =
+            extractFile(package, entry, magic, header_size, verify, top_hash, total_blocks);
+        detail::writeFile(output_path, data);
     }
 
 } // namespace stfs

@@ -2,6 +2,7 @@
 
 #include <FileExtractor.hpp>
 #include <cstdint>
+#include <fstream>
 #include <stdexcept>
 
 namespace stfs::detail {
@@ -33,6 +34,22 @@ namespace stfs::detail {
             table_entry.blocks_allocated * static_cast<std::uint32_t>(kBlockSize);
 
         return extractFile(package, table_entry, Magic::PIRS, header_size);
+    }
+
+    void writeFile(const std::filesystem::path& path, std::span<const std::byte> data) {
+        std::ofstream out(path, std::ios::binary);
+        if (!out) {
+            throw std::runtime_error("Cannot open output file: " + path.string());
+        }
+
+        if (!data.empty()) {
+            out.write(reinterpret_cast<const char*>(data.data()),
+                      static_cast<std::streamsize>(data.size()));
+        }
+        out.close();
+        if (!out) {
+            throw std::runtime_error("Failed to write output file: " + path.string());
+        }
     }
 
     std::vector<std::filesystem::path> buildEntryPaths(const std::vector<FileEntry>& entries) {

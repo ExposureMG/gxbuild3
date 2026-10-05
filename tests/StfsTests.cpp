@@ -556,6 +556,33 @@ namespace {
                 "system update names are accepted");
     }
 
+    // --- Writing ---------------------------------------------------------------------------
+
+    void test_write_failure_throws() {
+        const fs::path full = "/dev/full";
+        if (!fs::exists(full)) {
+            std::cout << "  (skipped: no /dev/full)\n";
+            return;
+        }
+        const auto bytes = make_package({{"a.bin", pattern(10, 1)}});
+
+        const auto package = stfs::Package::fromData(bytes);
+        require_throws([&] { package.extractFileToDisk(package.files().at(0), full); },
+                       "Package::extractFileToDisk reports a failed write");
+
+        // StfsContainer::extractAll writing through a planted link to /dev/full.
+        TempDir dir;
+        fs::create_directories(dir.root / "out");
+        fs::create_symlink(full, dir.root / "out" / "a.bin");
+        const Stfs::StfsContainer container{bytes};
+        require_throws([&] { container.extractAll(dir.root / "out"); },
+                       "StfsContainer::extractAll reports a failed write");
+
+        require_throws(
+            [&] { package.extractFileToDisk(package.files().at(0), dir.root / "no/dir/x"); },
+            "an unopenable output path is reported");
+    }
+
 } // namespace
 
 int main() {
@@ -584,6 +611,7 @@ int main() {
         {"name_length beyond field rejected", test_name_length_beyond_field_rejected},
         {"nameless entry ends listing", test_nameless_entry_ends_listing},
         {"entry name contents", test_entry_name_contents},
+        {"write failure throws", test_write_failure_throws},
     };
     int failed = 0;
     for (const auto& [name, test] : tests) {

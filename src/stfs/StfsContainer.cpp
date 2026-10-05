@@ -10,7 +10,6 @@
 #include <MetadataParser.hpp>
 #include <algorithm>
 #include <cctype>
-#include <fstream>
 #include <stdexcept>
 #include <string_view>
 #include <variant>
@@ -60,16 +59,6 @@ namespace Stfs {
                 name.erase(0, prefix.size());
             }
             return name;
-        }
-
-        void writeFile(const std::filesystem::path& path, std::span<const std::byte> data) {
-            std::ofstream out(path, std::ios::binary);
-            if (!out) {
-                throw std::runtime_error("Cannot open output file: " + path.string());
-            }
-
-            out.write(reinterpret_cast<const char*>(data.data()),
-                      static_cast<std::streamsize>(data.size()));
         }
 
     } // namespace
@@ -157,7 +146,7 @@ namespace Stfs {
 
             std::filesystem::create_directories(full_path.parent_path());
             const auto file_data = stfs::extractFile(data_, entry, stfs::Magic::PIRS, header_size_);
-            writeFile(full_path, file_data);
+            stfs::detail::writeFile(full_path, file_data);
         }
     }
 

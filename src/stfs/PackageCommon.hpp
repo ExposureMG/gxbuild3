@@ -16,6 +16,9 @@ namespace stfs::detail {
                                                        std::uint32_t header_size,
                                                        const StfsVolumeDescriptor& descriptor);
 
+    // Writes `data` to `path`, throwing if the file cannot be opened, written or closed.
+    void writeFile(const std::filesystem::path& path, std::span<const std::byte> data);
+
     // Relative path of every file-table entry, built from the path_indicator links. A parent
     // must precede its child in the table, which also rules out cycles.
     [[nodiscard]] std::vector<std::filesystem::path>
