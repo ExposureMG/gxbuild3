@@ -163,6 +163,19 @@ namespace {
         return package;
     }
 
+    void write_entry(Bytes& bytes, std::size_t offset, std::string_view name, std::uint8_t flags,
+                     std::uint32_t blocks, std::uint32_t start, std::uint32_t size) {
+        std::fill_n(bytes.begin() + static_cast<std::ptrdiff_t>(offset), 0x40, std::byte{0});
+        std::copy_n(reinterpret_cast<const std::byte*>(name.data()), name.size(),
+                    bytes.begin() + static_cast<std::ptrdiff_t>(offset));
+        bytes[offset + 0x28] = static_cast<std::byte>(flags | name.size());
+        put_le(bytes, offset + 0x29, blocks, 3);
+        put_le(bytes, offset + 0x2C, blocks, 3);
+        put_le(bytes, offset + 0x2F, start, 3);
+        put_be(bytes, offset + 0x32, 0xFFFF, 2);
+        put_be(bytes, offset + 0x34, size, 4);
+    }
+
     Bytes pattern(std::size_t size, std::uint8_t seed) {
         Bytes data(size);
         for (std::size_t i = 0; i < size; ++i)
@@ -400,6 +413,65 @@ namespace {
                        "a consecutive file larger than the package is rejected");
     }
 
+    // --- File table and volume descriptor --------------------------------------------------
+
+    void test_file_table_follows_hash_chain() {
+        // Logical block 0 is the first table block; a.bin lives in block 1 and the second table
+        // block is block 2, linked 0 -> 2 through the hash chain.
+        const auto data = pattern(10, 1);
+        auto bytes = make_package({{"a.bin", data}, {"spare", pattern(kBlockSize, 2)}});
+        for (std::size_t i = 1; i < 64; ++i)
+            write_entry(bytes, entry_offset(i), "e" + std::to_string(i), 0x40, 0, 0, 0);
+        std::fill_n(bytes.begin() + static_cast<std::ptrdiff_t>(data_offset(2)), kBlockSize,
+                    std::byte{0});
+        write_entry(bytes, data_offset(2), "second.bin", 0x40, 1, 1, 10);
+        put_le(bytes, kVolumeDescriptor + 0x03, 2, 2);
+        put_be(bytes, hash_offset(0) + 0x15, 2, 3);
+        seal(bytes);
+
+        const auto package = stfs::Package::fromData(bytes);
+        require(package.files().size() == 65 && package.files().back().name == "second.bin",
+                "Package reads the file table through its hash chain");
+        require(package.extractFile(package.files().back(), true) == data,
+                "an entry from the second table block extracts");
+
+        const Stfs::StfsContainer container{bytes};
+        require(container.extractFileByName("second.bin") == data,
+                "StfsContainer reads the same file table");
+    }
+
+    void test_invalid_file_table_descriptor_rejected() {
+        auto empty = make_package({{"a.bin", pattern(10, 1)}});
+        put_le(empty, kVolumeDescriptor + 0x03, 0, 2);
+        require_throws([&] { (void) stfs::Package::fromData(empty); },
+                       "Package rejects a zero file table block count");
+
+        auto negative = make_package({{"a.bin", pattern(10, 1)}});
+        put_le(negative, kVolumeDescriptor + 0x03, 0x8000, 2);
+        require_throws([&] { (void) stfs::Package::fromData(negative); },
+                       "Package rejects a negative file table block count");
+    }
+
+    void test_short_file_table_chain_rejected() {
+        auto bytes = make_package({{"a.bin", pattern(10, 1)}});
+        put_le(bytes, kVolumeDescriptor + 0x03, 2, 2); // claims two blocks, chain has one
+        require_throws([&] { (void) stfs::Package::fromData(bytes); },
+                       "a file table chain shorter than its block count is rejected");
+    }
+
+    void test_writable_layout_rejected() {
+        auto bytes = make_package({{"a.bin", pattern(10, 1)}});
+        bytes[kVolumeDescriptor + 0x02] = std::byte{0x00}; // block_separation bit 0 clear
+        require_throws([&] { (void) stfs::Package::fromData(bytes); },
+                       "Package rejects block_separation bit 0 clear");
+        require_throws([&] { const Stfs::StfsContainer container{bytes}; },
+                       "StfsContainer rejects block_separation bit 0 clear");
+
+        bytes[kVolumeDescriptor + 0x02] = std::byte{0x03};
+        require(stfs::Package::fromData(bytes).files().size() == 1,
+                "other block_separation bits do not matter");
+    }
+
 } // namespace
 
 int main() {
@@ -420,6 +492,10 @@ int main() {
         {"invalid hash status message is hex", test_invalid_hash_status_message_is_hex},
         {"consecutive file ignores hash chain", test_consecutive_file_ignores_hash_chain},
         {"consecutive file bounds", test_consecutive_file_bounds},
+        {"file table follows hash chain", test_file_table_follows_hash_chain},
+        {"invalid file table descriptor rejected", test_invalid_file_table_descriptor_rejected},
+        {"short file table chain rejected", test_short_file_table_chain_rejected},
+        {"writable layout rejected", test_writable_layout_rejected},
     };
     int failed = 0;
     for (const auto& [name, test] : tests) {

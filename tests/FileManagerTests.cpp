@@ -44,6 +44,7 @@ namespace {
         std::copy_n("PIRS", 4, package.begin());
         be32(package, 0x340, 0xA000);
         package[0x379] = 0x24;
+        package[0x37B] = 1; // block_separation: read-only layout
         package[0x37C] = 1; // file table block count (little endian)
         for (size_t block = 0; block <= files.size(); ++block) {
             const size_t hash = 0xA000 + block * 0x18;

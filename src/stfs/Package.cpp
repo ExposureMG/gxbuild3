@@ -15,30 +15,6 @@ namespace stfs {
 
     namespace {
 
-        constexpr std::size_t kBlockSize = 0x1000;
-
-        std::vector<std::byte> readFileTableData(std::span<const std::byte> package,
-                                                 const StfsVolumeDescriptor& vd,
-                                                 std::uint32_t header_size) {
-            std::vector<std::byte> table_data;
-            table_data.reserve(static_cast<std::size_t>(vd.file_table_block_count) * kBlockSize);
-
-            for (std::int16_t i = 0; i < vd.file_table_block_count; ++i) {
-                auto logical = static_cast<std::uint32_t>(vd.file_table_block_number + i);
-                std::uint32_t data_block = computeDataBlockNumber(logical);
-                std::uint64_t offset = blockToOffset(data_block, header_size);
-
-                if (offset + kBlockSize > package.size()) {
-                    throw std::runtime_error("File table block out of bounds");
-                }
-
-                const auto* ptr = package.data() + offset;
-                table_data.insert(table_data.end(), ptr, ptr + kBlockSize);
-            }
-
-            return table_data;
-        }
-
         std::vector<FileEntry> buildFileListing(std::span<const std::byte> package,
                                                 const Metadata& meta) {
             const auto* vd = std::get_if<StfsVolumeDescriptor>(&meta.volume_descriptor);
@@ -46,7 +22,7 @@ namespace stfs {
                 throw std::runtime_error("SVOD packages are not supported for file listing");
             }
 
-            auto table_data = readFileTableData(package, *vd, meta.header_size);
+            auto table_data = detail::readFileTable(package, meta.header_size, *vd);
             return parseFileListing(table_data);
         }
 

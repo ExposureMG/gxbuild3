@@ -3,10 +3,18 @@
 // Internal helpers shared by stfs::Package and Stfs::StfsContainer.
 
 #include <Commons.hpp>
+#include <cstdint>
 #include <filesystem>
+#include <span>
 #include <vector>
 
 namespace stfs::detail {
+
+    // Reads the file table through its hash chain after checking that the volume descriptor
+    // describes a layout this reader supports.
+    [[nodiscard]] std::vector<std::byte> readFileTable(std::span<const std::byte> package,
+                                                       std::uint32_t header_size,
+                                                       const StfsVolumeDescriptor& descriptor);
 
     // Relative path of every file-table entry, built from the path_indicator links. A parent
     // must precede its child in the table, which also rules out cycles.

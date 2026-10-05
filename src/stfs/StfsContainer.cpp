@@ -18,7 +18,6 @@
 namespace Stfs {
     namespace {
 
-        constexpr std::size_t kBlockSize = 0x1000;
         constexpr std::size_t kBootloaderHeaderSize = 0x10;
 
         [[nodiscard]] std::uint16_t readBe16(std::span<const std::byte> data, std::size_t offset) {
@@ -61,20 +60,6 @@ namespace Stfs {
                 name.erase(0, prefix.size());
             }
             return name;
-        }
-
-        [[nodiscard]] std::vector<std::byte> readFileTable(std::span<const std::byte> data,
-                                                           std::uint32_t header_size,
-                                                           const stfs::StfsVolumeDescriptor& vd) {
-            stfs::FileEntry table_entry{};
-            table_entry.name = "$filetable";
-            table_entry.flags = 0;
-            table_entry.blocks_allocated = static_cast<std::uint32_t>(vd.file_table_block_count);
-            table_entry.blocks_allocated_copy = table_entry.blocks_allocated;
-            table_entry.starting_block = static_cast<std::uint32_t>(vd.file_table_block_number);
-            table_entry.file_size = table_entry.blocks_allocated * kBlockSize;
-
-            return stfs::extractFile(data, table_entry, stfs::Magic::PIRS, header_size);
         }
 
         void writeFile(const std::filesystem::path& path, std::span<const std::byte> data) {
@@ -142,13 +127,9 @@ namespace Stfs {
             throw std::runtime_error("PIRS package is missing an STFS volume descriptor");
         }
 
-        if (vd->file_table_block_count <= 0 || vd->file_table_block_number < 0) {
-            throw std::runtime_error("PIRS package has an invalid file table descriptor");
-        }
-
         header_size_ = metadata.header_size;
 
-        const auto file_table = readFileTable(data_, header_size_, *vd);
+        const auto file_table = stfs::detail::readFileTable(data_, header_size_, *vd);
         entries_ = stfs::parseFileListing(file_table);
         Log::Debug("Opened STFS container ({} entries, header size 0x{:X})", entries_.size(),
                    header_size_);
