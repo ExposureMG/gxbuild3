@@ -200,7 +200,7 @@ namespace gxbuild3::cli {
         find_asset(std::string_view name, const std::vector<std::filesystem::path>& roots,
                    gxbuild3::utils::ScanOptions options = {},
                    gxbuild3::utils::AssetKind kind = gxbuild3::utils::AssetKind::Regular) {
-            auto found = FileManager::FindFileDataDetailed(name, roots, options, kind);
+            auto found = utils::FindFileDataDetailed(name, roots, options, kind);
             if (!found) {
                 return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
                                              found.error().message, found.error().source_path,
@@ -440,7 +440,7 @@ namespace gxbuild3::cli {
                                                  "Resolved asset is not a readable regular file",
                                                  candidate, std::string(filename)));
                 }
-                auto data = Utils::read_file(candidate);
+                auto data = utils::read_file(candidate);
                 if (!data) {
                     return std::unexpected(error(failure_code, "Could not read resolved asset",
                                                  candidate, std::string(filename)));
@@ -484,7 +484,7 @@ namespace gxbuild3::cli {
                                 !std::filesystem::is_regular_file(path, status_error)) {
                                 continue;
                             }
-                            auto data = Utils::read_file(
+                            auto data = utils::read_file(
                                 path, gxbuild3::utils::kXeRsa2048PrivateKeySize + 1);
                             if (data && data->size() == gxbuild3::utils::kXeRsa2048PrivateKeySize &&
                                 gxbuild3::utils::crc32(*data) ==
@@ -531,7 +531,7 @@ namespace gxbuild3::cli {
             for (const auto section_name : {"flashfs", "security"}) {
                 if (const auto* section = ini.get(section_name)) {
                     for (const auto& entry : *section) {
-                        const auto key = lowercase_basename(FileManager::IniAssetName(entry.key));
+                        const auto key = lowercase_basename(utils::IniAssetName(entry.key));
                         if (!key.empty() && key != "none") {
                             ranks.emplace(key, ranks.size());
                         }
@@ -573,7 +573,7 @@ namespace gxbuild3::cli {
             bool listed = false;
             if (const auto* security = ini.get("security")) {
                 listed = std::any_of(security->begin(), security->end(), [](const auto& entry) {
-                    return lowercase_basename(FileManager::IniAssetName(entry.key)) == "fcrt.bin";
+                    return lowercase_basename(utils::IniAssetName(entry.key)) == "fcrt.bin";
                 });
             }
             const auto requirement = keyvault ? gxbuild3::NAND::fcrt_requirement(*keyvault)
@@ -649,7 +649,7 @@ namespace gxbuild3::cli {
         if (args.cpu_key) {
             cpu_key = parse_cpu_key(*args.cpu_key, {});
         } else {
-            auto discovered = FileManager::FindFileDataDetailed("cpukey.txt", roots);
+            auto discovered = utils::FindFileDataDetailed("cpukey.txt", roots);
             if (!discovered) {
                 return std::unexpected(error(ResolutionErrorCode::CpuKeyReadFailed,
                                              discovered.error().message,
@@ -668,13 +668,13 @@ namespace gxbuild3::cli {
         std::optional<std::vector<uint8_t>> nand_data;
         if (args.input_path) {
             nand_path = anchored(working_directory_, *args.input_path);
-            nand_data = Utils::read_file(*nand_path);
+            nand_data = utils::read_file(*nand_path);
             if (!nand_data) {
                 return std::unexpected(error(ResolutionErrorCode::InputReadFailed,
                                              "Could not read explicit donor NAND", *nand_path));
             }
         } else {
-            auto discovered = FileManager::FindFileDataDetailed("nanddump.bin", roots);
+            auto discovered = utils::FindFileDataDetailed("nanddump.bin", roots);
             if (!discovered) {
                 return std::unexpected(error(ResolutionErrorCode::InputReadFailed,
                                              discovered.error().message,
@@ -818,10 +818,10 @@ namespace gxbuild3::cli {
                     }
                     // A file from outside the release is looked up as the INI reader looks it
                     // up: as a loose file under its path in the roots, then by its basename.
-                    const bool outside = FileManager::IniAssetIsOutside(entry.key);
+                    const bool outside = utils::IniAssetIsOutside(entry.key);
                     auto loose_options = scan_options;
                     loose_options.nosu = true;
-                    const auto name = FileManager::IniAssetName(entry.key);
+                    const auto name = utils::IniAssetName(entry.key);
                     auto found = outside ? find_asset(name, roots, loose_options)
                                          : find_asset(entry.key, roots, scan_options);
                     if (outside && found && !*found) {
@@ -848,8 +848,8 @@ namespace gxbuild3::cli {
                 }
             }
 
-            const auto ini_files = FileManager::ReadIniFiles(ini_path, target_section, roots,
-                                                             scan_options, args.build_type);
+            const auto ini_files =
+                utils::ReadIniFiles(ini_path, target_section, roots, scan_options, args.build_type);
             if (!ini_files) {
                 return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
                                              "Could not resolve build INI assets", ini_path,
@@ -1003,7 +1003,7 @@ namespace gxbuild3::cli {
             if (!scan_options.nosusecurity) {
                 if (const auto* security = ini_document->get("security")) {
                     for (const auto& entry : *security) {
-                        const auto key = lowercase_basename(FileManager::IniAssetName(entry.key));
+                        const auto key = lowercase_basename(utils::IniAssetName(entry.key));
                         if ((key == "extended.bin" || key == "secdata.bin") &&
                             !flashfs_positions.contains(key)) {
                             overlay_flashfs(flashfs, {key, {}}, flashfs_positions);

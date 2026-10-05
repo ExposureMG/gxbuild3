@@ -14,9 +14,9 @@
 #include <string_view>
 #include <vector>
 
-namespace fs = std::filesystem;
-
 namespace gxbuild3::utils {
+
+    namespace fs = std::filesystem;
 
     std::string bytes_to_hex(std::span<const uint8_t> bytes);
 
@@ -29,7 +29,3 @@ namespace gxbuild3::utils {
     bool create_directory(const fs::path& path);
 
 } // namespace gxbuild3::utils
-
-namespace Utils {
-    using namespace gxbuild3::utils;
-}

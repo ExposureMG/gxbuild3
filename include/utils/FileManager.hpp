@@ -116,7 +116,3 @@ namespace gxbuild3::utils {
     void ClearStfsCache();
 
 } // namespace gxbuild3::utils
-
-namespace FileManager {
-    using namespace gxbuild3::utils;
-}

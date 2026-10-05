@@ -1857,8 +1857,9 @@ std::optional<AllNandInfo> ExtractAllInfo(std::span<const uint8_t> nand_image,
         info.keyvault.serial_number = std::string(
             kv.data.sz14ConsoleSerialNumber,
             strnlen(kv.data.sz14ConsoleSerialNumber, sizeof(kv.data.sz14ConsoleSerialNumber)));
-        info.keyvault.dvd_key = Utils::bytes_to_hex(kv.data.b1ADvdKey);
-        info.keyvault.console_id_raw = Utils::bytes_to_hex(kv.data.b36ConsoleCertificate.ConsoleId);
+        info.keyvault.dvd_key = gxbuild3::utils::bytes_to_hex(kv.data.b1ADvdKey);
+        info.keyvault.console_id_raw =
+            gxbuild3::utils::bytes_to_hex(kv.data.b36ConsoleCertificate.ConsoleId);
 
         uint64_t cid_val =
             (static_cast<uint64_t>(kv.data.b36ConsoleCertificate.ConsoleId[0]) << 28) |
