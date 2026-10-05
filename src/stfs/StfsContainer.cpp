@@ -1,5 +1,6 @@
 #include "stfs/StfsContainer.hpp"
 
+#include "PackageCommon.hpp"
 #include "utils/Log.hpp"
 
 #include <BlockParser.hpp>
@@ -60,23 +61,6 @@ namespace Stfs {
                 name.erase(0, prefix.size());
             }
             return name;
-        }
-
-        [[nodiscard]] std::filesystem::path safeJoin(const std::filesystem::path& parent,
-                                                     std::string_view child) {
-            std::filesystem::path child_path{std::string{child}};
-            if (child_path.is_absolute()) {
-                throw std::runtime_error("STFS entry uses an absolute path");
-            }
-
-            const auto normalized = child_path.lexically_normal();
-            for (const auto& part : normalized) {
-                if (part == "..") {
-                    throw std::runtime_error("STFS entry escapes the target directory");
-                }
-            }
-
-            return parent / normalized;
         }
 
         [[nodiscard]] std::vector<std::byte> readFileTable(std::span<const std::byte> data,
@@ -170,34 +154,20 @@ namespace Stfs {
                    header_size_);
     }
 
-    std::vector<StfsContainer::EntryView> StfsContainer::buildEntryViews() const {
-        std::vector<EntryView> views;
-        views.reserve(entries_.size());
+    void StfsContainer::extractAll(const std::filesystem::path& target_dir) const {
+        // Validate every destination before writing anything.
+        const auto relative_paths = stfs::detail::buildEntryPaths(entries_);
+        std::vector<std::filesystem::path> destinations;
+        destinations.reserve(relative_paths.size());
+        for (const auto& relative : relative_paths) {
+            destinations.push_back(stfs::detail::safeJoin(target_dir, relative));
+        }
+
+        std::filesystem::create_directories(target_dir);
 
         for (std::size_t i = 0; i < entries_.size(); ++i) {
             const auto& entry = entries_[i];
-            std::filesystem::path path{entry.name};
-
-            if (entry.path_indicator >= 0) {
-                const auto parent_index = static_cast<std::size_t>(entry.path_indicator);
-                if (parent_index >= views.size()) {
-                    throw std::runtime_error("STFS file table references an invalid parent index");
-                }
-                path = views[parent_index].path / path;
-            }
-
-            views.push_back(EntryView{i, path.lexically_normal()});
-        }
-
-        return views;
-    }
-
-    void StfsContainer::extractAll(const std::filesystem::path& target_dir) const {
-        std::filesystem::create_directories(target_dir);
-
-        for (const auto& view : buildEntryViews()) {
-            const auto& entry = entries_[view.index];
-            const auto full_path = safeJoin(target_dir, view.path.string());
+            const auto& full_path = destinations[i];
 
             if (entry.isDirectory()) {
                 std::filesystem::create_directories(full_path);

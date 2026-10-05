@@ -52,6 +52,7 @@ set(GXBUILD3_LIB_SOURCES
     src/stfs/HeaderParser.cpp
     src/stfs/MetadataParser.cpp
     src/stfs/Package.cpp
+    src/stfs/PackageCommon.cpp
     src/stfs/StfsContainer.cpp
     src/utils/BigUint.cpp
     src/utils/BuildTime.cpp

@@ -223,6 +223,78 @@ namespace {
         require(header.magic == stfs::Magic::PIRS, "a full package header reads from file");
     }
 
+    // --- Extraction paths ------------------------------------------------------------------
+
+    void test_package_rejects_relative_escape() {
+        TempDir dir;
+        const auto package = stfs::Package::fromData(
+            make_package({{"good.bin", pattern(10, 1)}, {"../escaped", pattern(10, 2)}}));
+        const auto message = thrown_message([&] { package.extractAll(dir.root / "out"); });
+        require(message.find("escapes") != std::string::npos,
+                "a ../ entry name is rejected by Package::extractAll");
+        require(!fs::exists(dir.root / "escaped"), "nothing is written outside output_dir");
+        require(!fs::exists(dir.root / "out" / "good.bin"),
+                "destinations are validated before anything is written");
+
+        const auto nested = stfs::Package::fromData(make_package(
+            {{"sub", {}, true, -1, true}, {"../../escaped", pattern(10, 3), true, 0}}));
+        require_throws([&] { nested.extractAll(dir.root / "out"); },
+                       "a ../ entry under a directory is rejected");
+        require(!fs::exists(dir.root / "escaped"), "nested escape writes nothing outside");
+    }
+
+    void test_package_rejects_absolute_name() {
+        TempDir dir;
+        const auto package =
+            stfs::Package::fromData(make_package({{"/stfs-absolute-escape", pattern(10, 1)}}));
+        const auto message = thrown_message([&] { package.extractAll(dir.root / "out"); });
+        require(message.find("absolute") != std::string::npos,
+                "an absolute entry name is rejected by Package::extractAll");
+        require(!fs::exists("/stfs-absolute-escape"), "nothing is written at the absolute path");
+    }
+
+    void test_container_rejects_escape() {
+        TempDir dir;
+        const auto bytes = make_package({{"../escaped", pattern(10, 2)}});
+        const Stfs::StfsContainer container{bytes};
+        require_throws([&] { container.extractAll(dir.root / "out"); },
+                       "StfsContainer rejects a ../ entry name");
+        require(!fs::exists(dir.root / "escaped"), "container writes nothing outside");
+    }
+
+    void test_parent_cycle_rejected() {
+        TempDir dir;
+        // Entry 0 names itself as its parent.
+        const auto self =
+            stfs::Package::fromData(make_package({{"a.bin", pattern(10, 1), true, 0}}));
+        require_throws([&] { self.extractAll(dir.root / "out"); },
+                       "an entry that is its own parent is rejected");
+
+        // Entry 0 refers forward to entry 1, which refers back to entry 0.
+        const auto loop = stfs::Package::fromData(
+            make_package({{"a", {}, true, 1, true}, {"b", {}, true, 0, true}}));
+        require_throws([&] { loop.extractAll(dir.root / "out"); },
+                       "a parent cycle through a later entry is rejected");
+
+        const auto bytes = make_package({{"a", {}, true, 1, true}, {"b", {}, true, 0, true}});
+        const Stfs::StfsContainer container{bytes};
+        require_throws([&] { container.extractAll(dir.root / "out"); },
+                       "StfsContainer rejects a forward parent reference");
+    }
+
+    void test_nested_extraction() {
+        TempDir dir;
+        const auto data = pattern(5000, 9);
+        const auto package = stfs::Package::fromData(
+            make_package({{"sub", {}, true, -1, true}, {"inner.bin", data, true, 0}}));
+        package.extractAll(dir.root / "out", true);
+        std::ifstream in(dir.root / "out" / "sub" / "inner.bin", std::ios::binary);
+        Bytes read(data.size() + 1);
+        in.read(reinterpret_cast<char*>(read.data()), static_cast<std::streamsize>(read.size()));
+        read.resize(static_cast<std::size_t>(in.gcount()));
+        require(read == data, "a nested file extracts with verification");
+    }
+
 } // namespace
 
 int main() {
@@ -230,6 +302,11 @@ int main() {
         {"parseHeader rejects short buffer", test_parse_header_rejects_short_buffer},
         {"readHeaderFromFile requires full header",
          test_read_header_from_file_requires_full_header},
+        {"Package rejects relative escape", test_package_rejects_relative_escape},
+        {"Package rejects absolute name", test_package_rejects_absolute_name},
+        {"StfsContainer rejects escape", test_container_rejects_escape},
+        {"parent cycle rejected", test_parent_cycle_rejected},
+        {"nested extraction", test_nested_extraction},
     };
     int failed = 0;
     for (const auto& [name, test] : tests) {
