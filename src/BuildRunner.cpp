@@ -331,8 +331,8 @@ namespace {
         try {
             bytes.resize(align_16(*required_end), 0);
             XePatchSection xe_section{section.identifier, section.entries};
-            if (!XePatch::ApplyPatchSection(bytes.data(), static_cast<uint32_t>(bytes.size()),
-                                            xe_section)) {
+            if (!gxbuild3::patchers::apply_patch_section(
+                    bytes.data(), static_cast<uint32_t>(bytes.size()), xe_section)) {
                 return std::unexpected(
                     PatchError{"Failed to apply " + std::string(stage_name) + " patch section"});
             }
@@ -904,9 +904,9 @@ BuildResult gxbuild3::run_build(const Input& input) try {
 
         flash_image.smc->decrypt();
 
-        const uint32_t hits = Signature::ApplyPatch(
+        const uint32_t hits = gxbuild3::patchers::apply_signature_patch(
             flash_image.smc->data.data(), static_cast<uint32_t>(flash_image.smc->data.size()),
-            Glitch.addr, Glitch.value);
+            gxbuild3::patchers::Glitch.addr, gxbuild3::patchers::Glitch.value);
 
         if (hits == 0) {
             Log::Warn("SMC reboot patch site not found - "

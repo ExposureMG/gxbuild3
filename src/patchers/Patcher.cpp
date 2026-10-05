@@ -6,10 +6,10 @@
 #include <cstdint>
 #include <cstring>
 
-namespace XePatch {
+namespace gxbuild3::patchers {
 
-    bool ApplyPatch(uint8_t* data, uint32_t dataSize, uint32_t address, uint32_t length,
-                    const uint32_t* patchWords) {
+    bool apply_patch(uint8_t* data, uint32_t dataSize, uint32_t address, uint32_t length,
+                     const uint32_t* patchWords) {
         if (!data || !patchWords) {
             Log::Error("Invalid patch arguments (data={}, words={})", data != nullptr,
                        patchWords != nullptr);
@@ -34,7 +34,7 @@ namespace XePatch {
         return true;
     }
 
-    bool ApplyPatchEntry(uint8_t* data, uint32_t dataSize, const XePatchEntry& entry) {
+    bool apply_patch_entry(uint8_t* data, uint32_t dataSize, const XePatchEntry& entry) {
         if (entry.words.size() < entry.length) {
             Log::Error("Entry word count mismatch (address=0x{:X}, length_words=0x{:X}, "
                        "words_available=0x{:X})",
@@ -42,10 +42,10 @@ namespace XePatch {
             return false;
         }
 
-        return ApplyPatch(data, dataSize, entry.address, entry.length, entry.words.data());
+        return apply_patch(data, dataSize, entry.address, entry.length, entry.words.data());
     }
 
-    bool ApplyPatchSection(uint8_t* data, uint32_t dataSize, const XePatchSection& section) {
+    bool apply_patch_section(uint8_t* data, uint32_t dataSize, const XePatchSection& section) {
         Log::Info("Applying section '{}' with {} entries to buffer 0x{:X} bytes",
                   section.identifier, section.entries.size(), dataSize);
 
@@ -55,7 +55,7 @@ namespace XePatch {
                 "Section '{}' entry {} -> address 0x{:X}, length_words 0x{:X}, length_bytes 0x{:X}",
                 section.identifier, entry_index, entry.address, entry.length, entry.length * 4U);
 
-            if (!ApplyPatchEntry(data, dataSize, entry)) {
+            if (!apply_patch_entry(data, dataSize, entry)) {
                 Log::Error("Section '{}' failed at entry {} (address=0x{:X}, length_words=0x{:X}, "
                            "buffer=0x{:X})",
                            section.identifier, entry_index, entry.address, entry.length, dataSize);
@@ -67,4 +67,4 @@ namespace XePatch {
         return true;
     }
 
-} // namespace XePatch
+} // namespace gxbuild3::patchers

@@ -4,11 +4,11 @@
 
 #include <cstdint>
 
-namespace XePatch {
-    bool ApplyPatch(uint8_t* data, uint32_t dataSize, uint32_t address, uint32_t length,
-                    const uint32_t* patchWords);
+namespace gxbuild3::patchers {
+    bool apply_patch(uint8_t* data, uint32_t dataSize, uint32_t address, uint32_t length,
+                     const uint32_t* patchWords);
 
-    bool ApplyPatchEntry(uint8_t* data, uint32_t dataSize, const XePatchEntry& entry);
+    bool apply_patch_entry(uint8_t* data, uint32_t dataSize, const XePatchEntry& entry);
 
-    bool ApplyPatchSection(uint8_t* data, uint32_t dataSize, const XePatchSection& section);
-} // namespace XePatch
+    bool apply_patch_section(uint8_t* data, uint32_t dataSize, const XePatchSection& section);
+} // namespace gxbuild3::patchers
