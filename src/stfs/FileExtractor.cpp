@@ -78,6 +78,38 @@ namespace stfs {
         return chain;
     }
 
+    namespace {
+
+        // Logical blocks holding a non-empty file. Files flagged as consecutive occupy
+        // starting_block onwards and need not have a usable hash chain; others follow the chain.
+        std::vector<std::uint32_t> fileBlocks(std::span<const std::byte> package,
+                                              const FileEntry& entry, std::uint32_t header_size) {
+            if (!entry.isConsecutiveBlocks()) {
+                return followBlockChain(package, entry.starting_block, header_size);
+            }
+
+            if (std::uint64_t{entry.blocks_allocated} * kBlockSize < entry.file_size) {
+                throw std::runtime_error("File " + entry.name +
+                                         " allocates fewer blocks than its size needs");
+            }
+
+            const std::uint64_t needed =
+                (std::uint64_t{entry.file_size} + kBlockSize - 1) / kBlockSize;
+            if (needed > package.size() / kBlockSize ||
+                std::uint64_t{entry.starting_block} + needed - 1 > kChainTerminator - 1) {
+                throw std::runtime_error("Consecutive blocks of " + entry.name +
+                                         " run past the end of the package");
+            }
+
+            std::vector<std::uint32_t> blocks(static_cast<std::size_t>(needed));
+            for (std::size_t i = 0; i < blocks.size(); ++i) {
+                blocks[i] = entry.starting_block + static_cast<std::uint32_t>(i);
+            }
+            return blocks;
+        }
+
+    } // namespace
+
     std::vector<std::byte> extractFile(std::span<const std::byte> package, const FileEntry& entry,
                                        Magic magic, std::uint32_t header_size, bool verify,
                                        const std::array<std::byte, 0x14>* top_hash,
@@ -94,7 +126,7 @@ namespace stfs {
             return {};
         }
 
-        auto chain = followBlockChain(package, entry.starting_block, header_size);
+        const auto chain = fileBlocks(package, entry, header_size);
 
         std::vector<std::byte> result;
         result.reserve(std::min<std::size_t>(entry.file_size, chain.size() * kBlockSize));
@@ -125,7 +157,7 @@ namespace stfs {
         }
 
         if (result.size() < entry.file_size) {
-            throw std::runtime_error("Block chain of " + entry.name + " ends after " +
+            throw std::runtime_error("Blocks of " + entry.name + " end after " +
                                      std::to_string(result.size()) + " of " +
                                      std::to_string(entry.file_size) + " bytes");
         }

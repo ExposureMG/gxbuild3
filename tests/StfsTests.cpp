@@ -347,13 +347,57 @@ namespace {
     }
 
     void test_invalid_hash_status_message_is_hex() {
-        auto bytes = make_package({{"a.bin", pattern(10, 1)}});
+        auto bytes = make_package({{"a.bin", pattern(10, 1), false}});
         bytes[hash_offset(1) + 0x14] = std::byte{0xAB};
         const auto package = stfs::Package::fromData(bytes);
         const auto message =
             thrown_message([&] { (void) package.extractFile(package.files().at(0)); });
         require(message.find("(0xAB)") != std::string::npos,
                 "the hash entry status is printed in hex");
+    }
+
+    // --- Consecutive files -----------------------------------------------------------------
+
+    void test_consecutive_file_ignores_hash_chain() {
+        const auto data = pattern(0x2800, 6);
+        auto consecutive = make_package({{"a.bin", data, true}});
+        auto chained = make_package({{"a.bin", data, false}});
+        for (auto* bytes : {&consecutive, &chained}) {
+            for (std::uint32_t block = 1; block <= 3; ++block)
+                put_be(*bytes, hash_offset(block) + 0x15, 0xFFFFFF, 3); // break the chain
+            seal(*bytes);
+        }
+
+        const auto package = stfs::Package::fromData(consecutive);
+        require(package.extractFile(package.files().at(0)) == data,
+                "a consecutive file is read from starting_block without its chain");
+        require(package.extractFile(package.files().at(0), true) == data,
+                "a consecutive file still verifies block by block");
+
+        const auto chained_package = stfs::Package::fromData(chained);
+        require_throws([&] { (void) chained_package.extractFile(chained_package.files().at(0)); },
+                       "a non-consecutive file still follows (and trusts) its chain");
+    }
+
+    void test_consecutive_file_bounds() {
+        auto short_allocation = make_package({{"a.bin", pattern(0x2800, 6), true}});
+        put_le(short_allocation, entry_offset(0) + 0x29, 2, 3); // 2 blocks for 0x2800 bytes
+        const auto package = stfs::Package::fromData(short_allocation);
+        require_throws([&] { (void) package.extractFile(package.files().at(0)); },
+                       "blocks_allocated too small for file_size is rejected");
+
+        auto past_end = make_package({{"a.bin", pattern(0x2800, 6), true}});
+        put_le(past_end, entry_offset(0) + 0x2F, 0xFFFFFE, 3);
+        const auto past_end_package = stfs::Package::fromData(past_end);
+        require_throws([&] { (void) past_end_package.extractFile(past_end_package.files().at(0)); },
+                       "consecutive blocks past the last block number are rejected");
+
+        auto huge = make_package({{"a.bin", pattern(0x10, 6), true}});
+        put_le(huge, entry_offset(0) + 0x29, 0xFFFFFF, 3);
+        put_be(huge, entry_offset(0) + 0x34, 0xFFFFFFFF, 4);
+        const auto huge_package = stfs::Package::fromData(huge);
+        require_throws([&] { (void) huge_package.extractFile(huge_package.files().at(0)); },
+                       "a consecutive file larger than the package is rejected");
     }
 
 } // namespace
@@ -374,6 +418,8 @@ int main() {
         {"block offsets are 64-bit", test_block_offsets_are_64_bit},
         {"header_size out of range rejected", test_header_size_out_of_range_rejected},
         {"invalid hash status message is hex", test_invalid_hash_status_message_is_hex},
+        {"consecutive file ignores hash chain", test_consecutive_file_ignores_hash_chain},
+        {"consecutive file bounds", test_consecutive_file_bounds},
     };
     int failed = 0;
     for (const auto& [name, test] : tests) {
