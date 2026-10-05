@@ -37,7 +37,7 @@ namespace gxbuild3::stfs {
 
             HashEntry entry;
             entry.status = static_cast<std::uint8_t>(ptr[0x14]);
-            entry.next_block = readUInt24BE(ptr + 0x15);
+            entry.next_block = read_be24(ptr + 0x15);
 
             constexpr std::uint8_t kStatusUsed = 0x80;
             constexpr std::uint8_t kStatusNewlyAllocated = 0xC0;

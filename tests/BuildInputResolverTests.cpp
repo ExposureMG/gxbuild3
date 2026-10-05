@@ -315,11 +315,11 @@ namespace {
         }
 
         auto resolve(const BuildArgs& args) const {
-            return BuildInputResolver(working_directory).Resolve(args);
+            return BuildInputResolver(working_directory).resolve(args);
         }
 
         auto resolve_foundations(const BuildArgs& args) const {
-            return BuildInputResolver(working_directory).ResolveFoundations(args);
+            return BuildInputResolver(working_directory).resolve_foundations(args);
         }
     };
 
@@ -578,7 +578,7 @@ namespace {
         fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
         fixture.write_binary("first/cd.bin", Bytes{0xCD});
         fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
-        const auto absolute = BuildInputResolver(fixture.working_directory).Resolve(args);
+        const auto absolute = BuildInputResolver(fixture.working_directory).resolve(args);
         return require(absolute && absolute->input.image_type == ImageType::BigBlock &&
                            absolute->output_path == fixture.path("absolute-output.bin"),
                        "absolute explicit NAND and output paths remain absolute");
@@ -633,7 +633,7 @@ namespace {
                                result.error().path == fixture.path("working/malformed.bin"),
                            "malformed supported-size NAND maps to InvalidDonor with provenance");
         } catch (...) {
-            return require(false, "donor parser exceptions must not escape ResolveFoundations");
+            return require(false, "donor parser exceptions must not escape resolve_foundations");
         }
     }
 
@@ -696,7 +696,7 @@ namespace {
         ResolverFixture fixture;
         auto args = fixture.minimum_args();
         args.cpu_key.reset();
-        const auto result = BuildInputResolver(fixture.working_directory).Resolve(args);
+        const auto result = BuildInputResolver(fixture.working_directory).resolve(args);
         return require(!result && result.error().code == ResolutionErrorCode::CpuKeyNotFound,
                        "Resolve exposes foundation failures before Task 7 phases");
     }
@@ -705,7 +705,7 @@ namespace {
         ResolverFixture fixture;
         auto args = fixture.complete_loose_args();
         args.output_path = "nested/result.bin";
-        const auto result = BuildInputResolver(fixture.working_directory).Resolve(args);
+        const auto result = BuildInputResolver(fixture.working_directory).resolve(args);
         return require_resolved(result, "complete output-path fixture resolves") &&
                require(result->output_path == fixture.path("working/nested/result.bin"),
                        "Resolve anchors a relative output path to its working directory");
@@ -1638,7 +1638,7 @@ namespace {
                        "add-ons preserve CLI order and first-root priority") &&
                [&] {
                    const auto merged =
-                       ParseAndMergePatchSet(*result->input.patches, result->input.build_type);
+                       parse_and_merge_patch_set(*result->input.patches, result->input.build_type);
                    if (!require(merged.has_value(), "resolved patches parse and merge")) {
                        return false;
                    }
@@ -1773,7 +1773,7 @@ namespace {
         const auto result = fixture.resolve(args);
         return require(!result && result.error().code == ResolutionErrorCode::InvalidInput &&
                            result.error().message == "SMC is required",
-                       "ValidateInput failure becomes a structured InvalidInput error");
+                       "validate_input failure becomes a structured InvalidInput error");
     }
 
 } // namespace

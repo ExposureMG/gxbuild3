@@ -42,7 +42,7 @@ namespace {
                                                  "nohdmiwait;nolan",
                                                  "-a",
                                                  "demon"};
-        const auto parsed = gxbuild3::cli::ParseCommandLine(argv);
+        const auto parsed = gxbuild3::cli::parse_command_line(argv);
         const auto* args = parsed ? build_args(*parsed) : nullptr;
         return require(args != nullptr, "valid implicit build parses") &&
                require(args->build_type == BuildType::Glitch, "gg normalizes to glitch") &&
@@ -81,7 +81,7 @@ namespace {
                                                                       : "retail:emmc",
                                                      "-d",
                                                      "firmware"};
-            const auto parsed = gxbuild3::cli::ParseCommandLine(argv);
+            const auto parsed = gxbuild3::cli::parse_command_line(argv);
             const auto* args = parsed ? build_args(*parsed) : nullptr;
             if (!require(args != nullptr && args->image_type == expected,
                          "explicit build parses each block type")) {
@@ -114,7 +114,7 @@ namespace {
                                                  "--addon",
                                                  "nolan",
                                                  "--verbose"};
-        const auto parsed = gxbuild3::cli::ParseCommandLine(argv);
+        const auto parsed = gxbuild3::cli::parse_command_line(argv);
         const auto* args = parsed ? build_args(*parsed) : nullptr;
         return require(args != nullptr, "Windows path build parses") &&
                require(args->build_type == BuildType::Glitch, "glitch1 normalizes to glitch") &&
@@ -143,9 +143,9 @@ namespace {
         const std::vector<std::string_view> unsafe_character{"gxbuild",  "-b", "build.ini", "-s",
                                                              "falcon",   "-t", "retail",    "-d",
                                                              "firmware", "-e", "test.alt"};
-        const auto valid_result = gxbuild3::cli::ParseCommandLine(valid);
-        const auto invalid_result = gxbuild3::cli::ParseCommandLine(leading_underscore);
-        const auto unsafe_result = gxbuild3::cli::ParseCommandLine(unsafe_character);
+        const auto valid_result = gxbuild3::cli::parse_command_line(valid);
+        const auto invalid_result = gxbuild3::cli::parse_command_line(leading_underscore);
+        const auto unsafe_result = gxbuild3::cli::parse_command_line(unsafe_character);
         const auto* args = valid_result ? build_args(*valid_result) : nullptr;
         return require(args && args->patch_extension && *args->patch_extension == "test_alt",
                        "patch extension accepts a safe internal underscore") &&
@@ -160,8 +160,8 @@ namespace {
     bool test_help_and_version_bypass_build_validation() {
         const std::vector<std::string_view> help{"gxbuild", "--help"};
         const std::vector<std::string_view> version{"gxbuild", "--version"};
-        const auto help_result = gxbuild3::cli::ParseCommandLine(help);
-        const auto version_result = gxbuild3::cli::ParseCommandLine(version);
+        const auto help_result = gxbuild3::cli::parse_command_line(help);
+        const auto version_result = gxbuild3::cli::parse_command_line(version);
         return require(help_result &&
                            std::holds_alternative<gxbuild3::cli::HelpCommand>(*help_result),
                        "help bypasses build requirements") &&
@@ -224,7 +224,7 @@ namespace {
             {{"gxbuild", "--addon"}, gxbuild3::cli::ParseErrorCode::MissingValue},
         };
         for (const auto& test : cases) {
-            const auto parsed = gxbuild3::cli::ParseCommandLine(test.argv);
+            const auto parsed = gxbuild3::cli::parse_command_line(test.argv);
             if (!require(!parsed && parsed.error().code == test.expected,
                          "invalid command returns the expected parse error")) {
                 return false;
@@ -236,11 +236,11 @@ namespace {
     bool test_section_resolves_console() {
         const std::vector<std::string_view> known{
             "gxbuild", "-b", "_jtag.ini", "-s", "Jasper", "-t", "jtag:psb", "-d", "firmware"};
-        const auto known_result = gxbuild3::cli::ParseCommandLine(known);
+        const auto known_result = gxbuild3::cli::parse_command_line(known);
         const auto* known_args = known_result ? build_args(*known_result) : nullptr;
         const std::vector<std::string_view> unknown{
             "gxbuild", "-b", "_jtag.ini", "-s", "notaconsole", "-t", "jtag:psb", "-d", "firmware"};
-        const auto unknown_result = gxbuild3::cli::ParseCommandLine(unknown);
+        const auto unknown_result = gxbuild3::cli::parse_command_line(unknown);
         const auto* unknown_args = unknown_result ? build_args(*unknown_result) : nullptr;
         return require(known_args != nullptr, "-s jasper parses") &&
                require(known_args->section == "Jasper", "section text is preserved verbatim") &&

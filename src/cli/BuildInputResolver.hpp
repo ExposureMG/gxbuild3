@@ -60,10 +60,10 @@ namespace gxbuild3::cli {
         explicit BuildInputResolver(std::filesystem::path working_directory);
 
         [[nodiscard]] std::expected<ResolvedFoundations, ResolutionError>
-        ResolveFoundations(const BuildArgs& args) const;
+        resolve_foundations(const BuildArgs& args) const;
 
         [[nodiscard]] std::expected<BuildRequest, ResolutionError>
-        Resolve(const BuildArgs& args) const;
+        resolve(const BuildArgs& args) const;
 
       private:
         std::filesystem::path working_directory_;

@@ -774,7 +774,7 @@ namespace gxbuild3::nand {
             std::vector<uint8_t> automatic(8, 0xFF);
             automatic.insert(automatic.end(), inferred_khv.begin(), inferred_khv.end());
             ParsedPatchSet recovered;
-            if (ParsePatchSet(automatic, *build_type, recovered))
+            if (parse_patch_set(automatic, *build_type, recovered))
                 payloads.patchset = std::move(recovered);
         }
         const uint32_t window_base = kJtagWindowOffset;
@@ -1328,7 +1328,7 @@ namespace gxbuild3::nand {
             size_t patch_offset = 0;
             size_t patch_capacity = 0;
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
-                patch_bytes = SerializePatchSet(*payloads.patchset);
+                patch_bytes = serialize_patch_set(*payloads.patchset);
                 patch_offset = window_base + 0x1000;
                 patch_capacity = kJTAGPatchesSize;
             } else {
@@ -1336,7 +1336,7 @@ namespace gxbuild3::nand {
                 if (!khv) {
                     return false;
                 }
-                patch_bytes = SerializeKhvPayload(*khv);
+                patch_bytes = serialize_khv_payload(*khv);
                 patch_offset = glitch_patch_offset;
                 patch_capacity = slot_stride - khv_prefix(*this);
             }
@@ -1546,7 +1546,7 @@ namespace gxbuild3::nand {
             add_range(patchslot_base + slot_stride, slot_stride);
         if (payloads.patchset) {
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
-                add_range(window_base + 0x1000, SerializePatchSet(*payloads.patchset).size());
+                add_range(window_base + 0x1000, serialize_patch_set(*payloads.patchset).size());
             }
         }
         if (is_jtag_patchset) {
@@ -1739,11 +1739,11 @@ namespace gxbuild3::nand {
 
         if (payloads.patchset) {
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
-                const auto patch_bytes = SerializePatchSet(*payloads.patchset);
+                const auto patch_bytes = serialize_patch_set(*payloads.patchset);
                 add_range("JTAG patch payload", window_base + 0x1000, patch_bytes.size());
             } else if (const auto* khv =
                            find_patch_section(*payloads.patchset, PatchSectionTarget::Khv)) {
-                if (SerializeKhvPayload(*khv).size() > slot_stride - khv_prefix(*this))
+                if (serialize_khv_payload(*khv).size() > slot_stride - khv_prefix(*this))
                     return "Glitch KHV payload exceeds its patch-slot region";
                 add_range("Glitch KHV payload", slot1_base + khv_prefix(*this),
                           slot_stride - khv_prefix(*this));

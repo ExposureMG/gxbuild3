@@ -16,7 +16,7 @@ namespace gxbuild3::ini {
         MalformedEntry,
     };
 
-    constexpr std::string_view ParseErrorString(ParseError e) {
+    constexpr std::string_view parse_error_string(ParseError e) {
         switch (e) {
             case ParseError::FileNotFound:
                 return "File not found";
@@ -43,7 +43,7 @@ namespace gxbuild3::ini {
         [[nodiscard]] const Section* get(std::string_view name) const;
     };
 
-    [[nodiscard]] std::expected<Document, ParseError> Parse(std::string_view content);
-    [[nodiscard]] std::expected<Document, ParseError> ParseFile(const std::filesystem::path& path);
+    [[nodiscard]] std::expected<Document, ParseError> parse(std::string_view content);
+    [[nodiscard]] std::expected<Document, ParseError> parse_file(const std::filesystem::path& path);
 
 } // namespace gxbuild3::ini

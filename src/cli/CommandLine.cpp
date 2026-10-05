@@ -95,7 +95,7 @@ namespace gxbuild3::cli {
     } // namespace
 
     std::expected<ParsedCommand, ParseError>
-    ParseCommandLine(std::span<const std::string_view> argv) {
+    parse_command_line(std::span<const std::string_view> argv) {
         BuildArgs args;
         args.output_path = std::filesystem::current_path() / "updflash.bin";
 

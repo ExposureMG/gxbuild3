@@ -49,42 +49,42 @@ namespace {
     bool test_validation_rejects_missing_required_values() {
         auto input = valid_input();
         input.metadata.cpu_key.pop_back();
-        if (!require(ValidateInput(input).error().code == InputErrorCode::InvalidCpuKey,
+        if (!require(validate_input(input).error().code == InputErrorCode::InvalidCpuKey,
                      "a CPU key must contain exactly 16 bytes")) {
             return false;
         }
 
         input = valid_input();
         input.metadata.smc.reset();
-        if (!require(ValidateInput(input).error().code == InputErrorCode::MissingSmc,
+        if (!require(validate_input(input).error().code == InputErrorCode::MissingSmc,
                      "an SMC is required")) {
             return false;
         }
 
         input = valid_input();
         input.metadata.keyvault.reset();
-        if (!require(ValidateInput(input).error().code == InputErrorCode::MissingKeyvault,
+        if (!require(validate_input(input).error().code == InputErrorCode::MissingKeyvault,
                      "a keyvault is required")) {
             return false;
         }
 
         input = valid_input();
         input.bootloaders.cb_or_a.clear();
-        if (!require(ValidateInput(input).error().code == InputErrorCode::MissingCb,
+        if (!require(validate_input(input).error().code == InputErrorCode::MissingCb,
                      "a CB or A bootloader is required")) {
             return false;
         }
 
         input = valid_input();
         input.bootloaders.cd.clear();
-        return require(ValidateInput(input).error().code == InputErrorCode::MissingCd,
+        return require(validate_input(input).error().code == InputErrorCode::MissingCd,
                        "a CD bootloader is required");
     }
 
     bool test_glitch_requires_patchset() {
         auto input = valid_input();
         input.build_type = BuildType::Glitch2;
-        const auto result = ValidateInput(input);
+        const auto result = validate_input(input);
         return require(!result && result.error().code == InputErrorCode::MissingPatchset,
                        "glitch2 requires an automatic patchset");
     }
@@ -92,7 +92,7 @@ namespace {
     bool test_retail_rejects_automatic_patchset() {
         auto input = valid_input();
         input.patches = InputPatches{.automatic = InputPatchFile{"auto", {0x01}}, .addons = {}};
-        const auto result = ValidateInput(input);
+        const auto result = validate_input(input);
         return require(!result && result.error().code == InputErrorCode::UnexpectedPatchset,
                        "retail rejects an automatic patchset");
     }
@@ -103,7 +103,7 @@ namespace {
             input.build_type = build_type;
             input.patches = InputPatches{.automatic = std::nullopt,
                                          .addons = {InputPatchFile{"addon", {0x01}}}};
-            const auto result = ValidateInput(input);
+            const auto result = validate_input(input);
             if (!require(!result && result.error().code == InputErrorCode::UnexpectedPatchset,
                          "retail and devkit reject add-on patch data")) {
                 return false;
@@ -124,20 +124,20 @@ namespace {
         input.payloads = InputPayloads{};
         input.payloads->payload = std::vector<uint8_t>(0x200, 0x00);
         input.payloads->rebooter = std::vector<uint8_t>(0xd40, 0x00);
-        if (!require(ValidateInput(input).has_value(),
+        if (!require(validate_input(input).has_value(),
                      "a 0x200 payload with a 0xd40 rebooter is valid")) {
             return false;
         }
 
         input.payloads->rebooter = std::vector<uint8_t>(0x1000, 0x00);
-        if (!require(ValidateInput(input).has_value(),
+        if (!require(validate_input(input).has_value(),
                      "a rebooter that exactly fills its 0x1000-byte region is valid")) {
             return false;
         }
 
         input.payloads->rebooter = std::vector<uint8_t>(0xd40, 0x00);
         input.payloads->payload = std::vector<uint8_t>(0x100, 0x00);
-        const auto short_payload = ValidateInput(input);
+        const auto short_payload = validate_input(input);
         if (!require(!short_payload &&
                          short_payload.error().code == InputErrorCode::InvalidPayloadSize,
                      "a payload must contain exactly 0x200 bytes")) {
@@ -146,7 +146,7 @@ namespace {
 
         input.payloads->payload = std::vector<uint8_t>(0x200, 0x00);
         input.payloads->rebooter = std::vector<uint8_t>(0x1001, 0x00);
-        const auto oversized = ValidateInput(input);
+        const auto oversized = validate_input(input);
         return require(!oversized && oversized.error().code == InputErrorCode::InvalidRebooterSize,
                        "a rebooter must not exceed its 0x1000-byte region");
     }
@@ -156,13 +156,13 @@ namespace {
         input.metadata.smc_config = std::vector<uint8_t>(0x400, 0x00);
         input.metadata.statistics = std::vector<uint8_t>(0x1000, 0xFF);
         input.metadata.manufacturing = std::vector<uint8_t>(0x1000, 0xFF);
-        if (!require(ValidateInput(input).has_value(),
+        if (!require(validate_input(input).has_value(),
                      "0x400 of settings and 0x1000 of statistics and manufacturing are valid")) {
             return false;
         }
 
         input.metadata.smc_config = std::vector<uint8_t>(0x3FF, 0x00);
-        const auto short_config = ValidateInput(input);
+        const auto short_config = validate_input(input);
         if (!require(!short_config &&
                          short_config.error().code == InputErrorCode::InvalidSettingsBlockSize,
                      "a settings block must contain exactly 0x400 bytes")) {
@@ -171,7 +171,7 @@ namespace {
 
         input.metadata.smc_config.reset();
         input.metadata.manufacturing = std::vector<uint8_t>(0x1001, 0xFF);
-        const auto long_block = ValidateInput(input);
+        const auto long_block = validate_input(input);
         return require(!long_block &&
                            long_block.error().code == InputErrorCode::InvalidSettingsBlockSize,
                        "a manufacturing block must contain exactly 0x1000 bytes");
@@ -189,10 +189,10 @@ namespace {
                      "an unknown stage or a joined list is refused and the earlier value kept")) {
             return false;
         }
-        const auto all = ResolveNoPatch(options.data());
+        const auto all = resolve_no_patch(options.data());
         OptionsArgs legacy;
         legacy.noblpatch = true;
-        const auto old = ResolveNoPatch(legacy);
+        const auto old = resolve_no_patch(legacy);
         return require(all.cb && all.cd && all.khv, "every named stage is skipped") &&
                require(old.cb && old.cd && !old.khv,
                        "noblpatch still means nopatch=cb and nopatch=cd") &&
@@ -229,11 +229,11 @@ namespace {
 
         auto input = valid_input();
         input.options = options.data();
-        if (!require(ValidateInput(input).has_value(), "named buttons validate")) {
+        if (!require(validate_input(input).has_value(), "named buttons validate")) {
             return false;
         }
         input.options.dualboot = "sideways";
-        const auto result = ValidateInput(input);
+        const auto result = validate_input(input);
         return require(!result && result.error().code == InputErrorCode::InvalidOption,
                        "an unknown button supplied directly is rejected");
     }

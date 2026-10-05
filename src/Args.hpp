@@ -12,7 +12,6 @@
 namespace gxbuild3 {
 
     // The public types, visible unqualified throughout the internal gxbuild3 namespaces.
-    using GxBuild::OptionsArgs;
     using GxBuild::AllNandInfo;
     using GxBuild::BootloaderChainInfo;
     using GxBuild::BootloaderEntryInfo;
@@ -35,6 +34,7 @@ namespace gxbuild3 {
     using GxBuild::InputPayloads;
     using GxBuild::InputRawPatch;
     using GxBuild::KeyvaultSummaryInfo;
+    using GxBuild::OptionsArgs;
     using GxBuild::SmcSummaryInfo;
 
     inline const std::map<std::string, BuildType> kBuildTypeMap = {
@@ -70,7 +70,7 @@ namespace gxbuild3 {
 
     // The stages whose automatic patches are skipped. `noblpatch` is the older spelling of
     // `nopatch=cb+cd`.
-    [[nodiscard]] NoPatch ResolveNoPatch(const OptionsArgs& options);
+    [[nodiscard]] NoPatch resolve_no_patch(const OptionsArgs& options);
 
     class OptionsManager {
       public:

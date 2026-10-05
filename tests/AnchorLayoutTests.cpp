@@ -33,7 +33,7 @@ static FlashImage fixture(Driver::DriverMode mode, BuildType type) {
         p.insert(p.begin() + 8, {255, 255, 255, 255});
     }
     ParsedPatchSet ps;
-    ParsePatchSet(p, type, ps);
+    parse_patch_set(p, type, ps);
     f.payloads.patchset = ps;
     return f;
 }
@@ -279,7 +279,7 @@ static bool jtag_window(Driver::DriverMode mode) {
     bool ok = filled(0x200, 0x200, 0xCC, "SMC payload lands at absolute 0x200");
     ok = filled(window, 0xd40, 0xAA, "rebooter lands at the anchored window base") && ok;
     ok = filled(window + 0x5000, 0x60, 0xBB, "virtual fuses land at window + 0x5000") && ok;
-    const auto patches = SerializePatchSet(*f.payloads.patchset);
+    const auto patches = serialize_patch_set(*f.payloads.patchset);
     ok = check(d.read_clean(window + 0x1000, patches.size()) == patches,
                "KHV patchset is pinned at window + 0x1000") &&
          ok;

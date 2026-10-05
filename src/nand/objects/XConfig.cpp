@@ -86,7 +86,7 @@ namespace gxbuild3::nand {
 
     namespace xconfig {
 
-        std::string_view ParseErrorString(ParseError e) noexcept {
+        std::string_view parse_error_string(ParseError e) noexcept {
             switch (e) {
                 case ParseError::NullBuffer:
                     return "null buffer";
@@ -96,7 +96,7 @@ namespace gxbuild3::nand {
             return "unknown";
         }
 
-        std::expected<SmcConfig, ParseError> Parse(std::span<const uint8_t> buf,
+        std::expected<SmcConfig, ParseError> parse(std::span<const uint8_t> buf,
                                                    size_t base_offset) noexcept {
             if (buf.data() == nullptr)
                 return std::unexpected(ParseError::NullBuffer);
@@ -110,7 +110,7 @@ namespace gxbuild3::nand {
             return *res;
         }
 
-        std::vector<uint8_t> Serialize(const SmcConfig& cfg, size_t total_size,
+        std::vector<uint8_t> serialize(const SmcConfig& cfg, size_t total_size,
                                        size_t base_offset) noexcept {
             return cfg.serialize(total_size, base_offset);
         }

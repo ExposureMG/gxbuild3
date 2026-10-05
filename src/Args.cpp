@@ -79,7 +79,7 @@ namespace gxbuild3 {
 
     } // namespace
 
-    NoPatch ResolveNoPatch(const OptionsArgs& options) {
+    NoPatch resolve_no_patch(const OptionsArgs& options) {
         const std::string named = options.nopatch.value_or("");
         NoPatch stages;
         stages.cb = named.find("cb") != std::string::npos;

@@ -14,7 +14,7 @@ namespace gxbuild3::nand {
 
         constexpr uint32_t kSectionDelimiter = 0xFFFFFFFFU;
 
-        bool ReadBe32(std::span<const uint8_t> data, size_t offset, uint32_t& outValue) {
+        bool try_read_be32(std::span<const uint8_t> data, size_t offset, uint32_t& outValue) {
             if (offset + sizeof(uint32_t) > data.size()) {
                 return false;
             }
@@ -24,21 +24,22 @@ namespace gxbuild3::nand {
             return true;
         }
 
-        void AppendBe32(std::vector<uint8_t>& data, uint32_t value) {
+        void append_be32(std::vector<uint8_t>& data, uint32_t value) {
             value = swap32(value);
             const auto* value_bytes = reinterpret_cast<const uint8_t*>(&value);
             data.insert(data.end(), value_bytes, value_bytes + sizeof(uint32_t));
         }
 
-        bool ParseXePatchSectionBytes(std::span<const uint8_t> data, size_t startOffset,
-                                      std::vector<XePatchEntry>& outEntries, size_t& outConsumed) {
+        bool parse_xe_patch_section_bytes(std::span<const uint8_t> data, size_t startOffset,
+                                          std::vector<XePatchEntry>& outEntries,
+                                          size_t& outConsumed) {
             outEntries.clear();
             outConsumed = 0;
 
             size_t cursor = startOffset;
             while (true) {
                 uint32_t address = 0;
-                if (!ReadBe32(data, cursor, address)) {
+                if (!try_read_be32(data, cursor, address)) {
                     return false;
                 }
                 cursor += sizeof(uint32_t);
@@ -49,7 +50,7 @@ namespace gxbuild3::nand {
                 }
 
                 uint32_t length = 0;
-                if (!ReadBe32(data, cursor, length)) {
+                if (!try_read_be32(data, cursor, length)) {
                     return false;
                 }
                 cursor += sizeof(uint32_t);
@@ -65,7 +66,7 @@ namespace gxbuild3::nand {
                 entry.words.resize(length);
 
                 for (uint32_t i = 0; i < length; ++i) {
-                    if (!ReadBe32(data, cursor, entry.words[i])) {
+                    if (!try_read_be32(data, cursor, entry.words[i])) {
                         return false;
                     }
                     cursor += sizeof(uint32_t);
@@ -75,15 +76,15 @@ namespace gxbuild3::nand {
             }
         }
 
-        bool SplitRawSections(std::span<const uint8_t> data, size_t expectedSectionCount,
-                              std::vector<std::vector<uint8_t>>& outSections) {
+        bool split_raw_sections(std::span<const uint8_t> data, size_t expectedSectionCount,
+                                std::vector<std::vector<uint8_t>>& outSections) {
             outSections.clear();
 
             size_t sectionStart = 0;
             size_t cursor = 0;
             while (cursor + sizeof(uint32_t) <= data.size()) {
                 uint32_t word = 0;
-                if (!ReadBe32(data, cursor, word)) {
+                if (!try_read_be32(data, cursor, word)) {
                     return false;
                 }
 
@@ -103,7 +104,7 @@ namespace gxbuild3::nand {
             return outSections.size() == expectedSectionCount;
         }
 
-        std::optional<PatchSetKind> ResolvePatchSetKind(BuildType buildType) {
+        std::optional<PatchSetKind> resolve_patch_set_kind(BuildType buildType) {
             switch (buildType) {
                 case BuildType::Jtag:
                     return PatchSetKind::Jtag;
@@ -118,19 +119,19 @@ namespace gxbuild3::nand {
             }
         }
 
-        PatchSectionTarget ResolveGlitchSection1Target(BuildType buildType) {
+        PatchSectionTarget resolve_glitch_section1_target(BuildType buildType) {
             return buildType == BuildType::Glitch ? PatchSectionTarget::Cb
                                                   : PatchSectionTarget::Cbb;
         }
 
     } // namespace
 
-    bool ParsePatchSet(std::span<const uint8_t> fileData, BuildType buildType,
-                       ParsedPatchSet& outPatchSet) {
+    bool parse_patch_set(std::span<const uint8_t> fileData, BuildType buildType,
+                         ParsedPatchSet& outPatchSet) {
         outPatchSet = ParsedPatchSet{};
         ParsedPatchSet parsed;
 
-        const auto patchSetKind = ResolvePatchSetKind(buildType);
+        const auto patchSetKind = resolve_patch_set_kind(buildType);
         if (!patchSetKind) {
             Log::Error("Unsupported build type for patchset bytes");
             return false;
@@ -143,7 +144,7 @@ namespace gxbuild3::nand {
 
         if (*patchSetKind == PatchSetKind::Jtag) {
             std::vector<std::vector<uint8_t>> rawSections;
-            if (!SplitRawSections(fileData, 4, rawSections)) {
+            if (!split_raw_sections(fileData, 4, rawSections)) {
                 Log::Error("Failed to split JTAG patchset bytes into four sections");
                 return false;
             }
@@ -169,7 +170,7 @@ namespace gxbuild3::nand {
         }
 
         std::vector<std::vector<uint8_t>> glitchSections;
-        if (!SplitRawSections(fileData, 3, glitchSections)) {
+        if (!split_raw_sections(fileData, 3, glitchSections)) {
             Log::Error("Glitch patchset must have 3 sections [CB_B][CD][KHV], found {}",
                        glitchSections.size());
             return false;
@@ -179,12 +180,12 @@ namespace gxbuild3::nand {
         for (size_t i = 0; i < 2; ++i) {
             ParsedPatchSection section;
             section.target =
-                i == 0 ? ResolveGlitchSection1Target(buildType) : PatchSectionTarget::Cd;
+                i == 0 ? resolve_glitch_section1_target(buildType) : PatchSectionTarget::Cd;
             section.identifier =
                 i == 0 ? (section.target == PatchSectionTarget::Cb ? "cb" : "cbb") : "cd";
 
             size_t consumed = 0;
-            if (!ParseXePatchSectionBytes(fileData, cursor, section.entries, consumed)) {
+            if (!parse_xe_patch_section_bytes(fileData, cursor, section.entries, consumed)) {
                 Log::Error("Failed to parse section {} in Glitch patchset bytes", i);
                 return false;
             }
@@ -199,7 +200,8 @@ namespace gxbuild3::nand {
         if (khvSection.raw_data.size() >= sizeof(uint32_t)) {
             const auto tail = khvSection.raw_data.size() - sizeof(uint32_t);
             uint32_t lastWord = 0;
-            if (ReadBe32(khvSection.raw_data, tail, lastWord) && lastWord == kSectionDelimiter) {
+            if (try_read_be32(khvSection.raw_data, tail, lastWord) &&
+                lastWord == kSectionDelimiter) {
                 khvSection.raw_data.resize(tail);
             }
         }
@@ -210,14 +212,14 @@ namespace gxbuild3::nand {
         return true;
     }
 
-    std::expected<ParsedPatchSet, PatchError> ParseAndMergePatchSet(const InputPatches& patches,
-                                                                    BuildType buildType) {
+    std::expected<ParsedPatchSet, PatchError> parse_and_merge_patch_set(const InputPatches& patches,
+                                                                        BuildType buildType) {
         if (!patches.automatic) {
             return std::unexpected(PatchError{"An automatic patchset is required"});
         }
 
         ParsedPatchSet parsed;
-        if (!ParsePatchSet(patches.automatic->data, buildType, parsed)) {
+        if (!parse_patch_set(patches.automatic->data, buildType, parsed)) {
             return std::unexpected(PatchError{"Failed to parse automatic patchset bytes"});
         }
 
@@ -238,29 +240,29 @@ namespace gxbuild3::nand {
         return parsed;
     }
 
-    std::vector<uint8_t> SerializePatchSet(const ParsedPatchSet& patchSet) {
+    std::vector<uint8_t> serialize_patch_set(const ParsedPatchSet& patchSet) {
         std::vector<uint8_t> out;
 
         for (size_t i = 0; i < patchSet.sections.size(); ++i) {
             const auto& section = patchSet.sections[i];
             for (const auto& entry : section.entries) {
-                AppendBe32(out, entry.address);
-                AppendBe32(out, entry.length);
+                append_be32(out, entry.address);
+                append_be32(out, entry.length);
                 for (const auto word : entry.words) {
-                    AppendBe32(out, word);
+                    append_be32(out, word);
                 }
             }
             out.insert(out.end(), section.raw_data.begin(), section.raw_data.end());
 
-            AppendBe32(out, kSectionDelimiter);
+            append_be32(out, kSectionDelimiter);
         }
 
         return out;
     }
 
-    std::vector<uint8_t> SerializeKhvPayload(const ParsedPatchSection& section) {
+    std::vector<uint8_t> serialize_khv_payload(const ParsedPatchSection& section) {
         std::vector<uint8_t> out = section.raw_data;
-        AppendBe32(out, kSectionDelimiter);
+        append_be32(out, kSectionDelimiter);
         return out;
     }
 

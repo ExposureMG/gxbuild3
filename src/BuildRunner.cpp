@@ -805,7 +805,7 @@ namespace gxbuild3 {
     } // namespace
 
     BuildResult run_build(const Input& input) try {
-        if (const auto validation = ValidateInput(input); !validation) {
+        if (const auto validation = validate_input(input); !validation) {
             return build_error(BuildErrorCode::InvalidInput, validation.error().message);
         }
 
@@ -1052,7 +1052,7 @@ namespace gxbuild3 {
 
         std::optional<ParsedPatchSet> parsed_patchset;
         if (input.patches && input.patches->automatic) {
-            auto parsed = ParseAndMergePatchSet(*input.patches, input.build_type);
+            auto parsed = parse_and_merge_patch_set(*input.patches, input.build_type);
             if (!parsed) {
                 return build_error(BuildErrorCode::PatchFailure, parsed.error().message);
             }
@@ -1063,7 +1063,7 @@ namespace gxbuild3 {
         // its CD section patches the SD (xeBuild 1.21 devgl: SB, SC and SE as the release ships
         // them).
         const bool devgl = input.build_type == BuildType::Devgl;
-        const NoPatch no_patch = ResolveNoPatch(input.options);
+        const NoPatch no_patch = resolve_no_patch(input.options);
         if (parsed_patchset && parsed_patchset->kind == PatchSetKind::Glitch && no_patch.khv) {
             // The slot keeps its glitch layout and holds an empty KHV list, with no add-ons either.
             for (auto& section : parsed_patchset->sections) {
@@ -1264,7 +1264,7 @@ namespace gxbuild3 {
         if (parsed_patchset) {
             size_t patch_size = 0;
             if (parsed_patchset->kind == PatchSetKind::Jtag) {
-                patch_size = SerializePatchSet(*parsed_patchset).size();
+                patch_size = serialize_patch_set(*parsed_patchset).size();
                 if (patch_size > 0x4000) {
                     return build_error(BuildErrorCode::PatchFailure,
                                        "JTAG patch payload exceeds the 0x4000-byte region");
@@ -1275,7 +1275,7 @@ namespace gxbuild3 {
                     return build_error(BuildErrorCode::PatchFailure,
                                        "Glitch patchset has no KHV payload section");
                 }
-                patch_size = SerializeKhvPayload(*khv).size();
+                patch_size = serialize_khv_payload(*khv).size();
                 const bool is_big_or_emmc =
                     flash_image.flash_driver.driver_mode() == Driver::DriverMode::Big ||
                     flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc;
@@ -2010,7 +2010,7 @@ namespace gxbuild3 {
             out.build_type = *img.build_type;
             out.patches = InputPatches{};
             out.patches->automatic =
-                InputPatchFile{"extracted", SerializePatchSet(*img.payloads.patchset)};
+                InputPatchFile{"extracted", serialize_patch_set(*img.payloads.patchset)};
         }
         out.metadata.cpu_key = std::vector<uint8_t>(cpu_key.begin(), cpu_key.end());
         out.metadata.nand_image = std::vector<uint8_t>(nand_image.begin(), nand_image.end());

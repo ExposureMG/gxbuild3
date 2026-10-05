@@ -585,7 +585,7 @@ namespace gxbuild3::utils {
 
     } // namespace
 
-    std::string IniAssetName(std::string_view entry) {
+    std::string ini_asset_name(std::string_view entry) {
         std::string name{entry};
         std::replace(name.begin(), name.end(), '\\', '/');
         std::string_view rest{name};
@@ -594,13 +594,13 @@ namespace gxbuild3::utils {
         return std::string(rest);
     }
 
-    bool IniAssetIsOutside(std::string_view entry) {
+    bool ini_asset_is_outside(std::string_view entry) {
         return entry.starts_with("..\\") || entry.starts_with("../");
     }
 
     std::unordered_map<std::string, std::filesystem::path>
-    FindFiles(const std::vector<std::string>& filenames,
-              const std::vector<std::filesystem::path>& search_paths, ScanOptions options) {
+    find_files(const std::vector<std::string>& filenames,
+               const std::vector<std::filesystem::path>& search_paths, ScanOptions options) {
         AssetSearch search(search_paths, options);
         std::unordered_map<std::string, LocatedFile> winners;
         for (const auto& name : filenames) {
@@ -621,7 +621,7 @@ namespace gxbuild3::utils {
             }
         }
         if (!missing.empty())
-            throw std::runtime_error("FindFiles: could not locate required file(s): " + missing);
+            throw std::runtime_error("find_files: could not locate required file(s): " + missing);
 
         std::unordered_map<std::string, std::filesystem::path> result;
         for (auto& [key, winner] : winners)
@@ -629,9 +629,10 @@ namespace gxbuild3::utils {
         return result;
     }
 
-    std::optional<ResolvedFile> FindFileData(std::string_view filename,
-                                             const std::vector<std::filesystem::path>& search_paths,
-                                             ScanOptions options, AssetKind kind) {
+    std::optional<ResolvedFile>
+    find_file_data(std::string_view filename,
+                   const std::vector<std::filesystem::path>& search_paths, ScanOptions options,
+                   AssetKind kind) {
         if (!safe_asset_name(filename))
             return std::nullopt;
         const auto relative = entry_to_lookup_path(filename);
@@ -762,9 +763,9 @@ namespace gxbuild3::utils {
         return std::nullopt;
     }
 
-    FileLookupResult FindFileDataDetailed(std::string_view filename,
-                                          const std::vector<std::filesystem::path>& search_paths,
-                                          ScanOptions options, AssetKind kind) {
+    FileLookupResult find_file_data_detailed(std::string_view filename,
+                                             const std::vector<std::filesystem::path>& search_paths,
+                                             ScanOptions options, AssetKind kind) {
         if (!safe_asset_name(filename)) {
             return std::unexpected(
                 FileLookupError{.code = FileLookupErrorCode::InspectionFailed,
@@ -1072,22 +1073,23 @@ namespace gxbuild3::utils {
         return std::optional<ResolvedFile>{};
     }
 
-    std::optional<IniFilesResult> ReadIniFiles(std::string_view version, std::string_view type,
-                                               std::string_view target_section,
-                                               const std::filesystem::path& fw_dir,
-                                               ScanOptions options, BuildType build_type) {
+    std::optional<IniFilesResult> read_ini_files(std::string_view version, std::string_view type,
+                                                 std::string_view target_section,
+                                                 const std::filesystem::path& fw_dir,
+                                                 ScanOptions options, BuildType build_type) {
         const auto cwd = std::filesystem::current_path();
         const auto version_dir = cwd / version;
-        return ReadIniFiles(version_dir / ("_" + std::string(type) + ".ini"), target_section,
-                            {fw_dir.empty() ? cwd / "mydata" : fw_dir, version_dir, cwd / "common"},
-                            options, build_type);
+        return read_ini_files(
+            version_dir / ("_" + std::string(type) + ".ini"), target_section,
+            {fw_dir.empty() ? cwd / "mydata" : fw_dir, version_dir, cwd / "common"}, options,
+            build_type);
     }
 
     std::optional<IniFilesResult>
-    ReadIniFiles(const std::filesystem::path& ini_path, std::string_view target_section,
-                 const std::vector<std::filesystem::path>& search_paths, ScanOptions options,
-                 BuildType build_type) {
-        auto doc_res = ini::ParseFile(ini_path);
+    read_ini_files(const std::filesystem::path& ini_path, std::string_view target_section,
+                   const std::vector<std::filesystem::path>& search_paths, ScanOptions options,
+                   BuildType build_type) {
+        auto doc_res = ini::parse_file(ini_path);
         if (!doc_res) {
             Log::Error("Could not parse INI file at '{}'", ini_path.string());
             return std::nullopt;
@@ -1120,7 +1122,7 @@ namespace gxbuild3::utils {
             for (const auto& entry : *section) {
                 if (entry.key.empty() || normalize_file_key(entry.key) == "none")
                     continue;
-                if (!safe_asset_name(section == bl_sec ? entry.key : IniAssetName(entry.key))) {
+                if (!safe_asset_name(section == bl_sec ? entry.key : ini_asset_name(entry.key))) {
                     Log::Error("INI asset '{}' is not confined to its source roots", entry.key);
                     return std::nullopt;
                 }
@@ -1208,9 +1210,9 @@ namespace gxbuild3::utils {
         // An entry from outside the release is found under its path in the roots, then by its
         // basename, and only as a loose file.
         const auto find_listed = [&search, &loose_search](std::string_view entry) {
-            if (!IniAssetIsOutside(entry))
+            if (!ini_asset_is_outside(entry))
                 return search.find(entry);
-            const auto name = IniAssetName(entry);
+            const auto name = ini_asset_name(entry);
             auto found = loose_search.find(name);
             if (!found)
                 found = loose_search.find(display_basename(name));
@@ -1231,7 +1233,7 @@ namespace gxbuild3::utils {
                     result.flashfs_sec[it->second.first].second = std::move(found->data);
                     it->second.second = found->rank;
                 }
-            } else if (IniAssetIsOutside(entry.key)) {
+            } else if (ini_asset_is_outside(entry.key)) {
                 Log::Warn("Could not read file '{}', skipping", entry.key);
             } else if (optional) {
                 Log::Debug("Optional asset '{}' not present", entry.key);
@@ -1286,7 +1288,7 @@ namespace gxbuild3::utils {
         return result;
     }
 
-    void ClearStfsCache() {
+    void clear_stfs_cache() {
         std::lock_guard<std::mutex> lock(g_stfs_cache_mutex);
         g_disk_package_cache.clear();
         g_memory_package_cache.clear();

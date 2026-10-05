@@ -54,11 +54,11 @@ namespace gxbuild3::nand {
         std::string message;
     };
 
-    bool ParsePatchSet(std::span<const uint8_t> data, GxBuild::BuildType buildType,
-                       ParsedPatchSet& outPatchSet);
+    bool parse_patch_set(std::span<const uint8_t> data, GxBuild::BuildType buildType,
+                         ParsedPatchSet& outPatchSet);
     std::expected<ParsedPatchSet, PatchError>
-    ParseAndMergePatchSet(const GxBuild::InputPatches& patches, GxBuild::BuildType buildType);
-    std::vector<uint8_t> SerializePatchSet(const ParsedPatchSet& patchSet);
-    std::vector<uint8_t> SerializeKhvPayload(const ParsedPatchSection& section);
+    parse_and_merge_patch_set(const GxBuild::InputPatches& patches, GxBuild::BuildType buildType);
+    std::vector<uint8_t> serialize_patch_set(const ParsedPatchSet& patchSet);
+    std::vector<uint8_t> serialize_khv_payload(const ParsedPatchSection& section);
 
 } // namespace gxbuild3::nand

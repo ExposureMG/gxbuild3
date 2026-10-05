@@ -36,7 +36,7 @@ namespace gxbuild3::stfs {
             ConSignature sig;
             const auto* ptr = data.data();
 
-            sig.public_key_certificate_size = readBE16(ptr + 0x004);
+            sig.public_key_certificate_size = read_be16(ptr + 0x004);
 
             std::memcpy(sig.certificate_owner_console_id.data(), ptr + 0x006, 5);
             std::memcpy(sig.certificate_owner_console_part_number.data(), ptr + 0x00B, 0x14);

@@ -6,7 +6,7 @@
 
 namespace gxbuild3::cli {
 
-    CommandResult RunBuildCommand(const BuildArgs& args, const BuildCommandServices& services) {
+    CommandResult run_build_command(const BuildArgs& args, const BuildCommandServices& services) {
         const auto request = services.resolve(args);
         if (!request) {
             return {.exit_code = 3, .message = request.error().message};
@@ -35,10 +35,10 @@ namespace gxbuild3::cli {
         return {};
     }
 
-    BuildCommandServices DefaultBuildCommandServices(const std::filesystem::path& cwd) {
+    BuildCommandServices default_build_command_services(const std::filesystem::path& cwd) {
         return {
             .resolve = [resolver = BuildInputResolver(cwd)](
-                           const BuildArgs& args) { return resolver.Resolve(args); },
+                           const BuildArgs& args) { return resolver.resolve(args); },
             .build = [](const Input& input) { return run_build(input); },
             .write =
                 [](const std::filesystem::path& path, const std::vector<uint8_t>& data) {

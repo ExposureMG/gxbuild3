@@ -30,6 +30,6 @@ namespace gxbuild3 {
         std::string message;
     };
 
-    std::expected<void, InputError> ValidateInput(const Input& input);
+    std::expected<void, InputError> validate_input(const Input& input);
 
 } // namespace gxbuild3

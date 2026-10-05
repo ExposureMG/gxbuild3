@@ -34,6 +34,6 @@ namespace gxbuild3::cli {
     };
 
     std::expected<ParsedCommand, ParseError>
-    ParseCommandLine(std::span<const std::string_view> argv);
+    parse_command_line(std::span<const std::string_view> argv);
 
 } // namespace gxbuild3::cli

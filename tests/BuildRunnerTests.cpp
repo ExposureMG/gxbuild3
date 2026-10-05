@@ -834,8 +834,8 @@ namespace {
         payloads.xell = valid_xell();
         input.payloads = std::move(payloads);
 
-        const auto merged = ParseAndMergePatchSet(patches, BuildType::Jtag);
-        const auto expected = merged ? SerializePatchSet(*merged) : Bytes{};
+        const auto merged = parse_and_merge_patch_set(patches, BuildType::Jtag);
+        const auto expected = merged ? serialize_patch_set(*merged) : Bytes{};
         const auto built = run_build(input);
         const auto written_patch =
             built ? read_logical(*built, 0x91000, expected.size()) : std::nullopt;

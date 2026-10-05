@@ -200,7 +200,7 @@ namespace gxbuild3::cli {
         find_asset(std::string_view name, const std::vector<std::filesystem::path>& roots,
                    gxbuild3::utils::ScanOptions options = {},
                    gxbuild3::utils::AssetKind kind = gxbuild3::utils::AssetKind::Regular) {
-            auto found = utils::FindFileDataDetailed(name, roots, options, kind);
+            auto found = utils::find_file_data_detailed(name, roots, options, kind);
             if (!found) {
                 return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
                                              found.error().message, found.error().source_path,
@@ -531,7 +531,7 @@ namespace gxbuild3::cli {
             for (const auto section_name : {"flashfs", "security"}) {
                 if (const auto* section = ini.get(section_name)) {
                     for (const auto& entry : *section) {
-                        const auto key = lowercase_basename(utils::IniAssetName(entry.key));
+                        const auto key = lowercase_basename(utils::ini_asset_name(entry.key));
                         if (!key.empty() && key != "none") {
                             ranks.emplace(key, ranks.size());
                         }
@@ -573,7 +573,7 @@ namespace gxbuild3::cli {
             bool listed = false;
             if (const auto* security = ini.get("security")) {
                 listed = std::any_of(security->begin(), security->end(), [](const auto& entry) {
-                    return lowercase_basename(utils::IniAssetName(entry.key)) == "fcrt.bin";
+                    return lowercase_basename(utils::ini_asset_name(entry.key)) == "fcrt.bin";
                 });
             }
             const auto requirement = keyvault ? gxbuild3::nand::fcrt_requirement(*keyvault)
@@ -609,7 +609,7 @@ namespace gxbuild3::cli {
         : working_directory_(std::move(working_directory)) {}
 
     std::expected<ResolvedFoundations, ResolutionError>
-    BuildInputResolver::ResolveFoundations(const BuildArgs& args) const {
+    BuildInputResolver::resolve_foundations(const BuildArgs& args) const {
         if (args.source_dirs.empty()) {
             return std::unexpected(error(ResolutionErrorCode::InvalidSourceDirectory,
                                          "At least one source root is required"));
@@ -649,7 +649,7 @@ namespace gxbuild3::cli {
         if (args.cpu_key) {
             cpu_key = parse_cpu_key(*args.cpu_key, {});
         } else {
-            auto discovered = utils::FindFileDataDetailed("cpukey.txt", roots);
+            auto discovered = utils::find_file_data_detailed("cpukey.txt", roots);
             if (!discovered) {
                 return std::unexpected(error(ResolutionErrorCode::CpuKeyReadFailed,
                                              discovered.error().message,
@@ -674,7 +674,7 @@ namespace gxbuild3::cli {
                                              "Could not read explicit donor NAND", *nand_path));
             }
         } else {
-            auto discovered = utils::FindFileDataDetailed("nanddump.bin", roots);
+            auto discovered = utils::find_file_data_detailed("nanddump.bin", roots);
             if (!discovered) {
                 return std::unexpected(error(ResolutionErrorCode::InputReadFailed,
                                              discovered.error().message,
@@ -729,9 +729,9 @@ namespace gxbuild3::cli {
     }
 
     std::expected<BuildRequest, ResolutionError>
-    BuildInputResolver::Resolve(const BuildArgs& args) const {
+    BuildInputResolver::resolve(const BuildArgs& args) const {
         try {
-            auto foundations = ResolveFoundations(args);
+            auto foundations = resolve_foundations(args);
             if (!foundations) {
                 return std::unexpected(foundations.error());
             }
@@ -759,12 +759,12 @@ namespace gxbuild3::cli {
                     error(ResolutionErrorCode::BuildIniReadFailed, std::move(message), ini_path));
             }
 
-            const auto ini_document = ini::ParseFile(ini_path);
+            const auto ini_document = ini::parse_file(ini_path);
             if (!ini_document) {
                 return std::unexpected(
                     error(ResolutionErrorCode::BuildIniReadFailed,
                           "Could not read build INI: " +
-                              std::string(ini::ParseErrorString(ini_document.error())),
+                              std::string(ini::parse_error_string(ini_document.error())),
                           ini_path));
             }
             if (args.section.empty()) {
@@ -818,10 +818,10 @@ namespace gxbuild3::cli {
                     }
                     // A file from outside the release is looked up as the INI reader looks it
                     // up: as a loose file under its path in the roots, then by its basename.
-                    const bool outside = utils::IniAssetIsOutside(entry.key);
+                    const bool outside = utils::ini_asset_is_outside(entry.key);
                     auto loose_options = scan_options;
                     loose_options.nosu = true;
-                    const auto name = utils::IniAssetName(entry.key);
+                    const auto name = utils::ini_asset_name(entry.key);
                     auto found = outside ? find_asset(name, roots, loose_options)
                                          : find_asset(entry.key, roots, scan_options);
                     if (outside && found && !*found) {
@@ -848,8 +848,8 @@ namespace gxbuild3::cli {
                 }
             }
 
-            const auto ini_files =
-                utils::ReadIniFiles(ini_path, target_section, roots, scan_options, args.build_type);
+            const auto ini_files = utils::read_ini_files(ini_path, target_section, roots,
+                                                         scan_options, args.build_type);
             if (!ini_files) {
                 return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
                                              "Could not resolve build INI assets", ini_path,
@@ -1003,7 +1003,7 @@ namespace gxbuild3::cli {
             if (!scan_options.nosusecurity) {
                 if (const auto* security = ini_document->get("security")) {
                     for (const auto& entry : *security) {
-                        const auto key = lowercase_basename(utils::IniAssetName(entry.key));
+                        const auto key = lowercase_basename(utils::ini_asset_name(entry.key));
                         if ((key == "extended.bin" || key == "secdata.bin") &&
                             !flashfs_positions.contains(key)) {
                             overlay_flashfs(flashfs, {key, {}}, flashfs_positions);
@@ -1166,7 +1166,7 @@ namespace gxbuild3::cli {
                 input.payloads = std::move(payloads);
             }
 
-            if (const auto validation = ValidateInput(input); !validation) {
+            if (const auto validation = validate_input(input); !validation) {
                 return std::unexpected(
                     error(ResolutionErrorCode::InvalidInput, validation.error().message));
             }

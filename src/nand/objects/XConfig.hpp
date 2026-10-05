@@ -353,12 +353,12 @@ namespace gxbuild3::nand {
             BufferTooSmall,
         };
 
-        [[nodiscard]] std::string_view ParseErrorString(ParseError e) noexcept;
+        [[nodiscard]] std::string_view parse_error_string(ParseError e) noexcept;
 
         [[nodiscard]] std::expected<SmcConfig, ParseError>
-        Parse(std::span<const uint8_t> buf, size_t base_offset = 0xC000) noexcept;
+        parse(std::span<const uint8_t> buf, size_t base_offset = 0xC000) noexcept;
 
-        [[nodiscard]] std::vector<uint8_t> Serialize(const SmcConfig& cfg,
+        [[nodiscard]] std::vector<uint8_t> serialize(const SmcConfig& cfg,
                                                      size_t total_size = 0x10000,
                                                      size_t base_offset = 0xC000) noexcept;
 

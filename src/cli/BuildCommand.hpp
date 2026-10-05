@@ -23,7 +23,7 @@ namespace gxbuild3::cli {
         std::string message;
     };
 
-    CommandResult RunBuildCommand(const BuildArgs& args, const BuildCommandServices& services);
-    BuildCommandServices DefaultBuildCommandServices(const std::filesystem::path& cwd);
+    CommandResult run_build_command(const BuildArgs& args, const BuildCommandServices& services);
+    BuildCommandServices default_build_command_services(const std::filesystem::path& cwd);
 
 } // namespace gxbuild3::cli

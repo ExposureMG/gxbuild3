@@ -51,7 +51,7 @@ namespace {
                 ResolutionErrorCode::AssetNotFound, "missing asset", {}, "build.ini"})};
         };
         const auto result =
-            gxbuild3::cli::RunBuildCommand(minimum_build_args("output.bin"), services);
+            gxbuild3::cli::run_build_command(minimum_build_args("output.bin"), services);
         return require(result.exit_code == 3, "resolution failures return exit code 3") &&
                require(result.message == "missing asset",
                        "resolution failure preserves its message");
@@ -64,7 +64,7 @@ namespace {
                 std::unexpected(BuildError{BuildErrorCode::InvalidInput, "invalid build input"})};
         };
         const auto result =
-            gxbuild3::cli::RunBuildCommand(minimum_build_args("output.bin"), services);
+            gxbuild3::cli::run_build_command(minimum_build_args("output.bin"), services);
         return require(result.exit_code == 4, "build failures return exit code 4") &&
                require(result.message == "invalid build input",
                        "build failure preserves its message");
@@ -74,7 +74,7 @@ namespace {
         auto services = successful_services();
         services.write = [](const std::filesystem::path&, const Bytes&) { return false; };
         const auto result =
-            gxbuild3::cli::RunBuildCommand(minimum_build_args("output.bin"), services);
+            gxbuild3::cli::run_build_command(minimum_build_args("output.bin"), services);
         return require(result.exit_code == 5, "write failures return exit code 5");
     }
 
@@ -92,7 +92,7 @@ namespace {
             return true;
         };
         const auto result =
-            gxbuild3::cli::RunBuildCommand(minimum_build_args(output_path), services);
+            gxbuild3::cli::run_build_command(minimum_build_args(output_path), services);
         std::filesystem::remove_all(root, error);
         return require(result.exit_code == 0, "successful command returns exit code 0") &&
                require(wrote, "successful command creates the parent before writing bytes");
@@ -116,7 +116,7 @@ namespace {
             return wrote;
         };
         const auto result =
-            gxbuild3::cli::RunBuildCommand(minimum_build_args(output_path), services);
+            gxbuild3::cli::run_build_command(minimum_build_args(output_path), services);
 
         std::ifstream output(output_path, std::ios::binary);
         const Bytes written{std::istreambuf_iterator<char>(output),

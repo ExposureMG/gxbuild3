@@ -1,27 +1,15 @@
 #include "nand/objects/Xboxupd.hpp"
 
+#include "Endian.hpp"
 #include "utils/Log.hpp"
 #include "utils/Utils.hpp"
 
-#include <cstring>
 #include <stdexcept>
 
 namespace gxbuild3::nand {
     namespace {
 
         constexpr std::size_t kBootloaderHeaderSize = 0x20;
-
-        uint16_t read_be16(std::span<const uint8_t> data, std::size_t offset) {
-            uint16_t value = 0;
-            std::memcpy(&value, data.data() + static_cast<std::ptrdiff_t>(offset), sizeof(value));
-            return bswap16(value);
-        }
-
-        uint32_t read_be32(std::span<const uint8_t> data, std::size_t offset) {
-            uint32_t value = 0;
-            std::memcpy(&value, data.data() + static_cast<std::ptrdiff_t>(offset), sizeof(value));
-            return bswap32(value);
-        }
 
         std::vector<uint8_t> bytes_to_u8(std::span<const std::byte> data) {
             std::vector<uint8_t> out;
@@ -40,20 +28,21 @@ namespace gxbuild3::nand {
             throw std::runtime_error("xboxupd buffer too small to split");
         }
 
-        const uint16_t cf_magic = read_be16(xboxupd_bytes, 0);
+        const std::byte* raw = std::as_bytes(xboxupd_bytes).data();
+        const uint16_t cf_magic = read_be16(raw);
         if ((cf_magic & 0x0FFF) != 0x346) {
             Log::Error("CF header magic not found in xboxupd (magic=0x{:04X})", cf_magic);
             throw std::runtime_error("CF header not found. invalid xboxupd.bin?");
         }
 
-        const uint32_t cf_size = read_be32(xboxupd_bytes, 0x0C);
+        const uint32_t cf_size = read_be32(raw + 0x0C);
         if (cf_size < kBootloaderHeaderSize || xboxupd_bytes.size() < cf_size) {
             Log::Error("Invalid CF size 0x{:X} in xboxupd (buffer size 0x{:X})", cf_size,
                        xboxupd_bytes.size());
             throw std::runtime_error("xboxupd buffer too small to contain full CF");
         }
 
-        const uint32_t cg_size = read_be32(xboxupd_bytes, 0x1C);
+        const uint32_t cg_size = read_be32(raw + 0x1C);
         const std::size_t cg_offset = cf_size;
         if (cg_size < kBootloaderHeaderSize || xboxupd_bytes.size() < (cg_offset + cg_size)) {
             Log::Error("Invalid CG size 0x{:X} in xboxupd (buffer size 0x{:X})", cg_size,
@@ -61,7 +50,7 @@ namespace gxbuild3::nand {
             throw std::runtime_error("xboxupd buffer too small to contain full CG");
         }
 
-        const uint16_t cg_magic = read_be16(xboxupd_bytes.subspan(cg_offset), 0);
+        const uint16_t cg_magic = read_be16(raw + cg_offset);
         if ((cg_magic & 0x0FFF) != 0x347) {
             Log::Error("CG header magic not found in xboxupd (magic=0x{:04X})", cg_magic);
             throw std::runtime_error("CG header not found. invalid xboxupd.bin?");

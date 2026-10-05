@@ -30,7 +30,7 @@ namespace gxbuild3 {
 
     } // namespace
 
-    std::expected<void, InputError> ValidateInput(const Input& input) {
+    std::expected<void, InputError> validate_input(const Input& input) {
         if (input.metadata.cpu_key.size() != 16) {
             return std::unexpected(
                 InputError{InputErrorCode::InvalidCpuKey, "CPU key must contain exactly 16 bytes"});
