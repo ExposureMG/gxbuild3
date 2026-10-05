@@ -1,3 +1,4 @@
+#include "../src/stfs/PackageCommon.hpp"
 #include "excrypt.h"
 #include "stfs/BlockParser.hpp"
 #include "stfs/FileExtractor.hpp"
@@ -239,41 +240,75 @@ namespace {
 
     // --- Extraction paths ------------------------------------------------------------------
 
+    // Opens and extracts a package, returning the error message (empty if nothing threw).
+    std::string extract_error(const Bytes& bytes, const fs::path& out) {
+        try {
+            stfs::Package::fromData(bytes).extractAll(out);
+        } catch (const std::exception& e) {
+            return e.what();
+        }
+        return {};
+    }
+
     void test_package_rejects_relative_escape() {
         TempDir dir;
-        const auto package = stfs::Package::fromData(
-            make_package({{"good.bin", pattern(10, 1)}, {"../escaped", pattern(10, 2)}}));
-        const auto message = thrown_message([&] { package.extractAll(dir.root / "out"); });
-        require(message.find("escapes") != std::string::npos,
-                "a ../ entry name is rejected by Package::extractAll");
+        // A ".." directory entry passes the name checks but escapes once joined.
+        const auto dotdot = make_package({{"good.bin", pattern(10, 1)},
+                                          {"..", {}, true, -1, true},
+                                          {"escaped", pattern(10, 2), true, 1}});
+        require(extract_error(dotdot, dir.root / "out").find("escapes") != std::string::npos,
+                "a .. entry path is rejected by Package::extractAll");
         require(!fs::exists(dir.root / "escaped"), "nothing is written outside output_dir");
         require(!fs::exists(dir.root / "out" / "good.bin"),
                 "destinations are validated before anything is written");
 
-        const auto nested = stfs::Package::fromData(make_package(
-            {{"sub", {}, true, -1, true}, {"../../escaped", pattern(10, 3), true, 0}}));
-        require_throws([&] { nested.extractAll(dir.root / "out"); },
-                       "a ../ entry under a directory is rejected");
+        const auto slash = make_package({{"../escaped", pattern(10, 2)}});
+        require(!extract_error(slash, dir.root / "out").empty(),
+                "a ../ entry name is rejected by Package");
+        require(!fs::exists(dir.root / "escaped"), "a ../ name writes nothing outside");
+
+        const auto nested =
+            make_package({{"sub", {}, true, -1, true}, {"../../escaped", pattern(10, 3), true, 0}});
+        require(!extract_error(nested, dir.root / "out").empty(),
+                "a ../ entry under a directory is rejected");
         require(!fs::exists(dir.root / "escaped"), "nested escape writes nothing outside");
     }
 
     void test_package_rejects_absolute_name() {
         TempDir dir;
-        const auto package =
-            stfs::Package::fromData(make_package({{"/stfs-absolute-escape", pattern(10, 1)}}));
-        const auto message = thrown_message([&] { package.extractAll(dir.root / "out"); });
-        require(message.find("absolute") != std::string::npos,
-                "an absolute entry name is rejected by Package::extractAll");
+        const auto bytes = make_package({{"/stfs-absolute-escape", pattern(10, 1)}});
+        const auto message = extract_error(bytes, dir.root / "out");
+        require(message.find("absolute") != std::string::npos ||
+                    message.find("separator") != std::string::npos,
+                "an absolute entry name is rejected by Package");
         require(!fs::exists("/stfs-absolute-escape"), "nothing is written at the absolute path");
     }
 
     void test_container_rejects_escape() {
         TempDir dir;
-        const auto bytes = make_package({{"../escaped", pattern(10, 2)}});
+        const auto bytes =
+            make_package({{"..", {}, true, -1, true}, {"escaped", pattern(10, 2), true, 0}});
         const Stfs::StfsContainer container{bytes};
         require_throws([&] { container.extractAll(dir.root / "out"); },
-                       "StfsContainer rejects a ../ entry name");
+                       "StfsContainer rejects a .. entry path");
         require(!fs::exists(dir.root / "escaped"), "container writes nothing outside");
+    }
+
+    void test_safe_join() {
+        const fs::path out = "out";
+        require(stfs::detail::safeJoin(out, "a/./b") == out / "a/b", "safe paths are kept");
+        require_throws([&] { (void) stfs::detail::safeJoin(out, "/abs"); },
+                       "absolute paths are rejected");
+        require_throws([&] { (void) stfs::detail::safeJoin(out, "a/../../b"); },
+                       "escaping paths are rejected");
+        require_throws([&] { (void) stfs::detail::safeJoin(out, "a/.."); },
+                       "paths that collapse to the target itself are rejected");
+#ifdef _WIN32
+        require_throws([&] { (void) stfs::detail::safeJoin(out, "C:foo"); },
+                       "drive-relative paths are rejected");
+        require_throws([&] { (void) stfs::detail::safeJoin(out, "\\\\server\\share"); },
+                       "UNC paths are rejected");
+#endif
     }
 
     void test_parent_cycle_rejected() {
@@ -472,6 +507,55 @@ namespace {
                 "other block_separation bits do not matter");
     }
 
+    // --- File table names ------------------------------------------------------------------
+
+    void test_name_length_beyond_field_rejected() {
+        auto bytes = make_package({{"a.bin", pattern(10, 1)}});
+        bytes[entry_offset(0) + 0x28] = std::byte{0x40 | 0x29};
+        require_throws([&] { (void) stfs::Package::fromData(bytes); },
+                       "name_length 0x29 is rejected");
+        bytes[entry_offset(0) + 0x28] = std::byte{0x40 | 0x3F};
+        require_throws([&] { (void) stfs::Package::fromData(bytes); },
+                       "name_length 0x3F is rejected");
+
+        const std::string longest(0x28, 'n');
+        const auto full = stfs::Package::fromData(make_package({{longest, pattern(10, 1)}}));
+        require(full.files().at(0).name == longest, "a 40-byte name is accepted");
+    }
+
+    void test_nameless_entry_ends_listing() {
+        auto bytes = make_package(
+            {{"a.bin", pattern(10, 1)}, {"b.bin", pattern(10, 2)}, {"c.bin", pattern(10, 3)}});
+        bytes[entry_offset(1) + 0x28] = std::byte{0x40}; // name_length 0, other bytes set
+        const auto package = stfs::Package::fromData(bytes);
+        require(package.files().size() == 1 && package.files().at(0).name == "a.bin",
+                "an entry without a name length ends the listing");
+    }
+
+    void test_entry_name_contents() {
+        auto padded = make_package({{"a.bin", pattern(10, 1)}});
+        padded[entry_offset(0) + 0x28] = std::byte{0x40 | 0x08}; // "a.bin\0\0\0"
+        require(stfs::Package::fromData(padded).files().at(0).name == "a.bin",
+                "NUL padding inside name_length is trimmed");
+
+        auto empty = make_package({{"a.bin", pattern(10, 1)}});
+        empty[entry_offset(0)] = std::byte{0};
+        require_throws([&] { (void) stfs::Package::fromData(empty); },
+                       "a name that starts with NUL is rejected");
+
+        for (const auto* name : {"a/b", "a\\b"}) {
+            const auto bytes = make_package({{name, pattern(10, 1)}});
+            require_throws([&] { (void) stfs::Package::fromData(bytes); },
+                           "a name with a path separator is rejected");
+        }
+
+        const auto plain = stfs::Package::fromData(make_package(
+            {{"$flash_dash.xex", pattern(10, 1)}, {"$flash_SegoeXbox-Light.xtt", pattern(10, 2)}}));
+        require(plain.files().size() == 2 &&
+                    plain.files().at(1).name == "$flash_SegoeXbox-Light.xtt",
+                "system update names are accepted");
+    }
+
 } // namespace
 
 int main() {
@@ -482,6 +566,7 @@ int main() {
         {"Package rejects relative escape", test_package_rejects_relative_escape},
         {"Package rejects absolute name", test_package_rejects_absolute_name},
         {"StfsContainer rejects escape", test_container_rejects_escape},
+        {"safeJoin", test_safe_join},
         {"parent cycle rejected", test_parent_cycle_rejected},
         {"nested extraction", test_nested_extraction},
         {"truncated chain throws", test_truncated_chain_throws},
@@ -496,6 +581,9 @@ int main() {
         {"invalid file table descriptor rejected", test_invalid_file_table_descriptor_rejected},
         {"short file table chain rejected", test_short_file_table_chain_rejected},
         {"writable layout rejected", test_writable_layout_rejected},
+        {"name_length beyond field rejected", test_name_length_beyond_field_rejected},
+        {"nameless entry ends listing", test_nameless_entry_ends_listing},
+        {"entry name contents", test_entry_name_contents},
     };
     int failed = 0;
     for (const auto& [name, test] : tests) {
