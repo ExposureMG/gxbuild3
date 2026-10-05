@@ -1,4 +1,5 @@
 #include "excrypt.h"
+#include "stfs/BlockParser.hpp"
 #include "stfs/FileExtractor.hpp"
 #include "stfs/HeaderParser.hpp"
 #include "stfs/Package.hpp"
@@ -324,6 +325,37 @@ namespace {
                 "a zero-size file returns no bytes without walking its chain");
     }
 
+    // --- Offsets and header size -----------------------------------------------------------
+
+    void test_block_offsets_are_64_bit() {
+        require(stfs::blockToOffset(0, 0xAD0E) == 0xB000, "0xAD0E rounds up to 0xB000");
+        require(stfs::blockToOffset(0, 0x971A) == 0xA000, "0x971A rounds up to 0xA000");
+        require(stfs::blockToOffset(2, 0x1F000) == 0x21000, "header sizes above 0xFFFF are kept");
+        require(stfs::blockToOffset(0xFFFFFF, 0xAD0E) == 0xB000 + 0xFFFFFF000ull,
+                "the largest block number does not wrap");
+        require_throws([] { (void) stfs::blockToOffset(0x1000000, 0xAD0E); },
+                       "block numbers above 24 bits are rejected");
+    }
+
+    void test_header_size_out_of_range_rejected() {
+        for (const std::uint32_t header_size : {0x100u, 0x100000u, 0xFFFFF000u}) {
+            auto bytes = make_package({{"a.bin", pattern(10, 1)}});
+            put_be(bytes, 0x340, header_size, 4);
+            require_throws([&] { (void) stfs::Package::fromData(bytes); },
+                           "an absurd header_size is rejected");
+        }
+    }
+
+    void test_invalid_hash_status_message_is_hex() {
+        auto bytes = make_package({{"a.bin", pattern(10, 1)}});
+        bytes[hash_offset(1) + 0x14] = std::byte{0xAB};
+        const auto package = stfs::Package::fromData(bytes);
+        const auto message =
+            thrown_message([&] { (void) package.extractFile(package.files().at(0)); });
+        require(message.find("(0xAB)") != std::string::npos,
+                "the hash entry status is printed in hex");
+    }
+
 } // namespace
 
 int main() {
@@ -339,6 +371,9 @@ int main() {
         {"truncated chain throws", test_truncated_chain_throws},
         {"longer chain is cut at file_size", test_longer_chain_is_cut_at_file_size},
         {"zero-size file skips chain", test_zero_size_file_skips_chain},
+        {"block offsets are 64-bit", test_block_offsets_are_64_bit},
+        {"header_size out of range rejected", test_header_size_out_of_range_rejected},
+        {"invalid hash status message is hex", test_invalid_hash_status_message_is_hex},
     };
     int failed = 0;
     for (const auto& [name, test] : tests) {

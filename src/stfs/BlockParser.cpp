@@ -12,11 +12,14 @@ namespace stfs {
 
     } // namespace
 
-    std::uint32_t blockToOffset(std::uint32_t block, std::uint32_t header_size) {
+    std::uint64_t blockToOffset(std::uint32_t block, std::uint32_t header_size) {
         if (block > 0xFFFFFF) {
             throw std::runtime_error("Block number out of range");
         }
-        return ((header_size + 0xFFF) & 0xF000) + (block << 12);
+        // Block 0 starts at the header size rounded up to the next 4 KiB boundary.
+        const std::uint64_t first_block =
+            (static_cast<std::uint64_t>(header_size) + 0xFFF) & ~std::uint64_t{0xFFF};
+        return first_block + (static_cast<std::uint64_t>(block) << 12);
     }
 
     std::uint32_t computeLevelNHashBlockNumber(std::uint32_t block, int level) {

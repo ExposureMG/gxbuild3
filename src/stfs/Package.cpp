@@ -26,7 +26,7 @@ namespace stfs {
             for (std::int16_t i = 0; i < vd.file_table_block_count; ++i) {
                 auto logical = static_cast<std::uint32_t>(vd.file_table_block_number + i);
                 std::uint32_t data_block = computeDataBlockNumber(logical);
-                std::uint32_t offset = blockToOffset(data_block, header_size);
+                std::uint64_t offset = blockToOffset(data_block, header_size);
 
                 if (offset + kBlockSize > package.size()) {
                     throw std::runtime_error("File table block out of bounds");

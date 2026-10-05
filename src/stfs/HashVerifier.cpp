@@ -42,7 +42,7 @@ namespace stfs {
             record %= kDataBlocksPerHashLevel[0];
 
             std::uint32_t backing_block = computeLevelNHashBlockNumber(block_number, level);
-            std::size_t hash_offset =
+            std::uint64_t hash_offset =
                 blockToOffset(backing_block, header_size) + record * kHashEntrySize;
 
             if (hash_offset + kHashEntrySize > package.size()) {
@@ -78,7 +78,7 @@ namespace stfs {
 
         if (has_l2) {
             std::uint32_t l2_backing = computeLevelNHashBlockNumber(block, 2);
-            std::size_t l2_offset = blockToOffset(l2_backing, header_size);
+            std::uint64_t l2_offset = blockToOffset(l2_backing, header_size);
             if (l2_offset + kBlockSize > package.size())
                 return false;
             std::span<const std::byte> l2_block(package.data() + l2_offset, kBlockSize);
@@ -89,7 +89,7 @@ namespace stfs {
 
         if (has_l1) {
             std::uint32_t l1_backing = computeLevelNHashBlockNumber(block, 1);
-            std::size_t l1_offset = blockToOffset(l1_backing, header_size);
+            std::uint64_t l1_offset = blockToOffset(l1_backing, header_size);
             if (l1_offset + kBlockSize > package.size())
                 return false;
             std::span<const std::byte> l1_block(package.data() + l1_offset, kBlockSize);
@@ -99,7 +99,7 @@ namespace stfs {
         }
 
         std::uint32_t l0_backing = computeLevelNHashBlockNumber(block, 0);
-        std::size_t l0_offset = blockToOffset(l0_backing, header_size);
+        std::uint64_t l0_offset = blockToOffset(l0_backing, header_size);
         if (l0_offset + kBlockSize > package.size())
             return false;
         std::span<const std::byte> l0_block(package.data() + l0_offset, kBlockSize);
@@ -108,7 +108,7 @@ namespace stfs {
         LevelEntry l0_entry = readLevelEntry(package, block, 0, header_size);
 
         std::uint32_t data_phys = computeDataBlockNumber(block);
-        std::size_t data_offset = blockToOffset(data_phys, header_size);
+        std::uint64_t data_offset = blockToOffset(data_phys, header_size);
         if (data_offset + kBlockSize > package.size())
             return false;
         std::span<const std::byte> data_block(package.data() + data_offset, kBlockSize);

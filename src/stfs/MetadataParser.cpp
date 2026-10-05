@@ -80,6 +80,13 @@ namespace stfs {
 
         std::memcpy(meta.header_sha1.data(), base + 0x032C, 0x14);
         meta.header_size = readBE32(base + 0x0340);
+        // Every header holds at least the v1 metadata parsed here (real packages use 0x971A or
+        // 0xAD0E); a header approaching 1 MiB is not a real STFS header.
+        constexpr std::uint32_t kMinHeaderSize = 0x971A;
+        constexpr std::uint32_t kMaxHeaderSize = 0xFFFF0;
+        if (meta.header_size < kMinHeaderSize || meta.header_size > kMaxHeaderSize) {
+            throw std::runtime_error("STFS header size is out of range");
+        }
         meta.content_type = static_cast<ContentType>(readBE32(base + 0x0344));
         meta.metadata_version = static_cast<std::int32_t>(readBE32(base + 0x0348));
         meta.content_size = static_cast<std::int64_t>(readBE64(base + 0x034C));

@@ -4,6 +4,7 @@
 #include <FileExtractor.hpp>
 #include <HashVerifier.hpp>
 #include <algorithm>
+#include <format>
 #include <fstream>
 #include <stdexcept>
 
@@ -23,8 +24,8 @@ namespace stfs {
         HashEntry readHashEntry(std::span<const std::byte> package, std::uint32_t hash_block,
                                 std::uint32_t data_block, std::uint32_t header_size) {
             std::uint32_t entry_index = data_block % 0xAA;
-            std::uint32_t offset =
-                blockToOffset(hash_block, header_size) + entry_index * kHashEntrySize;
+            const std::uint64_t offset = blockToOffset(hash_block, header_size) +
+                                         std::uint64_t{entry_index} * kHashEntrySize;
 
             if (offset + kHashEntrySize > package.size()) {
                 throw std::runtime_error("Hash entry offset out of bounds");
@@ -40,10 +41,10 @@ namespace stfs {
             constexpr std::uint8_t kStatusNewlyAllocated = 0xC0;
 
             if (entry.status != kStatusUsed && entry.status != kStatusNewlyAllocated) {
-                throw std::runtime_error("Block " + std::to_string(data_block) +
-                                         " has invalid hash entry status (0x" +
-                                         std::to_string(static_cast<int>(entry.status)) +
-                                         ") - expected used or newly allocated");
+                throw std::runtime_error(
+                    std::format("Block {} has invalid hash entry status (0x{:02X}) - expected used "
+                                "or newly allocated",
+                                data_block, entry.status));
             }
 
             return entry;
@@ -106,7 +107,7 @@ namespace stfs {
             }
 
             std::uint32_t data_block = computeDataBlockNumber(logical_block);
-            std::uint32_t offset = blockToOffset(data_block, header_size);
+            const std::uint64_t offset = blockToOffset(data_block, header_size);
 
             if (offset + kBlockSize > package.size()) {
                 throw std::runtime_error("Data block offset out of bounds");
