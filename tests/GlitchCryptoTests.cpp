@@ -23,8 +23,7 @@ using gxbuild3::extract_all;
 using gxbuild3::extract_all_info;
 using gxbuild3::extract_metadata;
 using gxbuild3::run_build;
-using gxbuild3::nand::FlashImage;
-using gxbuild3::nand::Keyvault;
+using namespace gxbuild3::nand;
 
 namespace {
     using Bytes = std::vector<uint8_t>;

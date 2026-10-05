@@ -170,8 +170,8 @@ namespace gxbuild3::cli {
         std::expected<std::vector<uint8_t>, ResolutionError>
         parse_cpu_key(std::string_view raw, const std::filesystem::path& path) {
             raw = trim_view(raw);
-            const auto parsed = validate_cpu_key_hex(raw);
-            if (parsed.status == CpuKeyStatus::Invalid) {
+            const auto parsed = nand::validate_cpu_key_hex(raw);
+            if (parsed.status == nand::CpuKeyStatus::Invalid) {
                 return std::unexpected(error(ResolutionErrorCode::InvalidCpuKey, parsed.message,
                                              path, std::string(raw)));
             }

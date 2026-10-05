@@ -11,6 +11,8 @@ using GxBuild::BuildType;
 using GxBuild::InputPatches;
 using GxBuild::InputPatchFile;
 
+using namespace gxbuild3::nand;
+
 namespace {
 
     using Bytes = std::vector<uint8_t>;
@@ -66,7 +68,7 @@ namespace {
     bool test_byte_parser_uses_supplied_data() {
         const auto bytes = glitch_patchset(Bytes{0xA0, 0xA1});
         ParsedPatchSet parsed;
-        if (!require(BinaryParser::ParsePatchSet(bytes, BuildType::Glitch2, parsed),
+        if (!require(ParsePatchSet(bytes, BuildType::Glitch2, parsed),
                      "in-memory glitch patchset parses")) {
             return false;
         }
@@ -88,7 +90,7 @@ namespace {
             InputPatchFile{"file-that-must-not-be-opened.bin", glitch_patchset(Bytes{0x10})};
         patches.addons = {{"first", {0x20}}, {"second", {0x30}}};
 
-        const auto parsed = BinaryParser::ParseAndMergePatchSet(patches, BuildType::Glitch2);
+        const auto parsed = ParseAndMergePatchSet(patches, BuildType::Glitch2);
         const auto* khv = parsed ? find_section(*parsed, PatchSectionTarget::Khv) : nullptr;
         return require(parsed.has_value(), "glitch patchset parses from supplied bytes") &&
                require(khv && khv->raw_data == Bytes({0x10, 0x20, 0x30}),
@@ -100,7 +102,7 @@ namespace {
         patches.automatic = InputPatchFile{"unused-jtag-name.bin", jtag_patchset()};
         patches.addons = {{"first", {0x20}}, {"second", {0x30}}};
 
-        const auto parsed = BinaryParser::ParseAndMergePatchSet(patches, BuildType::Jtag);
+        const auto parsed = ParseAndMergePatchSet(patches, BuildType::Jtag);
         const auto* section4 =
             parsed ? find_section(*parsed, PatchSectionTarget::JtagSection4) : nullptr;
         return require(parsed.has_value(), "JTAG patchset parses from supplied bytes") &&
@@ -142,14 +144,14 @@ namespace {
             ParsedPatchSet parsed;
             parsed.sections.push_back(
                 ParsedPatchSection{PatchSectionTarget::Khv, "sentinel", {0xAA}, {}});
-            if (!require(!BinaryParser::ParsePatchSet(bytes, BuildType::Glitch, parsed), name) ||
+            if (!require(!ParsePatchSet(bytes, BuildType::Glitch, parsed), name) ||
                 !require(parsed.sections.empty(), "failed parse leaves no partial sections")) {
                 return false;
             }
 
             InputPatches patches{};
             patches.automatic = InputPatchFile{"unused", bytes};
-            const auto merged = BinaryParser::ParseAndMergePatchSet(patches, BuildType::Glitch);
+            const auto merged = ParseAndMergePatchSet(patches, BuildType::Glitch);
             if (!require(!merged.has_value() && !merged.error().message.empty(),
                          "merge reports deterministic malformed-byte error")) {
                 return false;
@@ -168,7 +170,7 @@ namespace {
         ParsedPatchSet parsed;
         parsed.sections.push_back(
             ParsedPatchSection{PatchSectionTarget::Khv, "sentinel", {0xAA}, {}});
-        if (!require(!BinaryParser::ParsePatchSet(three_sections, BuildType::Jtag, parsed),
+        if (!require(!ParsePatchSet(three_sections, BuildType::Jtag, parsed),
                      "JTAG patchset with wrong delimiter count fails") ||
             !require(parsed.sections.empty(), "JTAG failure leaves no partial sections")) {
             return false;
@@ -176,8 +178,7 @@ namespace {
 
         parsed.sections.push_back(
             ParsedPatchSection{PatchSectionTarget::Khv, "sentinel", {0xAA}, {}});
-        return require(!BinaryParser::ParsePatchSet(glitch_patchset(Bytes{0x10}), BuildType::Retail,
-                                                    parsed),
+        return require(!ParsePatchSet(glitch_patchset(Bytes{0x10}), BuildType::Retail, parsed),
                        "unsupported build type fails") &&
                require(parsed.sections.empty(), "unsupported type leaves no partial sections");
     }

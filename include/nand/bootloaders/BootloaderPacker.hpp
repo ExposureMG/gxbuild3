@@ -6,7 +6,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::bootloaders {
+namespace gxbuild3::nand {
 
     enum class HmacType {
         Default,
@@ -29,4 +29,4 @@ namespace gxbuild3::bootloaders {
 
     bool crypt_bootloaders(std::vector<BootloaderBlock>& bls, std::span<const uint8_t> cpu_key);
 
-} // namespace gxbuild3::bootloaders
+} // namespace gxbuild3::nand

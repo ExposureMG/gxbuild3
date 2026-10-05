@@ -5,17 +5,21 @@
 #include <optional>
 #include <vector>
 
-class BootloaderCe {
-  public:
-    ce_header header;
-    std::vector<uint8_t> data;
-    bool decrypted = false;
+namespace gxbuild3::nand {
 
-    static BootloaderCe parse(const std::vector<uint8_t>& bytes);
+    class BootloaderCe {
+      public:
+        ce_header header;
+        std::vector<uint8_t> data;
+        bool decrypted = false;
 
-    void decrypt(const uint8_t cd_key[16]);
-    void encrypt(const uint8_t cd_key[16]);
+        static BootloaderCe parse(const std::vector<uint8_t>& bytes);
 
-    bool is_decrypted() const;
-    std::vector<uint8_t> serialize() const;
-};
+        void decrypt(const uint8_t cd_key[16]);
+        void encrypt(const uint8_t cd_key[16]);
+
+        bool is_decrypted() const;
+        std::vector<uint8_t> serialize() const;
+    };
+
+} // namespace gxbuild3::nand

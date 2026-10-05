@@ -21,6 +21,8 @@ using GxBuild::ImageType;
 using GxBuild::Input;
 using GxBuild::InputBootloaders;
 
+using namespace gxbuild3::nand;
+
 namespace {
 
     using Bytes = std::vector<uint8_t>;

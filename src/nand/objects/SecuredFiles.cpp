@@ -311,15 +311,15 @@ namespace gxbuild3::nand {
 
     CrlSealing random_crl_sealing() {
         CrlSealing sealing{};
-        ::ExCryptRandom(sealing.iv.data(), sealing.iv.size());
-        ::ExCryptRandom(sealing.file_key.data(), sealing.file_key.size());
+        ExCryptRandom(sealing.iv.data(), sealing.iv.size());
+        ExCryptRandom(sealing.file_key.data(), sealing.file_key.size());
         return sealing;
     }
 
     DaeSealing random_dae_sealing() {
         DaeSealing sealing{};
-        ::ExCryptRandom(sealing.head.data(), sealing.head.size());
-        ::ExCryptRandom(sealing.field.data(), sealing.field.size());
+        ExCryptRandom(sealing.head.data(), sealing.head.size());
+        ExCryptRandom(sealing.field.data(), sealing.field.size());
         return sealing;
     }
 
@@ -438,7 +438,7 @@ namespace gxbuild3::nand {
 
     std::array<uint8_t, 8> random_secdata_head() {
         std::array<uint8_t, 8> head{};
-        ::ExCryptRandom(head.data(), head.size());
+        ExCryptRandom(head.data(), head.size());
         return head;
     }
 

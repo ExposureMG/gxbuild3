@@ -36,6 +36,8 @@ using GxBuild::InputPatchFile;
 using gxbuild3::extract_all;
 using gxbuild3::run_build;
 
+using namespace gxbuild3::nand;
+
 namespace {
 
     using Bytes = std::vector<uint8_t>;
@@ -1645,8 +1647,8 @@ namespace {
                            result->input.patches->addons[1].data == Bytes{0x12},
                        "add-ons preserve CLI order and first-root priority") &&
                [&] {
-                   const auto merged = BinaryParser::ParseAndMergePatchSet(
-                       *result->input.patches, result->input.build_type);
+                   const auto merged =
+                       ParseAndMergePatchSet(*result->input.patches, result->input.build_type);
                    if (!require(merged.has_value(), "resolved patches parse and merge")) {
                        return false;
                    }

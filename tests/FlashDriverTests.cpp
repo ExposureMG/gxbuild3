@@ -16,11 +16,7 @@
 #include <utility>
 #include <vector>
 
-using gxbuild3::nand::BlockMetadata;
-using gxbuild3::nand::Driver;
-using gxbuild3::nand::FlashFileSystem;
-using gxbuild3::nand::FlashImage;
-using gxbuild3::nand::Smc;
+using namespace gxbuild3::nand;
 
 namespace gxbuild3::nand {
 

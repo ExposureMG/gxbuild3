@@ -595,7 +595,7 @@ namespace {
         }
         BootloaderNonce nonce{};
         do {
-            ::ExCryptRandom(nonce.data(), nonce.size());
+            ExCryptRandom(nonce.data(), nonce.size());
         } while (is_zero_nonce(nonce));
         return nonce;
     }
@@ -1050,7 +1050,7 @@ BuildResult gxbuild3::run_build(const Input& input) try {
 
     std::optional<ParsedPatchSet> parsed_patchset;
     if (input.patches && input.patches->automatic) {
-        auto parsed = BinaryParser::ParseAndMergePatchSet(*input.patches, input.build_type);
+        auto parsed = ParseAndMergePatchSet(*input.patches, input.build_type);
         if (!parsed) {
             return build_error(BuildErrorCode::PatchFailure, parsed.error().message);
         }
@@ -1254,7 +1254,7 @@ BuildResult gxbuild3::run_build(const Input& input) try {
     if (parsed_patchset) {
         size_t patch_size = 0;
         if (parsed_patchset->kind == PatchSetKind::Jtag) {
-            patch_size = BinaryParser::SerializePatchSet(*parsed_patchset).size();
+            patch_size = SerializePatchSet(*parsed_patchset).size();
             if (patch_size > 0x4000) {
                 return build_error(BuildErrorCode::PatchFailure,
                                    "JTAG patch payload exceeds the 0x4000-byte region");
@@ -1265,7 +1265,7 @@ BuildResult gxbuild3::run_build(const Input& input) try {
                 return build_error(BuildErrorCode::PatchFailure,
                                    "Glitch patchset has no KHV payload section");
             }
-            patch_size = BinaryParser::SerializeKhvPayload(*khv).size();
+            patch_size = SerializeKhvPayload(*khv).size();
             const bool is_big_or_emmc =
                 flash_image.flash_driver.driver_mode() == Driver::DriverMode::Big ||
                 flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc;
@@ -1995,7 +1995,7 @@ std::optional<Input> gxbuild3::extract_all(std::span<const uint8_t> nand_image,
         out.build_type = *img.build_type;
         out.patches = InputPatches{};
         out.patches->automatic =
-            InputPatchFile{"extracted", BinaryParser::SerializePatchSet(*img.payloads.patchset)};
+            InputPatchFile{"extracted", SerializePatchSet(*img.payloads.patchset)};
     }
     out.metadata.cpu_key = std::vector<uint8_t>(cpu_key.begin(), cpu_key.end());
     out.metadata.nand_image = std::vector<uint8_t>(nand_image.begin(), nand_image.end());

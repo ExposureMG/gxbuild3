@@ -8,124 +8,122 @@
 #include <cstring>
 #include <span>
 
-using GxBuild::BuildType;
-using GxBuild::InputPatches;
+namespace gxbuild3::nand {
 
-namespace {
+    namespace {
 
-    constexpr uint32_t kSectionDelimiter = 0xFFFFFFFFU;
+        constexpr uint32_t kSectionDelimiter = 0xFFFFFFFFU;
 
-    bool ReadBe32(std::span<const uint8_t> data, size_t offset, uint32_t& outValue) {
-        if (offset + sizeof(uint32_t) > data.size()) {
-            return false;
+        bool ReadBe32(std::span<const uint8_t> data, size_t offset, uint32_t& outValue) {
+            if (offset + sizeof(uint32_t) > data.size()) {
+                return false;
+            }
+
+            std::memcpy(&outValue, data.data() + offset, sizeof(uint32_t));
+            outValue = swap32(outValue);
+            return true;
         }
 
-        std::memcpy(&outValue, data.data() + offset, sizeof(uint32_t));
-        outValue = swap32(outValue);
-        return true;
-    }
+        void AppendBe32(std::vector<uint8_t>& data, uint32_t value) {
+            value = swap32(value);
+            const auto* value_bytes = reinterpret_cast<const uint8_t*>(&value);
+            data.insert(data.end(), value_bytes, value_bytes + sizeof(uint32_t));
+        }
 
-    void AppendBe32(std::vector<uint8_t>& data, uint32_t value) {
-        value = swap32(value);
-        const auto* value_bytes = reinterpret_cast<const uint8_t*>(&value);
-        data.insert(data.end(), value_bytes, value_bytes + sizeof(uint32_t));
-    }
+        bool ParseXePatchSectionBytes(std::span<const uint8_t> data, size_t startOffset,
+                                      std::vector<XePatchEntry>& outEntries, size_t& outConsumed) {
+            outEntries.clear();
+            outConsumed = 0;
 
-    bool ParseXePatchSectionBytes(std::span<const uint8_t> data, size_t startOffset,
-                                  std::vector<XePatchEntry>& outEntries, size_t& outConsumed) {
-        outEntries.clear();
-        outConsumed = 0;
-
-        size_t cursor = startOffset;
-        while (true) {
-            uint32_t address = 0;
-            if (!ReadBe32(data, cursor, address)) {
-                return false;
-            }
-            cursor += sizeof(uint32_t);
-
-            if (address == kSectionDelimiter) {
-                outConsumed = cursor - startOffset;
-                return true;
-            }
-
-            uint32_t length = 0;
-            if (!ReadBe32(data, cursor, length)) {
-                return false;
-            }
-            cursor += sizeof(uint32_t);
-
-            const uint64_t wordsByteCount = static_cast<uint64_t>(length) * sizeof(uint32_t);
-            if (cursor + wordsByteCount > data.size()) {
-                return false;
-            }
-
-            XePatchEntry entry;
-            entry.address = address;
-            entry.length = length;
-            entry.words.resize(length);
-
-            for (uint32_t i = 0; i < length; ++i) {
-                if (!ReadBe32(data, cursor, entry.words[i])) {
+            size_t cursor = startOffset;
+            while (true) {
+                uint32_t address = 0;
+                if (!ReadBe32(data, cursor, address)) {
                     return false;
                 }
                 cursor += sizeof(uint32_t);
-            }
 
-            outEntries.push_back(std::move(entry));
-        }
-    }
+                if (address == kSectionDelimiter) {
+                    outConsumed = cursor - startOffset;
+                    return true;
+                }
 
-    bool SplitRawSections(std::span<const uint8_t> data, size_t expectedSectionCount,
-                          std::vector<std::vector<uint8_t>>& outSections) {
-        outSections.clear();
-
-        size_t sectionStart = 0;
-        size_t cursor = 0;
-        while (cursor + sizeof(uint32_t) <= data.size()) {
-            uint32_t word = 0;
-            if (!ReadBe32(data, cursor, word)) {
-                return false;
-            }
-
-            if (word == kSectionDelimiter) {
-                outSections.emplace_back(data.begin() + sectionStart, data.begin() + cursor);
+                uint32_t length = 0;
+                if (!ReadBe32(data, cursor, length)) {
+                    return false;
+                }
                 cursor += sizeof(uint32_t);
-                sectionStart = cursor;
-                continue;
+
+                const uint64_t wordsByteCount = static_cast<uint64_t>(length) * sizeof(uint32_t);
+                if (cursor + wordsByteCount > data.size()) {
+                    return false;
+                }
+
+                XePatchEntry entry;
+                entry.address = address;
+                entry.length = length;
+                entry.words.resize(length);
+
+                for (uint32_t i = 0; i < length; ++i) {
+                    if (!ReadBe32(data, cursor, entry.words[i])) {
+                        return false;
+                    }
+                    cursor += sizeof(uint32_t);
+                }
+
+                outEntries.push_back(std::move(entry));
+            }
+        }
+
+        bool SplitRawSections(std::span<const uint8_t> data, size_t expectedSectionCount,
+                              std::vector<std::vector<uint8_t>>& outSections) {
+            outSections.clear();
+
+            size_t sectionStart = 0;
+            size_t cursor = 0;
+            while (cursor + sizeof(uint32_t) <= data.size()) {
+                uint32_t word = 0;
+                if (!ReadBe32(data, cursor, word)) {
+                    return false;
+                }
+
+                if (word == kSectionDelimiter) {
+                    outSections.emplace_back(data.begin() + sectionStart, data.begin() + cursor);
+                    cursor += sizeof(uint32_t);
+                    sectionStart = cursor;
+                    continue;
+                }
+
+                cursor += sizeof(uint32_t);
             }
 
-            cursor += sizeof(uint32_t);
+            if (sectionStart < data.size()) {
+                outSections.emplace_back(data.begin() + sectionStart, data.end());
+            }
+            return outSections.size() == expectedSectionCount;
         }
 
-        if (sectionStart < data.size()) {
-            outSections.emplace_back(data.begin() + sectionStart, data.end());
+        std::optional<PatchSetKind> ResolvePatchSetKind(BuildType buildType) {
+            switch (buildType) {
+                case BuildType::Jtag:
+                    return PatchSetKind::Jtag;
+                case BuildType::Glitch:
+                case BuildType::Glitch2:
+                case BuildType::Glitch2m:
+                case BuildType::Glitch3:
+                case BuildType::Devgl:
+                    return PatchSetKind::Glitch;
+                default:
+                    return std::nullopt;
+            }
         }
-        return outSections.size() == expectedSectionCount;
-    }
 
-    std::optional<PatchSetKind> ResolvePatchSetKind(BuildType buildType) {
-        switch (buildType) {
-            case BuildType::Jtag:
-                return PatchSetKind::Jtag;
-            case BuildType::Glitch:
-            case BuildType::Glitch2:
-            case BuildType::Glitch2m:
-            case BuildType::Glitch3:
-            case BuildType::Devgl:
-                return PatchSetKind::Glitch;
-            default:
-                return std::nullopt;
+        PatchSectionTarget ResolveGlitchSection1Target(BuildType buildType) {
+            return buildType == BuildType::Glitch ? PatchSectionTarget::Cb
+                                                  : PatchSectionTarget::Cbb;
         }
-    }
 
-    PatchSectionTarget ResolveGlitchSection1Target(BuildType buildType) {
-        return buildType == BuildType::Glitch ? PatchSectionTarget::Cb : PatchSectionTarget::Cbb;
-    }
-
-} // namespace
-
-namespace BinaryParser {
+    } // namespace
 
     bool ParsePatchSet(std::span<const uint8_t> fileData, BuildType buildType,
                        ParsedPatchSet& outPatchSet) {
@@ -266,4 +264,4 @@ namespace BinaryParser {
         return out;
     }
 
-} // namespace BinaryParser
+} // namespace gxbuild3::nand

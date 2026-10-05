@@ -12,19 +12,19 @@ namespace gxbuild3::nand {
 
 #pragma pack(push, 1)
 
-    typedef struct _KV_CONTROLLER_DATA {
+    struct KV_CONTROLLER_DATA {
         uint32_t dwKey1Idx;
         uint32_t dwKey2Idx;
         uint8_t dwKey1Data[0x10];
         uint8_t dwKey2Data[0x10];
-    } KV_CONTROLLER_DATA, *PKV_CONTROLLER_DATA;
+    };
 
-    typedef struct _CONSOLE_PUBLIC_KEY {
+    struct CONSOLE_PUBLIC_KEY {
         uint32_t PublicExponent;
         uint8_t Modulus[0x80];
-    } CONSOLE_PUBLIC_KEY, *PCONSOLE_PUBLIC_KEY;
+    };
 
-    typedef struct _XE_CONSOLE_CERTIFICATE {
+    struct XE_CONSOLE_CERTIFICATE {
         uint16_t CertSize;
         uint8_t ConsoleId[0x5];
         char ConsolePartNumber[0xB];
@@ -34,9 +34,9 @@ namespace gxbuild3::nand {
         char ManufacturingDate[8];
         CONSOLE_PUBLIC_KEY ConsolePublicKey;
         uint8_t Signature[0x100];
-    } XE_CONSOLE_CERTIFICATE, *PXE_CONSOLE_CERTIFICATE;
+    };
 
-    typedef struct _XE_KEYVAULT_DATA {
+    struct XE_KEYVAULT_DATA {
         uint8_t bKeyVaultNonce[0x10];
         uint8_t bKeyVaultPairData[0x8];
         uint8_t b0ManufacturingMode;
@@ -100,9 +100,9 @@ namespace gxbuild3::nand {
         uint8_t b37Padding[0x1146];
         uint8_t b39SpecialKeyVaultSignature[0x100];
         uint8_t b38CardeaCertificate[0x2108];
-    } XE_KEYVAULT_DATA, *PXE_KEYVAULT_DATA;
+    };
 
-    typedef struct _XE_FCRT_DATA {
+    struct XE_FCRT_DATA {
         uint8_t bSignature[0x100];
         uint8_t bAesIv[0x10];
         uint32_t dwUnknown;
@@ -112,22 +112,22 @@ namespace gxbuild3::nand {
         uint8_t bUnknown[0xC];
         uint8_t bDigest[0x14];
         uint8_t bData[0x3ec0];
-    } XE_FCRT_DATA, *PXE_FCRT_DATA;
+    };
 
-    typedef struct _XE_CERTIFICATE_REVOCATION_DATA {
+    struct XE_CERTIFICATE_REVOCATION_DATA {
         uint32_t dwLength;
         uint32_t dwVersion;
         uint32_t dwCount;
         uint8_t bRevokedDigests[0x884];
-    } XE_CERTIFICATE_REVOCATION_DATA, *PXE_CERTIFICATE_REVOCATION_DATA;
+    };
 
-    typedef struct _XE_CERTIFICATE_REVOCATION_BOX_DATA {
+    struct XE_CERTIFICATE_REVOCATION_BOX_DATA {
         uint8_t bFileTimestamp[0x8];
         uint8_t bUnknown[0x7];
         uint8_t bLockDownValue;
-    } XE_CERTIFICATE_REVOCATION_BOX_DATA, *PXE_CERTIFICATE_REVOCATION_BOX_DATA;
+    };
 
-    typedef struct _XE_CRL_DATA {
+    struct XE_CRL_DATA {
         uint32_t dwMagic;
         uint8_t bConsoleId[0x5];
         uint8_t bPadding[0x3];
@@ -137,9 +137,9 @@ namespace gxbuild3::nand {
         uint8_t bAesKey1[0x10];
         XE_CERTIFICATE_REVOCATION_BOX_DATA xeBoxData;
         XE_CERTIFICATE_REVOCATION_DATA xeData;
-    } XE_CRL_DATA, *PXE_CRL_DATA;
+    };
 
-    typedef struct _XE_SEC_DATA {
+    struct XE_SEC_DATA {
         uint8_t bPairingData[0x3];
         uint8_t bPadding[0x3];
         uint8_t bSecurityInitialised;
@@ -150,15 +150,15 @@ namespace gxbuild3::nand {
         uint64_t qwDvdDisconnectedCount;
         uint64_t qwLockSystemUpdateCount;
         uint8_t WhateverMan[0x4000];
-    } XE_SEC_DATA, *PXE_SEC_DATA;
+    };
 
-    typedef struct _XE_EXTENDED_KV_DATA {
+    struct XE_EXTENDED_KV_DATA {
         uint8_t WhateverMan[0x4000];
-    } XE_EXTENDED_KV_DATA, *PXE_EXTENDED_KV_DATA;
+    };
 
-    typedef struct _XE_DAE_DATA {
+    struct XE_DAE_DATA {
         uint8_t WhateverMan[0x4000];
-    } XE_DAE_DATA, *PXE_DAE_DATA;
+    };
 
 #pragma pack(pop)
 
@@ -233,14 +233,3 @@ namespace gxbuild3::nand {
                                                      std::span<const uint8_t> data);
 
 } // namespace gxbuild3::nand
-
-using gxbuild3::nand::CpuKeyResult;
-using gxbuild3::nand::CpuKeyStatus;
-using gxbuild3::nand::is_zero_cpu_key;
-using gxbuild3::nand::Keyvault;
-using gxbuild3::nand::keyvault_decrypt;
-using gxbuild3::nand::keyvault_encrypt;
-using gxbuild3::nand::LooseKeyvault;
-using gxbuild3::nand::open_loose_keyvault;
-using gxbuild3::nand::validate_cpu_key;
-using gxbuild3::nand::validate_cpu_key_hex;

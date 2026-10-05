@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+using namespace gxbuild3::nand;
+
 namespace {
 
     // Public synthetic CPU key already used by CliFixtureGenerator.cpp.

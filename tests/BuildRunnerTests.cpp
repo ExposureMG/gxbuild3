@@ -50,12 +50,7 @@ using gxbuild3::extract_all_info;
 using gxbuild3::extract_metadata;
 using gxbuild3::extract_some_info;
 using gxbuild3::run_build;
-using gxbuild3::nand::BlockMetadata;
-using gxbuild3::nand::Driver;
-using gxbuild3::nand::FlashImage;
-using gxbuild3::nand::Keyvault;
-using gxbuild3::nand::MobileData;
-using gxbuild3::nand::Smc;
+using namespace gxbuild3::nand;
 
 namespace {
 
@@ -858,8 +853,8 @@ namespace {
         payloads.xell = valid_xell();
         input.payloads = std::move(payloads);
 
-        const auto merged = BinaryParser::ParseAndMergePatchSet(patches, BuildType::Jtag);
-        const auto expected = merged ? BinaryParser::SerializePatchSet(*merged) : Bytes{};
+        const auto merged = ParseAndMergePatchSet(patches, BuildType::Jtag);
+        const auto expected = merged ? SerializePatchSet(*merged) : Bytes{};
         const auto built = run_build(input);
         const auto written_patch =
             built ? read_logical(*built, 0x91000, expected.size()) : std::nullopt;

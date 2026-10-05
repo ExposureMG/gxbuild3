@@ -9,109 +9,111 @@
 #include <cstring>
 #include <stdexcept>
 
-BootloaderCg BootloaderCg::parse(const std::vector<uint8_t>& bytes) {
-    BootloaderCg cg;
-    if (bytes.size() < sizeof(cg_header))
-        throw std::runtime_error("CG/7BL data too short");
+namespace gxbuild3::nand {
 
-    std::memcpy(&cg.header, bytes.data(), sizeof(cg_header));
+    BootloaderCg BootloaderCg::parse(const std::vector<uint8_t>& bytes) {
+        BootloaderCg cg;
+        if (bytes.size() < sizeof(cg_header))
+            throw std::runtime_error("CG/7BL data too short");
 
-    byteswap_generic_header(cg.header.header);
-    byteswap_cg_header_numeric_fields(cg.header);
+        std::memcpy(&cg.header, bytes.data(), sizeof(cg_header));
 
-    cg.data = std::vector<uint8_t>(bytes.begin() + sizeof(cg_header), bytes.end());
-    cg.decrypted = cg.is_decrypted();
-    Log::Debug("Parsed 7BL/CG: version={}, size=0x{:X}, entrypoint=0x{:08X}",
-               cg.header.header.version, cg.header.header.size, cg.header.header.entrypoint);
-    return cg;
-}
+        byteswap_generic_header(cg.header.header);
+        byteswap_cg_header_numeric_fields(cg.header);
 
-void BootloaderCg::decrypt(const uint8_t cg_hmac[16]) {
-    if (decrypted)
-        return;
-    uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-    size_t payload_len = size_aligned - sizeof(generic_header);
-
-    if (data.size() + sizeof(cg_header) - sizeof(generic_header) < payload_len) {
-        size_t needed_data_size = payload_len - (sizeof(cg_header) - sizeof(generic_header));
-        data.resize(needed_data_size, 0x00);
+        cg.data = std::vector<uint8_t>(bytes.begin() + sizeof(cg_header), bytes.end());
+        cg.decrypted = cg.is_decrypted();
+        Log::Debug("Parsed 7BL/CG: version={}, size=0x{:X}, entrypoint=0x{:08X}",
+                   cg.header.header.version, cg.header.header.size, cg.header.header.entrypoint);
+        return cg;
     }
 
-    uint8_t cur_key[16];
-    std::memcpy(cur_key, cg_hmac, 16);
+    void BootloaderCg::decrypt(const uint8_t cg_hmac[16]) {
+        if (decrypted)
+            return;
+        uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
+        size_t payload_len = size_aligned - sizeof(generic_header);
 
-    std::vector<uint8_t> buffer(sizeof(cg_header) + data.size());
-    cg_header temp_hdr = header;
-    byteswap_generic_header(temp_hdr.header);
-    byteswap_cg_header_numeric_fields(temp_hdr);
-    std::memcpy(buffer.data(), &temp_hdr, sizeof(cg_header));
-    std::memcpy(buffer.data() + sizeof(cg_header), data.data(), data.size());
-
-    gxbuild3::bootloaders::crypt_single_bl(buffer, gxbuild3::bootloaders::HmacType::Default,
-                                           cur_key, nullptr, nullptr, 0x20);
-
-    std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
-                sizeof(cg_header) - 0x20);
-    byteswap_cg_header_numeric_fields(header);
-    std::memcpy(data.data(), buffer.data() + sizeof(cg_header), data.size());
-
-    decrypted = true;
-}
-
-void BootloaderCg::encrypt(const uint8_t cg_hmac[16]) {
-    if (!decrypted)
-        return;
-    uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-    size_t payload_len = size_aligned - sizeof(generic_header);
-
-    if (data.size() + sizeof(cg_header) - sizeof(generic_header) < payload_len) {
-        size_t req = payload_len - (sizeof(cg_header) - sizeof(generic_header));
-        data.resize(req, 0x00);
-    }
-
-    bool is_zero = true;
-    for (size_t i = 0; i < 16; ++i) {
-        if (header.key[i] != 0) {
-            is_zero = false;
-            break;
+        if (data.size() + sizeof(cg_header) - sizeof(generic_header) < payload_len) {
+            size_t needed_data_size = payload_len - (sizeof(cg_header) - sizeof(generic_header));
+            data.resize(needed_data_size, 0x00);
         }
+
+        uint8_t cur_key[16];
+        std::memcpy(cur_key, cg_hmac, 16);
+
+        std::vector<uint8_t> buffer(sizeof(cg_header) + data.size());
+        cg_header temp_hdr = header;
+        byteswap_generic_header(temp_hdr.header);
+        byteswap_cg_header_numeric_fields(temp_hdr);
+        std::memcpy(buffer.data(), &temp_hdr, sizeof(cg_header));
+        std::memcpy(buffer.data() + sizeof(cg_header), data.data(), data.size());
+
+        crypt_single_bl(buffer, HmacType::Default, cur_key, nullptr, nullptr, 0x20);
+
+        std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
+                    sizeof(cg_header) - 0x20);
+        byteswap_cg_header_numeric_fields(header);
+        std::memcpy(data.data(), buffer.data() + sizeof(cg_header), data.size());
+
+        decrypted = true;
     }
-    if (is_zero) {
-        ExCryptRandom(header.key, 16);
+
+    void BootloaderCg::encrypt(const uint8_t cg_hmac[16]) {
+        if (!decrypted)
+            return;
+        uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
+        size_t payload_len = size_aligned - sizeof(generic_header);
+
+        if (data.size() + sizeof(cg_header) - sizeof(generic_header) < payload_len) {
+            size_t req = payload_len - (sizeof(cg_header) - sizeof(generic_header));
+            data.resize(req, 0x00);
+        }
+
+        bool is_zero = true;
+        for (size_t i = 0; i < 16; ++i) {
+            if (header.key[i] != 0) {
+                is_zero = false;
+                break;
+            }
+        }
+        if (is_zero) {
+            ExCryptRandom(header.key, 16);
+        }
+
+        uint8_t cur_key[16];
+        std::memcpy(cur_key, cg_hmac, 16);
+
+        std::vector<uint8_t> buffer(sizeof(cg_header) + data.size());
+        cg_header temp_hdr = header;
+        byteswap_generic_header(temp_hdr.header);
+        byteswap_cg_header_numeric_fields(temp_hdr);
+        std::memcpy(buffer.data(), &temp_hdr, sizeof(cg_header));
+        std::memcpy(buffer.data() + sizeof(cg_header), data.data(), data.size());
+
+        crypt_single_bl(buffer, HmacType::Default, cur_key, nullptr, nullptr, 0x20);
+
+        std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
+                    sizeof(cg_header) - 0x20);
+        byteswap_cg_header_numeric_fields(header);
+        std::memcpy(data.data(), buffer.data() + sizeof(cg_header), data.size());
+
+        decrypted = false;
     }
 
-    uint8_t cur_key[16];
-    std::memcpy(cur_key, cg_hmac, 16);
+    bool BootloaderCg::is_decrypted() const {
+        return decrypted || (header.source_size != 0 && (header.source_size & 0xFFF) == 0x000);
+    }
 
-    std::vector<uint8_t> buffer(sizeof(cg_header) + data.size());
-    cg_header temp_hdr = header;
-    byteswap_generic_header(temp_hdr.header);
-    byteswap_cg_header_numeric_fields(temp_hdr);
-    std::memcpy(buffer.data(), &temp_hdr, sizeof(cg_header));
-    std::memcpy(buffer.data() + sizeof(cg_header), data.data(), data.size());
+    std::vector<uint8_t> BootloaderCg::serialize() const {
+        std::vector<uint8_t> out(sizeof(cg_header));
+        cg_header temp_hdr = header;
+        byteswap_generic_header(temp_hdr.header);
+        byteswap_cg_header_numeric_fields(temp_hdr);
 
-    gxbuild3::bootloaders::crypt_single_bl(buffer, gxbuild3::bootloaders::HmacType::Default,
-                                           cur_key, nullptr, nullptr, 0x20);
+        std::memcpy(out.data(), &temp_hdr, sizeof(cg_header));
+        out.insert(out.end(), data.begin(), data.end());
+        return out;
+    }
 
-    std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
-                sizeof(cg_header) - 0x20);
-    byteswap_cg_header_numeric_fields(header);
-    std::memcpy(data.data(), buffer.data() + sizeof(cg_header), data.size());
-
-    decrypted = false;
-}
-
-bool BootloaderCg::is_decrypted() const {
-    return decrypted || (header.source_size != 0 && (header.source_size & 0xFFF) == 0x000);
-}
-
-std::vector<uint8_t> BootloaderCg::serialize() const {
-    std::vector<uint8_t> out(sizeof(cg_header));
-    cg_header temp_hdr = header;
-    byteswap_generic_header(temp_hdr.header);
-    byteswap_cg_header_numeric_fields(temp_hdr);
-
-    std::memcpy(out.data(), &temp_hdr, sizeof(cg_header));
-    out.insert(out.end(), data.begin(), data.end());
-    return out;
-}
+} // namespace gxbuild3::nand

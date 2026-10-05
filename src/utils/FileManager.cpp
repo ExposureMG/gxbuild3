@@ -97,7 +97,7 @@ namespace gxbuild3::utils {
         // the request names another stage, or a version other than the one the package
         // carries: "cf_4532.bin" is never answered with the CF of a 17559 package. A request
         // naming no version takes the package's.
-        const std::vector<uint8_t>* xboxupd_part_for(const bootloaders::XboxupdParts& parts,
+        const std::vector<uint8_t>* xboxupd_part_for(const nand::XboxupdParts& parts,
                                                      std::string_view key, std::string_view stem) {
             const std::vector<uint8_t>* part = nullptr;
             if (key.starts_with("cf") || stem == "6bl")
@@ -203,7 +203,7 @@ namespace gxbuild3::utils {
             std::unique_ptr<stfs::StfsContainer> container;
             std::unordered_map<std::string, std::vector<uint8_t>> extracted_files;
             bool xboxupd_attempted = false;
-            std::optional<bootloaders::XboxupdParts> xboxupd_parts;
+            std::optional<nand::XboxupdParts> xboxupd_parts;
             std::string xboxupd_error;
         };
 
@@ -235,7 +235,7 @@ namespace gxbuild3::utils {
             return &it->second;
         }
 
-        const bootloaders::XboxupdParts* get_xboxupd_parts(CachedPackage& pkg) {
+        const nand::XboxupdParts* get_xboxupd_parts(CachedPackage& pkg) {
             if (!pkg.xboxupd_attempted) {
                 pkg.xboxupd_attempted = true;
                 if (!pkg.container || !pkg.container->containsFileByName("xboxupd.bin")) {
@@ -248,7 +248,7 @@ namespace gxbuild3::utils {
                         const auto extracted = pkg.container->extractFileByName("xboxupd.bin");
                         it = pkg.extracted_files.emplace("xboxupd.bin", to_u8(extracted)).first;
                     }
-                    pkg.xboxupd_parts = bootloaders::split_xboxupd_raw(std::span(it->second));
+                    pkg.xboxupd_parts = nand::split_xboxupd_raw(std::span(it->second));
                 } catch (const std::exception& e) {
                     pkg.xboxupd_error = e.what();
                     return nullptr;

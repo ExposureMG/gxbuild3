@@ -9,6 +9,8 @@
 #include <string_view>
 #include <vector>
 
+using namespace gxbuild3::nand;
+
 namespace {
 
     using Bytes = std::vector<uint8_t>;

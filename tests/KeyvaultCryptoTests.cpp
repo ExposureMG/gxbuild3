@@ -9,10 +9,11 @@
 #include <string_view>
 #include <vector>
 
+using namespace gxbuild3::nand;
+
 namespace {
 
-    std::vector<uint8_t> read_file(const char* path, size_t maximum_size,
-                                   std::string_view label) {
+    std::vector<uint8_t> read_file(const char* path, size_t maximum_size, std::string_view label) {
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file) {
             throw std::runtime_error("Cannot open " + std::string(label));
@@ -39,8 +40,8 @@ namespace {
         const auto mismatch = std::mismatch(actual.begin(), actual.end(), expected.begin());
         if (mismatch.first != actual.end()) {
             // Report the location, never console-specific keyvault bytes.
-            std::cerr << "FAIL: " << label << " differs from reference at offset 0x"
-                      << std::hex << (mismatch.first - actual.begin()) << std::dec << '\n';
+            std::cerr << "FAIL: " << label << " differs from reference at offset 0x" << std::hex
+                      << (mismatch.first - actual.begin()) << std::dec << '\n';
             return false;
         }
         return true;
@@ -57,8 +58,8 @@ int main(int argc, char** argv) {
     }
 
     try {
-        if (argc == 5 && !std::filesystem::exists(argv[1]) &&
-            !std::filesystem::exists(argv[2]) && !std::filesystem::exists(argv[3])) {
+        if (argc == 5 && !std::filesystem::exists(argv[1]) && !std::filesystem::exists(argv[2]) &&
+            !std::filesystem::exists(argv[3])) {
             std::cout << "SKIP: private keyvault fixtures are not installed\n";
             return 77;
         }
@@ -85,8 +86,8 @@ int main(int argc, char** argv) {
         // never from keyvault_encrypt: matching bugs must not cancel each other out.
         bool passed = true;
         try {
-            passed = compare(keyvault_decrypt(cpu_key.key, encrypted), expected,
-                             "keyvault_decrypt");
+            passed =
+                compare(keyvault_decrypt(cpu_key.key, encrypted), expected, "keyvault_decrypt");
         } catch (const std::exception& error) {
             std::cerr << "FAIL: keyvault_decrypt: " << error.what() << '\n';
             passed = false;

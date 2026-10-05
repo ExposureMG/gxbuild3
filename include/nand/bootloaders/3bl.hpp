@@ -6,22 +6,26 @@
 #include <optional>
 #include <vector>
 
-class BootloaderSc {
-  public:
-    sc_header header;
-    std::vector<uint8_t> data;
-    // Runtime key handed to SD: HMAC(secret, nonce). header.key retains the on-disk nonce.
-    std::optional<std::array<uint8_t, 16>> derived_key;
-    bool decrypted = false;
+namespace gxbuild3::nand {
 
-    static BootloaderSc parse(const std::vector<uint8_t>& bytes);
+    class BootloaderSc {
+      public:
+        sc_header header;
+        std::vector<uint8_t> data;
+        // Runtime key handed to SD: HMAC(secret, nonce). header.key retains the on-disk nonce.
+        std::optional<std::array<uint8_t, 16>> derived_key;
+        bool decrypted = false;
 
-    // The secret is sixteen zero bytes on every console (kZeroSecret).
-    void decrypt(const uint8_t secret[16]);
-    void encrypt(const uint8_t secret[16]);
+        static BootloaderSc parse(const std::vector<uint8_t>& bytes);
 
-    static constexpr uint8_t kZeroSecret[16] = {};
+        // The secret is sixteen zero bytes on every console (kZeroSecret).
+        void decrypt(const uint8_t secret[16]);
+        void encrypt(const uint8_t secret[16]);
 
-    bool is_decrypted() const;
-    std::vector<uint8_t> serialize() const;
-};
+        static constexpr uint8_t kZeroSecret[16] = {};
+
+        bool is_decrypted() const;
+        std::vector<uint8_t> serialize() const;
+    };
+
+} // namespace gxbuild3::nand

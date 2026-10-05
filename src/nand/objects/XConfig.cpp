@@ -5,25 +5,25 @@
 #include <algorithm>
 #include <cstring>
 
-namespace {
-
-    constexpr size_t kOffsetStatic = 0x0000;
-    constexpr size_t kOffsetStatistic = 0x010E;
-    constexpr size_t kOffsetSecured = 0x06E6;
-    constexpr size_t kOffsetUser = 0x08E6;
-    constexpr size_t kOffsetXnetMachineAcct = 0x0AE3;
-    constexpr size_t kOffsetXnetParameters = 0x0CD3;
-    constexpr size_t kOffsetMediaCenter = 0x0CE0;
-    constexpr size_t kOffsetConsole = 0x142C;
-    constexpr size_t kOffsetDvd = 0x1570;
-    constexpr size_t kOffsetIptv = 0x1808;
-    constexpr size_t kOffsetSystem = 0x1A08;
-
-    constexpr size_t kMinRegionSize = kOffsetSystem + sizeof(xconfig_system_settings_t);
-
-} // namespace
-
 namespace gxbuild3::nand {
+
+    namespace {
+
+        constexpr size_t kOffsetStatic = 0x0000;
+        constexpr size_t kOffsetStatistic = 0x010E;
+        constexpr size_t kOffsetSecured = 0x06E6;
+        constexpr size_t kOffsetUser = 0x08E6;
+        constexpr size_t kOffsetXnetMachineAcct = 0x0AE3;
+        constexpr size_t kOffsetXnetParameters = 0x0CD3;
+        constexpr size_t kOffsetMediaCenter = 0x0CE0;
+        constexpr size_t kOffsetConsole = 0x142C;
+        constexpr size_t kOffsetDvd = 0x1570;
+        constexpr size_t kOffsetIptv = 0x1808;
+        constexpr size_t kOffsetSystem = 0x1A08;
+
+        constexpr size_t kMinRegionSize = kOffsetSystem + sizeof(xconfig_system_settings_t);
+
+    } // namespace
 
     std::optional<SmcConfig> SmcConfig::parse(std::span<const uint8_t> bytes, size_t base_offset) {
         if (bytes.data() == nullptr || bytes.size() < base_offset + kMinRegionSize) {
@@ -84,37 +84,37 @@ namespace gxbuild3::nand {
         return out;
     }
 
+    namespace xconfig {
+
+        std::string_view ParseErrorString(ParseError e) noexcept {
+            switch (e) {
+                case ParseError::NullBuffer:
+                    return "null buffer";
+                case ParseError::BufferTooSmall:
+                    return "buffer too small for XConfig region";
+            }
+            return "unknown";
+        }
+
+        std::expected<SmcConfig, ParseError> Parse(std::span<const uint8_t> buf,
+                                                   size_t base_offset) noexcept {
+            if (buf.data() == nullptr)
+                return std::unexpected(ParseError::NullBuffer);
+            if (buf.size_bytes() < base_offset + kMinRegionSize)
+                return std::unexpected(ParseError::BufferTooSmall);
+
+            auto res = SmcConfig::parse(buf, base_offset);
+            if (!res) {
+                return std::unexpected(ParseError::BufferTooSmall);
+            }
+            return *res;
+        }
+
+        std::vector<uint8_t> Serialize(const SmcConfig& cfg, size_t total_size,
+                                       size_t base_offset) noexcept {
+            return cfg.serialize(total_size, base_offset);
+        }
+
+    } // namespace xconfig
+
 } // namespace gxbuild3::nand
-
-namespace XConfig {
-
-    std::string_view ParseErrorString(ParseError e) noexcept {
-        switch (e) {
-            case ParseError::NullBuffer:
-                return "null buffer";
-            case ParseError::BufferTooSmall:
-                return "buffer too small for XConfig region";
-        }
-        return "unknown";
-    }
-
-    std::expected<gxbuild3::nand::SmcConfig, ParseError> Parse(std::span<const uint8_t> buf,
-                                                               size_t base_offset) noexcept {
-        if (buf.data() == nullptr)
-            return std::unexpected(ParseError::NullBuffer);
-        if (buf.size_bytes() < base_offset + kMinRegionSize)
-            return std::unexpected(ParseError::BufferTooSmall);
-
-        auto res = gxbuild3::nand::SmcConfig::parse(buf, base_offset);
-        if (!res) {
-            return std::unexpected(ParseError::BufferTooSmall);
-        }
-        return *res;
-    }
-
-    std::vector<uint8_t> Serialize(const gxbuild3::nand::SmcConfig& cfg, size_t total_size,
-                                   size_t base_offset) noexcept {
-        return cfg.serialize(total_size, base_offset);
-    }
-
-} // namespace XConfig

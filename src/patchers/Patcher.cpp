@@ -34,7 +34,7 @@ namespace gxbuild3::patchers {
         return true;
     }
 
-    bool apply_patch_entry(uint8_t* data, uint32_t dataSize, const XePatchEntry& entry) {
+    bool apply_patch_entry(uint8_t* data, uint32_t dataSize, const nand::XePatchEntry& entry) {
         if (entry.words.size() < entry.length) {
             Log::Error("Entry word count mismatch (address=0x{:X}, length_words=0x{:X}, "
                        "words_available=0x{:X})",
@@ -45,7 +45,8 @@ namespace gxbuild3::patchers {
         return apply_patch(data, dataSize, entry.address, entry.length, entry.words.data());
     }
 
-    bool apply_patch_section(uint8_t* data, uint32_t dataSize, const XePatchSection& section) {
+    bool apply_patch_section(uint8_t* data, uint32_t dataSize,
+                             const nand::XePatchSection& section) {
         Log::Info("Applying section '{}' with {} entries to buffer 0x{:X} bytes",
                   section.identifier, section.entries.size(), dataSize);
 

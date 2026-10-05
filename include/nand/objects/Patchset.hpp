@@ -7,56 +7,58 @@
 #include <string>
 #include <vector>
 
-struct XePatchEntry {
-    uint32_t address;
-    uint32_t length;
-    std::vector<uint32_t> words;
-};
+namespace gxbuild3::nand {
 
-struct XePatchSection {
-    std::string identifier;
-    std::vector<XePatchEntry> entries;
-};
+    struct XePatchEntry {
+        uint32_t address;
+        uint32_t length;
+        std::vector<uint32_t> words;
+    };
 
-enum class PatchSetKind {
-    Jtag,
-    Glitch,
-};
+    struct XePatchSection {
+        std::string identifier;
+        std::vector<XePatchEntry> entries;
+    };
 
-enum class PatchSectionTarget {
-    Unknown,
-    JtagSection1,
-    JtagSection2,
-    JtagSection3,
-    JtagSection4,
-    Cb,
-    Cbb,
-    Cd,
-    Khv,
-};
+    enum class PatchSetKind {
+        Jtag,
+        Glitch,
+    };
 
-struct ParsedPatchSection {
-    PatchSectionTarget target{PatchSectionTarget::Unknown};
-    std::string identifier;
-    std::vector<uint8_t> raw_data;
-    std::vector<XePatchEntry> entries;
-};
+    enum class PatchSectionTarget {
+        Unknown,
+        JtagSection1,
+        JtagSection2,
+        JtagSection3,
+        JtagSection4,
+        Cb,
+        Cbb,
+        Cd,
+        Khv,
+    };
 
-struct ParsedPatchSet {
-    PatchSetKind kind{PatchSetKind::Glitch};
-    bool manufacturing = false;
-    std::vector<ParsedPatchSection> sections;
-};
+    struct ParsedPatchSection {
+        PatchSectionTarget target{PatchSectionTarget::Unknown};
+        std::string identifier;
+        std::vector<uint8_t> raw_data;
+        std::vector<XePatchEntry> entries;
+    };
 
-struct PatchError {
-    std::string message;
-};
+    struct ParsedPatchSet {
+        PatchSetKind kind{PatchSetKind::Glitch};
+        bool manufacturing = false;
+        std::vector<ParsedPatchSection> sections;
+    };
 
-namespace BinaryParser {
+    struct PatchError {
+        std::string message;
+    };
+
     bool ParsePatchSet(std::span<const uint8_t> data, GxBuild::BuildType buildType,
                        ParsedPatchSet& outPatchSet);
     std::expected<ParsedPatchSet, PatchError>
     ParseAndMergePatchSet(const GxBuild::InputPatches& patches, GxBuild::BuildType buildType);
     std::vector<uint8_t> SerializePatchSet(const ParsedPatchSet& patchSet);
     std::vector<uint8_t> SerializeKhvPayload(const ParsedPatchSection& section);
-} // namespace BinaryParser
+
+} // namespace gxbuild3::nand
