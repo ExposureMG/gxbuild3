@@ -1,15 +1,11 @@
 #pragma once
 
-#include "Args.hpp"
-
-#include <array>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <variant>
 #include <vector>
 
 namespace Ini {
@@ -17,7 +13,6 @@ namespace Ini {
     enum class ParseError {
         FileNotFound,
         ReadError,
-        SectionNotFound,
         MalformedEntry,
     };
 
@@ -27,8 +22,6 @@ namespace Ini {
                 return "File not found";
             case ParseError::ReadError:
                 return "Failed to read file";
-            case ParseError::SectionNotFound:
-                return "Section not found";
             case ParseError::MalformedEntry:
                 return "Malformed entry";
         }
@@ -48,31 +41,9 @@ namespace Ini {
         std::unordered_map<std::string, Section> sections;
 
         [[nodiscard]] const Section* get(std::string_view name) const;
-
-        [[nodiscard]] std::expected<const Section*, ParseError>
-        require(std::string_view name) const;
     };
 
     [[nodiscard]] std::expected<Document, ParseError> Parse(std::string_view content);
     [[nodiscard]] std::expected<Document, ParseError> ParseFile(const std::filesystem::path& path);
-
-    enum class OptionsError {
-        BadFormat,
-    };
-
-    constexpr std::string_view OptionsErrorString(OptionsError e) {
-        switch (e) {
-            case OptionsError::BadFormat:
-                return "Incorrect formatting in options.ini";
-        }
-        return "Unknown";
-    }
-
-    void ApplyOption(OptionsArgs& options, std::string_view key, std::string_view value);
-
-    [[nodiscard]] std::expected<OptionsArgs, OptionsError> ParseOptionsIni(std::string_view content);
-
-    using OptionsResult = std::expected<OptionsArgs, std::variant<ParseError, OptionsError>>;
-    [[nodiscard]] OptionsResult ParseOptionsIniFile(const std::filesystem::path& path);
 
 } // namespace Ini

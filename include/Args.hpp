@@ -64,30 +64,6 @@ inline const std::map<std::string, ConsoleType> kConsoleTypeMap = {
     {"winchester4g", ConsoleType::Winchester},
 };
 
-inline const std::map<std::string, ImageType> kImageTypeMap = {
-    {"xenon", ImageType::SmallBlock},
-    {"xenonbb", ImageType::BigBlock},
-    {"xenon4g", ImageType::Emmc},
-    {"zephyr", ImageType::SmallBlock},
-    {"zephyrbb", ImageType::BigBlock},
-    {"zephyr4g", ImageType::Emmc},
-    {"falcon", ImageType::SmallBlock},
-    {"falconbb", ImageType::BigBlock},
-    {"falcon4g", ImageType::Emmc},
-    {"jasper", ImageType::NewSmallBlock},
-    {"jasperbb", ImageType::BigBlock},
-    {"jasper4g", ImageType::Emmc},
-    {"trinity", ImageType::NewSmallBlock},
-    {"trinitybb", ImageType::BigBlock},
-    {"trinity4g", ImageType::Emmc},
-    {"corona", ImageType::NewSmallBlock},
-    {"coronabb", ImageType::BigBlock},
-    {"corona4g", ImageType::Emmc},
-    {"winchester", ImageType::NewSmallBlock},
-    {"winchesterbb", ImageType::BigBlock},
-    {"winchester4g", ImageType::Emmc},
-};
-
 // The 16 bytes a stage stores in clear and keys its seal from: +0x10 on CB/SC/CD/CE/CG, the
 // header fixpoint at +0x20 on CF.
 using BootloaderNonce = std::array<uint8_t, 16>;
@@ -307,12 +283,8 @@ class OptionsManager {
   public:
     OptionsManager() = default;
     explicit OptionsManager(OptionsArgs args);
-    explicit OptionsManager(std::string_view raw_args);
 
     bool parse(std::string_view raw_args);
-    bool parse(const std::vector<std::string>& raw_args_list);
-    bool parse_file(const std::filesystem::path& path);
-    bool parse_ini(std::string_view content);
 
     static bool is_known_option(std::string_view name);
     static bool is_bool_option(std::string_view name);
@@ -324,13 +296,9 @@ class OptionsManager {
 
     bool set_bool(std::string_view name, bool value);
     bool set(std::string_view name, std::string_view value);
-    bool unset(std::string_view name);
-
-    bool toggle(std::string_view name);
 
     std::optional<bool> get_bool(std::string_view name) const;
     std::optional<std::string> get_string(std::string_view name) const;
-    std::optional<std::string> get(std::string_view name) const;
 
     const OptionsArgs& data() const noexcept { return m_args; }
     OptionsArgs& data() noexcept { return m_args; }
