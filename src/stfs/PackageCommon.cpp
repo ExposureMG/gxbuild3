@@ -8,9 +8,9 @@
 
 namespace gxbuild3::stfs::detail {
 
-    std::vector<std::byte> readFileTable(std::span<const std::byte> package,
-                                         std::uint32_t header_size,
-                                         const StfsVolumeDescriptor& descriptor) {
+    std::vector<std::byte> read_file_table(std::span<const std::byte> package,
+                                           std::uint32_t header_size,
+                                           const StfsVolumeDescriptor& descriptor) {
         // Bit 0 set marks the read-only layout (one hash table per level), which is what system
         // update and other Microsoft-signed packages use. The writable layout keeps two tables
         // per level and places blocks differently; it is not implemented.
@@ -34,10 +34,10 @@ namespace gxbuild3::stfs::detail {
         table_entry.file_size =
             table_entry.blocks_allocated * static_cast<std::uint32_t>(kBlockSize);
 
-        return extractFile(package, table_entry, Magic::PIRS, header_size);
+        return extract_file(package, table_entry, Magic::PIRS, header_size);
     }
 
-    void writeFile(const std::filesystem::path& path, std::span<const std::byte> data) {
+    void write_file(const std::filesystem::path& path, std::span<const std::byte> data) {
         std::ofstream out(path, std::ios::binary);
         if (!out) {
             throw std::runtime_error("Cannot open output file: " + path.string());
@@ -53,7 +53,7 @@ namespace gxbuild3::stfs::detail {
         }
     }
 
-    std::vector<std::filesystem::path> buildEntryPaths(const std::vector<FileEntry>& entries) {
+    std::vector<std::filesystem::path> build_entry_paths(const std::vector<FileEntry>& entries) {
         constexpr std::uint16_t kRootIndicator = 0xFFFF;
 
         std::vector<std::filesystem::path> paths;
@@ -77,8 +77,8 @@ namespace gxbuild3::stfs::detail {
         return paths;
     }
 
-    std::filesystem::path safeJoin(const std::filesystem::path& parent,
-                                   const std::filesystem::path& relative) {
+    std::filesystem::path safe_join(const std::filesystem::path& parent,
+                                    const std::filesystem::path& relative) {
         if (relative.is_absolute() || relative.has_root_path() || relative.has_root_name()) {
             throw std::runtime_error("STFS entry uses an absolute path");
         }

@@ -16,18 +16,19 @@ namespace gxbuild3::stfs {
 
     namespace {
 
-        std::vector<FileEntry> buildFileListing(std::span<const std::byte> package,
-                                                const Metadata& meta) {
+        std::vector<FileEntry> build_file_listing(std::span<const std::byte> package,
+                                                  const Metadata& meta) {
             const auto* vd = std::get_if<StfsVolumeDescriptor>(&meta.volume_descriptor);
             if (!vd) {
                 throw std::runtime_error("SVOD packages are not supported for file listing");
             }
 
-            auto table_data = detail::readFileTable(package, meta.header_size, *vd);
-            return parseFileListing(table_data);
+            auto table_data = detail::read_file_table(package, meta.header_size, *vd);
+            return parse_file_listing(table_data);
         }
 
-        const std::array<std::byte, 0x14>* topHashPointer(const StfsVolumeDescriptor* vd) noexcept {
+        const std::array<std::byte, 0x14>*
+        top_hash_pointer(const StfsVolumeDescriptor* vd) noexcept {
             return vd ? &vd->top_hash_table_hash : nullptr;
         }
 
@@ -53,54 +54,55 @@ namespace gxbuild3::stfs {
             throw std::runtime_error("Failed to read file: " + path.string());
         }
 
-        return fromData(std::move(data));
+        return from_data(std::move(data));
     }
 
-    Package Package::fromData(std::vector<std::byte> data) {
+    Package Package::from_data(std::vector<std::byte> data) {
         std::span<const std::byte> view(data);
 
-        auto header = parseHeader(view);
-        auto metadata = parseMetadata(view);
-        auto files = buildFileListing(view, metadata);
+        auto header = parse_header(view);
+        auto metadata = parse_metadata(view);
+        auto files = build_file_listing(view, metadata);
 
         return Package(std::move(data), std::move(header), std::move(metadata), std::move(files));
     }
 
-    std::vector<std::byte> Package::extractFile(const FileEntry& entry, bool verify) const {
+    std::vector<std::byte> Package::extract_file(const FileEntry& entry, bool verify) const {
         const auto* vd = std::get_if<StfsVolumeDescriptor>(&metadata_.volume_descriptor);
         auto total_blocks = vd ? static_cast<std::uint32_t>(vd->total_allocated_block_count) : 0u;
 
-        return stfs::extractFile(data_, entry, header_.magic, metadata_.header_size, verify,
-                                 topHashPointer(vd), total_blocks);
+        return stfs::extract_file(data_, entry, header_.magic, metadata_.header_size, verify,
+                                  top_hash_pointer(vd), total_blocks);
     }
 
-    void Package::extractFileToDisk(const FileEntry& entry,
-                                    const std::filesystem::path& output_path, bool verify) const {
+    void Package::extract_file_to_disk(const FileEntry& entry,
+                                       const std::filesystem::path& output_path,
+                                       bool verify) const {
         const auto* vd = std::get_if<StfsVolumeDescriptor>(&metadata_.volume_descriptor);
         auto total_blocks = vd ? static_cast<std::uint32_t>(vd->total_allocated_block_count) : 0u;
 
-        stfs::extractFileToDisk(data_, entry, header_.magic, metadata_.header_size, output_path,
-                                verify, topHashPointer(vd), total_blocks);
+        stfs::extract_file_to_disk(data_, entry, header_.magic, metadata_.header_size, output_path,
+                                   verify, top_hash_pointer(vd), total_blocks);
     }
 
-    void Package::extractAll(const std::filesystem::path& output_dir, bool verify) const {
+    void Package::extract_all(const std::filesystem::path& output_dir, bool verify) const {
         // Validate every destination before writing anything.
-        const auto relative_paths = detail::buildEntryPaths(files_);
+        const auto relative_paths = detail::build_entry_paths(files_);
         std::vector<std::filesystem::path> destinations;
         destinations.reserve(relative_paths.size());
         for (const auto& relative : relative_paths) {
-            destinations.push_back(detail::safeJoin(output_dir, relative));
+            destinations.push_back(detail::safe_join(output_dir, relative));
         }
 
         for (std::size_t i = 0; i < files_.size(); ++i) {
             const auto& entry = files_[i];
             const auto& dest = destinations[i];
 
-            if (entry.isDirectory()) {
+            if (entry.is_directory()) {
                 std::filesystem::create_directories(dest);
             } else {
                 std::filesystem::create_directories(dest.parent_path());
-                extractFileToDisk(entry, dest, verify);
+                extract_file_to_disk(entry, dest, verify);
             }
         }
     }

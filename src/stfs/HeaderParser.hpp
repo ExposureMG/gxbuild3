@@ -7,8 +7,8 @@
 
 namespace gxbuild3::stfs {
 
-    [[nodiscard]] Header parseHeader(std::span<const std::byte> data);
+    [[nodiscard]] Header parse_header(std::span<const std::byte> data);
 
-    [[nodiscard]] Header readHeaderFromFile(const std::filesystem::path& path);
+    [[nodiscard]] Header read_header_from_file(const std::filesystem::path& path);
 
 } // namespace gxbuild3::stfs

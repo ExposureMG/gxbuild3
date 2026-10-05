@@ -14,7 +14,7 @@ namespace gxbuild3::stfs {
         // well (0x004 + 0x100 + 0x128). Every header variant needs this many bytes.
         constexpr std::size_t kHeaderSize = 0x22C;
 
-        Magic parseMagic(std::span<const std::byte> data) {
+        Magic parse_magic(std::span<const std::byte> data) {
             std::array<char, 4> magic_bytes;
             std::memcpy(magic_bytes.data(), data.data(), 4);
 
@@ -32,7 +32,7 @@ namespace gxbuild3::stfs {
             throw std::runtime_error("Invalid magic bytes");
         }
 
-        ConSignature parseConSignature(std::span<const std::byte> data) {
+        ConSignature parse_con_signature(std::span<const std::byte> data) {
             ConSignature sig;
             const auto* ptr = data.data();
 
@@ -53,7 +53,7 @@ namespace gxbuild3::stfs {
             return sig;
         }
 
-        LiveSignature parseLiveSignature(std::span<const std::byte> data) {
+        LiveSignature parse_live_signature(std::span<const std::byte> data) {
             LiveSignature sig;
             const auto* ptr = data.data();
 
@@ -65,28 +65,28 @@ namespace gxbuild3::stfs {
 
     } // namespace
 
-    Header parseHeader(std::span<const std::byte> data) {
+    Header parse_header(std::span<const std::byte> data) {
         if (data.size() < kHeaderSize) {
             throw std::runtime_error("Insufficient data for header parsing");
         }
 
         Header header;
-        header.magic = parseMagic(data);
+        header.magic = parse_magic(data);
 
         switch (header.magic) {
             case Magic::CON:
-                header.signature = parseConSignature(data);
+                header.signature = parse_con_signature(data);
                 break;
             case Magic::PIRS:
             case Magic::LIVE:
-                header.signature = parseLiveSignature(data);
+                header.signature = parse_live_signature(data);
                 break;
         }
 
         return header;
     }
 
-    Header readHeaderFromFile(const std::filesystem::path& path) {
+    Header read_header_from_file(const std::filesystem::path& path) {
         std::ifstream file(path, std::ios::binary);
         if (!file) {
             throw std::runtime_error("Cannot open file: " + path.string());
@@ -99,7 +99,7 @@ namespace gxbuild3::stfs {
             throw std::runtime_error("File too small for header");
         }
 
-        return parseHeader(buffer);
+        return parse_header(buffer);
     }
 
 } // namespace gxbuild3::stfs

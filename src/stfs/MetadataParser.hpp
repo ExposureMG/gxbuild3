@@ -6,6 +6,6 @@
 
 namespace gxbuild3::stfs {
 
-    [[nodiscard]] Metadata parseMetadata(std::span<const std::byte> data);
+    [[nodiscard]] Metadata parse_metadata(std::span<const std::byte> data);
 
 } // namespace gxbuild3::stfs

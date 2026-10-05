@@ -14,7 +14,7 @@ namespace gxbuild3::stfs {
 
     } // namespace
 
-    std::uint64_t blockToOffset(std::uint32_t block, std::uint32_t header_size) {
+    std::uint64_t block_to_offset(std::uint32_t block, std::uint32_t header_size) {
         if (block > 0xFFFFFF) {
             throw std::runtime_error("Block number out of range");
         }
@@ -24,7 +24,7 @@ namespace gxbuild3::stfs {
         return first_block + (static_cast<std::uint64_t>(block) << 12);
     }
 
-    std::uint32_t computeLevelNHashBlockNumber(std::uint32_t block, int level) {
+    std::uint32_t compute_level_n_hash_block_number(std::uint32_t block, int level) {
         std::uint64_t blockNum64 = block;
         std::uint64_t num = 0;
 
@@ -52,7 +52,7 @@ namespace gxbuild3::stfs {
         return static_cast<std::uint32_t>(num) + static_cast<std::uint32_t>(kBlocksPerHashTable);
     }
 
-    std::uint32_t computeDataBlockNumber(std::uint32_t block) {
+    std::uint32_t compute_data_block_number(std::uint32_t block) {
         std::uint64_t base = (block + 0xAA) / 0xAA;
         std::uint64_t result = base + block;
 

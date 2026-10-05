@@ -19,8 +19,8 @@ namespace gxbuild3::stfs {
         constexpr std::array<std::uint32_t, 3> kDataBlocksPerHashLevel = {0xAA, 0x70E4, 0x4AF768};
 
         // True when the 4 KiB block at `offset` is inside the package and hashes to `expected`.
-        bool blockHashMatches(std::span<const std::byte> package, std::uint64_t offset,
-                              const Digest& expected) {
+        bool block_hash_matches(std::span<const std::byte> package, std::uint64_t offset,
+                                const Digest& expected) {
             if (offset + kBlockSize > package.size()) {
                 return false;
             }
@@ -33,17 +33,18 @@ namespace gxbuild3::stfs {
         }
 
         // The hash stored for `block_number` in its level-N hash table.
-        Digest readLevelHash(std::span<const std::byte> package, std::uint32_t block_number,
-                             int level, std::uint32_t header_size) {
+        Digest read_level_hash(std::span<const std::byte> package, std::uint32_t block_number,
+                               int level, std::uint32_t header_size) {
             std::uint32_t record = block_number;
             if (level > 0) {
                 record /= kDataBlocksPerHashLevel[level - 1];
             }
             record %= kDataBlocksPerHashLevel[0];
 
-            const std::uint32_t backing_block = computeLevelNHashBlockNumber(block_number, level);
-            const std::uint64_t hash_offset =
-                blockToOffset(backing_block, header_size) + std::uint64_t{record} * kHashEntrySize;
+            const std::uint32_t backing_block =
+                compute_level_n_hash_block_number(block_number, level);
+            const std::uint64_t hash_offset = block_to_offset(backing_block, header_size) +
+                                              std::uint64_t{record} * kHashEntrySize;
 
             if (hash_offset + kHashEntrySize > package.size()) {
                 throw std::runtime_error("Hash entry offset out of bounds");
@@ -56,9 +57,9 @@ namespace gxbuild3::stfs {
 
     } // namespace
 
-    bool verifyDataBlock(std::span<const std::byte> package, std::uint32_t block,
-                         std::uint32_t header_size, const std::array<std::byte, 0x14>& top_hash,
-                         std::uint32_t total_blocks) {
+    bool verify_data_block(std::span<const std::byte> package, std::uint32_t block,
+                           std::uint32_t header_size, const std::array<std::byte, 0x14>& top_hash,
+                           std::uint32_t total_blocks) {
         if (total_blocks == 0) {
             throw std::runtime_error("total_blocks required for hash verification");
         }
@@ -70,15 +71,15 @@ namespace gxbuild3::stfs {
                                                                           : 0;
 
         for (int level = top_level; level >= 0; --level) {
-            const auto table = computeLevelNHashBlockNumber(block, level);
-            if (!blockHashMatches(package, blockToOffset(table, header_size), expected)) {
+            const auto table = compute_level_n_hash_block_number(block, level);
+            if (!block_hash_matches(package, block_to_offset(table, header_size), expected)) {
                 return false;
             }
-            expected = readLevelHash(package, block, level, header_size);
+            expected = read_level_hash(package, block, level, header_size);
         }
 
-        const auto data_block = computeDataBlockNumber(block);
-        return blockHashMatches(package, blockToOffset(data_block, header_size), expected);
+        const auto data_block = compute_data_block_number(block);
+        return block_hash_matches(package, block_to_offset(data_block, header_size), expected);
     }
 
 } // namespace gxbuild3::stfs

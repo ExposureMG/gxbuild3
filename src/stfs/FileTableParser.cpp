@@ -11,7 +11,7 @@
 
 namespace gxbuild3::stfs {
 
-    std::vector<FileEntry> parseFileListing(std::span<const std::byte> data) {
+    std::vector<FileEntry> parse_file_listing(std::span<const std::byte> data) {
         std::vector<FileEntry> entries;
         constexpr std::size_t entry_size = 0x40;
         constexpr std::size_t name_field_size = 0x28;

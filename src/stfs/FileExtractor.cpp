@@ -23,10 +23,10 @@ namespace gxbuild3::stfs {
             std::uint8_t status;
         };
 
-        HashEntry readHashEntry(std::span<const std::byte> package, std::uint32_t hash_block,
-                                std::uint32_t data_block, std::uint32_t header_size) {
+        HashEntry read_hash_entry(std::span<const std::byte> package, std::uint32_t hash_block,
+                                  std::uint32_t data_block, std::uint32_t header_size) {
             std::uint32_t entry_index = data_block % 0xAA;
-            const std::uint64_t offset = blockToOffset(hash_block, header_size) +
+            const std::uint64_t offset = block_to_offset(hash_block, header_size) +
                                          std::uint64_t{entry_index} * kHashEntrySize;
 
             if (offset + kHashEntrySize > package.size()) {
@@ -54,9 +54,9 @@ namespace gxbuild3::stfs {
 
     } // namespace
 
-    std::vector<std::uint32_t> followBlockChain(std::span<const std::byte> package,
-                                                std::uint32_t starting_block,
-                                                std::uint32_t header_size) {
+    std::vector<std::uint32_t> follow_block_chain(std::span<const std::byte> package,
+                                                  std::uint32_t starting_block,
+                                                  std::uint32_t header_size) {
         std::vector<std::uint32_t> chain;
         std::uint32_t current_block = starting_block;
 
@@ -70,8 +70,8 @@ namespace gxbuild3::stfs {
 
             chain.push_back(current_block);
 
-            std::uint32_t hash_block = computeLevelNHashBlockNumber(current_block, 0);
-            HashEntry hash_entry = readHashEntry(package, hash_block, current_block, header_size);
+            std::uint32_t hash_block = compute_level_n_hash_block_number(current_block, 0);
+            HashEntry hash_entry = read_hash_entry(package, hash_block, current_block, header_size);
 
             current_block = hash_entry.next_block;
             ++steps;
@@ -84,10 +84,10 @@ namespace gxbuild3::stfs {
 
         // Logical blocks holding a non-empty file. Files flagged as consecutive occupy
         // starting_block onwards and need not have a usable hash chain; others follow the chain.
-        std::vector<std::uint32_t> fileBlocks(std::span<const std::byte> package,
-                                              const FileEntry& entry, std::uint32_t header_size) {
-            if (!entry.isConsecutiveBlocks()) {
-                return followBlockChain(package, entry.starting_block, header_size);
+        std::vector<std::uint32_t> file_blocks(std::span<const std::byte> package,
+                                               const FileEntry& entry, std::uint32_t header_size) {
+            if (!entry.is_consecutive_blocks()) {
+                return follow_block_chain(package, entry.starting_block, header_size);
             }
 
             if (std::uint64_t{entry.blocks_allocated} * kBlockSize < entry.file_size) {
@@ -112,10 +112,10 @@ namespace gxbuild3::stfs {
 
     } // namespace
 
-    std::vector<std::byte> extractFile(std::span<const std::byte> package, const FileEntry& entry,
-                                       Magic magic, std::uint32_t header_size, bool verify,
-                                       const std::array<std::byte, 0x14>* top_hash,
-                                       std::uint32_t total_blocks) {
+    std::vector<std::byte> extract_file(std::span<const std::byte> package, const FileEntry& entry,
+                                        Magic magic, std::uint32_t header_size, bool verify,
+                                        const std::array<std::byte, 0x14>* top_hash,
+                                        std::uint32_t total_blocks) {
         if (magic == Magic::CON) {
             throw std::runtime_error("CON packages are not yet supported");
         }
@@ -131,20 +131,20 @@ namespace gxbuild3::stfs {
             return {};
         }
 
-        const auto chain = fileBlocks(package, entry, header_size);
+        const auto chain = file_blocks(package, entry, header_size);
 
         std::vector<std::byte> result;
         result.reserve(std::min<std::size_t>(entry.file_size, chain.size() * kBlockSize));
 
         for (std::uint32_t logical_block : chain) {
             if (verify &&
-                !verifyDataBlock(package, logical_block, header_size, *top_hash, total_blocks)) {
+                !verify_data_block(package, logical_block, header_size, *top_hash, total_blocks)) {
                 throw std::runtime_error("Hash verification failed for block " +
                                          std::to_string(logical_block) + " in file " + entry.name);
             }
 
-            std::uint32_t data_block = computeDataBlockNumber(logical_block);
-            const std::uint64_t offset = blockToOffset(data_block, header_size);
+            std::uint32_t data_block = compute_data_block_number(logical_block);
+            const std::uint64_t offset = block_to_offset(data_block, header_size);
 
             if (offset + kBlockSize > package.size()) {
                 throw std::runtime_error("Data block offset out of bounds");
@@ -170,13 +170,14 @@ namespace gxbuild3::stfs {
         return result;
     }
 
-    void extractFileToDisk(std::span<const std::byte> package, const FileEntry& entry, Magic magic,
-                           std::uint32_t header_size, const std::filesystem::path& output_path,
-                           bool verify, const std::array<std::byte, 0x14>* top_hash,
-                           std::uint32_t total_blocks) {
+    void extract_file_to_disk(std::span<const std::byte> package, const FileEntry& entry,
+                              Magic magic, std::uint32_t header_size,
+                              const std::filesystem::path& output_path, bool verify,
+                              const std::array<std::byte, 0x14>* top_hash,
+                              std::uint32_t total_blocks) {
         const auto data =
-            extractFile(package, entry, magic, header_size, verify, top_hash, total_blocks);
-        detail::writeFile(output_path, data);
+            extract_file(package, entry, magic, header_size, verify, top_hash, total_blocks);
+        detail::write_file(output_path, data);
     }
 
 } // namespace gxbuild3::stfs

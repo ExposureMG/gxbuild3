@@ -13,7 +13,7 @@ namespace gxbuild3::stfs {
 
     namespace {
 
-        void appendUtf8(std::u8string& out, char32_t cp) {
+        void append_utf8(std::u8string& out, char32_t cp) {
             if (cp < 0x80) {
                 out += static_cast<char8_t>(cp);
             } else if (cp < 0x800) {
@@ -33,7 +33,7 @@ namespace gxbuild3::stfs {
 
         // Decodes a NUL-terminated UTF-16BE string of at most `max_bytes` bytes to UTF-8.
         // Unpaired surrogates become U+FFFD; a trailing odd byte is ignored.
-        std::u8string readLocaleString(const std::byte* ptr, std::size_t max_bytes) {
+        std::u8string read_locale_string(const std::byte* ptr, std::size_t max_bytes) {
             constexpr char32_t kReplacement = 0xFFFD;
             const std::size_t units = max_bytes / 2;
             const auto unit = [ptr](std::size_t i) -> char32_t {
@@ -58,18 +58,18 @@ namespace gxbuild3::stfs {
                 } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
                     cp = kReplacement;
                 }
-                appendUtf8(out, cp);
+                append_utf8(out, cp);
             }
             return out;
         }
 
         // Thumbnail sizes are signed on disk; negative sizes mean no image.
-        std::size_t thumbnailSize(std::int32_t size) {
+        std::size_t thumbnail_size(std::int32_t size) {
             constexpr std::int32_t kMaxThumbnailSize = 0x4000;
             return size <= 0 ? 0 : static_cast<std::size_t>(std::min(size, kMaxThumbnailSize));
         }
 
-        StfsVolumeDescriptor parseStfsVolumeDescriptor(const std::byte* ptr) {
+        StfsVolumeDescriptor parse_stfs_volume_descriptor(const std::byte* ptr) {
             StfsVolumeDescriptor vd;
             vd.size = static_cast<std::uint8_t>(ptr[0x00]);
             vd.block_separation = static_cast<std::uint8_t>(ptr[0x02]);
@@ -81,7 +81,7 @@ namespace gxbuild3::stfs {
             return vd;
         }
 
-        SvodVolumeDescriptor parseSvodVolumeDescriptor(const std::byte* ptr) {
+        SvodVolumeDescriptor parse_svod_volume_descriptor(const std::byte* ptr) {
             SvodVolumeDescriptor vd;
             vd.size = static_cast<std::uint8_t>(ptr[0x00]);
             vd.block_cache_element_count = static_cast<std::uint8_t>(ptr[0x01]);
@@ -94,7 +94,7 @@ namespace gxbuild3::stfs {
             return vd;
         }
 
-        std::vector<LicenseEntry> parseLicenseEntries(const std::byte* ptr) {
+        std::vector<LicenseEntry> parse_license_entries(const std::byte* ptr) {
             std::vector<LicenseEntry> entries;
             constexpr std::size_t entry_size = 0x10;
             constexpr std::size_t entry_count = 0x100 / entry_size;
@@ -118,7 +118,7 @@ namespace gxbuild3::stfs {
         }
     } // namespace
 
-    Metadata parseMetadata(std::span<const std::byte> data) {
+    Metadata parse_metadata(std::span<const std::byte> data) {
         if (data.size() < 0x571A + 0x4000) {
             throw std::runtime_error("Insufficient data for metadata parsing (v1 assumed)");
         }
@@ -126,7 +126,7 @@ namespace gxbuild3::stfs {
         const auto* base = data.data();
         Metadata meta;
 
-        meta.license_entries = parseLicenseEntries(base + 0x022C);
+        meta.license_entries = parse_license_entries(base + 0x022C);
 
         std::memcpy(meta.header_sha1.data(), base + 0x032C, 0x14);
         meta.header_size = readBE32(base + 0x0340);
@@ -157,9 +157,9 @@ namespace gxbuild3::stfs {
         meta.descriptor_type = static_cast<DescriptorType>(descriptor_type_raw);
 
         if (meta.descriptor_type == DescriptorType::Svod) {
-            meta.volume_descriptor = parseSvodVolumeDescriptor(base + 0x0379);
+            meta.volume_descriptor = parse_svod_volume_descriptor(base + 0x0379);
         } else {
-            meta.volume_descriptor = parseStfsVolumeDescriptor(base + 0x0379);
+            meta.volume_descriptor = parse_stfs_volume_descriptor(base + 0x0379);
         }
 
         meta.data_file_count = static_cast<std::int32_t>(readBE32(base + 0x039D));
@@ -176,19 +176,19 @@ namespace gxbuild3::stfs {
 
         std::memcpy(meta.device_id.data(), base + 0x03FD, 0x14);
 
-        meta.display_name = readLocaleString(base + 0x0411, 0x900);
-        meta.display_description = readLocaleString(base + 0x0D11, 0x900);
-        meta.publisher_name = readLocaleString(base + 0x1611, 0x80);
-        meta.title_name = readLocaleString(base + 0x1691, 0x80);
+        meta.display_name = read_locale_string(base + 0x0411, 0x900);
+        meta.display_description = read_locale_string(base + 0x0D11, 0x900);
+        meta.publisher_name = read_locale_string(base + 0x1611, 0x80);
+        meta.title_name = read_locale_string(base + 0x1691, 0x80);
 
         meta.transfer_flags = static_cast<std::uint8_t>(base[0x1711]);
         meta.thumbnail_image_size = static_cast<std::int32_t>(readBE32(base + 0x1712));
         meta.title_thumbnail_image_size = static_cast<std::int32_t>(readBE32(base + 0x1716));
 
-        const auto thumb_size = thumbnailSize(meta.thumbnail_image_size);
+        const auto thumb_size = thumbnail_size(meta.thumbnail_image_size);
         meta.thumbnail_image.assign(base + 0x171A, base + 0x171A + thumb_size);
 
-        const auto title_thumb_size = thumbnailSize(meta.title_thumbnail_image_size);
+        const auto title_thumb_size = thumbnail_size(meta.title_thumbnail_image_size);
         meta.title_thumbnail_image.assign(base + 0x571A, base + 0x571A + title_thumb_size);
 
         return meta;

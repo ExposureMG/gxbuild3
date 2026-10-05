@@ -19,14 +19,14 @@ namespace gxbuild3::stfs {
       public:
         explicit StfsContainer(std::span<const std::byte> data);
 
-        void extractAll(const std::filesystem::path& target_dir) const;
+        void extract_all(const std::filesystem::path& target_dir) const;
 
         // Exclusions use the same lowercase, $flash_-stripped names as the result.
         // Excluded entries are skipped before their file contents are extracted.
         [[nodiscard]] ExtractedFiles
-        extractToMemory(std::span<const std::string> excluded_names = {}) const;
-        [[nodiscard]] bool containsFileByName(std::string_view name) const;
-        [[nodiscard]] std::vector<std::byte> extractFileByName(std::string_view name) const;
+        extract_to_memory(std::span<const std::string> excluded_names = {}) const;
+        [[nodiscard]] bool contains_file_by_name(std::string_view name) const;
+        [[nodiscard]] std::vector<std::byte> extract_file_by_name(std::string_view name) const;
 
       private:
         std::span<const std::byte> data_;

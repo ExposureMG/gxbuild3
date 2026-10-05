@@ -167,17 +167,17 @@ namespace gxbuild3::stfs {
         std::uint32_t update_timestamp;
         std::uint32_t access_timestamp;
 
-        bool isDirectory() const { return (flags & 0x80) == 0x80; }
-        bool isConsecutiveBlocks() const { return (flags & 0x40) == 0x40; }
+        bool is_directory() const { return (flags & 0x80) == 0x80; }
+        bool is_consecutive_blocks() const { return (flags & 0x40) == 0x40; }
 
-        std::uint8_t nameLength() const { return flags & 0x3F; }
+        std::uint8_t name_length() const { return flags & 0x3F; }
     };
 
-    std::vector<FileEntry> parseFileListing(std::span<const std::byte> data);
+    std::vector<FileEntry> parse_file_listing(std::span<const std::byte> data);
 
-    Header parseHeader(std::span<const std::byte> data);
-    Header readHeaderFromFile(const std::filesystem::path& path);
+    Header parse_header(std::span<const std::byte> data);
+    Header read_header_from_file(const std::filesystem::path& path);
 
-    Metadata parseMetadata(std::span<const std::byte> data);
+    Metadata parse_metadata(std::span<const std::byte> data);
 
 } // namespace gxbuild3::stfs

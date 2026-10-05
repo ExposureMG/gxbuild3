@@ -227,10 +227,10 @@ namespace gxbuild3::utils {
             if (it != pkg.extracted_files.end()) {
                 return &it->second;
             }
-            if (!pkg.container || !pkg.container->containsFileByName(key)) {
+            if (!pkg.container || !pkg.container->contains_file_by_name(key)) {
                 return nullptr;
             }
-            const auto extracted = pkg.container->extractFileByName(key);
+            const auto extracted = pkg.container->extract_file_by_name(key);
             it = pkg.extracted_files.emplace(key, to_u8(extracted)).first;
             return &it->second;
         }
@@ -238,14 +238,14 @@ namespace gxbuild3::utils {
         const nand::XboxupdParts* get_xboxupd_parts(CachedPackage& pkg) {
             if (!pkg.xboxupd_attempted) {
                 pkg.xboxupd_attempted = true;
-                if (!pkg.container || !pkg.container->containsFileByName("xboxupd.bin")) {
+                if (!pkg.container || !pkg.container->contains_file_by_name("xboxupd.bin")) {
                     pkg.xboxupd_error = "STFS package does not contain xboxupd.bin";
                     return nullptr;
                 }
                 try {
                     auto it = pkg.extracted_files.find("xboxupd.bin");
                     if (it == pkg.extracted_files.end()) {
-                        const auto extracted = pkg.container->extractFileByName("xboxupd.bin");
+                        const auto extracted = pkg.container->extract_file_by_name("xboxupd.bin");
                         it = pkg.extracted_files.emplace("xboxupd.bin", to_u8(extracted)).first;
                     }
                     pkg.xboxupd_parts = nand::split_xboxupd_raw(std::span(it->second));
@@ -442,12 +442,12 @@ namespace gxbuild3::utils {
                         try {
                             auto pkg = get_or_load_memory_package(options_.in_memory_stfs[mem_idx]);
                             if (pkg && pkg->container) {
-                                bool contains = pkg->container->containsFileByName(key);
+                                bool contains = pkg->container->contains_file_by_name(key);
                                 std::string matched_name = key;
                                 if (!contains && !contents) {
                                     if (std::find(excluded_.begin(), excluded_.end(), stem) ==
                                             excluded_.end() &&
-                                        pkg->container->containsFileByName(stem)) {
+                                        pkg->container->contains_file_by_name(stem)) {
                                         contains = true;
                                         matched_name = stem;
                                     }
@@ -467,7 +467,7 @@ namespace gxbuild3::utils {
                                 }
 
                                 if (kind == AssetKind::Bootloader && wants_xboxupd_part &&
-                                    pkg->container->containsFileByName("xboxupd.bin")) {
+                                    pkg->container->contains_file_by_name("xboxupd.bin")) {
                                     const auto* parts = get_xboxupd_parts(*pkg);
                                     if (parts) {
                                         const auto* part = xboxupd_part_for(*parts, key, stem);
@@ -521,12 +521,12 @@ namespace gxbuild3::utils {
                             continue;
                         auto pkg = get_or_load_disk_package(*package);
                         if (pkg && pkg->container) {
-                            bool contains = pkg->container->containsFileByName(key);
+                            bool contains = pkg->container->contains_file_by_name(key);
                             std::string matched_name = key;
                             if (!contains && !contents) {
                                 if (std::find(excluded_.begin(), excluded_.end(), stem) ==
                                         excluded_.end() &&
-                                    pkg->container->containsFileByName(stem)) {
+                                    pkg->container->contains_file_by_name(stem)) {
                                     contains = true;
                                     matched_name = stem;
                                 }
@@ -546,7 +546,7 @@ namespace gxbuild3::utils {
                             }
 
                             if (kind == AssetKind::Bootloader && wants_xboxupd_part &&
-                                pkg->container->containsFileByName("xboxupd.bin")) {
+                                pkg->container->contains_file_by_name("xboxupd.bin")) {
                                 const auto* parts = get_xboxupd_parts(*pkg);
                                 if (parts) {
                                     const auto* part = xboxupd_part_for(*parts, key, stem);
@@ -650,7 +650,7 @@ namespace gxbuild3::utils {
                 try {
                     auto pkg = get_or_load_memory_package(options.in_memory_stfs[mem_idx]);
                     if (pkg && pkg->container) {
-                        if (pkg->container->containsFileByName(key)) {
+                        if (pkg->container->contains_file_by_name(key)) {
                             const auto* data = get_package_file(*pkg, key);
                             if (data) {
                                 return ResolvedFile{
@@ -658,7 +658,7 @@ namespace gxbuild3::utils {
                             }
                         }
                         if (kind == AssetKind::Bootloader && wants_xboxupd_part &&
-                            pkg->container->containsFileByName("xboxupd.bin")) {
+                            pkg->container->contains_file_by_name("xboxupd.bin")) {
                             const auto* parts = get_xboxupd_parts(*pkg);
                             if (parts) {
                                 const auto* part = xboxupd_part_for(*parts, key, stem);
@@ -711,7 +711,7 @@ namespace gxbuild3::utils {
                 if (!pkg || !pkg->container) {
                     continue;
                 }
-                if (pkg->container->containsFileByName(key)) {
+                if (pkg->container->contains_file_by_name(key)) {
                     try {
                         const auto* data = get_package_file(*pkg, key);
                         if (data) {
@@ -730,7 +730,7 @@ namespace gxbuild3::utils {
                 }
 
                 if (kind != AssetKind::Bootloader || !wants_xboxupd_part ||
-                    !pkg->container->containsFileByName("xboxupd.bin")) {
+                    !pkg->container->contains_file_by_name("xboxupd.bin")) {
                     continue;
                 }
                 try {
@@ -809,7 +809,7 @@ namespace gxbuild3::utils {
                 }
 
                 if (pkg && pkg->container) {
-                    if (pkg->container->containsFileByName(key)) {
+                    if (pkg->container->contains_file_by_name(key)) {
                         try {
                             const auto* data = get_package_file(*pkg, key);
                             if (data) {
@@ -837,7 +837,7 @@ namespace gxbuild3::utils {
                     }
 
                     if (kind == AssetKind::Bootloader && wants_xboxupd_part &&
-                        pkg->container->containsFileByName("xboxupd.bin")) {
+                        pkg->container->contains_file_by_name("xboxupd.bin")) {
                         try {
                             const auto* parts = get_xboxupd_parts(*pkg);
                             if (!parts) {
@@ -983,7 +983,7 @@ namespace gxbuild3::utils {
                                         .source = AssetSource::Stfs});
                 }
 
-                if (pkg->container->containsFileByName(key)) {
+                if (pkg->container->contains_file_by_name(key)) {
                     try {
                         const auto* data = get_package_file(*pkg, key);
                         if (data) {
@@ -1012,7 +1012,7 @@ namespace gxbuild3::utils {
                 }
 
                 if (kind != AssetKind::Bootloader || !wants_xboxupd_part ||
-                    !pkg->container->containsFileByName("xboxupd.bin")) {
+                    !pkg->container->contains_file_by_name("xboxupd.bin")) {
                     continue;
                 }
                 try {
