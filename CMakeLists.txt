@@ -6,13 +6,25 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Force -O2 for -O3 optimizer bug
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "" FORCE)
+if(PROJECT_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
 add_subdirectory(extern/GxCrypt)
 add_subdirectory(extern/spdlog)
+
+# Clang -O3 hangs on C++23 code such as FlashFileSystem.cpp. Cap Release at -O2 for
+# gxbuild3 targets only (directory scope, after extern/); the later -O2 overrides -O3.
+add_compile_options("$<$<AND:$<CXX_COMPILER_ID:Clang>,$<CONFIG:Release>>:-O2>")
+
+# Warnings are errors on gxbuild3's own targets only; extern/ targets keep their own flags.
+function(gxbuild3_enable_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /WX)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+endfunction()
 
 set(GXBUILD3_LIB_SOURCES
     src/Args.cpp
@@ -71,16 +83,19 @@ target_link_libraries(gxbuild3_lib PUBLIC
     GxCrypt
     spdlog::spdlog
 )
+gxbuild3_enable_warnings(gxbuild3_lib)
 
 add_executable(gxbuild3 src/Main.cpp)
 set_target_properties(gxbuild3 PROPERTIES OUTPUT_NAME gxbuild)
 target_link_libraries(gxbuild3 PRIVATE gxbuild3_lib)
+gxbuild3_enable_warnings(gxbuild3)
 
 include(CTest)
 if(BUILD_TESTING)
     function(add_gxbuild3_test name source)
         add_executable(${name} ${source})
         target_link_libraries(${name} PRIVATE gxbuild3_lib)
+        gxbuild3_enable_warnings(${name})
         add_test(NAME ${name} COMMAND ${name})
     endfunction()
 
@@ -110,6 +125,7 @@ if(BUILD_TESTING)
 
     add_executable(gxbuild3_keyvault_crypto_tests tests/KeyvaultCryptoTests.cpp)
     target_link_libraries(gxbuild3_keyvault_crypto_tests PRIVATE gxbuild3_lib)
+    gxbuild3_enable_warnings(gxbuild3_keyvault_crypto_tests)
     set(GXBUILD3_KEYVAULT_CPU_KEY_FILE "${CMAKE_CURRENT_SOURCE_DIR}/_temp/cpukey.txt"
         CACHE FILEPATH "Private CPU key fixture (32 hex characters)")
     set(GXBUILD3_KEYVAULT_ENCRYPTED_FILE "${CMAKE_CURRENT_SOURCE_DIR}/_temp/KV_en.bin"
@@ -125,9 +141,11 @@ if(BUILD_TESTING)
 
     add_executable(gxbuild3_cli_fixture_generator tests/CliFixtureGenerator.cpp)
     target_link_libraries(gxbuild3_cli_fixture_generator PRIVATE gxbuild3_lib)
+    gxbuild3_enable_warnings(gxbuild3_cli_fixture_generator)
 
     add_executable(gxbuild3_cli_output_verifier tests/CliOutputVerifier.cpp)
     target_link_libraries(gxbuild3_cli_output_verifier PRIVATE gxbuild3_lib)
+    gxbuild3_enable_warnings(gxbuild3_cli_output_verifier)
 
     add_test(NAME gxbuild3_cli_integration_tests
         COMMAND ${CMAKE_COMMAND}

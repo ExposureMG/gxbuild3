@@ -332,7 +332,7 @@ struct InputPatchFile {
 
 struct InputPatches {
     std::optional<InputPatchFile> automatic;
-    std::vector<InputPatchFile> addons;
+    std::vector<InputPatchFile> addons{};
 };
 
 // A release INI [rawpatch] entry: the file's bytes written as they are at a clean image

@@ -24,7 +24,7 @@ namespace gxbuild3::utils {
         // Exclude security contents from STFS extraction, but still use loose files.
         bool nosusecurity = false;
         // In-memory STFS packages (queried without requiring a filesystem path).
-        std::vector<InMemoryStfsPackage> in_memory_stfs;
+        std::vector<InMemoryStfsPackage> in_memory_stfs{};
     };
 
     enum class AssetSource {

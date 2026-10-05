@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Args.hpp"
+#include "nand/FlashDriver.hpp"
 #include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
 #include "nand/bootloaders/4bl.hpp"
@@ -15,7 +16,6 @@
 #include "nand/objects/SMC.hpp"
 #include "nand/objects/XConfig.hpp"
 #include "nand/objects/XeLL.hpp"
-#include "nand/FlashDriver.hpp"
 
 #include <array>
 #include <cstddef>
@@ -42,7 +42,7 @@ namespace gxbuild3::NAND {
     struct SystemUpdate {
         std::optional<BootloaderCf> cf;
         std::optional<BootloaderCg> cg;
-        std::vector<uint16_t> cg_spill_blocks; // Logical 16 KiB clusters from CF + 0x32.
+        std::vector<uint16_t> cg_spill_blocks{}; // Logical 16 KiB clusters from CF + 0x32.
     };
 
     struct Payloads {
@@ -58,7 +58,8 @@ namespace gxbuild3::NAND {
     struct FlashImage {
         nand_header header;
         bool preserve_layout = false; // Direct read/write retains header-defined update anchors.
-        std::optional<BuildType> build_type; // Runtime layout; inferred conservatively when reading.
+        std::optional<BuildType>
+            build_type; // Runtime layout; inferred conservatively when reading.
         std::optional<Smc> smc;
         std::optional<Keyvault> keyvault;
         CbSection cb_section;
@@ -91,7 +92,8 @@ namespace gxbuild3::NAND {
 
         bool decrypt_all(std::span<const uint8_t> cpu_key);
         // Hacked chains may deliberately leave stages plaintext for their patched parent.
-        bool encrypt_all(std::span<const uint8_t> cpu_key, BuildType build_type = BuildType::Retail);
+        bool encrypt_all(std::span<const uint8_t> cpu_key,
+                         BuildType build_type = BuildType::Retail);
 
         // Remove serialized bootloader records inherited from a donor before replacing the chain:
         // the chain is zeroed and the CF/CG records in the update slots are erased (0xFF). This
