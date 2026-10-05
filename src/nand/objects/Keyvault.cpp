@@ -25,10 +25,9 @@ namespace gxbuild3::NAND {
         }
 
         uint32_t cpu_key_hamming_weight(const uint8_t cpu_key[16]) {
-            static constexpr uint8_t wght_mask[16] = {
-                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x03, 0x00, 0x00
-            };
+            static constexpr uint8_t wght_mask[16] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                                                      0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                                                      0xFF, 0x03, 0x00, 0x00};
             uint32_t count = 0;
             for (size_t i = 0; i < 16; ++i) {
                 uint8_t val = cpu_key[i] & wght_mask[i];
@@ -78,7 +77,8 @@ namespace gxbuild3::NAND {
             result.message = "CPU key is valid";
         } else {
             result.status = CpuKeyStatus::Corrected;
-            result.message = "Invalid CPU key (" + std::to_string(res) +
+            result.message =
+                "Invalid CPU key (" + std::to_string(res) +
                 " bit error(s) corrected). Corrected CPU key: " + bytes_to_hex(result.key);
         }
 
@@ -166,13 +166,12 @@ namespace gxbuild3::NAND {
                        static_cast<uint32_t>(out_data.size() - 0x10));
         }
 
-        const uint8_t version_be[2] = {
-            static_cast<uint8_t>(kv_version >> 8), static_cast<uint8_t>(kv_version)
-        };
+        const uint8_t version_be[2] = {static_cast<uint8_t>(kv_version >> 8),
+                                       static_cast<uint8_t>(kv_version)};
         uint8_t kv_digest[20];
-        ExCryptHmacSha(cpu_key.data(), static_cast<uint32_t>(cpu_key.size()), out_data.data() + 0x10,
-                       static_cast<uint32_t>(out_data.size() - 0x10), version_be, sizeof(version_be), nullptr, 0,
-                       kv_digest, 20);
+        ExCryptHmacSha(cpu_key.data(), static_cast<uint32_t>(cpu_key.size()),
+                       out_data.data() + 0x10, static_cast<uint32_t>(out_data.size() - 0x10),
+                       version_be, sizeof(version_be), nullptr, 0, kv_digest, 20);
 
         uint8_t difference = 0;
         for (size_t i = 0; i < 0x10; ++i) {
@@ -196,13 +195,12 @@ namespace gxbuild3::NAND {
 
         std::vector<uint8_t> out_data(data.begin(), data.end());
 
-        const uint8_t version_be[2] = {
-            static_cast<uint8_t>(kv_version >> 8), static_cast<uint8_t>(kv_version)
-        };
+        const uint8_t version_be[2] = {static_cast<uint8_t>(kv_version >> 8),
+                                       static_cast<uint8_t>(kv_version)};
         uint8_t kv_digest[20];
-        ExCryptHmacSha(cpu_key.data(), static_cast<uint32_t>(cpu_key.size()), out_data.data() + 0x10,
-                       static_cast<uint32_t>(out_data.size() - 0x10), version_be, sizeof(version_be), nullptr, 0,
-                       kv_digest, 20);
+        ExCryptHmacSha(cpu_key.data(), static_cast<uint32_t>(cpu_key.size()),
+                       out_data.data() + 0x10, static_cast<uint32_t>(out_data.size() - 0x10),
+                       version_be, sizeof(version_be), nullptr, 0, kv_digest, 20);
 
         std::memcpy(out_data.data(), kv_digest, 0x10);
 
@@ -236,8 +234,8 @@ namespace gxbuild3::NAND {
                                whole.begin() + static_cast<std::ptrdiff_t>(to),
                                [](uint8_t byte) { return byte == 0; });
         };
-        // xeBuild's tests, in its order. A zero nonce is in the clear unless 0x58-0x5F say it is not;
-        // a nonce is the plaintext's own when sealing derives it again.
+        // xeBuild's tests, in its order. A zero nonce is in the clear unless 0x58-0x5F say it is
+        // not; a nonce is the plaintext's own when sealing derives it again.
         const auto derived = keyvault_encrypt(cpu_key, whole);
         auto form = LooseKeyvault::Form::Unopened;
         if (zero(0, 0x10)) {
@@ -260,27 +258,6 @@ namespace gxbuild3::NAND {
         return true;
     }
 
-    bool keyvault_verify(std::span<const uint8_t> cpu_key, std::span<const uint8_t> data,
-                         std::span<const uint8_t> pub_key) {
-        if (!cpukey_valid(cpu_key)) {
-            return false;
-        }
-        if (data.size() < 0x18 + 0x3FE8) {
-            return false;
-        }
-
-        const uint8_t* kv_data = data.data() + 0x18;
-
-        uint8_t kv_hash[20];
-        ExCryptHmacSha(cpu_key.data(), static_cast<uint32_t>(cpu_key.size()), kv_data + 4, 0xD4,
-                       kv_data + 0xE8, 0x1CF8, kv_data + 0x1EE0, 0x2108, kv_hash, 20);
-
-        return ExKeysPkcs1Verify(
-                   kv_hash, kv_data + 0x1DE0,
-                   reinterpret_cast<EXCRYPT_RSA*>(
-                       const_cast<void*>(static_cast<const void*>(pub_key.data())))) != 0;
-    }
-
     std::optional<Keyvault> Keyvault::parse(std::span<const uint8_t> bytes) {
         if (bytes.size() != kSize) {
             Log::Error("Invalid Keyvault size: expected {} bytes, got {}", kSize, bytes.size());
@@ -297,13 +274,6 @@ namespace gxbuild3::NAND {
 
     std::optional<Keyvault> Keyvault::parse(const std::vector<uint8_t>& bytes) {
         return parse(std::span<const uint8_t>(bytes.data(), bytes.size()));
-    }
-
-    bool Keyvault::is_encrypted(std::span<const uint8_t> cpu_key) const {
-        if (!cpukey_valid(cpu_key)) {
-            return false;
-        }
-        return encrypted;
     }
 
     bool Keyvault::decrypt(std::span<const uint8_t> cpu_key) {
@@ -344,16 +314,6 @@ namespace gxbuild3::NAND {
             Log::Error("Keyvault encryption failed: {}", e.what());
             return false;
         }
-    }
-
-    bool Keyvault::verify(std::span<const uint8_t> cpu_key, std::span<const uint8_t> pub_key) const {
-        bool ok = keyvault_verify(cpu_key, raw_data, pub_key);
-        if (!ok) {
-            Log::Warn("Keyvault RSA PKCS#1 signature verification failed");
-        } else {
-            Log::Debug("Keyvault RSA PKCS#1 signature verified successfully");
-        }
-        return ok;
     }
 
     std::vector<uint8_t> Keyvault::serialize() const {

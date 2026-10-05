@@ -115,17 +115,3 @@ std::vector<uint8_t> BootloaderCg::serialize() const {
     out.insert(out.end(), data.begin(), data.end());
     return out;
 }
-
-std::vector<uint8_t> BootloaderCg::split(size_t limit) {
-    if (limit < sizeof(cg_header)) {
-        throw std::invalid_argument("Limit is smaller than 7BL/CG header size");
-    }
-    size_t max_data_size = limit - sizeof(cg_header);
-    if (data.size() <= max_data_size) {
-        return {};
-    }
-    std::vector<uint8_t> split_buffer(data.begin() + max_data_size, data.end());
-    data.resize(max_data_size);
-    header.header.size = static_cast<uint32_t>(limit);
-    return split_buffer;
-}

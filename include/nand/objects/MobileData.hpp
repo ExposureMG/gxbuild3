@@ -20,10 +20,10 @@ namespace gxbuild3::NAND {
         std::optional<std::vector<uint8_t>> x39;
 
         [[nodiscard]] bool empty() const noexcept;
-        [[nodiscard]] size_t total_blocks(size_t block_size) const noexcept;
 
         [[nodiscard]] std::optional<std::vector<uint8_t>>* get_slot(uint8_t block_type) noexcept;
-        [[nodiscard]] const std::optional<std::vector<uint8_t>>* get_slot(uint8_t block_type) const noexcept;
+        [[nodiscard]] const std::optional<std::vector<uint8_t>>*
+        get_slot(uint8_t block_type) const noexcept;
     };
 
     inline constexpr bool is_mobile_block_type(uint8_t block_type) noexcept {

@@ -162,37 +162,6 @@ namespace gxbuild3::NAND {
 
 #pragma pack(pop)
 
-    class CXeKeyVault {
-      public:
-        XE_KEYVAULT_DATA xeData;
-        uint8_t* pbCPUKey;
-        uint8_t bRc4Key[0x10];
-        uint8_t* pbHmacShaNonce;
-        uint16_t* pwKeyVaultVersion;
-        bool bIsDecrypted;
-
-        [[nodiscard]] int RandomizeKeys();
-        [[nodiscard]] int RepairDesKeys();
-        [[nodiscard]] int Crypt(bool isDecrypting);
-        [[nodiscard]] int Load(bool isEncrypted);
-        [[nodiscard]] int Save(bool saveEncrypted);
-        [[nodiscard]] int CalculateNonce(uint8_t* pbNonceBuff, uint32_t cbNonceBuff);
-        CXeKeyVault() {
-            pbCPUKey = nullptr;
-            pbHmacShaNonce = nullptr;
-        };
-    };
-
-    class CXeFlashSecuredFiles {
-      public:
-        XE_FCRT_DATA xeFcrtData;
-        XE_SEC_DATA xeSecData;
-        XE_EXTENDED_KV_DATA xeExtKVData;
-        XE_DAE_DATA xeDaeData;
-        XE_CRL_DATA xeCrlData;
-        uint8_t* pbCPUKey;
-    };
-
     enum class CpuKeyStatus {
         Valid,
         Corrected,
@@ -213,7 +182,6 @@ namespace gxbuild3::NAND {
     CpuKeyResult validate_cpu_key_hex(std::string_view hex);
 
     bool cpukey_valid(std::span<const uint8_t> cpu_key);
-    void ExCryptRandom(uint8_t* dest, size_t size);
     bool crypt_secfile(std::span<const uint8_t> cpu_key, std::span<uint8_t> data);
 
     struct Keyvault {
@@ -226,10 +194,8 @@ namespace gxbuild3::NAND {
         static std::optional<Keyvault> parse(std::span<const uint8_t> bytes);
         static std::optional<Keyvault> parse(const std::vector<uint8_t>& bytes);
 
-        bool is_encrypted(std::span<const uint8_t> cpu_key) const;
         bool decrypt(std::span<const uint8_t> cpu_key);
         bool encrypt(std::span<const uint8_t> cpu_key);
-        bool verify(std::span<const uint8_t> cpu_key, std::span<const uint8_t> pub_key) const;
         [[nodiscard]] std::vector<uint8_t> serialize() const;
     };
 
@@ -239,8 +205,6 @@ namespace gxbuild3::NAND {
     std::vector<uint8_t> keyvault_encrypt(std::span<const uint8_t> cpu_key,
                                           std::span<const uint8_t> data,
                                           uint16_t kv_version = 0x0712);
-    bool keyvault_verify(std::span<const uint8_t> cpu_key, std::span<const uint8_t> data,
-                         std::span<const uint8_t> pub_key);
 
     // A kv.bin supplied beside a build, in the clear: 0x4000 bytes with its nonce. A copy sealed
     // under the CPU key (its nonce is HMAC(CPU key, body + 07 12)) is opened; any other copy is
@@ -276,7 +240,6 @@ using gxbuild3::NAND::is_zero_cpu_key;
 using gxbuild3::NAND::Keyvault;
 using gxbuild3::NAND::keyvault_decrypt;
 using gxbuild3::NAND::keyvault_encrypt;
-using gxbuild3::NAND::keyvault_verify;
 using gxbuild3::NAND::LooseKeyvault;
 using gxbuild3::NAND::open_loose_keyvault;
 using gxbuild3::NAND::validate_cpu_key;
