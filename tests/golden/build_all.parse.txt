@@ -8020,7 +8020,7 @@ parse.fs.entry.29.name=fcrt.bin
 parse.fs.entry.29.info=block=0xE32 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:712ca3e33c354119da50218b943b7f44a73ca7de
 parse.fs.entry.30.name=secdata.bin
 parse.fs.entry.30.info=block=0xE33 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-parse.fs.serialize_root_block=0x4000 sha1:d40d080b50b0b50ae9421a7a29ad288a77f6a39c
+parse.fs.serialize_root_block=0x4000 sha1:b96e758be8b8634e9b1178258656521940aef592
 parse.payloads.xell=absent
 parse.payloads.fuses=absent
 parse.payloads.payload=absent
@@ -8252,7 +8252,7 @@ decrypt.fs.entry.29.name=fcrt.bin
 decrypt.fs.entry.29.info=block=0xE32 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:712ca3e33c354119da50218b943b7f44a73ca7de
 decrypt.fs.entry.30.name=secdata.bin
 decrypt.fs.entry.30.info=block=0xE33 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-decrypt.fs.serialize_root_block=0x4000 sha1:d40d080b50b0b50ae9421a7a29ad288a77f6a39c
+decrypt.fs.serialize_root_block=0x4000 sha1:b96e758be8b8634e9b1178258656521940aef592
 decrypt.payloads.xell=absent
 decrypt.payloads.fuses=absent
 decrypt.payloads.payload=absent
@@ -8512,7 +8512,7 @@ parse.fs.entry.32.name=extended.bin
 parse.fs.entry.32.info=block=0xE44 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:36a41afb41c10d7fd069b564e5ae48930e798cac
 parse.fs.entry.33.name=secdata.bin
 parse.fs.entry.33.info=block=0xE45 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-parse.fs.serialize_root_block=0x4000 sha1:5392e187da43084d1d8be9ba1081552668ac5115
+parse.fs.serialize_root_block=0x4000 sha1:6324dc1668668ee62bac251a2cba989311d4fa2f
 parse.payloads.xell=0x40000 sha1:198d67bbf3282a03ca20b34ec46c67bfa5b42c18
 parse.payloads.xell.version=-
 parse.payloads.xell.author=
@@ -8763,7 +8763,7 @@ decrypt.fs.entry.32.name=extended.bin
 decrypt.fs.entry.32.info=block=0xE44 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:36a41afb41c10d7fd069b564e5ae48930e798cac
 decrypt.fs.entry.33.name=secdata.bin
 decrypt.fs.entry.33.info=block=0xE45 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-decrypt.fs.serialize_root_block=0x4000 sha1:5392e187da43084d1d8be9ba1081552668ac5115
+decrypt.fs.serialize_root_block=0x4000 sha1:6324dc1668668ee62bac251a2cba989311d4fa2f
 decrypt.payloads.xell=0x40000 sha1:198d67bbf3282a03ca20b34ec46c67bfa5b42c18
 decrypt.payloads.xell.version=-
 decrypt.payloads.xell.author=
@@ -9003,7 +9003,7 @@ parse.fs.entry.32.name=fcrt.bin
 parse.fs.entry.32.info=block=0xE38 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:712ca3e33c354119da50218b943b7f44a73ca7de
 parse.fs.entry.33.name=secdata.bin
 parse.fs.entry.33.info=block=0xE39 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-parse.fs.serialize_root_block=0x4000 sha1:b3f11543f9b0b83712747a6784cda0b77a05d47e
+parse.fs.serialize_root_block=0x4000 sha1:8ebd8b7a7972fd88abddccb731bec2de8d2bd8ca
 parse.payloads.xell=0x40000 sha1:bd0f28b77bf594ac24f634f6ce96cffbdcf4d2bd
 parse.payloads.xell.version=-
 parse.payloads.xell.author=
@@ -9233,7 +9233,7 @@ decrypt.fs.entry.32.name=fcrt.bin
 decrypt.fs.entry.32.info=block=0xE38 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:712ca3e33c354119da50218b943b7f44a73ca7de
 decrypt.fs.entry.33.name=secdata.bin
 decrypt.fs.entry.33.info=block=0xE39 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-decrypt.fs.serialize_root_block=0x4000 sha1:b3f11543f9b0b83712747a6784cda0b77a05d47e
+decrypt.fs.serialize_root_block=0x4000 sha1:8ebd8b7a7972fd88abddccb731bec2de8d2bd8ca
 decrypt.payloads.xell=0x40000 sha1:bd0f28b77bf594ac24f634f6ce96cffbdcf4d2bd
 decrypt.payloads.xell.version=-
 decrypt.payloads.xell.author=
@@ -9491,7 +9491,7 @@ parse.fs.entry.32.name=fcrt.bin
 parse.fs.entry.32.info=block=0xE38 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:712ca3e33c354119da50218b943b7f44a73ca7de
 parse.fs.entry.33.name=secdata.bin
 parse.fs.entry.33.info=block=0xE39 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-parse.fs.serialize_root_block=0x4000 sha1:b3f11543f9b0b83712747a6784cda0b77a05d47e
+parse.fs.serialize_root_block=0x4000 sha1:8ebd8b7a7972fd88abddccb731bec2de8d2bd8ca
 parse.payloads.xell=0x40000 sha1:bd0f28b77bf594ac24f634f6ce96cffbdcf4d2bd
 parse.payloads.xell.version=-
 parse.payloads.xell.author=
@@ -9737,7 +9737,7 @@ decrypt.fs.entry.32.name=fcrt.bin
 decrypt.fs.entry.32.info=block=0xE38 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:712ca3e33c354119da50218b943b7f44a73ca7de
 decrypt.fs.entry.33.name=secdata.bin
 decrypt.fs.entry.33.info=block=0xE39 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-decrypt.fs.serialize_root_block=0x4000 sha1:b3f11543f9b0b83712747a6784cda0b77a05d47e
+decrypt.fs.serialize_root_block=0x4000 sha1:8ebd8b7a7972fd88abddccb731bec2de8d2bd8ca
 decrypt.payloads.xell=0x40000 sha1:bd0f28b77bf594ac24f634f6ce96cffbdcf4d2bd
 decrypt.payloads.xell.version=-
 decrypt.payloads.xell.author=
@@ -9995,7 +9995,7 @@ parse.fs.entry.32.name=fcrt.bin
 parse.fs.entry.32.info=block=0xE38 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:712ca3e33c354119da50218b943b7f44a73ca7de
 parse.fs.entry.33.name=secdata.bin
 parse.fs.entry.33.info=block=0xE39 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-parse.fs.serialize_root_block=0x4000 sha1:b3f11543f9b0b83712747a6784cda0b77a05d47e
+parse.fs.serialize_root_block=0x4000 sha1:8ebd8b7a7972fd88abddccb731bec2de8d2bd8ca
 parse.payloads.xell=0x40000 sha1:bd0f28b77bf594ac24f634f6ce96cffbdcf4d2bd
 parse.payloads.xell.version=-
 parse.payloads.xell.author=
@@ -10241,7 +10241,7 @@ decrypt.fs.entry.32.name=fcrt.bin
 decrypt.fs.entry.32.info=block=0xE38 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:712ca3e33c354119da50218b943b7f44a73ca7de
 decrypt.fs.entry.33.name=secdata.bin
 decrypt.fs.entry.33.info=block=0xE39 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-decrypt.fs.serialize_root_block=0x4000 sha1:b3f11543f9b0b83712747a6784cda0b77a05d47e
+decrypt.fs.serialize_root_block=0x4000 sha1:8ebd8b7a7972fd88abddccb731bec2de8d2bd8ca
 decrypt.payloads.xell=0x40000 sha1:bd0f28b77bf594ac24f634f6ce96cffbdcf4d2bd
 decrypt.payloads.xell.version=-
 decrypt.payloads.xell.author=
@@ -10515,7 +10515,7 @@ parse.fs.entry.32.name=fcrt.bin
 parse.fs.entry.32.info=block=0xE38 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:712ca3e33c354119da50218b943b7f44a73ca7de
 parse.fs.entry.33.name=secdata.bin
 parse.fs.entry.33.info=block=0xE39 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-parse.fs.serialize_root_block=0x4000 sha1:b3f11543f9b0b83712747a6784cda0b77a05d47e
+parse.fs.serialize_root_block=0x4000 sha1:8ebd8b7a7972fd88abddccb731bec2de8d2bd8ca
 parse.payloads.xell=0x40000 sha1:bd0f28b77bf594ac24f634f6ce96cffbdcf4d2bd
 parse.payloads.xell.version=-
 parse.payloads.xell.author=
@@ -10777,7 +10777,7 @@ decrypt.fs.entry.32.name=fcrt.bin
 decrypt.fs.entry.32.info=block=0xE38 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:712ca3e33c354119da50218b943b7f44a73ca7de
 decrypt.fs.entry.33.name=secdata.bin
 decrypt.fs.entry.33.info=block=0xE39 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-decrypt.fs.serialize_root_block=0x4000 sha1:b3f11543f9b0b83712747a6784cda0b77a05d47e
+decrypt.fs.serialize_root_block=0x4000 sha1:8ebd8b7a7972fd88abddccb731bec2de8d2bd8ca
 decrypt.payloads.xell=0x40000 sha1:bd0f28b77bf594ac24f634f6ce96cffbdcf4d2bd
 decrypt.payloads.xell.version=-
 decrypt.payloads.xell.author=
@@ -10997,7 +10997,7 @@ parse.fs.entry.25.name=fcrt.bin
 parse.fs.entry.25.info=block=0x603 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:712ca3e33c354119da50218b943b7f44a73ca7de
 parse.fs.entry.26.name=secdata.bin
 parse.fs.entry.26.info=block=0x604 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-parse.fs.serialize_root_block=0x4000 sha1:940b06ae38795a2a3c31f86bdd680a472315fd10
+parse.fs.serialize_root_block=0x4000 sha1:84399d5cc5c42e48d297bad6ed1dc624bebbb4f6
 parse.payloads.xell=absent
 parse.payloads.fuses=absent
 parse.payloads.payload=absent
@@ -11191,7 +11191,7 @@ decrypt.fs.entry.25.name=fcrt.bin
 decrypt.fs.entry.25.info=block=0x603 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:712ca3e33c354119da50218b943b7f44a73ca7de
 decrypt.fs.entry.26.name=secdata.bin
 decrypt.fs.entry.26.info=block=0x604 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-decrypt.fs.serialize_root_block=0x4000 sha1:940b06ae38795a2a3c31f86bdd680a472315fd10
+decrypt.fs.serialize_root_block=0x4000 sha1:84399d5cc5c42e48d297bad6ed1dc624bebbb4f6
 decrypt.payloads.xell=absent
 decrypt.payloads.fuses=absent
 decrypt.payloads.payload=absent
@@ -11438,7 +11438,7 @@ parse.fs.entry.31.name=extended.bin
 parse.fs.entry.31.info=block=0xE37 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:36a41afb41c10d7fd069b564e5ae48930e798cac
 parse.fs.entry.32.name=secdata.bin
 parse.fs.entry.32.info=block=0xE38 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-parse.fs.serialize_root_block=0x4000 sha1:d86be25637f666d5ac3276e9a22c5f306c4b0ac6
+parse.fs.serialize_root_block=0x4000 sha1:f83d5a78d96373e04cbec4374ad5f99674f6cfb5
 parse.payloads.xell=absent
 parse.payloads.fuses=0x60 sha1:5efd62dc9e9db33b4a6a21b379c2750039f154ca
 parse.payloads.payload=absent
@@ -11675,7 +11675,7 @@ decrypt.fs.entry.31.name=extended.bin
 decrypt.fs.entry.31.info=block=0xE37 length=0x4000 timestamp=0x5D444AC3 file=0x4000 sha1:36a41afb41c10d7fd069b564e5ae48930e798cac
 decrypt.fs.entry.32.name=secdata.bin
 decrypt.fs.entry.32.info=block=0xE38 length=0x400 timestamp=0x5D444AC3 file=0x400 sha1:c2c535d608fa6eb32d36b7230ababf973cb796cc
-decrypt.fs.serialize_root_block=0x4000 sha1:d86be25637f666d5ac3276e9a22c5f306c4b0ac6
+decrypt.fs.serialize_root_block=0x4000 sha1:f83d5a78d96373e04cbec4374ad5f99674f6cfb5
 decrypt.payloads.xell=absent
 decrypt.payloads.fuses=0x60 sha1:5efd62dc9e9db33b4a6a21b379c2750039f154ca
 decrypt.payloads.payload=absent
