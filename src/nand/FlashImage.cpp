@@ -1,5 +1,6 @@
 #include "nand/FlashImage.hpp"
 
+#include "Wire.hpp"
 #include "excrypt.h"
 #include "nand/FlashDriver.hpp"
 #include "nand/bootloaders/BootloaderPacker.hpp"
@@ -18,6 +19,7 @@
 #include <cstring>
 #include <format>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -184,7 +186,7 @@ namespace gxbuild3::nand {
         uint32_t slot_size(const FlashImage& image) {
             if (image.preserve_layout)
                 return image.header.fs_addr && image.header.fs_addr != 0xFFFFFFFF
-                           ? image.header.fs_addr
+                           ? image.header.fs_addr.get()
                            : 0x10000;
             if (is_jtag_image(image)) {
                 return 0x10000;
@@ -311,7 +313,48 @@ namespace gxbuild3::nand {
                 sum += block[i];
             }
             const uint16_t expected = static_cast<uint16_t>(~sum);
-            return (block[0] | (block[1] << 8)) == expected;
+            const auto stored = wire::read<wire::le16>(block, 0, "SMC config checksum");
+            return stored && stored->get() == expected;
+        }
+
+        // A KHV patch stream: records of a 4-aligned big-endian address and a non-zero
+        // big-endian word count followed by that many words, closed by 0xFFFFFFFF. Reads
+        // `length` bytes at `offset` and returns the stream through its terminator when at
+        // least one record precedes it and every record fits; nothing otherwise.
+        std::optional<std::vector<uint8_t>> find_khv_stream(const Driver& driver, size_t offset,
+                                                            size_t length) {
+            const std::vector<uint8_t> bytes = driver.read_clean(offset, length);
+            wire::Cursor cursor(bytes, offset);
+            size_t records = 0;
+            while (true) {
+                const auto address = cursor.take<wire::be32>("KHV patch address");
+                if (!address) {
+                    return std::nullopt;
+                }
+                const uint32_t target = address->get();
+                if (target == 0xFFFFFFFF) {
+                    if (records == 0) {
+                        return std::nullopt;
+                    }
+                    const auto stream = cursor.consumed();
+                    return std::vector<uint8_t>(stream.begin(), stream.end());
+                }
+                if ((target & 3) != 0) {
+                    return std::nullopt;
+                }
+                const auto count = cursor.take<wire::be32>("KHV patch word count");
+                if (!count) {
+                    return std::nullopt;
+                }
+                const uint32_t words = count->get();
+                if (words == 0 || words > cursor.remaining() / 4) {
+                    return std::nullopt;
+                }
+                if (!cursor.skip(size_t(words) * 4, "KHV patch words")) {
+                    return std::nullopt;
+                }
+                ++records;
+            }
         }
 
         // Lays one of the console's 0x1000-byte blocks (settings, statistics, manufacturing) at
@@ -401,29 +444,13 @@ namespace gxbuild3::nand {
             return fail(ErrorCode::Truncated, "the NAND header could not be read");
         }
 
-        nand_header raw{};
-        std::memcpy(&raw, header_span.data(), sizeof(nand_header));
+        auto decoded = wire::read<nand_header>(header_span, 0, "NAND header");
+        if (!decoded) {
+            return std::unexpected(std::move(decoded.error()));
+        }
 
         preserve_layout = true;
-        header.magic = bswap16(raw.magic);
-        header.version = bswap16(raw.version);
-        header.pairing = bswap16(raw.pairing);
-        header.flags = bswap16(raw.flags);
-        header.entrypoint = bswap32(raw.entrypoint);
-        header.size = bswap32(raw.size);
-        std::memcpy(header.copyright, raw.copyright, sizeof(header.copyright));
-        header.hack_flags = bswap32(raw.hack_flags);
-        header.boot_flags = bswap32(raw.boot_flags);
-        std::memcpy(header.reserved, raw.reserved, sizeof(header.reserved));
-        header.kv_size = bswap32(raw.kv_size);
-        header.cf_offset = bswap32(raw.cf_offset);
-        header.patch_slots = bswap16(raw.patch_slots);
-        header.kv_version = bswap16(raw.kv_version);
-        header.kv_addr = bswap32(raw.kv_addr);
-        header.fs_addr = bswap32(raw.fs_addr);
-        header.smc_config_offset = bswap32(raw.smc_config_offset);
-        header.smc_boot_size = bswap32(raw.smc_boot_size);
-        header.smc_boot_offset = bswap32(raw.smc_boot_offset);
+        header = *decoded;
 
         Log::Debug("Parsed NAND header: magic=0x{:04X}, version=0x{:04X}, entry=0x{:08X}, "
                    "kv_addr=0x{:08X}",
@@ -431,7 +458,7 @@ namespace gxbuild3::nand {
 
         const uint32_t smc_size =
             (header.smc_boot_size > 0 && header.smc_boot_size <= kKeyvaultOffset)
-                ? header.smc_boot_size
+                ? header.smc_boot_size.get()
                 : 0x3000;
         const uint32_t smc_offset = kKeyvaultOffset - smc_size;
         auto smc_bytes = flash_driver.read_clean(smc_offset, smc_size);
@@ -457,17 +484,16 @@ namespace gxbuild3::nand {
 
         size_t cursor = kEntryOffset;
         while (cursor + sizeof(generic_header) <= image_bytes.size()) {
-            auto bldr_hdr_bytes = flash_driver.read_clean(cursor, sizeof(generic_header));
-            if (bldr_hdr_bytes.size() < sizeof(generic_header)) {
+            const auto bldr_hdr_bytes = flash_driver.read_clean(cursor, sizeof(generic_header));
+            const auto bldr_hdr =
+                wire::read<generic_header>(bldr_hdr_bytes, 0, "bootloader stage header");
+            if (!bldr_hdr) {
                 break;
             }
 
-            generic_header bldr_hdr{};
-            std::memcpy(&bldr_hdr, bldr_hdr_bytes.data(), sizeof(generic_header));
-
-            uint16_t magic = bswap16(bldr_hdr.magic);
-            uint16_t version = bswap16(bldr_hdr.version);
-            uint32_t bldr_size = bswap32(bldr_hdr.size);
+            const uint16_t magic = bldr_hdr->magic.get();
+            const uint16_t version = bldr_hdr->version.get();
+            const uint32_t bldr_size = bldr_hdr->size.get();
 
             if (bldr_size == 0 || bldr_size > 0x100000 || cursor + bldr_size > image_bytes.size()) {
                 break;
@@ -488,7 +514,7 @@ namespace gxbuild3::nand {
             } else if (magic == NANDBootloaderMagic::SE) {
                 name = "SE";
                 stage = parse_stage(kernel_section.ce, bldr_data, name, cursor);
-            } else if (magic == 0x4342) {
+            } else if (magic == NANDBootloaderMagic::CB) {
                 name = "CB";
                 if (version == 15432) {
                     stage = parse_stage(cb_section.cb_x, bldr_data, name, cursor);
@@ -497,13 +523,13 @@ namespace gxbuild3::nand {
                 } else {
                     stage = parse_stage(cb_section.cb_B, bldr_data, name, cursor);
                 }
-            } else if (magic == 0x5343) {
+            } else if (magic == NANDBootloaderMagic::SC) {
                 name = "SC";
                 stage = parse_stage(cb_section.sc, bldr_data, name, cursor);
-            } else if (magic == 0x4344) {
+            } else if (magic == NANDBootloaderMagic::CD) {
                 name = "CD";
                 stage = parse_stage(kernel_section.cd, bldr_data, name, cursor);
-            } else if (magic == 0x4345) {
+            } else if (magic == NANDBootloaderMagic::CE) {
                 name = "CE";
                 stage = parse_stage(kernel_section.ce, bldr_data, name, cursor);
             } else {
@@ -520,7 +546,7 @@ namespace gxbuild3::nand {
 
         const auto slot_mode = flash_driver.driver_mode();
         const uint32_t slot_stride =
-            header.fs_addr && header.fs_addr != 0xFFFFFFFF ? header.fs_addr : 0x10000;
+            header.fs_addr && header.fs_addr != 0xFFFFFFFF ? header.fs_addr.get() : 0x10000;
         const uint32_t patchslot_base = header.cf_offset != 0 && header.cf_offset != 0xFFFFFFFF
                                             ? header.cf_offset
                                             : retail_slot_offset(slot_mode);
@@ -530,15 +556,17 @@ namespace gxbuild3::nand {
             if (base_offset + sizeof(generic_header) > image_bytes.size()) {
                 return {};
             }
-            auto slot_hdr_bytes = flash_driver.read_clean(base_offset, sizeof(generic_header));
-            if (slot_hdr_bytes.size() < sizeof(generic_header)) {
+            const auto slot_hdr_bytes =
+                flash_driver.read_clean(base_offset, sizeof(generic_header));
+            const auto slot_hdr =
+                wire::read<generic_header>(slot_hdr_bytes, 0, "patch slot CF header");
+            if (!slot_hdr) {
                 return {};
             }
 
-            generic_header slot_hdr{};
-            std::memcpy(&slot_hdr, slot_hdr_bytes.data(), sizeof(generic_header));
-            if (bswap16(slot_hdr.magic) == 0x4346) {
-                uint32_t cf_size = bswap32(slot_hdr.size);
+            if (const uint16_t cf_magic = slot_hdr->magic.get();
+                cf_magic == NANDBootloaderMagic::CF) {
+                const uint32_t cf_size = slot_hdr->size.get();
                 if (cf_size > 0 && base_offset + cf_size <= image_bytes.size()) {
                     auto cf_data = flash_driver.read_clean(base_offset, cf_size);
                     if (auto parsed = parse_stage(slot.cf, cf_data, "CF", base_offset); !parsed) {
@@ -547,13 +575,15 @@ namespace gxbuild3::nand {
 
                     size_t cg_offset = base_offset + align_16(cf_size);
                     if (cg_offset + sizeof(generic_header) <= image_bytes.size()) {
-                        auto cg_hdr_bytes =
+                        const auto cg_hdr_bytes =
                             flash_driver.read_clean(cg_offset, sizeof(generic_header));
-                        if (cg_hdr_bytes.size() == sizeof(generic_header)) {
-                            generic_header cg_hdr{};
-                            std::memcpy(&cg_hdr, cg_hdr_bytes.data(), sizeof(generic_header));
-                            if (bswap16(cg_hdr.magic) == 0x4347) {
-                                uint32_t cg_size = bswap32(cg_hdr.size);
+                        // read_clean returns the full length or nothing, so this read
+                        // fails exactly when the CG header is cut short.
+                        if (const auto cg_hdr = wire::read<generic_header>(
+                                cg_hdr_bytes, 0, "patch slot CG header")) {
+                            if (const uint16_t cg_magic = cg_hdr->magic.get();
+                                cg_magic == NANDBootloaderMagic::CG) {
+                                const uint32_t cg_size = cg_hdr->size.get();
                                 if (cg_size > 0 && cg_offset + cg_size <= image_bytes.size()) {
                                     auto cg_data = flash_driver.read_clean(cg_offset, cg_size);
                                     const size_t prefix = std::min<size_t>(
@@ -569,25 +599,36 @@ namespace gxbuild3::nand {
                                                             "CG continuation table",
                                                             base_offset));
                                         }
-                                        const auto& table = decoded_cf.data;
-                                        const size_t count =
-                                            table.size() >= 2 ? (size_t(table[0]) << 8) | table[1]
-                                                              : 0;
-                                        const size_t needed = (cg_size - prefix + 0x3FFF) / 0x4000;
-                                        if (count > 0 && count <= 223 && count != needed) {
+                                        const auto& payload = decoded_cf.data;
+                                        // A payload shorter than the table reads zero-padded:
+                                        // under 2 bytes the count is 0, and the size guard
+                                        // below keeps every cluster read inside the payload.
+                                        std::array<uint8_t, kCfTableSize> table_bytes{};
+                                        std::copy_n(payload.begin(),
+                                                    std::min(payload.size(), table_bytes.size()),
+                                                    table_bytes.begin());
+                                        const auto table = wire::read<cf_continuation_table>(
+                                            table_bytes, 0, "CF continuation table");
+                                        if (!table) {
+                                            return std::unexpected(table.error());
+                                        }
+                                        const size_t count = table->count.get();
+                                        const size_t needed =
+                                            (cg_size - prefix + kCgClusterSize - 1) /
+                                            kCgClusterSize;
+                                        if (count > 0 && count <= kMaxCgClusters &&
+                                            count != needed) {
                                             return fail(ErrorCode::Malformed,
                                                         "the CF at 0x{:X} names {} CG continuation "
                                                         "clusters; the CG needs {}",
                                                         base_offset, count, needed);
                                         }
-                                        if (count == needed && count <= 223 &&
-                                            table.size() >= 2 + count * 2) {
+                                        if (count == needed && count <= kMaxCgClusters &&
+                                            payload.size() >= 2 + count * 2) {
                                             cg_data = flash_driver.read_clean(cg_offset, prefix);
                                             for (size_t i = 0; i < count; ++i) {
-                                                const uint16_t block =
-                                                    (uint16_t(table[2 + i * 2]) << 8) |
-                                                    table[3 + i * 2];
-                                                if (size_t(block) * 0x4000 >=
+                                                const uint16_t block = table->clusters[i].get();
+                                                if (size_t(block) * kCgClusterSize >=
                                                         flash_driver.data_block_limit() *
                                                             flash_driver.block_size_clean() ||
                                                     std::find(slot.cg_spill_blocks.begin(),
@@ -601,9 +642,9 @@ namespace gxbuild3::nand {
                                                         base_offset, block);
                                                 }
                                                 const size_t length = std::min<size_t>(
-                                                    0x4000, cg_size - cg_data.size());
+                                                    kCgClusterSize, cg_size - cg_data.size());
                                                 auto part = flash_driver.read_clean(
-                                                    size_t(block) * 0x4000, length);
+                                                    size_t(block) * kCgClusterSize, length);
                                                 if (part.size() != length) {
                                                     return fail(ErrorCode::Truncated,
                                                                 "CG continuation cluster 0x{:X} "
@@ -637,45 +678,24 @@ namespace gxbuild3::nand {
             return with_context(std::move(slot), "update slot 1");
         }
 
-        std::vector<uint8_t> inferred_khv;
-        const auto valid_khv_at = [&](size_t offset, size_t prefix) {
-            const auto bytes =
-                flash_driver.read_clean(offset, slot_stride > prefix ? slot_stride - prefix : 0);
-            size_t cursor = 0, records = 0;
-            const auto word = [&](size_t at) {
-                return (uint32_t(bytes[at]) << 24) | (uint32_t(bytes[at + 1]) << 16) |
-                       (uint32_t(bytes[at + 2]) << 8) | bytes[at + 3];
-            };
-            while (cursor + 4 <= bytes.size()) {
-                const uint32_t address = word(cursor);
-                cursor += 4;
-                if (address == 0xFFFFFFFF) {
-                    if (records)
-                        inferred_khv.assign(bytes.begin(), bytes.begin() + cursor);
-                    return records != 0;
-                }
-                if ((address & 3) || cursor + 4 > bytes.size())
-                    return false;
-                const uint32_t count = word(cursor);
-                cursor += 4;
-                if (!count || count > (bytes.size() - cursor) / 4)
-                    return false;
-                cursor += size_t(count) * 4;
-                ++records;
-            }
-            return false;
-        };
         const size_t overlay = size_t(patchslot_base) + slot_stride;
+        // The KHV stream after a prefix of the second slot, read up to the slot's end.
+        const auto khv_after = [&](size_t prefix) {
+            return find_khv_stream(flash_driver, overlay + prefix,
+                                   slot_stride > prefix ? slot_stride - prefix : 0);
+        };
         // A development chain names its type: devkit when the header states 0x8000 at 0x04,
         // as a devkit image does, or the second slot holds no glitch2m fuses and KHV patches;
-        // devgl otherwise.
+        // devgl otherwise. Each probe runs only when the ones before it found nothing.
+        std::optional<std::vector<uint8_t>> inferred_khv;
         if (devkit_chain()) {
-            build_type = header.pairing != 0x8000 && valid_khv_at(overlay + 0x60, 0x60)
-                             ? BuildType::Devgl
-                             : BuildType::Devkit;
-        } else if (valid_khv_at(overlay + 0x10, 0x10)) {
+            if (header.pairing != 0x8000) {
+                inferred_khv = khv_after(0x60);
+            }
+            build_type = inferred_khv ? BuildType::Devgl : BuildType::Devkit;
+        } else if ((inferred_khv = khv_after(0x10))) {
             build_type = BuildType::Glitch2;
-        } else if (valid_khv_at(overlay + 0x60, 0x60)) {
+        } else if ((inferred_khv = khv_after(0x60))) {
             build_type = BuildType::Glitch2m;
         }
 
@@ -843,7 +863,7 @@ namespace gxbuild3::nand {
             return std::move(*parsed);
         };
 
-        if (!inferred_khv.empty()) {
+        if (inferred_khv) {
             if (build_type != BuildType::Glitch2m && build_type != BuildType::Devgl)
                 build_type = cb_section.cb_x   ? BuildType::Glitch3
                              : cb_section.cb_B ? BuildType::Glitch2
@@ -851,7 +871,7 @@ namespace gxbuild3::nand {
             // The NAND contains already-patched CB/CD. Rebuild with empty bootloader
             // sections and the recovered runtime stream, avoiding double application.
             std::vector<uint8_t> automatic(8, 0xFF);
-            automatic.insert(automatic.end(), inferred_khv.begin(), inferred_khv.end());
+            automatic.insert(automatic.end(), inferred_khv->begin(), inferred_khv->end());
             auto recovered = parse_patch_set(automatic, *build_type);
             if (recovered) {
                 payloads.patchset = std::move(*recovered);
@@ -951,41 +971,32 @@ namespace gxbuild3::nand {
         const uint32_t smc_offset = kKeyvaultOffset - static_cast<uint32_t>(smc_len);
         const auto smc_cfg_offset = smc_config_offset(driver);
 
-        nand_header raw{};
-        raw.magic = bswap16(header.magic ? header.magic : 0xFF4F);
-        raw.version = bswap16(header.version ? header.version : 0x0760);
-        raw.pairing = bswap16(header.pairing);
-        raw.flags = bswap16(header.flags);
-        raw.entrypoint = bswap32(header.entrypoint ? header.entrypoint : kEntryOffset);
+        nand_header raw = header;
+        raw.magic = header.magic ? header.magic.get() : uint16_t{0xFF4F};
+        raw.version = header.version ? header.version.get() : uint16_t{0x0760};
+        raw.entrypoint = header.entrypoint ? header.entrypoint.get() : kEntryOffset;
         // The legacy bootloader-chain scanner used by tools such as J-Runner
         // advances from the NAND header using this size.  It must therefore
         // terminate at the first system-update slot, not retain a donor image's
         // earlier boot-chain boundary.
-        raw.size = bswap32(patchslot_base);
-        std::memcpy(raw.copyright, header.copyright, sizeof(raw.copyright));
-        raw.hack_flags = bswap32(header.hack_flags);
-        raw.boot_flags = bswap32(header.boot_flags);
-        std::memcpy(raw.reserved, header.reserved, sizeof(raw.reserved));
-        raw.kv_size = bswap32(header.kv_size ? header.kv_size : Keyvault::kSize);
-        raw.cf_offset = bswap32(patchslot_base);
+        raw.size = patchslot_base;
+        raw.kv_size =
+            header.kv_size ? header.kv_size.get() : static_cast<uint32_t>(Keyvault::kSize);
+        raw.cf_offset = patchslot_base;
         // Two update slots on every image, as xeBuild states them. On a glitch image the
         // second is the KHV patch slot, which the kernel passes over for want of a CF.
-        raw.patch_slots = bswap16(2);
-        raw.kv_version = bswap16(header.kv_version ? header.kv_version : 0x0712);
-        raw.kv_addr = bswap32(header.kv_addr ? header.kv_addr : kKeyvaultOffset);
-        raw.fs_addr = bswap32(slot_stride); // Runtime dwSysUpdateSlotSize (header + 0x70).
+        raw.patch_slots = uint16_t{2};
+        raw.kv_version = header.kv_version ? header.kv_version.get() : uint16_t{0x0712};
+        raw.kv_addr = header.kv_addr ? header.kv_addr.get() : kKeyvaultOffset;
+        raw.fs_addr = slot_stride; // Runtime dwSysUpdateSlotSize (header + 0x70).
         // Zero on every image, a donor's value or not: xeBuild never states the settings
         // block here (xerunner build.py `header`), and the three console dumps measured
         // carry zero. The block is found by its place in the layout instead.
-        raw.smc_config_offset = 0;
-        raw.smc_boot_size = bswap32(static_cast<uint32_t>(smc_len));
-        raw.smc_boot_offset = bswap32(smc_offset);
+        raw.smc_config_offset = uint32_t{0};
+        raw.smc_boot_size = static_cast<uint32_t>(smc_len);
+        raw.smc_boot_offset = smc_offset;
 
-        if (auto laid = write_or_fail(
-                driver, 0,
-                std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&raw), sizeof(raw)),
-                "NAND header");
-            !laid) {
+        if (auto laid = write_or_fail(driver, 0, wire::bytes_of(raw), "NAND header"); !laid) {
             return laid;
         }
         // On a built image the header block is programmed zero from the header to the SMC.
@@ -1096,8 +1107,9 @@ namespace gxbuild3::nand {
                     }
                     size_t consumed = prefix;
                     for (uint16_t block : slot.cg_spill_blocks) {
-                        const size_t count = std::min<size_t>(0x4000, cg_bytes.size() - consumed);
-                        if (auto laid = write_or_fail(driver, size_t(block) * 0x4000,
+                        const size_t count =
+                            std::min<size_t>(kCgClusterSize, cg_bytes.size() - consumed);
+                        if (auto laid = write_or_fail(driver, size_t(block) * kCgClusterSize,
                                                       std::span(cg_bytes).subspan(consumed, count),
                                                       "CG continuation cluster");
                             !laid) {
@@ -2105,9 +2117,14 @@ namespace gxbuild3::nand {
             if (is_zero_cpu_key(cpu_key)) {
                 if (auto opened = open_loose_keyvault(cpu_key, keyvault->raw_data);
                     opened && opened->form == LooseKeyvault::Form::Sealed) {
+                    auto record = wire::read<XE_KEYVAULT_DATA>(opened->plain, 0, "keyvault");
+                    if (!record) {
+                        return std::unexpected(std::move(record.error())
+                                                   .add_context("reading the keyvault opened "
+                                                                "under the all-zero CPU key"));
+                    }
                     keyvault->raw_data = std::move(opened->plain);
-                    std::memcpy(&keyvault->data, keyvault->raw_data.data(),
-                                sizeof(XE_KEYVAULT_DATA));
+                    keyvault->data = *record;
                     keyvault->encrypted = false;
                 } else {
                     Log::Warn("The keyvault does not open under the all-zero CPU key; it is "
@@ -2328,8 +2345,9 @@ namespace gxbuild3::nand {
                     return with_context(std::move(opened),
                                         "opening the CF to clear its continuation table");
                 }
-                if (slot.cf->data.size() >= 0x1C0)
-                    std::fill_n(slot.cf->data.begin(), 0x1C0, 0);
+                if (slot.cf->data.size() >= kCfTableSize) {
+                    std::fill_n(slot.cf->data.begin(), kCfTableSize, 0);
+                }
                 slot.cg_spill_blocks.clear();
                 if (filesystem) {
                     filesystem->set_driver(&flash_driver);
@@ -2386,28 +2404,31 @@ namespace gxbuild3::nand {
                             filename);
             }
             auto chain = filesystem->get_chain(entry->block_number);
-            const size_t needed = (cg.size() - prefix + 0x3FFF) / 0x4000;
-            if (chain.size() > 223 || chain.size() != needed) {
+            const size_t needed = (cg.size() - prefix + kCgClusterSize - 1) / kCgClusterSize;
+            if (chain.size() > kMaxCgClusters || chain.size() != needed) {
                 return fail(ErrorCode::OutOfRange,
                             "the CG tail {} spans {} clusters; it needs {} and a CF names at most "
-                            "223",
-                            filename, chain.size(), needed);
+                            "{}",
+                            filename, chain.size(), needed, kMaxCgClusters);
             }
             if (auto opened = slot.cf->decrypt(key_1bl); !opened) {
                 return with_context(std::move(opened),
                                     "opening the CF to write its continuation table");
             }
-            if (slot.cf->data.size() < 0x1C0) {
+            if (slot.cf->data.size() < kCfTableSize) {
                 return fail(ErrorCode::Malformed,
                             "the CF payload (0x{:X} bytes) is too short for a continuation table",
                             slot.cf->data.size());
             }
-            std::fill_n(slot.cf->data.begin(), 0x1C0, 0);
-            slot.cf->data[0] = uint8_t(chain.size() >> 8);
-            slot.cf->data[1] = uint8_t(chain.size());
+            cf_continuation_table table{};
+            table.count = static_cast<uint16_t>(chain.size());
             for (size_t i = 0; i < chain.size(); ++i) {
-                slot.cf->data[2 + i * 2] = uint8_t(chain[i] >> 8);
-                slot.cf->data[3 + i * 2] = uint8_t(chain[i]);
+                table.clusters[i] = chain[i];
+            }
+            if (auto written =
+                    wire::write(std::span(slot.cf->data), 0, table, "CF continuation table");
+                !written) {
+                return written;
             }
             slot.cg_spill_blocks = std::move(chain);
             return {};

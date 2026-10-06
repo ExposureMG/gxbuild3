@@ -1,6 +1,6 @@
 #pragma once
 
-// Internal helpers shared by stfs::Package and stfs::StfsContainer.
+// Internal helpers used by stfs::StfsContainer.
 
 #include "Error.hpp"
 #include "stfs/Commons.hpp"
@@ -8,8 +8,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <span>
-#include <stdexcept>
-#include <utility>
 #include <vector>
 
 namespace gxbuild3::stfs::detail {
@@ -34,20 +32,11 @@ namespace gxbuild3::stfs::detail {
     [[nodiscard]] Result<std::filesystem::path> safe_join(const std::filesystem::path& parent,
                                                           const std::filesystem::path& relative);
 
-    // TODO(parsing): Package still reports failures by throwing. It unwraps the
-    // Result-returning helpers through this shim until the parsing phase converts it.
-    // tests/ErrorConventionGuard.cmake keeps it out of the rest of src/.
-    template <class T> [[nodiscard]] T value_or_throw(Result<T>&& result) {
-        if (!result) {
-            throw std::runtime_error(result.error().describe());
-        }
-        return std::move(*result);
-    }
-
-    inline void value_or_throw(Result<void>&& result) {
-        if (!result) {
-            throw std::runtime_error(result.error().describe());
-        }
-    }
+    // Destination of every file-table entry under `target_dir`, in table order: the
+    // build_entry_paths result joined through safe_join. Fails on the first bad entry, before
+    // anything is written.
+    [[nodiscard]] Result<std::vector<std::filesystem::path>>
+    plan_destinations(const std::vector<FileEntry>& entries,
+                      const std::filesystem::path& target_dir);
 
 } // namespace gxbuild3::stfs::detail

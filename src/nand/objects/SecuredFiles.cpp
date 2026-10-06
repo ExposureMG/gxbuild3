@@ -1,10 +1,12 @@
 #include "nand/objects/SecuredFiles.hpp"
 
+#include "Wire.hpp"
 #include "excrypt.h"
 #include "nand/bootloaders/Common.hpp"
 #include "nand/objects/Keyvault.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <string_view>
 
@@ -25,7 +27,6 @@ namespace gxbuild3::nand {
         constexpr size_t kDaeBodyOffset = 0x130;
         constexpr std::string_view kDaeMagic = "DAEP";
         constexpr uint8_t kExtendedNonceTail[2] = {0x07, 0x12};
-        constexpr size_t kOddFeaturesOffset = 0x1C;
         constexpr size_t kFcrtSize = 0x4000;
         constexpr size_t kFcrtIvOffset = 0x100;
         constexpr size_t kFcrtBodyOffsetField = 0x11C;
@@ -156,8 +157,12 @@ namespace gxbuild3::nand {
                     !std::equal(kDaeMagic.begin(), kDaeMagic.end(), blob.begin() + at)) {
                     return fail(ErrorCode::Malformed, "dae.bin has no DAEP record at 0x{:X}", at);
                 }
-                const size_t length = (static_cast<size_t>(blob[at + kRecordLengthOffset]) << 8) |
-                                      blob[at + kRecordLengthOffset + 1];
+                auto stated =
+                    wire::read<wire::be16>(blob, at + kRecordLengthOffset, "dae record length");
+                if (!stated) {
+                    return std::unexpected(std::move(stated.error()));
+                }
+                const size_t length = stated->get();
                 if (length < kRecordHashedFrom || length > blob.size() - at ||
                     (length - kDaeBodyOffset) % 16 != 0) {
                     return fail(ErrorCode::Malformed,
@@ -284,11 +289,7 @@ namespace gxbuild3::nand {
         const auto seconds =
             static_cast<uint64_t>(std::max<int64_t>(build_seconds, 0) + 2) & ~uint64_t{1};
         const uint64_t ticks = (seconds + kWindowsEpochOffset) * kTicksPerSecond;
-        std::array<uint8_t, 8> out{};
-        for (size_t index = 0; index < out.size(); ++index) {
-            out[index] = static_cast<uint8_t>(ticks >> (56 - 8 * index));
-        }
-        return out;
+        return wire::encode(wire::be64{ticks});
     }
 
     Result<CrlSealing> crl_sealing(std::span<const uint8_t> own, std::span<const uint8_t> cpu_key) {
@@ -484,10 +485,13 @@ namespace gxbuild3::nand {
             out.sealing = FcrtSealing::InvalidSize;
             return out;
         }
-        const size_t body_offset = (static_cast<size_t>(content[kFcrtBodyOffsetField]) << 24) |
-                                   (static_cast<size_t>(content[kFcrtBodyOffsetField + 1]) << 16) |
-                                   (static_cast<size_t>(content[kFcrtBodyOffsetField + 2]) << 8) |
-                                   content[kFcrtBodyOffsetField + 3];
+        const auto stated_offset =
+            wire::read<wire::be32>(content, kFcrtBodyOffsetField, "fcrt body offset");
+        if (!stated_offset) {
+            out.sealing = FcrtSealing::InvalidOffset;
+            return out;
+        }
+        const size_t body_offset = stated_offset->get();
         if (body_offset >= kFcrtSize) {
             out.sealing = FcrtSealing::InvalidOffset;
             return out;
@@ -512,11 +516,12 @@ namespace gxbuild3::nand {
     }
 
     FcrtRequirement fcrt_requirement(std::span<const uint8_t> clear_keyvault) {
-        if (clear_keyvault.size() < kOddFeaturesOffset + 2) {
+        const auto odd_features = wire::read<wire::be16>(
+            clear_keyvault, offsetof(XE_KEYVAULT_DATA, w4OddFeatures), "keyvault odd features");
+        if (!odd_features) {
             return FcrtRequirement::NotRequired;
         }
-        const auto features = static_cast<uint16_t>((clear_keyvault[kOddFeaturesOffset] << 8) |
-                                                    clear_keyvault[kOddFeaturesOffset + 1]);
+        const uint16_t features = odd_features->get();
         if ((features & 0x0300) != 0) {
             return FcrtRequirement::RequiredByDrive;
         }

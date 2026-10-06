@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Endian.hpp"
 #include "Error.hpp"
+#include "Wire.hpp"
 #include "excrypt.h"
 #include "exkeys.h"
 
@@ -10,7 +10,6 @@
 #include <limits>
 #include <optional>
 #include <stdbool.h>
-#include <stdexcept>
 #include <stdint.h>
 #include <string_view>
 #include <utility>
@@ -39,28 +38,18 @@ namespace gxbuild3::nand {
         SG = 0x5347
     };
 
-#pragma pack(push, 1)
-
+    // Bootloader stage records are wire structs (src/Wire.hpp): they hold their numeric fields in
+    // on-disk big-endian order, so sizeof and offsetof are the on-disk layout and a stage header
+    // is serialized by copying its bytes.
     struct generic_header {
-        uint16_t magic;
-        uint16_t version;
-        uint16_t pairing;
-        uint16_t flags;
-        uint32_t entrypoint;
-        uint32_t size;
+        wire::be16 magic;
+        wire::be16 version;
+        wire::be16 pairing;
+        wire::be16 flags;
+        wire::be32 entrypoint;
+        wire::be32 size;
     };
-
-    // Bootloader headers are serialized big-endian, while every Bootloader* instance stores these
-    // numeric fields in host order. The conversion is involutive, so this one helper is used at
-    // each parse, serialization, and temporary crypt-buffer boundary.
-    inline void byteswap_generic_header(generic_header& header) noexcept {
-        header.magic = bswap16(header.magic);
-        header.version = bswap16(header.version);
-        header.pairing = bswap16(header.pairing);
-        header.flags = bswap16(header.flags);
-        header.entrypoint = bswap32(header.entrypoint);
-        header.size = bswap32(header.size);
-    }
+    static_assert(wire::WireLayout<generic_header>);
 
     struct cb_perbox {
         uint8_t pairing_data[3];
@@ -68,46 +57,22 @@ namespace gxbuild3::nand {
         uint8_t reserved[0xC];
         uint8_t per_box_digest[0x10];
     };
+    static_assert(wire::WireLayout<cb_perbox>);
 
     struct ConsoleTypeSeqAllow {
         uint8_t console_type;
         uint8_t console_sequence;
-        uint16_t console_sequence_allow;
-
-        [[nodiscard]] bool console_type_is_allowed(uint64_t fuseline) const noexcept {
-            if ((fuseline & 0xF) == 0) {
-                return console_type == 0;
-            }
-            return console_type == 1;
-        }
-
-        [[nodiscard]] bool console_sequence_is_allowed(uint64_t fuseline) const noexcept {
-            if (fuseline == 0) {
-                return true;
-            }
-            int i = 0;
-            for (i = 0; i < 0x10; ++i) {
-                if ((fuseline & 0xF) == 0xF) {
-                    break;
-                }
-                fuseline >>= 4;
-            }
-
-            if (i == 0 || (0x10 - i) == console_sequence) {
-                return true;
-            }
-
-            return ((1 << ((0x10 - i) - 1)) & console_sequence_allow) > 0;
-        }
+        wire::be16 console_sequence_allow;
     };
+    static_assert(wire::WireLayout<ConsoleTypeSeqAllow>);
 
     struct cb_header {
         generic_header header;
         uint8_t key[0x10];
-        uint64_t padding_or_args[4];
-        EXCRYPT_SIG signature;
+        uint8_t padding_or_args[0x20];
+        uint8_t signature[0x100];
         uint8_t globals[0x128];
-        EXCRYPT_RSAPUB_2048 dev_pub_key;
+        uint8_t dev_pub_key[0x110];
         uint8_t nonce_3bl[0x10];
         char salt_3bl[10];
         char salt_4bl[10];
@@ -115,46 +80,35 @@ namespace gxbuild3::nand {
         ConsoleTypeSeqAllow console_seq_allow;
         uint8_t reserved[0xC];
     };
-
-    inline void byteswap_cb_header_numeric_fields(cb_header& header) noexcept {
-        header.console_seq_allow.console_sequence_allow =
-            bswap16(header.console_seq_allow.console_sequence_allow);
-    }
+    static_assert(wire::WireLayout<cb_header>);
 
     struct sc_header {
         generic_header header;
         uint8_t key[0x10];
-        EXCRYPT_SIG signature;
+        uint8_t signature[0x100];
     };
+    static_assert(wire::WireLayout<sc_header>);
 
     struct cd_header {
         generic_header header;
         uint8_t key[0x10];
-        EXCRYPT_SIG signature;
-        EXCRYPT_RSAPUB_2048 rsa_pub_key;
+        uint8_t signature[0x100];
+        uint8_t rsa_pub_key[0x110];
         uint8_t nonce_6bl[0x10];
         char salt_6bl[10];
-        uint16_t padding;
+        wire::be16 padding;
         uint8_t ce_hash[0x14];
     };
-
-    inline void byteswap_cd_header_numeric_fields(cd_header& header) noexcept {
-        header.padding = bswap16(header.padding);
-    }
+    static_assert(wire::WireLayout<cd_header>);
 
     struct ce_header {
         generic_header header;
         uint8_t key[0x10];
-        uint64_t address;
-        uint32_t size;
-        uint32_t padding;
+        wire::be64 address;
+        wire::be32 size;
+        wire::be32 padding;
     };
-
-    inline void byteswap_ce_header_numeric_fields(ce_header& header) noexcept {
-        header.address = bswap64(header.address);
-        header.size = bswap32(header.size);
-        header.padding = bswap32(header.padding);
-    }
+    static_assert(wire::WireLayout<ce_header>);
 
     struct cf_perbox {
         uint8_t reserved_per_box[0x2B];
@@ -163,47 +117,50 @@ namespace gxbuild3::nand {
         uint8_t lockdown_value;
         uint8_t per_box_digest[0x10];
     };
+    static_assert(wire::WireLayout<cf_perbox>);
 
     struct cf_header {
         generic_header header;
-        uint16_t source_version;
-        uint16_t source_qfe;
-        uint16_t target_version;
-        uint16_t target_qfe;
-        uint32_t reserved;
-        uint32_t cg_size;
+        wire::be16 source_version;
+        wire::be16 source_qfe;
+        wire::be16 target_version;
+        wire::be16 target_qfe;
+        wire::be32 reserved;
+        wire::be32 cg_size;
         uint8_t fixpoint_nonce[0x10]; // CF+0x20: self-referential HMAC fixpoint, not the CG key
     };
+    static_assert(wire::WireLayout<cf_header>);
 
     // The CG/7BL RC4 key is HMAC-SHA1 of the 7BL nonce stored in the decrypted CF payload
     // at absolute offset 0x330 (cf_header is 0x30 bytes, so this is payload offset 0x300),
     // never the header fixpoint above. RGBuild/build360/nandtool/J-Runner agree on 0x330.
     inline constexpr size_t kCfCgNonceOffset = 0x330;
 
-    inline void byteswap_cf_header_numeric_fields(cf_header& header) noexcept {
-        header.source_version = bswap16(header.source_version);
-        header.source_qfe = bswap16(header.source_qfe);
-        header.target_version = bswap16(header.target_version);
-        header.target_qfe = bswap16(header.target_qfe);
-        header.reserved = bswap32(header.reserved);
-        header.cg_size = bswap32(header.cg_size);
-    }
+    // A CG too long for its update slot spills its tail into logical 16 KiB FlashFS clusters.
+    // The decrypted CF payload opens (CF + 0x30) with the table naming them in order: a count
+    // and up to kMaxCgClusters cluster numbers, the rest zero. The record is a lossless codec;
+    // the cap and the needed-count checks stay with the callers.
+    inline constexpr size_t kMaxCgClusters = 223;
+    inline constexpr size_t kCgClusterSize = 0x4000;
+
+    struct cf_continuation_table {
+        wire::be16 count;
+        wire::be16 clusters[kMaxCgClusters];
+    };
+    static_assert(wire::WireLayout<cf_continuation_table>);
+
+    inline constexpr size_t kCfTableSize = sizeof(cf_continuation_table);
+    static_assert(kCfTableSize == 0x1C0);
 
     struct cg_header {
         generic_header header;
         uint8_t key[0x10];
-        uint32_t source_size;
+        wire::be32 source_size;
         uint8_t source_hash[0x14];
-        uint32_t target_size;
+        wire::be32 target_size;
         uint8_t target_hash[0x14];
     };
-
-    inline void byteswap_cg_header_numeric_fields(cg_header& header) noexcept {
-        header.source_size = bswap32(header.source_size);
-        header.target_size = bswap32(header.target_size);
-    }
-
-#pragma pack(pop)
+    static_assert(wire::WireLayout<cg_header>);
 
     // A stage's declared size rounded up to the 16-byte crypt granularity. It fails when the
     // declared size cannot hold `min_size` bytes (the stage's own header), which keeps the
@@ -222,25 +179,5 @@ namespace gxbuild3::nand {
         }
         return static_cast<size_t>(aligned);
     }
-
-    namespace detail {
-
-        // TODO(test-phase): the test-only *_or_throw bootloader shims unwrap the Result API
-        // through these; the test rewrite deletes both. tests/ErrorConventionGuard.cmake keeps
-        // them out of the rest of src/.
-        template <class T> [[nodiscard]] T value_or_throw(Result<T>&& result) {
-            if (!result) {
-                throw std::runtime_error(result.error().describe());
-            }
-            return std::move(*result);
-        }
-
-        inline void value_or_throw(Result<void>&& result) {
-            if (!result) {
-                throw std::runtime_error(result.error().describe());
-            }
-        }
-
-    } // namespace detail
 
 } // namespace gxbuild3::nand

@@ -2,6 +2,7 @@
 // (src/xebuild/chain/sealing.py `keys` + crypto/formats.py `encrypt_bootloader`),
 // run over the release files in tests/gxBuild-support-files/common.
 
+#include "TestResult.hpp"
 #include "excrypt.h"
 #include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
@@ -21,7 +22,6 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
-#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -71,16 +71,16 @@ namespace {
             return false;
 
         const uint8_t zero_secret[16] = {};
-        auto sc = BootloaderSc::parse_or_throw(plain);
+        auto sc = gxbuild3::test::must(BootloaderSc::parse(plain));
         sc.decrypted = true;
-        sc.encrypt_or_throw(zero_secret);
+        gxbuild3::test::must(sc.encrypt(zero_secret));
         const Bytes sealed = sc.serialize();
         if (!require(sha1(sealed) == digest_from_hex(kSealedSc),
                      "SC sealed under the zero secret matches xerunner"))
             return false;
 
-        auto reopened = BootloaderSc::parse_or_throw(sealed);
-        reopened.decrypt_or_throw(zero_secret);
+        auto reopened = gxbuild3::test::must(BootloaderSc::parse(sealed));
+        gxbuild3::test::must(reopened.decrypt(zero_secret));
         return require(reopened.serialize() == plain, "sealed SC opens back to the release file");
     }
 
@@ -179,9 +179,9 @@ namespace {
         if (!require(cba_bytes.size() > 0x400 && cbb_bytes.size() > 0x400,
                      "cba_9188_mfg.bin and cbb_6752.bin fixtures are present"))
             return false;
-        auto cba = BootloaderCb::parse_or_throw(cba_bytes);
+        auto cba = gxbuild3::test::must(BootloaderCb::parse(cba_bytes));
         cba.decrypted = true;
-        cba.encrypt_or_throw(key_1bl);
+        gxbuild3::test::must(cba.encrypt(key_1bl));
         if (!require(cba.derived_key && *cba.derived_key == key_from_hex(kCbAKey),
                      "CB_A key matches xerunner"))
             return false;
@@ -198,17 +198,18 @@ namespace {
             header.header.flags = vector.flags;
             for (const auto& [cpu, expected] : {std::pair{cpu_0f, vector.cb_b_key_cpu_0f},
                                                 std::pair{cpu_a5, vector.cb_b_key_cpu_a5}}) {
-                auto cbb = BootloaderCb::parse_or_throw(cbb_bytes);
+                auto cbb = gxbuild3::test::must(BootloaderCb::parse(cbb_bytes));
                 cbb.decrypted = true;
                 cbb.populate_metadata();
-                cbb.encrypt_cb_b_or_throw(header, cba.derived_key->data(), cpu.data());
+                gxbuild3::test::must(cbb.encrypt_cb_b(header, cba.derived_key->data(), cpu.data()));
                 const std::string label = "CB_B key under CB_A flags " +
                                           std::to_string(vector.flags) + " matches xerunner";
                 ok =
                     require(cbb.derived_key && *cbb.derived_key == key_from_hex(expected), label) &&
                     ok;
-                auto sealed = BootloaderCb::parse_or_throw(cbb.serialize());
-                sealed.decrypt_cb_b_or_throw(header, cba.derived_key->data(), cpu.data());
+                auto sealed = gxbuild3::test::must(BootloaderCb::parse(cbb.serialize()));
+                gxbuild3::test::must(
+                    sealed.decrypt_cb_b(header, cba.derived_key->data(), cpu.data()));
                 ok = require(sealed.serialize() == cbb_bytes, "CB_B opens back: " + label) && ok;
             }
         }
@@ -220,9 +221,9 @@ namespace {
     bool test_unbound_cb_b_has_zero_digest() {
         const Bytes cba_bytes = read_common("cba_9188_mfg.bin");
         const Bytes cbb_bytes = read_common("cbb_6752.bin");
-        auto cba = BootloaderCb::parse_or_throw(cba_bytes);
+        auto cba = gxbuild3::test::must(BootloaderCb::parse(cba_bytes));
         cba.decrypted = true;
-        cba.encrypt_or_throw(key_1bl);
+        gxbuild3::test::must(cba.encrypt(key_1bl));
         const Bytes smc(0x3000, 0x5A);
 
         Key cpu_0f{};
@@ -236,14 +237,14 @@ namespace {
               std::tuple{uint16_t{0x1801}, cpu_0f, kCbBVectors[1].cb_b_key_cpu_0f}}) {
             auto header = cba.header;
             header.header.flags = flags;
-            auto cbb = BootloaderCb::parse_or_throw(cbb_bytes);
+            auto cbb = gxbuild3::test::must(BootloaderCb::parse(cbb_bytes));
             cbb.decrypted = true;
             cbb.populate_metadata();
-            cbb.encrypt_retail_or_throw(cba.derived_key->data(), cpu, smc, &header);
+            gxbuild3::test::must(cbb.encrypt_retail(cba.derived_key->data(), cpu, smc, &header));
             ok = require(cbb.derived_key && *cbb.derived_key == key_from_hex(expected),
                          "retail seal of a manufacturing CB_B uses xerunner's key") &&
                  ok;
-            cbb.decrypt_cb_b_or_throw(header, cba.derived_key->data(), cpu.data());
+            gxbuild3::test::must(cbb.decrypt_cb_b(header, cba.derived_key->data(), cpu.data()));
             ok = require(std::all_of(cbb.data.begin() + 0x20, cbb.data.begin() + 0x30,
                                      [](uint8_t b) { return b == 0; }),
                          "manufacturing CB_B digest slot is zero") &&
@@ -252,11 +253,11 @@ namespace {
 
         auto header = cba.header;
         header.header.flags = 0x0800;
-        auto cbb = BootloaderCb::parse_or_throw(cbb_bytes);
+        auto cbb = gxbuild3::test::must(BootloaderCb::parse(cbb_bytes));
         cbb.decrypted = true;
         cbb.populate_metadata();
-        cbb.encrypt_retail_or_throw(cba.derived_key->data(), zero_cpu, smc, &header);
-        cbb.decrypt_cb_b_or_throw(header, cba.derived_key->data(), zero_cpu.data());
+        gxbuild3::test::must(cbb.encrypt_retail(cba.derived_key->data(), zero_cpu, smc, &header));
+        gxbuild3::test::must(cbb.decrypt_cb_b(header, cba.derived_key->data(), zero_cpu.data()));
         ok = require(std::all_of(cbb.data.begin() + 0x20, cbb.data.begin() + 0x30,
                                  [](uint8_t b) { return b == 0; }),
                      "zero-CPU-key CB_B digest slot is zero") &&
@@ -280,9 +281,9 @@ namespace {
         if (!require(cba_bytes.size() > 0x400 && cbb_bytes.size() > 0x400,
                      "cba_9188.bin and cbb_6752.bin fixtures are present"))
             return false;
-        auto cba = BootloaderCb::parse_or_throw(cba_bytes);
+        auto cba = gxbuild3::test::must(BootloaderCb::parse(cba_bytes));
         cba.decrypted = true;
-        cba.encrypt_or_throw(key_1bl);
+        gxbuild3::test::must(cba.encrypt(key_1bl));
 
         Bytes smc(0x3000);
         for (size_t i = 0; i < smc.size(); ++i)
@@ -295,7 +296,7 @@ namespace {
         for (const auto& [flags, expected] : kBoundCbB) {
             auto header = cba.header;
             header.header.flags = flags;
-            auto cbb = BootloaderCb::parse_or_throw(cbb_bytes);
+            auto cbb = gxbuild3::test::must(BootloaderCb::parse(cbb_bytes));
             cbb.decrypted = true;
             cbb.populate_metadata();
             // xerunner's console block: pairing, LDV 0, twelve zero bytes.
@@ -305,7 +306,7 @@ namespace {
             cbb.perbox->pairing_data[2] = 0x56;
             if (!require(cbb.serialize_perbox().has_value(), "CB_B per-box serializes"))
                 return false;
-            cbb.encrypt_retail_or_throw(cba.derived_key->data(), cpu, smc, &header);
+            gxbuild3::test::must(cbb.encrypt_retail(cba.derived_key->data(), cpu, smc, &header));
             ok = require(sha1(cbb.serialize()) == digest_from_hex(expected),
                          "bound CB_B under CB_A flags " + std::to_string(flags) +
                              " matches xerunner") &&
@@ -371,11 +372,6 @@ namespace {
                                ErrorCode::Malformed),
                     "CG declaring less than its header is refused") &&
             ok;
-        try {
-            (void) BootloaderCd::parse_or_throw(stage_bytes(CD, sizeof(cd_header) + 0x20, 0x20));
-            ok = require(false, "CD parse_or_throw throws on an undersized declared size") && ok;
-        } catch (const std::runtime_error&) {
-        }
         return ok;
     }
 
@@ -385,8 +381,8 @@ namespace {
         using gxbuild3::ErrorCode;
         const uint8_t key[16] = {};
 
-        auto cd = BootloaderCd::parse_or_throw(
-            stage_bytes(CD, sizeof(cd_header) + 0x20, sizeof(cd_header) + 0x20));
+        auto cd = gxbuild3::test::must(BootloaderCd::parse(
+            stage_bytes(CD, sizeof(cd_header) + 0x20, sizeof(cd_header) + 0x20)));
         cd.header.header.size = 0x10;
         const Bytes cd_data = cd.data;
         const bool cd_was_decrypted = cd.decrypted;
@@ -398,7 +394,7 @@ namespace {
                      "failed CD crypt leaves the stage unchanged") &&
              ok;
 
-        auto cb = BootloaderCb::parse_or_throw(stage_bytes(CB, 0x40, 0x40));
+        auto cb = gxbuild3::test::must(BootloaderCb::parse(stage_bytes(CB, 0x40, 0x40)));
         cb.header.header.size = 0x10;
         const Bytes cb_data = cb.data;
         ok = require(fails_with(cb.decrypt(key), ErrorCode::Malformed) && !cb.decrypted &&
@@ -406,8 +402,8 @@ namespace {
                      "CB decrypt of a header-only CB fails and leaves the stage") &&
              ok;
 
-        auto cg = BootloaderCg::parse_or_throw(
-            stage_bytes(CG, sizeof(cg_header) + 0x20, sizeof(cg_header) + 0x20));
+        auto cg = gxbuild3::test::must(BootloaderCg::parse(
+            stage_bytes(CG, sizeof(cg_header) + 0x20, sizeof(cg_header) + 0x20)));
         cg.decrypted = false;
         cg.header.header.size = 0x10;
         const Bytes cg_data = cg.data;

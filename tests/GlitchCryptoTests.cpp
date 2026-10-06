@@ -1,4 +1,5 @@
 #include "BuildRunner.hpp"
+#include "TestResult.hpp"
 #include "excrypt.h"
 #include "nand/FlashImage.hpp"
 #include "nand/objects/Keyvault.hpp"
@@ -23,6 +24,19 @@ namespace {
         return condition;
     }
 
+    // A generic stage header from host values (wire fields assign one at a time).
+    generic_header stage_header(uint16_t magic, uint16_t version, uint16_t pairing, uint16_t flags,
+                                uint32_t entrypoint, size_t size) {
+        generic_header header{};
+        header.magic = magic;
+        header.version = version;
+        header.pairing = pairing;
+        header.flags = flags;
+        header.entrypoint = entrypoint;
+        header.size = static_cast<uint32_t>(size);
+        return header;
+    }
+
     // Independent wire-format oracle: the HMAC/RC4 operations used by the reference
     // Python builders, without calling gxbuild3's bootloader crypto helpers.
     Key hmac(const Key& parent, const Bytes& message) {
@@ -42,7 +56,8 @@ namespace {
 
     Bytes cb(uint16_t version, uint16_t flags, uint8_t nonce) {
         BootloaderCb loader{};
-        loader.header.header = {NANDBootloaderMagic::CB, version, 0, flags, 0x400, 0x600};
+        loader.header.header =
+            stage_header(NANDBootloaderMagic::CB, version, 0, flags, 0x400, 0x600);
         loader.data.assign(0x600 - sizeof(generic_header), 0);
         std::fill_n(loader.data.begin(), 16, nonce);
         loader.data[0x400] = 0x42;
@@ -76,7 +91,8 @@ namespace {
         }
 
         BootloaderCd cd{};
-        cd.header.header = {NANDBootloaderMagic::CD, 9452, 0, 0, 0, sizeof(cd_header) + 0x20};
+        cd.header.header =
+            stage_header(NANDBootloaderMagic::CD, 9452, 0, 0, 0, sizeof(cd_header) + 0x20);
         std::fill_n(cd.header.key, 16, 0x44);
         cd.header.ce_hash[0] = 1;
         cd.data.assign(0x20, 0xCD);
@@ -84,7 +100,8 @@ namespace {
         input.bootloaders.cd = cd.serialize();
 
         BootloaderCe ce{};
-        ce.header.header = {NANDBootloaderMagic::CE, 1888, 0, 0, 0, sizeof(ce_header) + 0x20};
+        ce.header.header =
+            stage_header(NANDBootloaderMagic::CE, 1888, 0, 0, 0, sizeof(ce_header) + 0x20);
         std::fill_n(ce.header.key, 16, 0x55);
         ce.data.assign(0x20, 0xCE);
         ce.decrypted = true;
@@ -104,8 +121,7 @@ namespace {
         if (type != BuildType::Retail) {
             // Empty CB and CD patch sections followed by a KHV payload. This isolates
             // the crypto policy while still exercising the normal hacked-image build.
-            Bytes patch(8, 0xFF);
-            patch.push_back(0xA5);
+            const Bytes patch{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xA5};
             input.patches = InputPatches{.automatic = InputPatchFile{"automatic", patch}};
         }
         return input;
@@ -155,13 +171,14 @@ namespace {
             smc[i] = i;
         bool ok = true;
         for (size_t variant = 0; variant < 3; ++variant) {
-            auto cba = BootloaderCb::parse_or_throw(cb(9188, variant == 2 ? 0x1800 : 0x800, 0x11));
-            auto target = BootloaderCb::parse_or_throw(cb(6750, 0, variant == 0 ? 0x11 : 0x33));
+            auto cba =
+                test::must(BootloaderCb::parse(cb(9188, variant == 2 ? 0x1800 : 0x800, 0x11)));
+            auto target = test::must(BootloaderCb::parse(cb(6750, 0, variant == 0 ? 0x11 : 0x33)));
             for (size_t i = 0; i < 16; ++i)
                 target.data[0x10 + i] = 0x10 + i;
             const auto parent = variant == 0 ? onebl : hmac(onebl, Bytes(16, 0x11));
-            target.encrypt_retail_or_throw(parent.data(), cpu, smc,
-                                           variant == 0 ? nullptr : &cba.header);
+            test::must(target.encrypt_retail(parent.data(), cpu, smc,
+                                             variant == 0 ? nullptr : &cba.header));
             auto wire = target.serialize();
             ExCryptRc4(target.derived_key->data(), 16, wire.data() + 0x20, wire.size() - 0x20);
             ok = require(std::equal(expected[variant].begin(), expected[variant].end(),
@@ -478,7 +495,7 @@ namespace {
         put_word(expected, 0x370, 0x64690006);
         put_word(expected, 0x37C, 0xF8491010);
 
-        auto loader = BootloaderCb::parse_or_throw(v1);
+        auto loader = test::must(BootloaderCb::parse(v1));
         loader.decrypted = true;
         bool ok = require(loader.patch_rgh3_v1_cb_x(), "a v1 CB_X is patched") &&
                   require(loader.serialize() == expected, "the v1 fix rewrites exactly four words");
@@ -488,19 +505,19 @@ namespace {
 
         auto v2 = cb(15432, 0x800, 0);
         put_word(v2, 0x368, 0x7D8C502A);
-        auto v2_loader = BootloaderCb::parse_or_throw(v2);
+        auto v2_loader = test::must(BootloaderCb::parse(v2));
         v2_loader.decrypted = true;
         ok = require(!v2_loader.patch_rgh3_v1_cb_x() && v2_loader.serialize() == v2,
                      "a v2 CB_X (zero at +0x354) is left unchanged") &&
              ok;
 
-        auto sealed = BootloaderCb::parse_or_throw(v1);
+        auto sealed = test::must(BootloaderCb::parse(v1));
         sealed.decrypted = false;
         ok = require(!sealed.patch_rgh3_v1_cb_x() && sealed.serialize() == v1,
                      "a sealed CB_X is never patched") &&
              ok;
 
-        auto short_loader = BootloaderCb::parse_or_throw(Bytes(v1.begin(), v1.begin() + 0x37C));
+        auto short_loader = test::must(BootloaderCb::parse(Bytes(v1.begin(), v1.begin() + 0x37C)));
         short_loader.decrypted = true;
         return require(!short_loader.patch_rgh3_v1_cb_x(),
                        "a CB_X too short for the fix is left unchanged") &&
@@ -574,7 +591,8 @@ namespace {
         std::fill(input.bootloaders.cb_or_a.begin() + 0x20,
                   input.bootloaders.cb_or_a.begin() + 0x40, 0xCC);
         BootloaderCf cf{};
-        cf.header.header = {NANDBootloaderMagic::CF, 17559, 0, 0, 0, sizeof(cf_header) + 0x340};
+        cf.header.header =
+            stage_header(NANDBootloaderMagic::CF, 17559, 0, 0, 0, sizeof(cf_header) + 0x340);
         cf.data.assign(0x340, 0);
         cf.decrypted = true;
         input.bootloaders.cf0 = cf.serialize();
@@ -624,8 +642,8 @@ namespace {
                      name + " CE opens under CD's key") &&
              ok;
 
-        auto sealed_cf = BootloaderCf::parse_or_throw(image->system_update_0.cf->serialize());
-        sealed_cf.decrypt_or_throw(onebl.data());
+        auto sealed_cf = test::must(BootloaderCf::parse(image->system_update_0.cf->serialize()));
+        test::must(sealed_cf.decrypt(onebl.data()));
         if (!require(sealed_cf.parse_perbox().has_value(), name + " CF per-box parses"))
             return false;
         const auto& cf_perbox = *sealed_cf.perbox;
@@ -669,7 +687,8 @@ namespace {
 
         const Bytes extra_cb = cb(6750, 0, 0x66);
         BootloaderCd cd{};
-        cd.header.header = {NANDBootloaderMagic::CD, 8453, 0, 0, 0, sizeof(cd_header) + 0x20};
+        cd.header.header =
+            stage_header(NANDBootloaderMagic::CD, 8453, 0, 0, 0, sizeof(cd_header) + 0x20);
         std::fill_n(cd.header.key, 16, 0x88);
         cd.header.ce_hash[0] = 1;
         cd.data.assign(0x20, 0xDC);
@@ -745,7 +764,8 @@ namespace {
         // Decrypted CF whose 7BL nonce (payload +0x300 == serialized +0x330) is
         // 0xA0..0xAF, deliberately different from the zeroed header fixpoint at +0x20.
         BootloaderCf cf{};
-        cf.header.header = {NANDBootloaderMagic::CF, 17559, 0, 0, 0, sizeof(cf_header) + 0x340};
+        cf.header.header =
+            stage_header(NANDBootloaderMagic::CF, 17559, 0, 0, 0, sizeof(cf_header) + 0x340);
         cf.data.assign(0x340, 0);
         for (size_t i = 0; i < 16; ++i)
             cf.data[0x300 + i] = static_cast<uint8_t>(0xA0 + i);
@@ -755,7 +775,8 @@ namespace {
         // Decrypted CG: a non-zero header key survives encryption unchanged, and a
         // 0x1000-aligned source_size makes the CG plaintext heuristic recognise it.
         BootloaderCg cg{};
-        cg.header.header = {NANDBootloaderMagic::CG, 17559, 0, 0, 0, sizeof(cg_header) + 0x40};
+        cg.header.header =
+            stage_header(NANDBootloaderMagic::CG, 17559, 0, 0, 0, sizeof(cg_header) + 0x40);
         std::fill_n(cg.header.key, 16, 0x77);
         cg.header.source_size = 0x1000;
         cg.data.assign(0x40, 0xEE);

@@ -3,6 +3,7 @@
 #include "GoldenSnapshot.hpp"
 #include "Library.hpp"
 #include "ScopedTimeZone.hpp"
+#include "TestResult.hpp"
 #include "XeRsaTestKey.hpp"
 #include "excrypt.h"
 #include "nand/FlashDriver.hpp"
@@ -21,6 +22,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -185,17 +187,17 @@ namespace {
     // run_build opens a supplied sealed CG and seals it again under a new nonce, so a CG is
     // compared by what it carries: its plaintext, with the nonce at +0x10 cleared.
     std::optional<Bytes> opened_cg(const Bytes& cf_bytes, const Bytes& cg_bytes) {
-        auto cf = BootloaderCf::parse_or_throw(cf_bytes);
+        auto cf = test::must(BootloaderCf::parse(cf_bytes));
         if (!cf.is_decrypted()) {
-            cf.decrypt_or_throw(key_1bl);
+            test::must(cf.decrypt(key_1bl));
         }
         const auto key = cf.cg_key();
         if (!key || cg_bytes.size() < sizeof(cg_header)) {
             return std::nullopt;
         }
-        auto cg = BootloaderCg::parse_or_throw(cg_bytes);
+        auto cg = test::must(BootloaderCg::parse(cg_bytes));
         if (!cg.decrypted) {
-            cg.decrypt_or_throw(key->data());
+            test::must(cg.decrypt(key->data()));
         }
         auto opened = cg.serialize();
         std::fill(opened.begin() + 0x10, opened.begin() + 0x20, 0);
@@ -1224,7 +1226,7 @@ namespace {
             input.options.noblpatch = test_case.noblpatch;
             input.bootloaders.cb_or_a.resize(test_case.xell_offset - 0x8000 + 0x10, 0xA9);
             const uint32_t cb_size =
-                bswap32(static_cast<uint32_t>(input.bootloaders.cb_or_a.size()));
+                std::byteswap(static_cast<uint32_t>(input.bootloaders.cb_or_a.size()));
             std::memcpy(input.bootloaders.cb_or_a.data() + offsetof(generic_header, size), &cb_size,
                         sizeof(cb_size));
             if (test_case.jtag_patchset || test_case.noblpatch) {
@@ -1288,9 +1290,9 @@ namespace {
         if (!donor.keyvault->encrypt(source.metadata.cpu_key)) {
             std::abort();
         }
-        donor.cb_section.cb_or_A = BootloaderCb::parse_or_throw(source.bootloaders.cb_or_a);
-        donor.cb_section.sc = BootloaderSc::parse_or_throw(*source.bootloaders.sc);
-        donor.kernel_section.cd = BootloaderCd::parse_or_throw(source.bootloaders.cd);
+        donor.cb_section.cb_or_A = test::must(BootloaderCb::parse(source.bootloaders.cb_or_a));
+        donor.cb_section.sc = test::must(BootloaderSc::parse(*source.bootloaders.sc));
+        donor.kernel_section.cd = test::must(BootloaderCd::parse(source.bootloaders.cd));
         if (!donor.encrypt_all(source.metadata.cpu_key)) {
             std::abort();
         }
@@ -1328,12 +1330,13 @@ namespace {
                      std::string(what) + ": eMMC build with mobile data succeeds")) {
             return false;
         }
+        const auto lays_anchor_mobiles =
+            std::string(what) + ": eMMC lays mobiles 0x31-0x34 and drops the rest";
         for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
             const auto* given = input.mobiles.slot(block_type);
             const auto* laid = parsed->mobile_data->get_slot(block_type);
             const bool expected = block_type <= 0x34 && given && *given;
-            if (!require(expected ? *laid == *given : !laid->has_value(),
-                         std::string(what) + ": eMMC lays mobiles 0x31-0x34 and drops the rest")) {
+            if (!require(expected ? *laid == *given : !laid->has_value(), lays_anchor_mobiles)) {
                 return false;
             }
         }
@@ -1801,10 +1804,10 @@ namespace {
     // An SC is sealed under HMAC(16 zero bytes, nonce), whatever its parent.
     bool test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() {
         auto encrypted_source = fresh_input(ImageType::SmallBlock);
-        auto encrypted_sc = BootloaderSc::parse_or_throw(*encrypted_source.bootloaders.sc);
+        auto encrypted_sc = test::must(BootloaderSc::parse(*encrypted_source.bootloaders.sc));
         const auto expected_encrypted_sc_data = encrypted_sc.data;
         encrypted_sc.decrypted = true;
-        encrypted_sc.encrypt_or_throw(BootloaderSc::kZeroSecret);
+        test::must(encrypted_sc.encrypt(BootloaderSc::kZeroSecret));
         encrypted_source.bootloaders.sc = encrypted_sc.serialize();
 
         const auto encrypted_build = run_build(encrypted_source);
@@ -2612,7 +2615,7 @@ namespace {
         const auto bootloader_donor = make_donor(source, {});
         auto bootloaders = extract_all(bootloader_donor, source.metadata.cpu_key);
         const auto extracted_cd = bootloaders
-                                      ? BootloaderCd::parse_or_throw(bootloaders->bootloaders.cd)
+                                      ? test::must(BootloaderCd::parse(bootloaders->bootloaders.cd))
                                       : BootloaderCd{};
         if (!require(bootloaders.has_value(), "serialized bootloader donor extracts") ||
             !require(bootloaders->bootloaders.cb_or_a == source.bootloaders.cb_or_a,
@@ -2633,7 +2636,7 @@ namespace {
                                : not_built;
         const auto roundtrip_cd =
             bootloader_roundtrip
-                ? BootloaderCd::parse_or_throw(bootloader_roundtrip->bootloaders.cd)
+                ? test::must(BootloaderCd::parse(bootloader_roundtrip->bootloaders.cd))
                 : BootloaderCd{};
         // The donor chain stops before CE, so the rebuild seals CB/A under a fresh nonce.
         const auto same_outside_nonce = [](const Bytes& left, const Bytes& right) {
@@ -2690,7 +2693,7 @@ namespace {
     bool test_metadata_overrides_reach_final_patched_cb_b_and_cf0() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Glitch2;
-        auto cb_a = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
+        auto cb_a = test::must(BootloaderCb::parse(input.bootloaders.cb_or_a));
         if (!cb_a.parse_perbox()) {
             std::abort();
         }
@@ -2703,7 +2706,7 @@ namespace {
         }
         input.bootloaders.cb_or_a = cb_a.serialize();
 
-        auto cb_b = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
+        auto cb_b = test::must(BootloaderCb::parse(input.bootloaders.cb_or_a));
         if (!cb_b.parse_perbox()) {
             std::abort();
         }
@@ -2860,7 +2863,7 @@ namespace {
 
     bool test_present_unwritable_cb_b_remains_metadata_authoritative() {
         auto input = fresh_input(ImageType::SmallBlock);
-        auto cb_a = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
+        auto cb_a = test::must(BootloaderCb::parse(input.bootloaders.cb_or_a));
         cb_a.data[0x260] = 0x01;
         cb_a.decrypted = false;
         input.bootloaders.cb_or_a = cb_a.serialize();
@@ -2879,7 +2882,7 @@ namespace {
 
     bool test_donor_bootloader_chain_is_replaced_by_input_presence() {
         auto donor_input = fresh_input(ImageType::SmallBlock);
-        auto donor_cb = BootloaderCb::parse_or_throw(donor_input.bootloaders.cb_or_a);
+        auto donor_cb = test::must(BootloaderCb::parse(donor_input.bootloaders.cb_or_a));
         donor_cb.data[0x260] = 0x01;
         donor_cb.decrypted = false;
         donor_input.bootloaders.cb_or_a = donor_cb.serialize();
@@ -3195,40 +3198,44 @@ namespace {
         cb.header.header.pairing = pairing;
         cb.header.header.size = sizeof(generic_header);
         const auto cb_wire = cb.serialize();
-        passed = require(has_big_endian_pairing(cb_wire) &&
-                             BootloaderCb::parse_or_throw(cb_wire).header.header.pairing == pairing,
-                         "CB generic pairing is big-endian on wire and host-order after parse") &&
-                 passed;
+        passed =
+            require(has_big_endian_pairing(cb_wire) &&
+                        test::must(BootloaderCb::parse(cb_wire)).header.header.pairing == pairing,
+                    "CB generic pairing is big-endian on wire and host-order after parse") &&
+            passed;
 
         BootloaderSc sc{};
         sc.header.header.magic = NANDBootloaderMagic::SC;
         sc.header.header.pairing = pairing;
         sc.header.header.size = sizeof(sc_header);
         const auto sc_wire = sc.serialize();
-        passed = require(has_big_endian_pairing(sc_wire) &&
-                             BootloaderSc::parse_or_throw(sc_wire).header.header.pairing == pairing,
-                         "SC generic pairing is big-endian on wire and host-order after parse") &&
-                 passed;
+        passed =
+            require(has_big_endian_pairing(sc_wire) &&
+                        test::must(BootloaderSc::parse(sc_wire)).header.header.pairing == pairing,
+                    "SC generic pairing is big-endian on wire and host-order after parse") &&
+            passed;
 
         BootloaderCd cd{};
         cd.header.header.magic = NANDBootloaderMagic::CD;
         cd.header.header.pairing = pairing;
         cd.header.header.size = sizeof(cd_header);
         const auto cd_wire = cd.serialize();
-        passed = require(has_big_endian_pairing(cd_wire) &&
-                             BootloaderCd::parse_or_throw(cd_wire).header.header.pairing == pairing,
-                         "CD generic pairing is big-endian on wire and host-order after parse") &&
-                 passed;
+        passed =
+            require(has_big_endian_pairing(cd_wire) &&
+                        test::must(BootloaderCd::parse(cd_wire)).header.header.pairing == pairing,
+                    "CD generic pairing is big-endian on wire and host-order after parse") &&
+            passed;
 
         BootloaderCe ce{};
         ce.header.header.magic = NANDBootloaderMagic::CE;
         ce.header.header.pairing = pairing;
         ce.header.header.size = sizeof(ce_header);
         const auto ce_wire = ce.serialize();
-        passed = require(has_big_endian_pairing(ce_wire) &&
-                             BootloaderCe::parse_or_throw(ce_wire).header.header.pairing == pairing,
-                         "CE generic pairing is big-endian on wire and host-order after parse") &&
-                 passed;
+        passed =
+            require(has_big_endian_pairing(ce_wire) &&
+                        test::must(BootloaderCe::parse(ce_wire)).header.header.pairing == pairing,
+                    "CE generic pairing is big-endian on wire and host-order after parse") &&
+            passed;
 
         BootloaderCf cf{};
         cf.header.header.magic = NANDBootloaderMagic::CF;
@@ -3237,25 +3244,27 @@ namespace {
         cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
         cf.decrypted = true;
         const auto cf_wire = cf.serialize();
-        passed = require(has_big_endian_pairing(cf_wire) &&
-                             BootloaderCf::parse_or_throw(cf_wire).header.header.pairing == pairing,
-                         "CF generic pairing is big-endian on wire and host-order after parse") &&
-                 passed;
+        passed =
+            require(has_big_endian_pairing(cf_wire) &&
+                        test::must(BootloaderCf::parse(cf_wire)).header.header.pairing == pairing,
+                    "CF generic pairing is big-endian on wire and host-order after parse") &&
+            passed;
 
         BootloaderCg cg{};
         cg.header.header.magic = NANDBootloaderMagic::CG;
         cg.header.header.pairing = pairing;
         cg.header.header.size = sizeof(cg_header);
         const auto cg_wire = cg.serialize();
-        passed = require(has_big_endian_pairing(cg_wire) &&
-                             BootloaderCg::parse_or_throw(cg_wire).header.header.pairing == pairing,
-                         "CG generic pairing is big-endian on wire and host-order after parse") &&
-                 passed;
+        passed =
+            require(has_big_endian_pairing(cg_wire) &&
+                        test::must(BootloaderCg::parse(cg_wire)).header.header.pairing == pairing,
+                    "CG generic pairing is big-endian on wire and host-order after parse") &&
+            passed;
 
-        cf.encrypt_or_throw(key_1bl);
+        test::must(cf.encrypt(key_1bl));
         const auto encrypted_cf_wire = cf.serialize();
-        auto decrypted_cf = BootloaderCf::parse_or_throw(encrypted_cf_wire);
-        decrypted_cf.decrypt_or_throw(key_1bl);
+        auto decrypted_cf = test::must(BootloaderCf::parse(encrypted_cf_wire));
+        test::must(decrypted_cf.decrypt(key_1bl));
         passed = require(has_big_endian_pairing(encrypted_cf_wire) &&
                              decrypted_cf.header.header.pairing == pairing,
                          "CF encrypt/decrypt preserves the generic pairing endian invariant") &&
@@ -3275,7 +3284,7 @@ namespace {
             offsetof(ConsoleTypeSeqAllow, console_sequence_allow) - sizeof(generic_header);
         cb.data[console_allow_offset] = 0x12;
         cb.data[console_allow_offset + 1] = 0x34;
-        const auto parsed_cb = BootloaderCb::parse_or_throw(cb.serialize());
+        const auto parsed_cb = test::must(BootloaderCb::parse(cb.serialize()));
         passed = require(parsed_cb.header.console_seq_allow.console_sequence_allow == 0x1234,
                          "CB console sequence allowance is normalized after parse") &&
                  passed;
@@ -3286,7 +3295,7 @@ namespace {
         cd.header.padding = 0x1234;
         const auto cd_wire = cd.serialize();
         passed = require(read_be16(cd_wire, offsetof(cd_header, padding)) == 0x1234 &&
-                             BootloaderCd::parse_or_throw(cd_wire).header.padding == 0x1234,
+                             test::must(BootloaderCd::parse(cd_wire)).header.padding == 0x1234,
                          "CD padding is host-order after parse and big-endian on wire") &&
                  passed;
 
@@ -3297,7 +3306,7 @@ namespace {
         ce.header.size = 0x11223344;
         ce.header.padding = 0x55667788;
         const auto ce_wire = ce.serialize();
-        const auto parsed_ce = BootloaderCe::parse_or_throw(ce_wire);
+        const auto parsed_ce = test::must(BootloaderCe::parse(ce_wire));
         passed =
             require(read_be64(ce_wire, offsetof(ce_header, address)) == 0x0102030405060708ULL &&
                         read_be32(ce_wire, offsetof(ce_header, size)) == 0x11223344 &&
@@ -3315,7 +3324,7 @@ namespace {
         cg.header.target_size = 0x50607080;
         cg.data.assign(0x40, 0x33);
         const auto cg_wire = cg.serialize();
-        auto parsed_cg = BootloaderCg::parse_or_throw(cg_wire);
+        auto parsed_cg = test::must(BootloaderCg::parse(cg_wire));
         passed =
             require(
                 read_be32(cg_wire, offsetof(cg_header, source_size)) == 0x10203040 &&
@@ -3326,9 +3335,9 @@ namespace {
             passed;
 
         parsed_cg.decrypted = true;
-        parsed_cg.encrypt_or_throw(key_1bl);
-        auto crypt_roundtrip_cg = BootloaderCg::parse_or_throw(parsed_cg.serialize());
-        crypt_roundtrip_cg.decrypt_or_throw(key_1bl);
+        test::must(parsed_cg.encrypt(key_1bl));
+        auto crypt_roundtrip_cg = test::must(BootloaderCg::parse(parsed_cg.serialize()));
+        test::must(crypt_roundtrip_cg.decrypt(key_1bl));
         return require(passed && crypt_roundtrip_cg.header.source_size == 0x10203040 &&
                            crypt_roundtrip_cg.header.target_size == 0x50607080,
                        "CG encrypt/decrypt preserves normalized source and target sizes");
@@ -3356,7 +3365,7 @@ namespace {
         constexpr size_t console_allow_wire_offset =
             offsetof(cb_header, console_seq_allow) +
             offsetof(ConsoleTypeSeqAllow, console_sequence_allow);
-        auto cb = BootloaderCb::parse_or_throw(asymmetric_decrypted_cb(0x1357).serialize());
+        auto cb = test::must(BootloaderCb::parse(asymmetric_decrypted_cb(0x1357).serialize()));
         const Bytes original_perbox(cb.data.begin() + 0x10,
                                     cb.data.begin() + 0x10 + sizeof(cb_perbox));
         cb.header.console_seq_allow.console_sequence_allow = 0xBEEF;
@@ -3373,13 +3382,13 @@ namespace {
     }
 
     bool test_cb_console_allow_host_value_encrypts_and_roundtrips_asymmetrically() {
-        auto cb = BootloaderCb::parse_or_throw(asymmetric_decrypted_cb(0x1357).serialize());
+        auto cb = test::must(BootloaderCb::parse(asymmetric_decrypted_cb(0x1357).serialize()));
         const Bytes original_perbox(cb.data.begin() + 0x10,
                                     cb.data.begin() + 0x10 + sizeof(cb_perbox));
         cb.header.console_seq_allow.console_sequence_allow = 0xBEEF;
-        cb.encrypt_or_throw(key_1bl);
-        auto parsed_encrypted = BootloaderCb::parse_or_throw(cb.serialize());
-        parsed_encrypted.decrypt_or_throw(key_1bl);
+        test::must(cb.encrypt(key_1bl));
+        auto parsed_encrypted = test::must(BootloaderCb::parse(cb.serialize()));
+        test::must(parsed_encrypted.decrypt(key_1bl));
         return require(
                    parsed_encrypted.header.console_seq_allow.console_sequence_allow == 0xBEEF,
                    "encrypted CB roundtrip retains the host-order asymmetric console allowance") &&
@@ -3396,7 +3405,7 @@ namespace {
 
         FlashImage header_only_cd{};
         const auto bootloaders = valid_bootloaders();
-        header_only_cd.cb_section.cb_or_A = BootloaderCb::parse_or_throw(bootloaders.cb_or_a);
+        header_only_cd.cb_section.cb_or_A = test::must(BootloaderCb::parse(bootloaders.cb_or_a));
         header_only_cd.kernel_section.cd.header.header.magic = NANDBootloaderMagic::CD;
         header_only_cd.kernel_section.cd.header.header.size = sizeof(cd_header);
 

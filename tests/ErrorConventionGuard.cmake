@@ -3,10 +3,18 @@ cmake_minimum_required(VERSION 3.29)
 # Error-convention guard: library code reports failures through gxbuild3::Result, so the
 # exception machinery that remains in src/ and include/ is an explicit, shrinking inventory.
 #
-#   1. The temporary throwing shims (*_or_throw, value_or_throw) may only be named in the files
-#      that define them or still depend on them.
-#   2. `throw` may only appear in BigUint (precondition violations) and the shims.
+#   1. The temporary throwing shims (*_or_throw, value_or_throw) are gone; none may come back.
+#   2. `throw` may only appear in BigUint (precondition violations).
 #   3. `catch (...)` may only appear in main().
+#
+# WireConventionGuard (see src/Wire.hpp): on-disk records are plain structs of wire:: field types,
+# so the legacy byte-order machinery is a second shrinking inventory.
+#   4. `#pragma pack` may only appear in the files that still declare packed records.
+#   5. The manual byte-order helpers (bswap16/32/64, read_be*/read_le*, including their
+#      __builtin_bswap* bodies, and the deleted swap32) are gone with Endian.hpp; only src/Wire.hpp
+#      names bswap*, in the deleted overloads that reject a manual swap on a wire field.
+#   6. No file under src/nand/objects/ includes Endian.hpp: every objects record is a wire struct.
+# A converting commit removes its file's entry in the same commit.
 #
 # Every allowlist entry must still match its rule: once a shim is deleted the guard fails until
 # the entry is removed, so the allowlists can only shrink. `//` comments are ignored.
@@ -18,29 +26,12 @@ if(NOT DEFINED SOURCE_ROOT OR NOT IS_DIRECTORY "${SOURCE_ROOT}/src")
     message(FATAL_ERROR "SOURCE_ROOT must name the gxbuild3 repository root")
 endif()
 
-# Shim inventory.
-#   TODO(test-phase): the bootloader *_or_throw shims (2bl.hpp-7bl.hpp) and their
-#     detail::value_or_throw helper (Common.hpp) exist only for the tests; the test rewrite
-#     migrates those call sites to the Result API and deletes them.
-#   TODO(parsing): stfs::Package (Package.cpp) still throws and unwraps Result helpers through
-#     stfs::detail::value_or_throw (PackageCommon.hpp) until the parsing phase converts it.
+# Shim inventory: empty. Tests unwrap Results with gxbuild3::test::must (tests/TestResult.hpp).
 set(shim_name_allowlist
-    src/nand/bootloaders/2bl.hpp
-    src/nand/bootloaders/3bl.hpp
-    src/nand/bootloaders/4bl.hpp
-    src/nand/bootloaders/5bl.hpp
-    src/nand/bootloaders/6bl.hpp
-    src/nand/bootloaders/7bl.hpp
-    src/nand/bootloaders/Common.hpp
-    src/stfs/Package.cpp
-    src/stfs/PackageCommon.hpp
 )
 
 # BigUint throws std::logic_error-family precondition violations by design.
 set(throw_allowlist
-    src/nand/bootloaders/Common.hpp
-    src/stfs/Package.cpp
-    src/stfs/PackageCommon.hpp
     src/utils/BigUint.cpp
 )
 
@@ -48,19 +39,49 @@ set(catch_all_allowlist
     src/Main.cpp
 )
 
+# WireConventionGuard inventories. XConfig.hpp keeps its packed bitfields on purpose; every other
+# entry goes away as its records move to src/Wire.hpp. src/Wire.hpp itself stays: it declares
+# the deleted bswap* overloads that reject a manual swap on a wire field.
+set(pragma_pack_allowlist
+    src/nand/objects/XConfig.hpp
+)
+
+set(byte_swap_allowlist
+    src/Wire.hpp
+)
+
+# No exceptions: objects/ reads and writes on-disk fields only through src/Wire.hpp.
+set(objects_endian_include_allowlist
+)
+
 set(rule_shim_name_regex "[A-Za-z0-9_]_or_throw[^A-Za-z0-9_]")
 set(rule_throw_regex "[^A-Za-z0-9_]throw[^A-Za-z0-9_]")
 set(rule_catch_all_regex "[^A-Za-z0-9_]catch[ \t]*\\([ \t]*\\.\\.\\.[ \t]*\\)")
+set(rule_pragma_pack_regex "#[ \t]*pragma[ \t]+pack")
+# Substring match on purpose: it also catches __builtin_bswap16 and helpers such as
+# try_read_be32 that wrap the legacy readers.
+set(rule_byte_swap_regex "bswap(16|32|64)|swap32|read_(be|le)(16|24|32|64)")
+set(rule_objects_endian_include_regex "#[ \t]*include[ \t]*[\"<]([^\">]*/)?Endian\\.hpp[\">]")
 
 set(rule_shim_name_label "throwing shim name (*_or_throw / value_or_throw)")
 set(rule_throw_label "`throw`")
 set(rule_catch_all_label "`catch (...)`")
+set(rule_pragma_pack_label "`#pragma pack` (use wire:: field types, src/Wire.hpp)")
+set(rule_byte_swap_label "manual byte-order helper (use wire:: field types, src/Wire.hpp)")
+set(rule_objects_endian_include_label
+    "Endian.hpp include under src/nand/objects/ (use wire:: field types, src/Wire.hpp)")
 
 set(rule_shim_name_allow ${shim_name_allowlist})
 set(rule_throw_allow ${throw_allowlist})
 set(rule_catch_all_allow ${catch_all_allowlist})
+set(rule_pragma_pack_allow ${pragma_pack_allowlist})
+set(rule_byte_swap_allow ${byte_swap_allowlist})
+set(rule_objects_endian_include_allow ${objects_endian_include_allowlist})
 
-set(rules shim_name throw catch_all)
+# Optional per-rule path scope (a regex on the repository-relative path); unset means every file.
+set(rule_objects_endian_include_scope "^src/nand/objects/")
+
+set(rules shim_name throw catch_all pragma_pack byte_swap objects_endian_include)
 foreach(rule IN LISTS rules)
     set(hits_${rule} "")
 endforeach()
@@ -91,6 +112,9 @@ foreach(relative IN LISTS scanned_files)
         string(REGEX REPLACE "//.*$" "" code "${line}")
         set(code " ${code} ")
         foreach(rule IN LISTS rules)
+            if(DEFINED rule_${rule}_scope AND NOT relative MATCHES "${rule_${rule}_scope}")
+                continue()
+            endif()
             if(NOT code MATCHES "${rule_${rule}_regex}")
                 continue()
             endif()
@@ -116,7 +140,8 @@ endforeach()
 
 if(NOT violations STREQUAL "")
     message(FATAL_ERROR
-        "error-convention guard failed (see the Result convention in src/Error.hpp):\n"
+        "error-convention guard failed (see the Result convention in src/Error.hpp and the wire "
+        "convention in src/Wire.hpp):\n"
         "${violations}")
 endif()
 

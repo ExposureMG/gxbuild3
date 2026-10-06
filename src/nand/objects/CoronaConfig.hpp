@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Error.hpp"
+#include "Wire.hpp"
 
 #include <array>
 #include <cstddef>
@@ -24,6 +25,30 @@ namespace gxbuild3::nand {
     //
     // A blob's slot is its type, not its turn: slot = type - 0x31, and an absent blob leaves
     // its slot zero.
+    struct corona_anchor_blob {
+        wire::be16 block;  // in 0x4000-byte blocks
+        wire::be16 length; // in bytes
+    };
+
+    struct corona_anchor {
+        uint8_t digest[0x14];
+        wire::be32 reserved0;
+        wire::be32 number;
+        wire::be16 table;
+        wire::be16 reserved1;
+        corona_anchor_blob blobs[4];
+        uint8_t tail[0x1D0];
+    };
+
+    static_assert(wire::WireLayout<corona_anchor_blob> && sizeof(corona_anchor_blob) == 4);
+    static_assert(wire::WireLayout<corona_anchor> && sizeof(corona_anchor) == 0x200);
+    static_assert(offsetof(corona_anchor, reserved0) == 0x14);
+    static_assert(offsetof(corona_anchor, number) == 0x18);
+    static_assert(offsetof(corona_anchor, table) == 0x1C);
+    static_assert(offsetof(corona_anchor, reserved1) == 0x1E);
+    static_assert(offsetof(corona_anchor, blobs) == 0x20);
+    static_assert(offsetof(corona_anchor, tail) == 0x30);
+
     struct CoronaConfig {
         static constexpr size_t kSize = 0x200;
         static constexpr size_t kBlobSlots = 4;
@@ -55,5 +80,8 @@ namespace gxbuild3::nand {
 
         [[nodiscard]] std::vector<uint8_t> serialize() const;
     };
+
+    static_assert(sizeof(corona_anchor) == CoronaConfig::kSize);
+    static_assert(std::size(corona_anchor{}.blobs) == CoronaConfig::kBlobSlots);
 
 } // namespace gxbuild3::nand

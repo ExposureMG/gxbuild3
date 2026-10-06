@@ -1,38 +1,34 @@
 #include "stfs/FileExtractor.hpp"
 
-#include "Endian.hpp"
-#include "PackageCommon.hpp"
+#include "ContainerDetail.hpp"
+#include "Wire.hpp"
 #include "stfs/BlockParser.hpp"
 #include "stfs/Commons.hpp"
 #include "stfs/HashVerifier.hpp"
+#include "stfs/Layout.hpp"
 
 #include <algorithm>
 #include <format>
+#include <utility>
 
 namespace gxbuild3::stfs {
 
     namespace {
-
-        constexpr std::size_t kBlockSize = 0x1000;
-        constexpr std::size_t kHashEntrySize = 0x18;
-        constexpr std::uint32_t kChainTerminator = 0xFFFFFF;
 
         struct HashEntry {
             std::uint32_t next_block;
             std::uint8_t status;
         };
 
+        // The level-0 hash entry of `data_block`, which holds its status and the next block.
         [[nodiscard]] Result<HashEntry> read_hash_entry(std::span<const std::byte> package,
-                                                        std::uint32_t hash_block,
                                                         std::uint32_t data_block,
                                                         std::uint32_t header_size) {
-            std::uint32_t entry_index = data_block % 0xAA;
-            const auto table_offset = block_to_offset(hash_block, header_size);
-            if (!table_offset) {
-                return std::unexpected(table_offset.error());
+            const auto entry_offset = hash_entry_offset(data_block, 0, header_size);
+            if (!entry_offset) {
+                return std::unexpected(entry_offset.error());
             }
-            const std::uint64_t offset =
-                *table_offset + std::uint64_t{entry_index} * kHashEntrySize;
+            const std::uint64_t offset = *entry_offset;
 
             if (offset + kHashEntrySize > package.size()) {
                 return fail(ErrorCode::OutOfRange,
@@ -40,11 +36,15 @@ namespace gxbuild3::stfs {
                             offset);
             }
 
-            const auto* ptr = package.data() + offset;
+            const auto record = wire::read<stfs_hash_entry>(
+                wire::as_u8(package), static_cast<std::size_t>(offset), "STFS hash entry");
+            if (!record) {
+                return std::unexpected(record.error());
+            }
 
             HashEntry entry;
-            entry.status = static_cast<std::uint8_t>(ptr[0x14]);
-            entry.next_block = read_be24(ptr + 0x15);
+            entry.status = record->status;
+            entry.next_block = record->next_block.get();
 
             constexpr std::uint8_t kStatusUsed = 0x80;
             constexpr std::uint8_t kStatusNewlyAllocated = 0xC0;
@@ -79,12 +79,7 @@ namespace gxbuild3::stfs {
 
             chain.push_back(current_block);
 
-            const auto hash_block = compute_level_n_hash_block_number(current_block, 0);
-            if (!hash_block) {
-                return std::unexpected(hash_block.error());
-            }
-            const auto hash_entry =
-                read_hash_entry(package, *hash_block, current_block, header_size);
+            const auto hash_entry = read_hash_entry(package, current_block, header_size);
             if (!hash_entry) {
                 return std::unexpected(hash_entry.error());
             }

@@ -154,7 +154,7 @@ namespace {
         field[1] |= 0x01;
         const auto stamp = secured_file_stamp(kBuild.build_seconds);
         bool records_hold = true;
-        for (const auto [at, length] : {std::pair<size_t, size_t>{0, 0x400}, {0x400, 0x300}}) {
+        for (const auto& [at, length] : {std::pair<size_t, size_t>{0, 0x400}, {0x400, 0x300}}) {
             const auto record = std::span(*sealed).subspan(at, length);
             const auto body = aes_cbc_decrypt(kCpuKey, Key{}, record.subspan(0x130));
             const auto mac = hmac(kCpuKey, field, std::span(body).first(0x10));

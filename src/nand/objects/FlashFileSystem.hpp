@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Error.hpp"
+#include "Wire.hpp"
 #include "nand/FlashDriver.hpp"
 
 #include <cstddef>
@@ -36,7 +37,8 @@ namespace gxbuild3::nand {
         static constexpr uint16_t Unnamed = 0x0000;
     };
 
-#pragma pack(push, 1)
+    // A directory entry in host order: the block number is the physical cluster, rebased from
+    // the on-disk number by the filesystem's base cluster.
     struct FlashFileSystemEntry {
         char filename[kMaxFilenameLength]{};
         uint16_t block_number{};
@@ -46,8 +48,48 @@ namespace gxbuild3::nand {
         [[nodiscard]] bool is_valid() const noexcept;
         [[nodiscard]] bool matches(std::string_view name) const noexcept;
     };
-    static_assert(sizeof(FlashFileSystemEntry) == 32);
-#pragma pack(pop)
+
+    // ---- On-disk root cluster (big-endian) --------------------------------------------------
+    // The root is one 0x4000-byte cluster of 32 pages of 0x200 bytes: even pages hold the block
+    // map, odd pages the directory. Block numbers and links count from the filesystem's base
+    // cluster.
+
+    struct flashfs_disk_entry {
+        // NUL-terminated unless it fills all kMaxFilenameLength bytes.
+        char filename[kMaxFilenameLength];
+        wire::be16 block_number;
+        wire::be32 length;
+        wire::be32 timestamp;
+    };
+    static_assert(sizeof(flashfs_disk_entry) == 0x20);
+    static_assert(offsetof(flashfs_disk_entry, filename) == 0x00);
+    static_assert(offsetof(flashfs_disk_entry, block_number) == 0x16);
+    static_assert(offsetof(flashfs_disk_entry, length) == 0x18);
+    static_assert(offsetof(flashfs_disk_entry, timestamp) == 0x1C);
+
+    struct flashfs_map_page {
+        wire::be16 links[kBlocksPerPage];
+    };
+    static_assert(sizeof(flashfs_map_page) == 0x200);
+
+    struct flashfs_dir_page {
+        flashfs_disk_entry entries[kEntriesPerPage];
+    };
+    static_assert(sizeof(flashfs_dir_page) == 0x200);
+
+    // One even map page and the odd directory page after it.
+    struct flashfs_root_pair {
+        flashfs_map_page map;
+        flashfs_dir_page dir;
+    };
+    static_assert(sizeof(flashfs_root_pair) == 0x400);
+    static_assert(offsetof(flashfs_root_pair, dir) == 0x200);
+
+    struct flashfs_root_cluster {
+        flashfs_root_pair pairs[kRootDirectoryPages];
+    };
+    static_assert(sizeof(flashfs_root_cluster) == kCleanBlockSize);
+    static_assert(wire::WireLayout<flashfs_root_cluster>);
 
     class FlashFileSystem {
       public:
@@ -158,6 +200,33 @@ namespace gxbuild3::nand {
         // load() into a freshly staged filesystem; load() commits it only on success.
         [[nodiscard]] Result<void> read_root(Driver& driver, uint16_t root_block,
                                              size_t cluster_in_block);
+        // Reads every listed file through its chain into m_file_data; Truncated when a chain
+        // holds fewer bytes than the entry states.
+        [[nodiscard]] Result<void> read_files(const Driver& driver);
+        // The entry's chain read up to its stated length; shorter when the chain runs out.
+        [[nodiscard]] std::vector<uint8_t> read_chain(const Driver& driver,
+                                                      const FlashFileSystemEntry& entry) const;
+
+        enum class BlockKind {
+            Root,
+            Data
+        };
+        // Each file cluster and how many of its pages carry the file's spare.
+        using ClusterPages = std::map<size_t, size_t>;
+
+        // save()'s stages. Writes the encoded root bytes and returns the root cluster.
+        [[nodiscard]] Result<size_t> write_root_cluster();
+        // The spare stamp of a root or data block.
+        [[nodiscard]] BlockMetadata fs_metadata(BlockKind kind, uint32_t sequence,
+                                                uint16_t block_id) const;
+        // Writes the file's bytes through its chain, zero-padding the last cluster, and states
+        // in `clusters` how many pages of each cluster carry the file's spare.
+        [[nodiscard]] Result<void> write_file_chain(const FlashFileSystemEntry& entry,
+                                                    const std::string& name,
+                                                    std::span<const uint8_t> bytes,
+                                                    ClusterPages& clusters);
+        // Stamps the data spare on each cluster's stated pages and erases the rest.
+        void stamp_file_clusters(const ClusterPages& clusters);
 
         [[nodiscard]] static std::optional<size_t> checked_block_count(size_t bytes_needed,
                                                                        size_t clean_block_size);

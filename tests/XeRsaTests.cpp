@@ -164,8 +164,7 @@ namespace {
         auto key = xe_rsa_test::shared_private_key();
         auto wrong_prime = key;
         wrong_prime[0x110 + 0x7F] ^= 0x02;
-        auto wrong_size = key;
-        wrong_size.pop_back();
+        const auto wrong_size = std::span(key).first(key.size() - 1);
         auto wrong_digits = key;
         wrong_digits[3] = 0x10;
         return require(gxbuild3::utils::XeRsaPrivateKey::parse(key).has_value(),

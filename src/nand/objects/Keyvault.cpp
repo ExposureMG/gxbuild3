@@ -163,12 +163,12 @@ namespace gxbuild3::nand {
                        static_cast<uint32_t>(out_data.size() - 0x10));
         }
 
-        const uint8_t version_be[2] = {static_cast<uint8_t>(kv_version >> 8),
-                                       static_cast<uint8_t>(kv_version)};
+        const auto version_be = wire::encode(wire::be16{kv_version});
         uint8_t kv_digest[20];
         ExCryptHmacSha(cpu_key.data(), static_cast<uint32_t>(cpu_key.size()),
                        out_data.data() + 0x10, static_cast<uint32_t>(out_data.size() - 0x10),
-                       version_be, sizeof(version_be), nullptr, 0, kv_digest, 20);
+                       version_be.data(), static_cast<uint32_t>(version_be.size()), nullptr, 0,
+                       kv_digest, 20);
 
         uint8_t difference = 0;
         for (size_t i = 0; i < 0x10; ++i) {
@@ -194,12 +194,12 @@ namespace gxbuild3::nand {
 
         std::vector<uint8_t> out_data(data.begin(), data.end());
 
-        const uint8_t version_be[2] = {static_cast<uint8_t>(kv_version >> 8),
-                                       static_cast<uint8_t>(kv_version)};
+        const auto version_be = wire::encode(wire::be16{kv_version});
         uint8_t kv_digest[20];
         ExCryptHmacSha(cpu_key.data(), static_cast<uint32_t>(cpu_key.size()),
                        out_data.data() + 0x10, static_cast<uint32_t>(out_data.size() - 0x10),
-                       version_be, sizeof(version_be), nullptr, 0, kv_digest, 20);
+                       version_be.data(), static_cast<uint32_t>(version_be.size()), nullptr, 0,
+                       kv_digest, 20);
 
         std::memcpy(out_data.data(), kv_digest, 0x10);
 
@@ -280,9 +280,13 @@ namespace gxbuild3::nand {
                         bytes.size());
         }
 
+        auto record = wire::read<XE_KEYVAULT_DATA>(bytes, 0, "keyvault");
+        if (!record) {
+            return std::unexpected(std::move(record.error()));
+        }
         Keyvault kv;
         kv.raw_data.assign(bytes.begin(), bytes.end());
-        std::memcpy(&kv.data, bytes.data(), sizeof(XE_KEYVAULT_DATA));
+        kv.data = *record;
         kv.encrypted = true;
         Log::Debug("Parsed Keyvault (0x{:X} bytes)", bytes.size());
         return kv;
@@ -305,8 +309,12 @@ namespace gxbuild3::nand {
             return fail(ErrorCode::Truncated, "Keyvault is 0x{:X} bytes, not 0x{:X}",
                         crypted->size(), sizeof(XE_KEYVAULT_DATA));
         }
+        auto record = wire::read<XE_KEYVAULT_DATA>(*crypted, 0, "keyvault");
+        if (!record) {
+            return std::unexpected(std::move(record.error()));
+        }
         raw_data = std::move(*crypted);
-        std::memcpy(&data, raw_data.data(), sizeof(XE_KEYVAULT_DATA));
+        data = *record;
         encrypted = false;
         Log::Debug("Keyvault decrypted successfully");
         return {};
@@ -325,8 +333,12 @@ namespace gxbuild3::nand {
             return fail(ErrorCode::Truncated, "Keyvault is 0x{:X} bytes, not 0x{:X}",
                         crypted->size(), sizeof(XE_KEYVAULT_DATA));
         }
+        auto record = wire::read<XE_KEYVAULT_DATA>(*crypted, 0, "keyvault");
+        if (!record) {
+            return std::unexpected(std::move(record.error()));
+        }
         raw_data = std::move(*crypted);
-        std::memcpy(&data, raw_data.data(), sizeof(XE_KEYVAULT_DATA));
+        data = *record;
         encrypted = true;
         Log::Debug("Keyvault encrypted successfully");
         return {};
@@ -336,9 +348,8 @@ namespace gxbuild3::nand {
         if (raw_data.size() == kSize) {
             return raw_data;
         }
-        std::vector<uint8_t> out(kSize, 0x00);
-        std::memcpy(out.data(), &data, sizeof(XE_KEYVAULT_DATA));
-        return out;
+        const auto image = wire::encode(data);
+        return std::vector<uint8_t>(image.begin(), image.end());
     }
 
 } // namespace gxbuild3::nand

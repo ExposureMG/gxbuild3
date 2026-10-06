@@ -2,6 +2,7 @@
 #include "ExtractProjection.hpp"
 #include "GoldenSnapshot.hpp"
 #include "ScopedTimeZone.hpp"
+#include "TestResult.hpp"
 #include "XeRsaTestKey.hpp"
 #include "cli/BuildInputResolver.hpp"
 #include "excrypt.h"
@@ -191,7 +192,7 @@ namespace {
                 .value();
         input.bootloaders = valid_bootloaders();
 
-        auto cb = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
+        auto cb = test::must(BootloaderCb::parse(input.bootloaders.cb_or_a));
         cb.data.resize(sizeof(cb_header) - sizeof(generic_header), 0);
         cb.header.header.size = static_cast<uint32_t>(sizeof(generic_header) + cb.data.size());
         if (!cb.parse_perbox()) {

@@ -1,6 +1,7 @@
 #include "BuildRunner.hpp"
 
 #include "InputValidator.hpp"
+#include "Wire.hpp"
 #include "nand/FlashDriver.hpp"
 #include "nand/FlashImage.hpp"
 #include "nand/bootloaders/2bl.hpp"
@@ -362,8 +363,13 @@ namespace gxbuild3 {
                 return fail(ErrorCode::Truncated, "{} patch target has no bootloader header",
                             stage_name);
             }
-            const uint32_t be_size = bswap32(static_cast<uint32_t>(bytes.size()));
-            std::memcpy(bytes.data() + offsetof(generic_header, size), &be_size, sizeof(be_size));
+            const auto patched_size = static_cast<uint32_t>(bytes.size());
+            if (auto patched = wire::patch<generic_header>(
+                    bytes, 0, "patched bootloader header",
+                    [patched_size](generic_header& header) { header.size = patched_size; });
+                !patched) {
+                return std::unexpected(std::move(patched.error()));
+            }
             return bytes;
         }
 
@@ -2052,17 +2058,17 @@ namespace gxbuild3 {
                           static_cast<unsigned long long>(cid_val), last_digit);
             info.keyvault.console_id_friendly = cid_buf;
 
-            if (kv.raw_data.size() >= 0xCAD) {
-                info.keyvault.osig = std::string(
-                    reinterpret_cast<const char*>(kv.raw_data.data() + 0xC92),
-                    strnlen(reinterpret_cast<const char*>(kv.raw_data.data() + 0xC92), 28));
+            if (kv.raw_data.size() >= Keyvault::kOsigOffset + Keyvault::kOsigLength) {
+                const auto* osig =
+                    reinterpret_cast<const char*>(kv.raw_data.data() + Keyvault::kOsigOffset);
+                info.keyvault.osig = std::string(osig, strnlen(osig, Keyvault::kOsigLength));
             }
             info.keyvault.mfr_date =
                 std::string(kv.data.b36ConsoleCertificate.ManufacturingDate,
                             strnlen(kv.data.b36ConsoleCertificate.ManufacturingDate,
                                     sizeof(kv.data.b36ConsoleCertificate.ManufacturingDate)));
 
-            info.keyvault.region_raw = bswap16(kv.data.w16GameRegion);
+            info.keyvault.region_raw = kv.data.w16GameRegion.get();
             switch (info.keyvault.region_raw) {
                 case 0x00FF:
                     info.keyvault.region_name = "NTSC/US";

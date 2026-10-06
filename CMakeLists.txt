@@ -60,8 +60,7 @@ set(GXBUILD3_LIB_SOURCES
     src/stfs/HashVerifier.cpp
     src/stfs/HeaderParser.cpp
     src/stfs/MetadataParser.cpp
-    src/stfs/Package.cpp
-    src/stfs/PackageCommon.cpp
+    src/stfs/ContainerDetail.cpp
     src/stfs/StfsContainer.cpp
     src/utils/BigUint.cpp
     src/utils/BuildTime.cpp
@@ -140,9 +139,15 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_crypto_reference_tests tests/CryptoReferenceTests.cpp)
     add_gxbuild3_test(gxbuild3_stfs_tests tests/StfsTests.cpp)
     add_gxbuild3_test(gxbuild3_error_tests tests/ErrorTests.cpp)
+    # src/Wire.hpp: endian field types, record codecs, Cursor, the compile-time rejections
+    # (deleted swaps, no compound assignment) and formatting through std::format and Log.hpp.
+    add_gxbuild3_test(gxbuild3_wire_tests tests/WireTests.cpp)
     # Compile-time sizeof/offsetof pins of every bootloader record in Common.hpp, taken from
     # the on-disk layout; the run prints how many records and fields the build pinned.
     add_gxbuild3_test(gxbuild3_bootloader_layout_tests tests/BootloaderLayoutTests.cpp)
+    # src/nand/bootloaders/Stage.hpp: the shared stage parse, padding, serialize and record crypt
+    # checked against a plain crypt_single_bl, plus the paths the bootloader corpus never reaches.
+    add_gxbuild3_test(gxbuild3_stage_tests tests/StageTests.cpp)
     add_gxbuild3_test(gxbuild3_golden_snapshot_tests tests/GoldenSnapshotTests.cpp)
     target_compile_definitions(gxbuild3_golden_snapshot_tests PRIVATE
         GXBUILD3_TEST_SCRATCH_DIR="${CMAKE_CURRENT_BINARY_DIR}/golden-snapshot-tests")

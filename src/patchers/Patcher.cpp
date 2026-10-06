@@ -1,7 +1,7 @@
 #include "patchers/Patcher.hpp"
 
+#include "Wire.hpp"
 #include "utils/Log.hpp"
-#include "utils/Utils.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -27,9 +27,9 @@ namespace gxbuild3::patchers {
 
         for (uint32_t i = 0; i < length; i++) {
             uint32_t targetAddr = address + i * 4;
-            uint32_t beWord = swap32(patchWords[i]);
+            const auto image = wire::encode(wire::be32{patchWords[i]});
 
-            memcpy(data + targetAddr, &beWord, sizeof(uint32_t));
+            std::memcpy(data + targetAddr, image.data(), image.size());
         }
 
         return {};

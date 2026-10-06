@@ -1,3 +1,4 @@
+#include "TestResult.hpp"
 #include "nand/FlashImage.hpp"
 #include "nand/bootloaders/Common.hpp"
 #include "nand/objects/Freeboot.hpp"
@@ -136,7 +137,7 @@ static bool spill(BuildType type) {
                 return false;
     }
     auto c = *f.system_update_0.cf;
-    c.decrypt_or_throw(key_1bl);
+    test::must(c.decrypt(key_1bl));
     if (!check(c.data[0] != 0 || c.data[1] != 0, "CF has a CG continuation block list"))
         return false;
     auto parsed = FlashImage::read(f.write().value_or(Bytes{}));
@@ -158,10 +159,10 @@ static bool spill(BuildType type) {
         return false;
     // A duplicate continuation cluster must not silently replace part of the CG.
     auto corrupt = *f.system_update_0.cf;
-    corrupt.decrypt_or_throw(key_1bl);
+    test::must(corrupt.decrypt(key_1bl));
     corrupt.data[4] = corrupt.data[2];
     corrupt.data[5] = corrupt.data[3];
-    corrupt.encrypt_or_throw(key_1bl);
+    test::must(corrupt.encrypt(key_1bl));
     if (!check(parsed->flash_driver.write_offset(parsed->header.cf_offset, corrupt.serialize()),
                "the corrupt CF is laid"))
         return false;
@@ -173,7 +174,7 @@ static bool spill(BuildType type) {
     if (!check(f.encrypt_all({}, type), "shrunk CG prepares"))
         return false;
     auto shrunk = *f.system_update_0.cf;
-    shrunk.decrypt_or_throw(key_1bl);
+    test::must(shrunk.decrypt(key_1bl));
     return check(shrunk.data[0] == 0 && shrunk.data[1] == 0 &&
                      !f.filesystem->exists("sysupdate.xexp1"),
                  "shrinking CG clears its block table and obsolete continuation file");
@@ -214,10 +215,12 @@ static bool freeboot_provider() {
                    std::equal(version.begin(), version.end(), stated.begin() + 0xD0B),
                "the rebooter states the kernel version, zero-padded, at 0xD0B") &&
          ok;
-    Bytes rest(stated.begin(), stated.end());
-    std::copy(blank.begin(), blank.end(), rest.begin() + 0xD0B);
-    ok = check(std::equal(rest.begin(), rest.end(), core.begin()),
-               "the version string is the only change to the rebooter") &&
+    const auto version_end = 0xD0B + blank.size();
+    ok = check(
+             stated.size() == core.size() &&
+                 std::equal(stated.begin(), stated.begin() + 0xD0B, core.begin()) &&
+                 std::equal(stated.begin() + version_end, stated.end(), core.begin() + version_end),
+             "the version string is the only change to the rebooter") &&
          ok;
     const Bytes hold{0x80, 0x00, 0x00, 0x00, 0x01, 0x00, 0x30, 0x78};
     const Bytes old_hold{0x80, 0x00, 0x00, 0x00, 0x00, 0x1F, 0xFF, 0xF8};
