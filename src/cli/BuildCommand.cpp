@@ -1,5 +1,6 @@
 #include "cli/BuildCommand.hpp"
 
+#include "utils/Log.hpp"
 #include "utils/Utils.hpp"
 
 #include <system_error>
@@ -42,7 +43,14 @@ namespace gxbuild3::cli {
             .build = [](const Input& input) { return run_build(input); },
             .write =
                 [](const std::filesystem::path& path, const std::vector<uint8_t>& data) {
-                    return gxbuild3::utils::write_file(path, data);
+                    // The service still reports a bare bool (a typed write service comes
+                    // later), so this lambda is the boundary that consumes the Error: it logs
+                    // the reason once and run_build_command reports the summary.
+                    auto written = gxbuild3::utils::write_file(path, data);
+                    if (!written) {
+                        Log::Error("{}", written.error().describe());
+                    }
+                    return written.has_value();
                 },
         };
     }

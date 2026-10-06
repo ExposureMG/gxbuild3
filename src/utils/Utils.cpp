@@ -1,7 +1,7 @@
 #include "utils/Utils.hpp"
 
-#include "utils/Log.hpp"
-
+#include <cerrno>
+#include <string_view>
 #include <system_error>
 
 namespace gxbuild3::utils {
@@ -17,65 +17,82 @@ namespace gxbuild3::utils {
         return hex;
     }
 
-    std::optional<std::vector<uint8_t>> read_file(const fs::path& path) {
+    namespace {
+
+        // Builds the Error for a stream that failed to open, from the errno the open left
+        // behind. std::fstream does not promise to set errno, so a zero errno falls back to a
+        // generic message.
+        std::unexpected<Error> open_failure(const fs::path& path, int saved_errno,
+                                            std::string_view action) {
+            if (saved_errno != 0) {
+                return from_error_code(std::error_code(saved_errno, std::generic_category()), path);
+            }
+            return fail(ErrorCode::IoError, "{}: could not open the file for {}", path.string(),
+                        action);
+        }
+
+    } // namespace
+
+    Result<std::vector<uint8_t>> read_file(const fs::path& path) {
+        errno = 0;
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
-            Log::Trace("Failed to open file: '{}'", path.string());
-            return std::nullopt;
+            const int saved_errno = errno;
+            std::error_code status_error;
+            if (!fs::exists(path, status_error) && !status_error) {
+                return from_error_code(std::make_error_code(std::errc::no_such_file_or_directory),
+                                       path);
+            }
+            return open_failure(path, saved_errno, "reading");
         }
 
-        std::streamsize size = file.tellg();
-        file.seekg(0, std::ios::beg);
-
+        const std::streamsize size = file.tellg();
         if (size < 0) {
-            Log::Warn("Failed to determine file size: '{}'", path.string());
-            return std::nullopt;
+            return fail(ErrorCode::IoError, "{}: could not determine the file size", path.string());
         }
+        file.seekg(0, std::ios::beg);
 
         std::vector<uint8_t> buffer(static_cast<size_t>(size));
         if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
-            Log::Warn("Failed to read file: '{}'", path.string());
-            return std::nullopt;
+            return fail(ErrorCode::IoError, "{}: could not read {} bytes", path.string(), size);
         }
 
         return buffer;
     }
 
-    std::optional<std::vector<uint8_t>> read_file(const fs::path& path, size_t max_length) {
+    Result<std::vector<uint8_t>> read_file(const fs::path& path, size_t max_length) {
         auto result = read_file(path);
-        if (!result) {
-            return std::nullopt;
-        }
-
-        if (result->size() > max_length) {
+        if (result && result->size() > max_length) {
             result->resize(max_length);
         }
-
         return result;
     }
 
-    bool write_file(const fs::path& path, const std::vector<uint8_t>& data) {
-        if (path.has_parent_path() && !gxbuild3::utils::directory_exists(path.parent_path())) {
-            if (!gxbuild3::utils::create_directory(path.parent_path())) {
-                Log::Error("Failed to create parent directory for: '{}'", path.string());
-                return false;
+    Result<void> write_file(const fs::path& path, const std::vector<uint8_t>& data) {
+        if (path.has_parent_path() && !directory_exists(path.parent_path())) {
+            if (auto created = utils::create_directory(path.parent_path()); !created) {
+                return with_context(std::move(created),
+                                    "creating the parent directory of " + path.string());
             }
         }
 
-        std::ofstream file(path, std::ios::binary);
+        errno = 0;
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
         if (!file.is_open()) {
-            Log::Error("Failed to open file for writing: '{}'", path.string());
-            return false;
+            return open_failure(path, errno, "writing");
         }
 
         file.write(reinterpret_cast<const char*>(data.data()),
                    static_cast<std::streamsize>(data.size()));
-        if (!file.good()) {
-            Log::Error("Failed to write to file: '{}'", path.string());
-            return false;
+        file.flush();
+        file.close();
+        // failbit and badbit are sticky, so this covers the write, the flush and the close.
+        if (file.fail()) {
+            return fail(ErrorCode::IoError, "{}: could not write {} bytes", path.string(),
+                        data.size());
         }
 
-        return true;
+        return {};
     }
 
     bool directory_exists(const fs::path& path) {
@@ -83,12 +100,19 @@ namespace gxbuild3::utils {
         return fs::is_directory(path, ec);
     }
 
-    bool create_directory(const fs::path& path) {
+    Result<void> create_directory(const fs::path& path) {
         std::error_code ec;
         if (fs::is_directory(path, ec)) {
-            return true;
+            return {};
         }
-        return fs::create_directories(path, ec);
+        fs::create_directories(path, ec);
+        if (ec) {
+            return from_error_code(ec, path);
+        }
+        if (!fs::is_directory(path, ec)) {
+            return fail(ErrorCode::IoError, "{}: exists and is not a directory", path.string());
+        }
+        return {};
     }
 
 } // namespace gxbuild3::utils

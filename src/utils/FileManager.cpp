@@ -323,7 +323,7 @@ namespace gxbuild3::utils {
 
             auto data = read_file(path);
             if (!data) {
-                throw std::runtime_error("Could not read STFS package");
+                throw std::runtime_error("Could not read STFS package: " + data.error().describe());
             }
 
             auto pkg = std::make_shared<CachedPackage>();
@@ -940,13 +940,13 @@ namespace gxbuild3::utils {
                     }
                     auto data = read_file(candidate);
                     if (!data) {
-                        return std::unexpected(
-                            FileLookupError{.code = FileLookupErrorCode::ReadFailed,
-                                            .message = "Could not read loose candidate",
-                                            .source_path = candidate,
-                                            .root_path = root,
-                                            .root_index = root_index,
-                                            .source = AssetSource::Loose});
+                        return std::unexpected(FileLookupError{
+                            .code = FileLookupErrorCode::ReadFailed,
+                            .message = "Could not read loose candidate: " + data.error().describe(),
+                            .source_path = candidate,
+                            .root_path = root,
+                            .root_index = root_index,
+                            .source = AssetSource::Loose});
                     }
                     return std::optional<ResolvedFile>{
                         ResolvedFile{std::string(filename), candidate, std::move(*data), root_index,

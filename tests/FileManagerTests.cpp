@@ -1,4 +1,5 @@
 #include "utils/FileManager.hpp"
+#include "utils/Utils.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -999,6 +1000,35 @@ namespace {
                 "read_ini_files resolves payload from in-memory STFS");
     }
 
+    // read_file, write_file and create_directory report failures as Errors that carry the
+    // path, and write_file creates missing parents.
+    void test_utils_io_results() {
+        Fixture f;
+        const auto missing = utils::read_file(f.root / "absent.bin");
+        require(!missing && missing.error().code == ErrorCode::NotFound &&
+                    missing.error().message.find("absent.bin") != std::string::npos,
+                "reading a missing file fails with NotFound naming the path");
+
+        const auto nested = f.root / "out/deeper/image.bin";
+        const auto written = utils::write_file(nested, {0x01, 0x02, 0x03});
+        require(written.has_value(), "write_file creates missing parents and writes");
+        const auto read_back = utils::read_file(nested);
+        require(read_back && *read_back == Bytes{0x01, 0x02, 0x03}, "written bytes read back");
+        const auto truncated = utils::read_file(nested, 2);
+        require(truncated && *truncated == Bytes{0x01, 0x02}, "max_length truncates the read");
+
+        const auto blocker = f.root / "blocker";
+        write_file(blocker, {0x00});
+        const auto created = utils::create_directory(blocker / "child");
+        require(!created && created.error().code == ErrorCode::IoError,
+                "create_directory under a regular file fails with IoError");
+        const auto blocked_write = utils::write_file(blocker / "child/file.bin", {0x00});
+        require(!blocked_write && !blocked_write.error().context.empty(),
+                "write_file reports a parent creation failure with context");
+        require(utils::create_directory(f.root / "out").has_value(),
+                "create_directory on an existing directory succeeds");
+    }
+
 } // namespace
 
 int main() {
@@ -1054,6 +1084,7 @@ int main() {
         {"in-memory STFS without path", test_in_memory_stfs_without_path},
         {"in-memory STFS bootloader derivation", test_in_memory_stfs_bootloader_derivation},
         {"in-memory STFS priority and flags", test_in_memory_stfs_priority_and_flags},
+        {"Utils I/O results", test_utils_io_results},
     };
     int failed = 0;
     for (const auto& [name, test] : tests) {

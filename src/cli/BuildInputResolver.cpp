@@ -442,8 +442,9 @@ namespace gxbuild3::cli {
                 }
                 auto data = utils::read_file(candidate);
                 if (!data) {
-                    return std::unexpected(error(failure_code, "Could not read resolved asset",
-                                                 candidate, std::string(filename)));
+                    return std::unexpected(error(
+                        failure_code, "Could not read resolved asset: " + data.error().describe(),
+                        candidate, std::string(filename)));
                 }
                 return std::optional<DirectFile>{DirectFile{candidate, std::move(*data)}};
             }
@@ -668,11 +669,13 @@ namespace gxbuild3::cli {
         std::optional<std::vector<uint8_t>> nand_data;
         if (args.input_path) {
             nand_path = anchored(working_directory_, *args.input_path);
-            nand_data = utils::read_file(*nand_path);
-            if (!nand_data) {
-                return std::unexpected(error(ResolutionErrorCode::InputReadFailed,
-                                             "Could not read explicit donor NAND", *nand_path));
+            auto read = utils::read_file(*nand_path);
+            if (!read) {
+                return std::unexpected(error(
+                    ResolutionErrorCode::InputReadFailed,
+                    "Could not read explicit donor NAND: " + read.error().describe(), *nand_path));
             }
+            nand_data = std::move(*read);
         } else {
             auto discovered = utils::find_file_data_detailed("nanddump.bin", roots);
             if (!discovered) {
