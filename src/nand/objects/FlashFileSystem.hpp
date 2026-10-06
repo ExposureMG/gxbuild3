@@ -200,6 +200,12 @@ namespace gxbuild3::nand {
         // load() into a freshly staged filesystem; load() commits it only on success.
         [[nodiscard]] Result<void> read_root(Driver& driver, uint16_t root_block,
                                              size_t cluster_in_block);
+        // Reads every listed file through its chain into m_file_data; Truncated when a chain
+        // holds fewer bytes than the entry states.
+        [[nodiscard]] Result<void> read_files(const Driver& driver);
+        // The entry's chain read up to its stated length; shorter when the chain runs out.
+        [[nodiscard]] std::vector<uint8_t> read_chain(const Driver& driver,
+                                                      const FlashFileSystemEntry& entry) const;
 
         [[nodiscard]] static std::optional<size_t> checked_block_count(size_t bytes_needed,
                                                                        size_t clean_block_size);

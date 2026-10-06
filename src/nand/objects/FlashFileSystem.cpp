@@ -538,30 +538,30 @@ namespace gxbuild3::nand {
             return std::nullopt;
         }
 
-        auto chain = get_chain(entry->block_number);
-        if (chain.empty()) {
+        if (get_chain(entry->block_number).empty() || !m_driver) {
             return std::nullopt;
         }
 
-        if (!m_driver) {
+        auto data = read_chain(*m_driver, *entry);
+        if (data.size() != entry->length) {
             return std::nullopt;
         }
+        return data;
+    }
 
+    std::vector<uint8_t> FlashFileSystem::read_chain(const Driver& driver,
+                                                     const FlashFileSystemEntry& entry) const {
         std::vector<uint8_t> data;
-        data.reserve(entry->length);
+        data.reserve(entry.length);
 
-        for (uint16_t blk : chain) {
-            if (data.size() >= entry->length) {
+        for (uint16_t blk : get_chain(entry.block_number)) {
+            if (data.size() >= entry.length) {
                 break;
             }
             auto blk_data =
-                m_driver->read_clean(static_cast<size_t>(blk) * kCleanBlockSize, kCleanBlockSize);
-            size_t to_copy = std::min<size_t>(entry->length - data.size(), blk_data.size());
+                driver.read_clean(static_cast<size_t>(blk) * kCleanBlockSize, kCleanBlockSize);
+            size_t to_copy = std::min<size_t>(entry.length - data.size(), blk_data.size());
             data.insert(data.end(), blk_data.begin(), blk_data.begin() + to_copy);
-        }
-
-        if (data.size() != entry->length) {
-            return std::nullopt;
         }
         return data;
     }
@@ -791,22 +791,12 @@ namespace gxbuild3::nand {
             return decoded;
         }
 
+        return read_files(driver);
+    }
+
+    Result<void> FlashFileSystem::read_files(const Driver& driver) {
         for (const auto& entry : m_entries) {
-            auto chain = get_chain(entry.block_number);
-            std::vector<uint8_t> file_bytes;
-            file_bytes.reserve(entry.length);
-
-            for (uint16_t blk : chain) {
-                if (file_bytes.size() >= entry.length) {
-                    break;
-                }
-                auto blk_data =
-                    driver.read_clean(static_cast<size_t>(blk) * kCleanBlockSize, kCleanBlockSize);
-                size_t to_copy =
-                    std::min<size_t>(entry.length - file_bytes.size(), blk_data.size());
-                file_bytes.insert(file_bytes.end(), blk_data.begin(), blk_data.begin() + to_copy);
-            }
-
+            auto file_bytes = read_chain(driver, entry);
             if (file_bytes.size() != entry.length) {
                 return fail(ErrorCode::Truncated,
                             "FlashFS file '{}' is truncated: expected {} bytes, read {}",
