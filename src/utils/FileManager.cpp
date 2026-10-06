@@ -271,14 +271,10 @@ namespace gxbuild3::utils {
                 } else if (*raw == nullptr) {
                     pkg.xboxupd_error =
                         Error(ErrorCode::NotFound, "STFS package does not contain xboxupd.bin");
+                } else if (auto parts = nand::split_xboxupd_raw(std::span(**raw))) {
+                    pkg.xboxupd_parts = std::move(*parts);
                 } else {
-                    // TODO(E7e): split_xboxupd_raw still throws. Drop this try and cache its
-                    // Error once it returns Result.
-                    try {
-                        pkg.xboxupd_parts = nand::split_xboxupd_raw(std::span(**raw));
-                    } catch (const std::runtime_error& e) {
-                        pkg.xboxupd_error = Error(ErrorCode::Malformed, e.what());
-                    }
+                    pkg.xboxupd_error = std::move(parts).error();
                 }
             }
             if (pkg.xboxupd_error) {
