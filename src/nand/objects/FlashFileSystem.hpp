@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Error.hpp"
+#include "Wire.hpp"
 #include "nand/FlashDriver.hpp"
 
 #include <cstddef>
@@ -36,7 +37,8 @@ namespace gxbuild3::nand {
         static constexpr uint16_t Unnamed = 0x0000;
     };
 
-#pragma pack(push, 1)
+    // A directory entry in host order: the block number is the physical cluster, rebased from
+    // the on-disk number by the filesystem's base cluster.
     struct FlashFileSystemEntry {
         char filename[kMaxFilenameLength]{};
         uint16_t block_number{};
@@ -46,8 +48,48 @@ namespace gxbuild3::nand {
         [[nodiscard]] bool is_valid() const noexcept;
         [[nodiscard]] bool matches(std::string_view name) const noexcept;
     };
-    static_assert(sizeof(FlashFileSystemEntry) == 32);
-#pragma pack(pop)
+
+    // ---- On-disk root cluster (big-endian) --------------------------------------------------
+    // The root is one 0x4000-byte cluster of 32 pages of 0x200 bytes: even pages hold the block
+    // map, odd pages the directory. Block numbers and links count from the filesystem's base
+    // cluster.
+
+    struct flashfs_disk_entry {
+        // NUL-terminated unless it fills all kMaxFilenameLength bytes.
+        char filename[kMaxFilenameLength];
+        wire::be16 block_number;
+        wire::be32 length;
+        wire::be32 timestamp;
+    };
+    static_assert(sizeof(flashfs_disk_entry) == 0x20);
+    static_assert(offsetof(flashfs_disk_entry, filename) == 0x00);
+    static_assert(offsetof(flashfs_disk_entry, block_number) == 0x16);
+    static_assert(offsetof(flashfs_disk_entry, length) == 0x18);
+    static_assert(offsetof(flashfs_disk_entry, timestamp) == 0x1C);
+
+    struct flashfs_map_page {
+        wire::be16 links[kBlocksPerPage];
+    };
+    static_assert(sizeof(flashfs_map_page) == 0x200);
+
+    struct flashfs_dir_page {
+        flashfs_disk_entry entries[kEntriesPerPage];
+    };
+    static_assert(sizeof(flashfs_dir_page) == 0x200);
+
+    // One even map page and the odd directory page after it.
+    struct flashfs_root_pair {
+        flashfs_map_page map;
+        flashfs_dir_page dir;
+    };
+    static_assert(sizeof(flashfs_root_pair) == 0x400);
+    static_assert(offsetof(flashfs_root_pair, dir) == 0x200);
+
+    struct flashfs_root_cluster {
+        flashfs_root_pair pairs[kRootDirectoryPages];
+    };
+    static_assert(sizeof(flashfs_root_cluster) == kCleanBlockSize);
+    static_assert(wire::WireLayout<flashfs_root_cluster>);
 
     class FlashFileSystem {
       public:

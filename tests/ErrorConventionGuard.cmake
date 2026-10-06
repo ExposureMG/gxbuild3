@@ -53,14 +53,12 @@ set(catch_all_allowlist
 # entry goes away as its records move to src/Wire.hpp. src/Wire.hpp itself stays: it declares
 # the deleted bswap*/swap32 overloads that reject a manual swap on a wire field.
 set(pragma_pack_allowlist
-    src/nand/objects/FlashFileSystem.hpp
     src/nand/objects/XConfig.hpp
 )
 
 set(byte_swap_allowlist
     src/Endian.hpp
     src/Wire.hpp
-    src/nand/objects/FlashFileSystem.cpp
     src/nand/objects/Patchset.cpp
     src/nand/objects/Xboxupd.cpp
     src/patchers/Patcher.cpp

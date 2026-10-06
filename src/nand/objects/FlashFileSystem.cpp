@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstring>
 #include <map>
 #include <unordered_set>
 
@@ -16,6 +15,116 @@ namespace gxbuild3::nand {
         std::string_view entry_name(const FlashFileSystemEntry& entry) {
             const char* end = std::find(entry.filename, entry.filename + kMaxFilenameLength, '\0');
             return {entry.filename, static_cast<size_t>(end - entry.filename)};
+        }
+
+        constexpr size_t kMapLinks = kRootDirectoryPages * kBlocksPerPage;
+
+        // Link `index` of the block map, counted from the filesystem's base cluster.
+        wire::be16& map_link(flashfs_root_cluster& root, size_t index) {
+            return root.pairs[index / kBlocksPerPage].map.links[index % kBlocksPerPage];
+        }
+
+        const wire::be16& map_link(const flashfs_root_cluster& root, size_t index) {
+            return root.pairs[index / kBlocksPerPage].map.links[index % kBlocksPerPage];
+        }
+
+        flashfs_disk_entry& dir_slot(flashfs_root_cluster& root, size_t index) {
+            return root.pairs[index / kEntriesPerPage].dir.entries[index % kEntriesPerPage];
+        }
+
+        const flashfs_disk_entry& dir_slot(const flashfs_root_cluster& root, size_t index) {
+            return root.pairs[index / kEntriesPerPage].dir.entries[index % kEntriesPerPage];
+        }
+
+        // States every cluster from `base` on, rebased to it; a withheld cluster states what
+        // `stated` names for it.
+        Result<void> encode_block_map(const std::vector<uint16_t>& blockmap,
+                                      const std::map<size_t, uint16_t>& stated, size_t base,
+                                      flashfs_root_cluster& root) {
+            for (size_t index = 0; index < kMapLinks && base + index < blockmap.size(); ++index) {
+                const size_t cluster = base + index;
+                uint16_t val = blockmap[cluster];
+                if (const auto withheld = stated.find(cluster); withheld != stated.end()) {
+                    val = withheld->second;
+                } else if ((val & 0x7FFF) < BlockMapStatus::BadBlock) {
+                    if ((val & 0x7FFF) < base) {
+                        return fail(ErrorCode::Malformed,
+                                    "FlashFS cluster 0x{:X} links below the filesystem base 0x{:X}",
+                                    cluster, base);
+                    }
+                    val = static_cast<uint16_t>((val & 0x8000) | ((val & 0x7FFF) - base));
+                }
+                map_link(root, index) = val;
+            }
+            return {};
+        }
+
+        Result<void> encode_directory(const std::vector<FlashFileSystemEntry>& entries, size_t base,
+                                      flashfs_root_cluster& root) {
+            for (size_t index = 0; index < entries.size() && index < kMaxDirectoryEntries;
+                 ++index) {
+                const FlashFileSystemEntry& entry = entries[index];
+                if (entry.block_number < base) {
+                    return fail(ErrorCode::Malformed,
+                                "FlashFS file '{}' starts below the filesystem base 0x{:X}",
+                                entry_name(entry), base);
+                }
+                flashfs_disk_entry& disk = dir_slot(root, index);
+                std::ranges::copy(entry.filename, disk.filename);
+                disk.block_number = static_cast<uint16_t>(entry.block_number - base);
+                disk.length = entry.length;
+                disk.timestamp = entry.timestamp;
+            }
+            return {};
+        }
+
+        // Fills `blockmap` from `base` on, rebasing every link; the clusters before `base` and
+        // past the root's map keep what they hold.
+        Result<void> decode_block_map(const flashfs_root_cluster& root, size_t base,
+                                      std::vector<uint16_t>& blockmap) {
+            for (size_t index = 0; index < kMapLinks && base + index < blockmap.size(); ++index) {
+                const size_t cluster = base + index;
+                uint16_t val = map_link(root, index);
+                if ((val & 0x7FFF) < BlockMapStatus::BadBlock) {
+                    if ((val & 0x7FFF) + base >= blockmap.size()) {
+                        return fail(ErrorCode::Malformed,
+                                    "FlashFS cluster 0x{:X} links past the map to 0x{:X}", cluster,
+                                    (val & 0x7FFF) + base);
+                    }
+                    val = static_cast<uint16_t>((val & 0x8000) | ((val & 0x7FFF) + base));
+                }
+                blockmap[cluster] = val;
+            }
+            return {};
+        }
+
+        // Appends every valid entry, rebased to physical clusters; an unused slot (block 0xFFFF)
+        // is skipped before rebasing.
+        Result<void> decode_directory(const flashfs_root_cluster& root, size_t base,
+                                      size_t map_size, std::vector<FlashFileSystemEntry>& entries) {
+            for (size_t index = 0; index < kMaxDirectoryEntries; ++index) {
+                const flashfs_disk_entry& disk = dir_slot(root, index);
+                const uint16_t relative_block = disk.block_number;
+                if (relative_block == 0xFFFF) {
+                    continue;
+                }
+                const size_t physical_cluster = relative_block + base;
+                FlashFileSystemEntry entry{};
+                std::ranges::copy(disk.filename, entry.filename);
+                entry.block_number = static_cast<uint16_t>(physical_cluster);
+                entry.length = disk.length;
+                entry.timestamp = disk.timestamp;
+
+                if (entry.is_valid()) {
+                    if (physical_cluster >= map_size) {
+                        return fail(ErrorCode::Malformed,
+                                    "FlashFS file '{}' starts past the map at 0x{:X}",
+                                    entry_name(entry), physical_cluster);
+                    }
+                    entries.push_back(entry);
+                }
+            }
+            return {};
         }
     } // namespace
 
@@ -348,7 +457,7 @@ namespace gxbuild3::nand {
         }
 
         FlashFileSystemEntry entry{};
-        std::memcpy(entry.filename, clean_name.data(), clean_name.size());
+        std::ranges::copy(clean_name, entry.filename);
         entry.filename[clean_name.size()] = '\0';
         entry.block_number = *chain_start;
         entry.length = static_cast<uint32_t>(data.size());
@@ -506,52 +615,16 @@ namespace gxbuild3::nand {
             return fail(ErrorCode::OutOfRange, "FlashFS directory holds {} entries; at most {} fit",
                         m_entries.size(), kMaxDirectoryEntries);
         }
-        std::vector<uint8_t> root_block(kCleanBlockSize, 0);
-
-        size_t bm_written = base_cluster();
-        for (size_t page = 0; page < 32 && bm_written < m_blockmap.size(); page += 2) {
-            uint8_t* page_ptr = root_block.data() + (page * 512);
-            for (size_t entry = 0; entry < kBlocksPerPage && bm_written < m_blockmap.size();
-                 ++entry) {
-                const auto stated = m_stated.find(bm_written);
-                uint16_t val = m_blockmap[bm_written++];
-                if (stated != m_stated.end()) {
-                    val = stated->second;
-                } else if ((val & 0x7FFF) < BlockMapStatus::BadBlock) {
-                    if ((val & 0x7FFF) < base_cluster()) {
-                        return fail(ErrorCode::Malformed,
-                                    "FlashFS cluster 0x{:X} links below the filesystem base 0x{:X}",
-                                    bm_written - 1, base_cluster());
-                    }
-                    val = static_cast<uint16_t>((val & 0x8000) | ((val & 0x7FFF) - base_cluster()));
-                }
-                val = bswap16(val);
-                std::memcpy(page_ptr + (entry * sizeof(uint16_t)), &val, sizeof(uint16_t));
-            }
+        // The map is encoded before the directory, so its errors take precedence.
+        flashfs_root_cluster root{};
+        if (auto encoded = encode_block_map(m_blockmap, m_stated, base_cluster(), root); !encoded) {
+            return std::unexpected(std::move(encoded.error()));
         }
-
-        size_t entry_written = 0;
-        for (size_t page = 1; page < kRootDirectoryPages * 2 && entry_written < m_entries.size();
-             page += 2) {
-            uint8_t* page_ptr = root_block.data() + (page * 512);
-            for (size_t slot = 0; slot < kEntriesPerPage && entry_written < m_entries.size();
-                 ++slot) {
-                FlashFileSystemEntry raw = m_entries[entry_written++];
-                if (raw.block_number < base_cluster()) {
-                    return fail(ErrorCode::Malformed,
-                                "FlashFS file '{}' starts below the filesystem base 0x{:X}",
-                                entry_name(raw), base_cluster());
-                }
-                raw.block_number =
-                    bswap16(static_cast<uint16_t>(raw.block_number - base_cluster()));
-                raw.length = bswap32(raw.length);
-                raw.timestamp = bswap32(raw.timestamp);
-                std::memcpy(page_ptr + (slot * sizeof(FlashFileSystemEntry)), &raw,
-                            sizeof(FlashFileSystemEntry));
-            }
+        if (auto encoded = encode_directory(m_entries, base_cluster(), root); !encoded) {
+            return std::unexpected(std::move(encoded.error()));
         }
-
-        return root_block;
+        const auto image = wire::bytes_of(root);
+        return std::vector<uint8_t>(image.begin(), image.end());
     }
 
     Result<void> FlashFileSystem::save() {
@@ -699,56 +772,23 @@ namespace gxbuild3::nand {
         m_root_placed = true;
         m_stated.clear();
 
+        auto root = wire::read<flashfs_root_cluster>(root_data, 0, "FlashFS root");
+        if (!root) {
+            return std::unexpected(std::move(root.error()));
+        }
+
         const size_t cluster_count = driver.block_count() * clusters_per_block();
         m_blockmap.assign(std::min(cluster_count, kRootDirectoryPages * kBlocksPerPage),
                           BlockMapStatus::Reserved);
-        size_t bm_read = base_cluster();
-
-        for (size_t page = 0; page < 32 && bm_read < m_blockmap.size(); page += 2) {
-            const uint8_t* page_ptr = root_data.data() + (page * 512);
-            for (size_t entry = 0; entry < kBlocksPerPage && bm_read < m_blockmap.size(); ++entry) {
-                uint16_t val = 0;
-                std::memcpy(&val, page_ptr + (entry * sizeof(uint16_t)), sizeof(uint16_t));
-                val = bswap16(val);
-                if ((val & 0x7FFF) < BlockMapStatus::BadBlock) {
-                    if ((val & 0x7FFF) + base_cluster() >= m_blockmap.size()) {
-                        return fail(ErrorCode::Malformed,
-                                    "FlashFS cluster 0x{:X} links past the map to 0x{:X}", bm_read,
-                                    (val & 0x7FFF) + base_cluster());
-                    }
-                    val = static_cast<uint16_t>((val & 0x8000) | ((val & 0x7FFF) + base_cluster()));
-                }
-                m_blockmap[bm_read++] = val;
-            }
+        if (auto decoded = decode_block_map(*root, base_cluster(), m_blockmap); !decoded) {
+            return decoded;
         }
 
         m_entries.clear();
         m_file_data.clear();
-
-        for (size_t page = 1; page < 32; page += 2) {
-            const uint8_t* page_ptr = root_data.data() + (page * 512);
-            for (size_t slot = 0; slot < kEntriesPerPage; ++slot) {
-                FlashFileSystemEntry raw{};
-                std::memcpy(&raw, page_ptr + (slot * sizeof(FlashFileSystemEntry)),
-                            sizeof(FlashFileSystemEntry));
-                const uint16_t relative_block = bswap16(raw.block_number);
-                if (relative_block == 0xFFFF) {
-                    continue;
-                }
-                const size_t physical_cluster = relative_block + base_cluster();
-                raw.block_number = static_cast<uint16_t>(physical_cluster);
-                raw.length = bswap32(raw.length);
-                raw.timestamp = bswap32(raw.timestamp);
-
-                if (raw.is_valid()) {
-                    if (physical_cluster >= m_blockmap.size()) {
-                        return fail(ErrorCode::Malformed,
-                                    "FlashFS file '{}' starts past the map at 0x{:X}",
-                                    entry_name(raw), physical_cluster);
-                    }
-                    m_entries.push_back(raw);
-                }
-            }
+        if (auto decoded = decode_directory(*root, base_cluster(), m_blockmap.size(), m_entries);
+            !decoded) {
+            return decoded;
         }
 
         for (const auto& entry : m_entries) {
