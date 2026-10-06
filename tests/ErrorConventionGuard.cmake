@@ -60,7 +60,6 @@ set(byte_swap_allowlist
     src/Endian.hpp
     src/Wire.hpp
     src/stfs/FileExtractor.cpp
-    src/stfs/FileTableParser.cpp
     src/stfs/HeaderParser.cpp
     src/stfs/MetadataParser.cpp
 )
