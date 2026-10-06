@@ -59,7 +59,6 @@ set(pragma_pack_allowlist
 set(byte_swap_allowlist
     src/Endian.hpp
     src/Wire.hpp
-    src/patchers/Patcher.cpp
     src/stfs/FileExtractor.cpp
     src/stfs/FileTableParser.cpp
     src/stfs/HeaderParser.cpp
