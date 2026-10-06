@@ -1,7 +1,6 @@
 // Tests for src/Wire.hpp: endian field types, record codecs, the stream Cursor, the compile-time
 // rejections the convention relies on, and formatting through std::format and spdlog (Log.hpp).
 
-#include "Endian.hpp"
 #include "Error.hpp"
 #include "Wire.hpp"
 #include "utils/Log.hpp"
@@ -162,9 +161,11 @@ namespace {
     template <class V>
     concept CanStdMaxWithUnsigned = requires(V v) { std::max(v, 5u); };
 
-    // The legacy helpers still take host integers.
-    static_assert(CanBswap16<std::uint16_t> && CanBswap32<std::uint32_t> &&
-                  CanBswap64<std::uint64_t>);
+    // Endian.hpp is gone: no host-integer bswap helper is left; std::byteswap is the host swap.
+    static_assert(!CanBswap16<std::uint16_t> && !CanBswap32<std::uint32_t> &&
+                  !CanBswap64<std::uint64_t>);
+    static_assert(CanStdByteswap<std::uint16_t> && CanStdByteswap<std::uint32_t> &&
+                  CanStdByteswap<std::uint64_t>);
     // A manual swap on a wire field does not compile: the deleted overloads win.
     static_assert(!CanBswap16<wire::be16> && !CanBswap16<wire::le16>);
     static_assert(!CanBswap32<wire::be32> && !CanBswap32<wire::le32>);
@@ -329,8 +330,11 @@ namespace {
               "as_u8 views the same storage");
         const auto word = wire::read<wire::be32>(view, 0, "word");
         check(word.has_value() && *word == 0xDEADBEEF, "as_u8 feeds wire::read");
-        check(word.has_value() && *word == gxbuild3::read_be32(storage.data()),
-              "wire::read agrees with the legacy read_be32");
+        const auto host = std::bit_cast<std::uint32_t>(storage);
+        const std::uint32_t big_endian =
+            std::endian::native == std::endian::big ? host : std::byteswap(host);
+        check(word.has_value() && *word == big_endian,
+              "wire::read agrees with a std::byteswap of the host word");
     }
 
     // ---- Cursor --------------------------------------------------------------------------------

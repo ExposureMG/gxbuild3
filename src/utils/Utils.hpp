@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Endian.hpp"
 #include "Error.hpp"
 
 #include <cassert>

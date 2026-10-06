@@ -375,8 +375,9 @@ namespace std {
 
 namespace gxbuild3 {
 
-    // A leftover manual swap on a wire field is a compile error, not a silent double swap. These
-    // win overload resolution over the uint*_t helpers in Endian.hpp (exact match versus a
+    // A manual swap on a wire field is a compile error, not a silent double swap: the legacy
+    // bswap16/32/64 helpers are gone, and these deleted overloads keep the names from coming back
+    // for a wire field (they would win as an exact match over a uint*_t helper reached through a
     // user-defined conversion).
     template <class T, std::endian E> void bswap16(wire::endian_int<T, E>) = delete;
     template <class T, std::endian E> void bswap32(wire::endian_int<T, E>) = delete;

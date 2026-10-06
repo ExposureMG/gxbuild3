@@ -174,9 +174,12 @@ namespace gxbuild3::utils {
                         kSdHashResume);
         }
         sd.resize((sd.size() + 0x0F) & ~size_t{0x0F}, 0);
-        const auto size = static_cast<uint32_t>(sd.size());
-        for (size_t index = 0; index < 4; ++index) {
-            sd[0x0C + index] = static_cast<uint8_t>(size >> (24 - 8 * index));
+        // The length check above guarantees the size word fits.
+        if (auto stored =
+                wire::write<wire::be32>(std::span<uint8_t>(sd), 0x0C,
+                                        wire::be32(static_cast<uint32_t>(sd.size())), "SD size");
+            !stored) {
+            return stored;
         }
         const auto hash = sd_hash(sd);
         const auto salt = std::span(reinterpret_cast<const uint8_t*>(kSdSignatureSalt.data()),

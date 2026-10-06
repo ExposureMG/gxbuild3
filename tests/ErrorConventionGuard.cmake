@@ -11,8 +11,8 @@ cmake_minimum_required(VERSION 3.29)
 # so the legacy byte-order machinery is a second shrinking inventory.
 #   4. `#pragma pack` may only appear in the files that still declare packed records.
 #   5. The manual byte-order helpers (bswap16/32/64, read_be*/read_le*, including their
-#      __builtin_bswap* bodies, and the deleted swap32) may only be named in the files that still
-#      use them.
+#      __builtin_bswap* bodies, and the deleted swap32) are gone with Endian.hpp; only src/Wire.hpp
+#      names bswap*, in the deleted overloads that reject a manual swap on a wire field.
 #   6. No file under src/nand/objects/ includes Endian.hpp: every objects record is a wire struct.
 # A converting commit removes its file's entry in the same commit.
 #
@@ -47,7 +47,6 @@ set(pragma_pack_allowlist
 )
 
 set(byte_swap_allowlist
-    src/Endian.hpp
     src/Wire.hpp
 )
 

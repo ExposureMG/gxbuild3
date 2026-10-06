@@ -1,5 +1,4 @@
 #include "BuildRunner.hpp"
-#include "Endian.hpp"
 #include "ExtractProjection.hpp"
 #include "GoldenSnapshot.hpp"
 #include "Library.hpp"
@@ -23,6 +22,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -1226,7 +1226,7 @@ namespace {
             input.options.noblpatch = test_case.noblpatch;
             input.bootloaders.cb_or_a.resize(test_case.xell_offset - 0x8000 + 0x10, 0xA9);
             const uint32_t cb_size =
-                bswap32(static_cast<uint32_t>(input.bootloaders.cb_or_a.size()));
+                std::byteswap(static_cast<uint32_t>(input.bootloaders.cb_or_a.size()));
             std::memcpy(input.bootloaders.cb_or_a.data() + offsetof(generic_header, size), &cb_size,
                         sizeof(cb_size));
             if (test_case.jtag_patchset || test_case.noblpatch) {
