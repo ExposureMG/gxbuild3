@@ -29,8 +29,6 @@ endif()
 #   TODO(test-phase): the bootloader *_or_throw shims (2bl.hpp-7bl.hpp) and their
 #     detail::value_or_throw helper (Common.hpp) exist only for the tests; the test rewrite
 #     migrates those call sites to the Result API and deletes them.
-#   TODO(parsing): stfs::detail::value_or_throw (PackageCommon.hpp) no longer has a caller; the
-#     parsing phase deletes it.
 set(shim_name_allowlist
     src/nand/bootloaders/2bl.hpp
     src/nand/bootloaders/3bl.hpp
@@ -39,13 +37,11 @@ set(shim_name_allowlist
     src/nand/bootloaders/6bl.hpp
     src/nand/bootloaders/7bl.hpp
     src/nand/bootloaders/Common.hpp
-    src/stfs/PackageCommon.hpp
 )
 
 # BigUint throws std::logic_error-family precondition violations by design.
 set(throw_allowlist
     src/nand/bootloaders/Common.hpp
-    src/stfs/PackageCommon.hpp
     src/utils/BigUint.cpp
 )
 

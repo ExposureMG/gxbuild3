@@ -8,8 +8,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <span>
-#include <stdexcept>
-#include <utility>
 #include <vector>
 
 namespace gxbuild3::stfs::detail {
@@ -40,20 +38,5 @@ namespace gxbuild3::stfs::detail {
     [[nodiscard]] Result<std::vector<std::filesystem::path>>
     plan_destinations(const std::vector<FileEntry>& entries,
                       const std::filesystem::path& target_dir);
-
-    // TODO(parsing): this throwing shim no longer has a caller; the parsing phase deletes it.
-    // tests/ErrorConventionGuard.cmake keeps it out of the rest of src/.
-    template <class T> [[nodiscard]] T value_or_throw(Result<T>&& result) {
-        if (!result) {
-            throw std::runtime_error(result.error().describe());
-        }
-        return std::move(*result);
-    }
-
-    inline void value_or_throw(Result<void>&& result) {
-        if (!result) {
-            throw std::runtime_error(result.error().describe());
-        }
-    }
 
 } // namespace gxbuild3::stfs::detail
