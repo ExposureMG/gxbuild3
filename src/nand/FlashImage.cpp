@@ -69,8 +69,8 @@ namespace gxbuild3::nand {
 
         // Parses one bootloader record into `target` (a stage or an optional stage).
         template <class Target>
-        [[nodiscard]] Result<void> parse_stage(Target& target, std::span<const uint8_t> bytes,
-                                               std::string_view name, size_t offset) {
+        [[nodiscard]] Result<void> parse_section(Target& target, std::span<const uint8_t> bytes,
+                                                 std::string_view name, size_t offset) {
             auto parsed = StageOf<Target>::type::parse(bytes);
             if (!parsed) {
                 return std::unexpected(std::move(parsed.error())
@@ -552,6 +552,151 @@ namespace gxbuild3::nand {
             return (reserve_block - 1) * driver.block_size_clean();
         }
 
+        // Checks the image is large enough to hold a NAND header and decodes it.
+        [[nodiscard]] Result<nand_header> decode_nand_header(const Driver& driver) {
+            if (driver.block_count() == 0) {
+                return fail(ErrorCode::InvalidArgument, "the NAND image has no blocks");
+            }
+
+            const size_t image_size = driver.serialize().size();
+            if (image_size < sizeof(nand_header)) {
+                return fail(ErrorCode::Truncated,
+                            "the NAND image ({} bytes) is smaller than the NAND header",
+                            image_size);
+            }
+
+            const auto header_span = driver.read_offset(0, sizeof(nand_header));
+            if (header_span.size() < sizeof(nand_header)) {
+                return fail(ErrorCode::Truncated, "the NAND header could not be read");
+            }
+
+            return wire::read<nand_header>(header_span, 0, "NAND header");
+        }
+
+        // Reads the SMC ahead of 0x4000 and the keyvault at 0x4000. Neither failure fails the
+        // parse: an SMC that does not parse leaves `smc` as it was, a keyvault that does not
+        // parse is dropped with a warning.
+        void read_secure_head(const Driver& driver, const nand_header& header,
+                              std::optional<Smc>& smc, std::optional<Keyvault>& keyvault) {
+            const uint32_t smc_boot_size = header.smc_boot_size.get();
+            const uint32_t smc_size =
+                (smc_boot_size > 0 && smc_boot_size <= kKeyvaultOffset) ? smc_boot_size : 0x3000;
+            const uint32_t smc_offset = kKeyvaultOffset - smc_size;
+            auto smc_bytes = driver.read_clean(smc_offset, smc_size);
+            if (!smc_bytes.empty()) {
+                if (auto parsed = Smc::parse(smc_bytes)) {
+                    smc = std::move(*parsed);
+                    Log::Debug("Extracted SMC from NAND (0x{:X} bytes)", smc_bytes.size());
+                } else {
+                    Log::Debug("SMC not extracted: {}", parsed.error().describe());
+                }
+            }
+
+            auto kv_bytes = driver.read_clean(kKeyvaultOffset, Keyvault::kSize);
+            if (!kv_bytes.empty()) {
+                if (auto parsed = Keyvault::parse(kv_bytes)) {
+                    keyvault = std::move(*parsed);
+                    Log::Debug("Extracted Keyvault from NAND (0x{:X} bytes)", kv_bytes.size());
+                } else {
+                    keyvault.reset();
+                    Log::Warn("The NAND's Keyvault is not kept: {}", parsed.error().describe());
+                }
+            }
+        }
+
+        // The CB build that marks a glitch3 CB_X.
+        constexpr uint16_t kCbXVersion = 15432;
+
+        // Parses `target` and hands back the name it was parsed under.
+        template <class Target>
+        [[nodiscard]] Result<std::string_view> parse_named(Target& target,
+                                                           std::span<const uint8_t> bytes,
+                                                           std::string_view name, size_t offset) {
+            if (auto parsed = parse_section(target, bytes, name, offset); !parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            return name;
+        }
+
+        // Parses one boot-chain record into the slot its magic and version pick, and hands back
+        // the name it was parsed under. An empty name means the record ends the chain: an
+        // unknown magic, or an SB once CB_A is already held. The first CB fills CB_A, a CB at
+        // kCbXVersion fills CB_X and any later CB fills CB_B.
+        [[nodiscard]] Result<std::string_view>
+        parse_boot_record(uint16_t magic, uint16_t version, std::span<const uint8_t> bytes,
+                          size_t offset, CbSection& cb_section, KernelSection& kernel_section) {
+            switch (magic) {
+                case NANDBootloaderMagic::SB:
+                    if (!cb_section.cb_or_A.data.empty()) {
+                        return std::string_view{};
+                    }
+                    return parse_named(cb_section.cb_or_A, bytes, "SB", offset);
+                case NANDBootloaderMagic::SD:
+                    return parse_named(kernel_section.cd, bytes, "SD", offset);
+                case NANDBootloaderMagic::SE:
+                    return parse_named(kernel_section.ce, bytes, "SE", offset);
+                case NANDBootloaderMagic::CB:
+                    if (version == kCbXVersion) {
+                        return parse_named(cb_section.cb_x, bytes, "CB", offset);
+                    }
+                    if (cb_section.cb_or_A.data.empty()) {
+                        return parse_named(cb_section.cb_or_A, bytes, "CB", offset);
+                    }
+                    return parse_named(cb_section.cb_B, bytes, "CB", offset);
+                case NANDBootloaderMagic::SC:
+                    return parse_named(cb_section.sc, bytes, "SC", offset);
+                case NANDBootloaderMagic::CD:
+                    return parse_named(kernel_section.cd, bytes, "CD", offset);
+                case NANDBootloaderMagic::CE:
+                    return parse_named(kernel_section.ce, bytes, "CE", offset);
+                default:
+                    return std::string_view{};
+            }
+        }
+
+        // Walks the boot chain from 0x8000, record by record, until a header that does not
+        // read, a size out of range or a magic that ends the chain. A record that does not
+        // parse fails the scan; the records parsed before it are kept.
+        [[nodiscard]] Result<void> scan_boot_chain(const Driver& driver, size_t image_size,
+                                                   CbSection& cb_section,
+                                                   KernelSection& kernel_section) {
+            size_t cursor = kEntryOffset;
+            while (cursor + sizeof(generic_header) <= image_size) {
+                const auto bldr_hdr_bytes = driver.read_clean(cursor, sizeof(generic_header));
+                const auto bldr_hdr =
+                    wire::read<generic_header>(bldr_hdr_bytes, 0, "bootloader stage header");
+                if (!bldr_hdr) {
+                    break;
+                }
+
+                const uint16_t magic = bldr_hdr->magic.get();
+                const uint16_t version = bldr_hdr->version.get();
+                const uint32_t bldr_size = bldr_hdr->size.get();
+
+                if (bldr_size == 0 || bldr_size > 0x100000 || cursor + bldr_size > image_size) {
+                    break;
+                }
+
+                // A stage is sealed through its 16-byte rounding, so it is read with it: the
+                // rounding then opens back to the zeros it was sealed from.
+                auto bldr_data = driver.read_clean(cursor, align_16(bldr_size));
+
+                auto name = parse_boot_record(magic, version, bldr_data, cursor, cb_section,
+                                              kernel_section);
+                if (!name) {
+                    return std::unexpected(std::move(name.error()));
+                }
+                if (name->empty()) {
+                    break;
+                }
+                Log::Debug("Parsed {} bootloader at offset 0x{:X} (version {}, size 0x{:X})", *name,
+                           cursor, version, bldr_size);
+
+                cursor += align_16(bldr_size);
+            }
+            return {};
+        }
+
     } // namespace
 
     std::optional<FlashImage> FlashImage::read(std::vector<uint8_t> raw_image) {
@@ -565,23 +710,7 @@ namespace gxbuild3::nand {
     }
 
     Result<void> FlashImage::parse() {
-        if (flash_driver.block_count() == 0) {
-            return fail(ErrorCode::InvalidArgument, "the NAND image has no blocks");
-        }
-
-        const auto& image_bytes = std::as_const(flash_driver).serialize();
-        if (image_bytes.size() < sizeof(nand_header)) {
-            return fail(ErrorCode::Truncated,
-                        "the NAND image ({} bytes) is smaller than the NAND header",
-                        image_bytes.size());
-        }
-
-        auto header_span = std::as_const(flash_driver).read_offset(0, sizeof(nand_header));
-        if (header_span.size() < sizeof(nand_header)) {
-            return fail(ErrorCode::Truncated, "the NAND header could not be read");
-        }
-
-        auto decoded = wire::read<nand_header>(header_span, 0, "NAND header");
+        auto decoded = decode_nand_header(flash_driver);
         if (!decoded) {
             return std::unexpected(std::move(decoded.error()));
         }
@@ -593,92 +722,13 @@ namespace gxbuild3::nand {
                    "kv_addr=0x{:08X}",
                    header.magic, header.version, header.entrypoint, header.kv_addr);
 
-        const uint32_t smc_size =
-            (header.smc_boot_size > 0 && header.smc_boot_size <= kKeyvaultOffset)
-                ? header.smc_boot_size.get()
-                : 0x3000;
-        const uint32_t smc_offset = kKeyvaultOffset - smc_size;
-        auto smc_bytes = flash_driver.read_clean(smc_offset, smc_size);
-        if (!smc_bytes.empty()) {
-            if (auto parsed = Smc::parse(smc_bytes)) {
-                smc = std::move(*parsed);
-                Log::Debug("Extracted SMC from NAND (0x{:X} bytes)", smc_bytes.size());
-            } else {
-                Log::Debug("SMC not extracted: {}", parsed.error().describe());
-            }
-        }
+        read_secure_head(flash_driver, header, smc, keyvault);
 
-        auto kv_bytes = flash_driver.read_clean(kKeyvaultOffset, Keyvault::kSize);
-        if (!kv_bytes.empty()) {
-            if (auto parsed = Keyvault::parse(kv_bytes)) {
-                keyvault = std::move(*parsed);
-                Log::Debug("Extracted Keyvault from NAND (0x{:X} bytes)", kv_bytes.size());
-            } else {
-                keyvault.reset();
-                Log::Warn("The NAND's Keyvault is not kept: {}", parsed.error().describe());
-            }
-        }
-
-        size_t cursor = kEntryOffset;
-        while (cursor + sizeof(generic_header) <= image_bytes.size()) {
-            const auto bldr_hdr_bytes = flash_driver.read_clean(cursor, sizeof(generic_header));
-            const auto bldr_hdr =
-                wire::read<generic_header>(bldr_hdr_bytes, 0, "bootloader stage header");
-            if (!bldr_hdr) {
-                break;
-            }
-
-            const uint16_t magic = bldr_hdr->magic.get();
-            const uint16_t version = bldr_hdr->version.get();
-            const uint32_t bldr_size = bldr_hdr->size.get();
-
-            if (bldr_size == 0 || bldr_size > 0x100000 || cursor + bldr_size > image_bytes.size()) {
-                break;
-            }
-
-            // A stage is sealed through its 16-byte rounding, so it is read with it: the
-            // rounding then opens back to the zeros it was sealed from.
-            auto bldr_data = flash_driver.read_clean(cursor, align_16(bldr_size));
-
-            std::string_view name;
-            Result<void> stage{};
-            if (magic == NANDBootloaderMagic::SB && cb_section.cb_or_A.data.empty()) {
-                name = "SB";
-                stage = parse_stage(cb_section.cb_or_A, bldr_data, name, cursor);
-            } else if (magic == NANDBootloaderMagic::SD) {
-                name = "SD";
-                stage = parse_stage(kernel_section.cd, bldr_data, name, cursor);
-            } else if (magic == NANDBootloaderMagic::SE) {
-                name = "SE";
-                stage = parse_stage(kernel_section.ce, bldr_data, name, cursor);
-            } else if (magic == NANDBootloaderMagic::CB) {
-                name = "CB";
-                if (version == 15432) {
-                    stage = parse_stage(cb_section.cb_x, bldr_data, name, cursor);
-                } else if (cb_section.cb_or_A.data.empty()) {
-                    stage = parse_stage(cb_section.cb_or_A, bldr_data, name, cursor);
-                } else {
-                    stage = parse_stage(cb_section.cb_B, bldr_data, name, cursor);
-                }
-            } else if (magic == NANDBootloaderMagic::SC) {
-                name = "SC";
-                stage = parse_stage(cb_section.sc, bldr_data, name, cursor);
-            } else if (magic == NANDBootloaderMagic::CD) {
-                name = "CD";
-                stage = parse_stage(kernel_section.cd, bldr_data, name, cursor);
-            } else if (magic == NANDBootloaderMagic::CE) {
-                name = "CE";
-                stage = parse_stage(kernel_section.ce, bldr_data, name, cursor);
-            } else {
-                break;
-            }
-            if (!stage) {
-                return stage;
-            }
-            Log::Debug("Parsed {} bootloader at offset 0x{:X} (version {}, size 0x{:X})", name,
-                       cursor, version, bldr_size);
-
-            cursor += align_16(bldr_size);
+        const auto& image_bytes = std::as_const(flash_driver).serialize();
+        if (auto chain =
+                scan_boot_chain(flash_driver, image_bytes.size(), cb_section, kernel_section);
+            !chain) {
+            return chain;
         }
 
         const auto slot_mode = flash_driver.driver_mode();
@@ -703,7 +753,7 @@ namespace gxbuild3::nand {
                 const uint32_t cf_size = slot_hdr->size.get();
                 if (cf_size > 0 && base_offset + cf_size <= image_bytes.size()) {
                     auto cf_data = flash_driver.read_clean(base_offset, cf_size);
-                    if (auto parsed = parse_stage(slot.cf, cf_data, "CF", base_offset); !parsed) {
+                    if (auto parsed = parse_section(slot.cf, cf_data, "CF", base_offset); !parsed) {
                         return parsed;
                     }
 
@@ -792,7 +842,7 @@ namespace gxbuild3::nand {
                                         }
                                     }
                                     if (auto parsed =
-                                            parse_stage(slot.cg, cg_data, "CG", cg_offset);
+                                            parse_section(slot.cg, cg_data, "CG", cg_offset);
                                         !parsed) {
                                         return parsed;
                                     }
