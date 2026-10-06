@@ -25,28 +25,6 @@ namespace gxbuild3 {
                (static_cast<std::uint32_t>(ptr[2]) << 8) | static_cast<std::uint32_t>(ptr[3]);
     }
 
-    [[nodiscard]] inline std::uint64_t read_be64(const std::byte* ptr) noexcept {
-        std::uint64_t result = 0;
-        for (int i = 0; i < 8; ++i) {
-            result = (result << 8) | static_cast<std::uint64_t>(ptr[i]);
-        }
-        return result;
-    }
-
-    [[nodiscard]] inline std::uint16_t read_le16(const std::byte* ptr) noexcept {
-        return static_cast<std::uint16_t>(ptr[0]) | (static_cast<std::uint16_t>(ptr[1]) << 8);
-    }
-
-    [[nodiscard]] inline std::uint32_t read_be24(const std::byte* ptr) noexcept {
-        return (static_cast<std::uint32_t>(ptr[0]) << 16) |
-               (static_cast<std::uint32_t>(ptr[1]) << 8) | static_cast<std::uint32_t>(ptr[2]);
-    }
-
-    [[nodiscard]] inline std::uint32_t read_le24(const std::byte* ptr) noexcept {
-        return static_cast<std::uint32_t>(ptr[0]) | (static_cast<std::uint32_t>(ptr[1]) << 8) |
-               (static_cast<std::uint32_t>(ptr[2]) << 16);
-    }
-
 #if defined(_MSC_VER)
     [[nodiscard]] inline uint16_t bswap16(uint16_t x) noexcept {
         return _byteswap_ushort(x);
