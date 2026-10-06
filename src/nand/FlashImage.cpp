@@ -184,7 +184,7 @@ namespace gxbuild3::nand {
         uint32_t slot_size(const FlashImage& image) {
             if (image.preserve_layout)
                 return image.header.fs_addr && image.header.fs_addr != 0xFFFFFFFF
-                           ? image.header.fs_addr
+                           ? image.header.fs_addr.get()
                            : 0x10000;
             if (is_jtag_image(image)) {
                 return 0x10000;
@@ -401,29 +401,13 @@ namespace gxbuild3::nand {
             return fail(ErrorCode::Truncated, "the NAND header could not be read");
         }
 
-        nand_header raw{};
-        std::memcpy(&raw, header_span.data(), sizeof(nand_header));
+        auto decoded = wire::read<nand_header>(header_span, 0, "NAND header");
+        if (!decoded) {
+            return std::unexpected(std::move(decoded.error()));
+        }
 
         preserve_layout = true;
-        header.magic = bswap16(raw.magic);
-        header.version = bswap16(raw.version);
-        header.pairing = bswap16(raw.pairing);
-        header.flags = bswap16(raw.flags);
-        header.entrypoint = bswap32(raw.entrypoint);
-        header.size = bswap32(raw.size);
-        std::memcpy(header.copyright, raw.copyright, sizeof(header.copyright));
-        header.hack_flags = bswap32(raw.hack_flags);
-        header.boot_flags = bswap32(raw.boot_flags);
-        std::memcpy(header.reserved, raw.reserved, sizeof(header.reserved));
-        header.kv_size = bswap32(raw.kv_size);
-        header.cf_offset = bswap32(raw.cf_offset);
-        header.patch_slots = bswap16(raw.patch_slots);
-        header.kv_version = bswap16(raw.kv_version);
-        header.kv_addr = bswap32(raw.kv_addr);
-        header.fs_addr = bswap32(raw.fs_addr);
-        header.smc_config_offset = bswap32(raw.smc_config_offset);
-        header.smc_boot_size = bswap32(raw.smc_boot_size);
-        header.smc_boot_offset = bswap32(raw.smc_boot_offset);
+        header = *decoded;
 
         Log::Debug("Parsed NAND header: magic=0x{:04X}, version=0x{:04X}, entry=0x{:08X}, "
                    "kv_addr=0x{:08X}",
@@ -431,7 +415,7 @@ namespace gxbuild3::nand {
 
         const uint32_t smc_size =
             (header.smc_boot_size > 0 && header.smc_boot_size <= kKeyvaultOffset)
-                ? header.smc_boot_size
+                ? header.smc_boot_size.get()
                 : 0x3000;
         const uint32_t smc_offset = kKeyvaultOffset - smc_size;
         auto smc_bytes = flash_driver.read_clean(smc_offset, smc_size);
@@ -520,7 +504,7 @@ namespace gxbuild3::nand {
 
         const auto slot_mode = flash_driver.driver_mode();
         const uint32_t slot_stride =
-            header.fs_addr && header.fs_addr != 0xFFFFFFFF ? header.fs_addr : 0x10000;
+            header.fs_addr && header.fs_addr != 0xFFFFFFFF ? header.fs_addr.get() : 0x10000;
         const uint32_t patchslot_base = header.cf_offset != 0 && header.cf_offset != 0xFFFFFFFF
                                             ? header.cf_offset
                                             : retail_slot_offset(slot_mode);
@@ -951,41 +935,32 @@ namespace gxbuild3::nand {
         const uint32_t smc_offset = kKeyvaultOffset - static_cast<uint32_t>(smc_len);
         const auto smc_cfg_offset = smc_config_offset(driver);
 
-        nand_header raw{};
-        raw.magic = bswap16(header.magic ? header.magic : 0xFF4F);
-        raw.version = bswap16(header.version ? header.version : 0x0760);
-        raw.pairing = bswap16(header.pairing);
-        raw.flags = bswap16(header.flags);
-        raw.entrypoint = bswap32(header.entrypoint ? header.entrypoint : kEntryOffset);
+        nand_header raw = header;
+        raw.magic = header.magic ? header.magic.get() : uint16_t{0xFF4F};
+        raw.version = header.version ? header.version.get() : uint16_t{0x0760};
+        raw.entrypoint = header.entrypoint ? header.entrypoint.get() : kEntryOffset;
         // The legacy bootloader-chain scanner used by tools such as J-Runner
         // advances from the NAND header using this size.  It must therefore
         // terminate at the first system-update slot, not retain a donor image's
         // earlier boot-chain boundary.
-        raw.size = bswap32(patchslot_base);
-        std::memcpy(raw.copyright, header.copyright, sizeof(raw.copyright));
-        raw.hack_flags = bswap32(header.hack_flags);
-        raw.boot_flags = bswap32(header.boot_flags);
-        std::memcpy(raw.reserved, header.reserved, sizeof(raw.reserved));
-        raw.kv_size = bswap32(header.kv_size ? header.kv_size : Keyvault::kSize);
-        raw.cf_offset = bswap32(patchslot_base);
+        raw.size = patchslot_base;
+        raw.kv_size =
+            header.kv_size ? header.kv_size.get() : static_cast<uint32_t>(Keyvault::kSize);
+        raw.cf_offset = patchslot_base;
         // Two update slots on every image, as xeBuild states them. On a glitch image the
         // second is the KHV patch slot, which the kernel passes over for want of a CF.
-        raw.patch_slots = bswap16(2);
-        raw.kv_version = bswap16(header.kv_version ? header.kv_version : 0x0712);
-        raw.kv_addr = bswap32(header.kv_addr ? header.kv_addr : kKeyvaultOffset);
-        raw.fs_addr = bswap32(slot_stride); // Runtime dwSysUpdateSlotSize (header + 0x70).
+        raw.patch_slots = uint16_t{2};
+        raw.kv_version = header.kv_version ? header.kv_version.get() : uint16_t{0x0712};
+        raw.kv_addr = header.kv_addr ? header.kv_addr.get() : kKeyvaultOffset;
+        raw.fs_addr = slot_stride; // Runtime dwSysUpdateSlotSize (header + 0x70).
         // Zero on every image, a donor's value or not: xeBuild never states the settings
         // block here (xerunner build.py `header`), and the three console dumps measured
         // carry zero. The block is found by its place in the layout instead.
-        raw.smc_config_offset = 0;
-        raw.smc_boot_size = bswap32(static_cast<uint32_t>(smc_len));
-        raw.smc_boot_offset = bswap32(smc_offset);
+        raw.smc_config_offset = uint32_t{0};
+        raw.smc_boot_size = static_cast<uint32_t>(smc_len);
+        raw.smc_boot_offset = smc_offset;
 
-        if (auto laid = write_or_fail(
-                driver, 0,
-                std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&raw), sizeof(raw)),
-                "NAND header");
-            !laid) {
+        if (auto laid = write_or_fail(driver, 0, wire::bytes_of(raw), "NAND header"); !laid) {
             return laid;
         }
         // On a built image the header block is programmed zero from the header to the SMC.

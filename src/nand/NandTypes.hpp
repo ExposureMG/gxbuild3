@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Wire.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -8,40 +10,54 @@
 
 namespace gxbuild3::nand {
 
-#pragma pack(push, 1)
-
+    // The NAND header at offset 0 (big-endian on disk).
     struct nand_header {
-        uint16_t magic;
-        uint16_t version;
-        uint16_t pairing;
-        uint16_t flags;
-        uint32_t entrypoint;
-        uint32_t size;
+        wire::be16 magic;
+        wire::be16 version;
+        wire::be16 pairing;
+        wire::be16 flags;
+        wire::be32 entrypoint;
+        wire::be32 size;
         uint8_t copyright[0x38];
         // 1 on a hacked image (the glitch types and JTAG), 0 on retail and devkit.
-        uint32_t hack_flags;
+        wire::be32 hack_flags;
         // The XeLL and boot switches the hacked CB/CD read, high byte first: 0x4C dualboot
         // reason, 0x4D boot options, 0x4E second XeLL reason, 0x4F XeLL reason. Zero on retail
         // and devkit.
-        uint32_t boot_flags;
+        wire::be32 boot_flags;
         uint8_t reserved[0x10];
-        uint32_t kv_size;
-        uint32_t cf_offset;
-        uint16_t patch_slots;
-        uint16_t kv_version;
-        uint32_t kv_addr;
-        uint32_t fs_addr;
-        uint32_t smc_config_offset;
-        uint32_t smc_boot_size;
-        uint32_t smc_boot_offset;
+        wire::be32 kv_size;
+        wire::be32 cf_offset;
+        wire::be16 patch_slots;
+        wire::be16 kv_version;
+        wire::be32 kv_addr;
+        wire::be32 fs_addr;
+        wire::be32 smc_config_offset;
+        wire::be32 smc_boot_size;
+        wire::be32 smc_boot_offset;
     };
 
-#pragma pack(pop)
-
+    static_assert(wire::WireLayout<nand_header>);
+    static_assert(sizeof(nand_header) == 0x80);
+    static_assert(offsetof(nand_header, magic) == 0x00);
+    static_assert(offsetof(nand_header, version) == 0x02);
+    static_assert(offsetof(nand_header, pairing) == 0x04);
+    static_assert(offsetof(nand_header, flags) == 0x06);
+    static_assert(offsetof(nand_header, entrypoint) == 0x08);
+    static_assert(offsetof(nand_header, size) == 0x0C);
+    static_assert(offsetof(nand_header, copyright) == 0x10);
     static_assert(offsetof(nand_header, hack_flags) == 0x48);
     static_assert(offsetof(nand_header, boot_flags) == 0x4C);
+    static_assert(offsetof(nand_header, reserved) == 0x50);
+    static_assert(offsetof(nand_header, kv_size) == 0x60);
+    static_assert(offsetof(nand_header, cf_offset) == 0x64);
     static_assert(offsetof(nand_header, patch_slots) == 0x68);
-    static_assert(sizeof(nand_header) == 0x80);
+    static_assert(offsetof(nand_header, kv_version) == 0x6A);
+    static_assert(offsetof(nand_header, kv_addr) == 0x6C);
+    static_assert(offsetof(nand_header, fs_addr) == 0x70);
+    static_assert(offsetof(nand_header, smc_config_offset) == 0x74);
+    static_assert(offsetof(nand_header, smc_boot_size) == 0x78);
+    static_assert(offsetof(nand_header, smc_boot_offset) == 0x7C);
 
     // One settings blob copy (mobile type 0x31-0x39). On NAND it fills `page_count` pages from
     // `first_page` of `start_block`, and only those pages carry its spare: the type, the version,
