@@ -156,8 +156,6 @@ namespace {
     template <class V>
     concept CanBswap64 = requires(V v) { gxbuild3::bswap64(v); };
     template <class V>
-    concept CanSwap32 = requires(V v) { gxbuild3::swap32(v); };
-    template <class V>
     concept CanStdByteswap = requires(V v) { std::byteswap(v); };
     template <class V>
     concept CanCompoundAssign = requires(V& v) { v += 4u; };
@@ -166,13 +164,12 @@ namespace {
 
     // The legacy helpers still take host integers.
     static_assert(CanBswap16<std::uint16_t> && CanBswap32<std::uint32_t> &&
-                  CanBswap64<std::uint64_t> && CanSwap32<std::uint32_t>);
+                  CanBswap64<std::uint64_t>);
     // A manual swap on a wire field does not compile: the deleted overloads win.
     static_assert(!CanBswap16<wire::be16> && !CanBswap16<wire::le16>);
     static_assert(!CanBswap32<wire::be32> && !CanBswap32<wire::le32>);
     static_assert(!CanBswap64<wire::be64> && !CanBswap64<wire::le64>);
-    static_assert(!CanSwap32<wire::be32> && !CanSwap32<wire::le32>);
-    static_assert(!CanBswap32<wire::be24> && !CanSwap32<wire::le24>);
+    static_assert(!CanBswap32<wire::be24> && !CanBswap32<wire::le24>);
     static_assert(!CanStdByteswap<wire::be16> && !CanStdByteswap<wire::be32> &&
                   !CanStdByteswap<wire::be64>);
     // No compound assignment, no implicit construction, no pointer pun, no deduced std::max.

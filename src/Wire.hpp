@@ -20,7 +20,7 @@
 // Assignment from a wider type narrows silently (-Wconversion is off): cast explicitly, as in
 // `h.size = static_cast<uint32_t>(n);`. `auto x = h.size` yields a be32, not a host integer; use a
 // typed local or .get(), and use .get() before passing a field to a deduced template such as
-// std::max. A manual bswap16/32/64 or swap32 on a field is a compile error (deleted overloads at
+// std::max. A manual bswap16/32/64 on a field is a compile error (deleted overloads at
 // the end of this header), as is std::byteswap, compound assignment and `be32 v = 5u`.
 //
 // This header is std-only (plus Error.hpp) on purpose so any internal header can include it.
@@ -381,8 +381,6 @@ namespace gxbuild3 {
     template <class T, std::endian E> void bswap16(wire::endian_int<T, E>) = delete;
     template <class T, std::endian E> void bswap32(wire::endian_int<T, E>) = delete;
     template <class T, std::endian E> void bswap64(wire::endian_int<T, E>) = delete;
-    template <class T, std::endian E> void swap32(wire::endian_int<T, E>) = delete;
     template <std::endian E> void bswap32(wire::uint24<E>) = delete;
-    template <std::endian E> void swap32(wire::uint24<E>) = delete;
 
 } // namespace gxbuild3

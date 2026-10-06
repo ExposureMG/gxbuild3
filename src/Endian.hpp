@@ -10,11 +10,6 @@
 
 namespace gxbuild3 {
 
-    [[nodiscard]] inline uint32_t swap32(uint32_t x) noexcept {
-        return (x & 0xFF000000U) >> 24 | (x & 0x00FF0000U) >> 8 | (x & 0x0000FF00U) << 8 |
-               (x & 0x000000FFU) << 24;
-    }
-
     [[nodiscard]] inline std::uint16_t read_be16(const std::byte* ptr) noexcept {
         return (static_cast<std::uint16_t>(ptr[0]) << 8) | static_cast<std::uint16_t>(ptr[1]);
     }

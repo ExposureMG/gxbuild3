@@ -10,8 +10,10 @@ cmake_minimum_required(VERSION 3.29)
 # WireConventionGuard (see src/Wire.hpp): on-disk records are plain structs of wire:: field types,
 # so the legacy byte-order machinery is a second shrinking inventory.
 #   4. `#pragma pack` may only appear in the files that still declare packed records.
-#   5. The manual byte-order helpers (bswap16/32/64, swap32, read_be*/read_le*, including their
-#      __builtin_bswap* bodies) may only be named in the files that still use them.
+#   5. The manual byte-order helpers (bswap16/32/64, read_be*/read_le*, including their
+#      __builtin_bswap* bodies, and the deleted swap32) may only be named in the files that still
+#      use them.
+#   6. No file under src/nand/objects/ includes Endian.hpp: every objects record is a wire struct.
 # A converting commit removes its file's entry in the same commit.
 #
 # Every allowlist entry must still match its rule: once a shim is deleted the guard fails until
@@ -39,7 +41,7 @@ set(catch_all_allowlist
 
 # WireConventionGuard inventories. XConfig.hpp keeps its packed bitfields on purpose; every other
 # entry goes away as its records move to src/Wire.hpp. src/Wire.hpp itself stays: it declares
-# the deleted bswap*/swap32 overloads that reject a manual swap on a wire field.
+# the deleted bswap* overloads that reject a manual swap on a wire field.
 set(pragma_pack_allowlist
     src/nand/objects/XConfig.hpp
 )
@@ -49,6 +51,10 @@ set(byte_swap_allowlist
     src/Wire.hpp
 )
 
+# No exceptions: objects/ reads and writes on-disk fields only through src/Wire.hpp.
+set(objects_endian_include_allowlist
+)
+
 set(rule_shim_name_regex "[A-Za-z0-9_]_or_throw[^A-Za-z0-9_]")
 set(rule_throw_regex "[^A-Za-z0-9_]throw[^A-Za-z0-9_]")
 set(rule_catch_all_regex "[^A-Za-z0-9_]catch[ \t]*\\([ \t]*\\.\\.\\.[ \t]*\\)")
@@ -56,20 +62,27 @@ set(rule_pragma_pack_regex "#[ \t]*pragma[ \t]+pack")
 # Substring match on purpose: it also catches __builtin_bswap16 and helpers such as
 # try_read_be32 that wrap the legacy readers.
 set(rule_byte_swap_regex "bswap(16|32|64)|swap32|read_(be|le)(16|24|32|64)")
+set(rule_objects_endian_include_regex "#[ \t]*include[ \t]*[\"<]([^\">]*/)?Endian\\.hpp[\">]")
 
 set(rule_shim_name_label "throwing shim name (*_or_throw / value_or_throw)")
 set(rule_throw_label "`throw`")
 set(rule_catch_all_label "`catch (...)`")
 set(rule_pragma_pack_label "`#pragma pack` (use wire:: field types, src/Wire.hpp)")
 set(rule_byte_swap_label "manual byte-order helper (use wire:: field types, src/Wire.hpp)")
+set(rule_objects_endian_include_label
+    "Endian.hpp include under src/nand/objects/ (use wire:: field types, src/Wire.hpp)")
 
 set(rule_shim_name_allow ${shim_name_allowlist})
 set(rule_throw_allow ${throw_allowlist})
 set(rule_catch_all_allow ${catch_all_allowlist})
 set(rule_pragma_pack_allow ${pragma_pack_allowlist})
 set(rule_byte_swap_allow ${byte_swap_allowlist})
+set(rule_objects_endian_include_allow ${objects_endian_include_allowlist})
 
-set(rules shim_name throw catch_all pragma_pack byte_swap)
+# Optional per-rule path scope (a regex on the repository-relative path); unset means every file.
+set(rule_objects_endian_include_scope "^src/nand/objects/")
+
+set(rules shim_name throw catch_all pragma_pack byte_swap objects_endian_include)
 foreach(rule IN LISTS rules)
     set(hits_${rule} "")
 endforeach()
@@ -100,6 +113,9 @@ foreach(relative IN LISTS scanned_files)
         string(REGEX REPLACE "//.*$" "" code "${line}")
         set(code " ${code} ")
         foreach(rule IN LISTS rules)
+            if(DEFINED rule_${rule}_scope AND NOT relative MATCHES "${rule_${rule}_scope}")
+                continue()
+            endif()
             if(NOT code MATCHES "${rule_${rule}_regex}")
                 continue()
             endif()
