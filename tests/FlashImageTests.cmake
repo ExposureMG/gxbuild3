@@ -20,8 +20,11 @@ cmake_minimum_required(VERSION 3.29)
 #   - inputs absent: reported as "not compared" with the reason; never a failure.
 #   - a build_all.sh image without a manifest entry fails (unpinned image).
 #   - a manifest entry without a build_all.sh line is reported as "not compared".
-# The run prints `compared N/M`. When no entry has its inputs (a clean clone, where the
-# per-console fixture directories are absent) the test exits 77 so CTest reports a skip.
+# build_all.sh runs twice; every runnable image must be byte-identical across the two runs
+# (`deterministic N/R`, R = entries with all inputs) and the first run must match the
+# manifest. The run prints `compared N/M`. When no entry has its inputs (a clean clone,
+# where the per-console fixture directories are absent) the test exits 77 so CTest
+# reports a skip.
 #
 # Capture mode (-DGXBUILD3_UPDATE_GOLDEN=1, never set by CTest; see the
 # gxbuild3_flashimage_golden_update target): every input must be present, build_all.sh
@@ -314,9 +317,25 @@ if(runnable_count EQUAL 0)
         "the per-console fixture directories are absent")
 endif()
 
+# Determinism: build_all.sh runs twice, in two fresh scratch copies at different paths
+# and times. An image whose two runs differ fails as nondeterministic rather than as a
+# plain manifest mismatch, so a new source of randomness or wall-clock time is named as
+# such. The first run is the one compared with the manifest.
 run_build_all("${GXBUILD3_SCRATCH_DIR}/compare" actual)
+run_build_all("${GXBUILD3_SCRATCH_DIR}/compare-rerun" rerun)
 
-set(problems ${actual_problems})
+set(problems ${actual_problems} ${rerun_problems})
+set(deterministic 0)
+foreach(image IN LISTS runnable_entries)
+    if(actual_${image} STREQUAL rerun_${image})
+        math(EXPR deterministic "${deterministic} + 1")
+    else()
+        list(APPEND problems
+            "${image}: nondeterministic: run 1 ${actual_${image}}, run 2 ${rerun_${image}}")
+    endif()
+endforeach()
+message(STATUS "deterministic ${deterministic}/${runnable_count}")
+
 set(compared 0)
 foreach(image IN LISTS runnable_entries)
     set(got "${actual_${image}}")
@@ -346,6 +365,7 @@ message(STATUS "compared ${compared}/${total_count}")
 if(problems)
     list(JOIN problems "\n  " problem_text)
     message(FATAL_ERROR "FlashImage byte oracle failed; scratch kept in "
-        "${GXBUILD3_SCRATCH_DIR}/compare:\n  ${problem_text}")
+        "${GXBUILD3_SCRATCH_DIR}/compare and ${GXBUILD3_SCRATCH_DIR}/compare-rerun:\n"
+        "  ${problem_text}")
 endif()
-file(REMOVE_RECURSE "${GXBUILD3_SCRATCH_DIR}/compare")
+file(REMOVE_RECURSE "${GXBUILD3_SCRATCH_DIR}/compare" "${GXBUILD3_SCRATCH_DIR}/compare-rerun")
