@@ -4,22 +4,21 @@
 
 #include <cstdint>
 #include <fstream>
-#include <stdexcept>
 
 namespace gxbuild3::stfs::detail {
 
-    std::vector<std::byte> read_file_table(std::span<const std::byte> package,
-                                           std::uint32_t header_size,
-                                           const StfsVolumeDescriptor& descriptor) {
+    Result<std::vector<std::byte>> read_file_table(std::span<const std::byte> package,
+                                                   std::uint32_t header_size,
+                                                   const StfsVolumeDescriptor& descriptor) {
         // Bit 0 set marks the read-only layout (one hash table per level), which is what system
         // update and other Microsoft-signed packages use. The writable layout keeps two tables
         // per level and places blocks differently; it is not implemented.
         if ((descriptor.block_separation & 0x01) == 0) {
-            throw std::runtime_error(
-                "STFS packages with block_separation bit 0 clear are not supported");
+            return fail(ErrorCode::Unsupported,
+                        "STFS packages with block_separation bit 0 clear are not supported");
         }
         if (descriptor.file_table_block_count <= 0 || descriptor.file_table_block_number < 0) {
-            throw std::runtime_error("STFS package has an invalid file table descriptor");
+            return fail(ErrorCode::Malformed, "STFS package has an invalid file table descriptor");
         }
 
         constexpr std::size_t kBlockSize = 0x1000;
@@ -34,13 +33,14 @@ namespace gxbuild3::stfs::detail {
         table_entry.file_size =
             table_entry.blocks_allocated * static_cast<std::uint32_t>(kBlockSize);
 
-        return extract_file(package, table_entry, Magic::PIRS, header_size);
+        return with_context(extract_file(package, table_entry, Magic::PIRS, header_size),
+                            "reading the STFS file table");
     }
 
-    void write_file(const std::filesystem::path& path, std::span<const std::byte> data) {
+    Result<void> write_file(const std::filesystem::path& path, std::span<const std::byte> data) {
         std::ofstream out(path, std::ios::binary);
         if (!out) {
-            throw std::runtime_error("Cannot open output file: " + path.string());
+            return fail(ErrorCode::IoError, "cannot open output file {}", path.string());
         }
 
         if (!data.empty()) {
@@ -49,11 +49,13 @@ namespace gxbuild3::stfs::detail {
         }
         out.close();
         if (!out) {
-            throw std::runtime_error("Failed to write output file: " + path.string());
+            return fail(ErrorCode::IoError, "failed to write output file {}", path.string());
         }
+        return {};
     }
 
-    std::vector<std::filesystem::path> build_entry_paths(const std::vector<FileEntry>& entries) {
+    Result<std::vector<std::filesystem::path>>
+    build_entry_paths(const std::vector<FileEntry>& entries) {
         constexpr std::uint16_t kRootIndicator = 0xFFFF;
 
         std::vector<std::filesystem::path> paths;
@@ -66,7 +68,9 @@ namespace gxbuild3::stfs::detail {
             const auto parent = static_cast<std::uint16_t>(entry.path_indicator);
             if (parent != kRootIndicator) {
                 if (parent >= i) {
-                    throw std::runtime_error("STFS file table references an invalid parent index");
+                    return fail(ErrorCode::Malformed,
+                                "STFS file table entry {} references an invalid parent index {}", i,
+                                parent);
                 }
                 path = paths[parent] / path;
             }
@@ -77,20 +81,23 @@ namespace gxbuild3::stfs::detail {
         return paths;
     }
 
-    std::filesystem::path safe_join(const std::filesystem::path& parent,
-                                    const std::filesystem::path& relative) {
+    Result<std::filesystem::path> safe_join(const std::filesystem::path& parent,
+                                            const std::filesystem::path& relative) {
         if (relative.is_absolute() || relative.has_root_path() || relative.has_root_name()) {
-            throw std::runtime_error("STFS entry uses an absolute path");
+            return fail(ErrorCode::InvalidArgument, "STFS entry {} uses an absolute path",
+                        relative.string());
         }
 
         const auto normalized = relative.lexically_normal();
         for (const auto& part : normalized) {
             if (part == "..") {
-                throw std::runtime_error("STFS entry escapes the target directory");
+                return fail(ErrorCode::InvalidArgument,
+                            "STFS entry {} escapes the target directory", relative.string());
             }
         }
         if (normalized.empty() || normalized == ".") {
-            throw std::runtime_error("STFS entry has an empty path");
+            return fail(ErrorCode::InvalidArgument, "STFS entry {} has an empty path",
+                        relative.string());
         }
 
         return parent / normalized;

@@ -7,7 +7,6 @@
 #include <array>
 #include <bit>
 #include <cstring>
-#include <stdexcept>
 
 namespace gxbuild3::stfs {
 
@@ -118,9 +117,12 @@ namespace gxbuild3::stfs {
         }
     } // namespace
 
-    Metadata parse_metadata(std::span<const std::byte> data) {
-        if (data.size() < 0x571A + 0x4000) {
-            throw std::runtime_error("Insufficient data for metadata parsing (v1 assumed)");
+    Result<Metadata> parse_metadata(std::span<const std::byte> data) {
+        constexpr std::size_t kMinMetadataSize = 0x571A + 0x4000;
+        if (data.size() < kMinMetadataSize) {
+            return fail(ErrorCode::Truncated,
+                        "STFS metadata needs 0x{:X} bytes (v1 assumed), got 0x{:X}",
+                        kMinMetadataSize, data.size());
         }
 
         const auto* base = data.data();
@@ -135,7 +137,8 @@ namespace gxbuild3::stfs {
         constexpr std::uint32_t kMinHeaderSize = 0x971A;
         constexpr std::uint32_t kMaxHeaderSize = 0xFFFF0;
         if (meta.header_size < kMinHeaderSize || meta.header_size > kMaxHeaderSize) {
-            throw std::runtime_error("STFS header size is out of range");
+            return fail(ErrorCode::Malformed, "STFS header size 0x{:X} is out of range",
+                        meta.header_size);
         }
         meta.content_type = static_cast<ContentType>(read_be32(base + 0x0344));
         meta.metadata_version = static_cast<std::int32_t>(read_be32(base + 0x0348));

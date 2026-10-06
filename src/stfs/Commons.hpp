@@ -2,9 +2,7 @@
 
 #include <array>
 #include <cstdint>
-#include <filesystem>
 #include <optional>
-#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -172,12 +170,5 @@ namespace gxbuild3::stfs {
 
         std::uint8_t name_length() const { return flags & 0x3F; }
     };
-
-    std::vector<FileEntry> parse_file_listing(std::span<const std::byte> data);
-
-    Header parse_header(std::span<const std::byte> data);
-    Header read_header_from_file(const std::filesystem::path& path);
-
-    Metadata parse_metadata(std::span<const std::byte> data);
 
 } // namespace gxbuild3::stfs

@@ -2,8 +2,6 @@
 
 #include "stfs/Commons.hpp"
 
-#include <stdexcept>
-
 namespace gxbuild3::stfs {
 
     namespace {
@@ -14,9 +12,9 @@ namespace gxbuild3::stfs {
 
     } // namespace
 
-    std::uint64_t block_to_offset(std::uint32_t block, std::uint32_t header_size) {
+    Result<std::uint64_t> block_to_offset(std::uint32_t block, std::uint32_t header_size) {
         if (block > 0xFFFFFF) {
-            throw std::runtime_error("Block number out of range");
+            return fail(ErrorCode::OutOfRange, "block number 0x{:X} is out of range", block);
         }
         // Block 0 starts at the header size rounded up to the next 4 KiB boundary.
         const std::uint64_t first_block =
@@ -24,7 +22,7 @@ namespace gxbuild3::stfs {
         return first_block + (static_cast<std::uint64_t>(block) << 12);
     }
 
-    std::uint32_t compute_level_n_hash_block_number(std::uint32_t block, int level) {
+    Result<std::uint32_t> compute_level_n_hash_block_number(std::uint32_t block, int level) {
         std::uint64_t blockNum64 = block;
         std::uint64_t num = 0;
 
@@ -46,7 +44,7 @@ namespace gxbuild3::stfs {
         } else if (level == 2) {
             return static_cast<std::uint32_t>(kStfsBlockStep1);
         } else {
-            throw std::runtime_error("Invalid hash table level");
+            return fail(ErrorCode::InvalidArgument, "invalid hash table level {}", level);
         }
 
         return static_cast<std::uint32_t>(num) + static_cast<std::uint32_t>(kBlocksPerHashTable);

@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <format>
-#include <stdexcept>
 
 namespace gxbuild3::stfs {
 
@@ -23,14 +22,22 @@ namespace gxbuild3::stfs {
             std::uint8_t status;
         };
 
-        HashEntry read_hash_entry(std::span<const std::byte> package, std::uint32_t hash_block,
-                                  std::uint32_t data_block, std::uint32_t header_size) {
+        [[nodiscard]] Result<HashEntry> read_hash_entry(std::span<const std::byte> package,
+                                                        std::uint32_t hash_block,
+                                                        std::uint32_t data_block,
+                                                        std::uint32_t header_size) {
             std::uint32_t entry_index = data_block % 0xAA;
-            const std::uint64_t offset = block_to_offset(hash_block, header_size) +
-                                         std::uint64_t{entry_index} * kHashEntrySize;
+            const auto table_offset = block_to_offset(hash_block, header_size);
+            if (!table_offset) {
+                return std::unexpected(table_offset.error());
+            }
+            const std::uint64_t offset =
+                *table_offset + std::uint64_t{entry_index} * kHashEntrySize;
 
             if (offset + kHashEntrySize > package.size()) {
-                throw std::runtime_error("Hash entry offset out of bounds");
+                return fail(ErrorCode::OutOfRange,
+                            "hash entry for block {} at 0x{:X} is outside the package", data_block,
+                            offset);
             }
 
             const auto* ptr = package.data() + offset;
@@ -43,10 +50,10 @@ namespace gxbuild3::stfs {
             constexpr std::uint8_t kStatusNewlyAllocated = 0xC0;
 
             if (entry.status != kStatusUsed && entry.status != kStatusNewlyAllocated) {
-                throw std::runtime_error(
-                    std::format("Block {} has invalid hash entry status (0x{:02X}) - expected used "
-                                "or newly allocated",
-                                data_block, entry.status));
+                return fail(ErrorCode::Malformed,
+                            "block {} has invalid hash entry status (0x{:02X}) - expected used or "
+                            "newly allocated",
+                            data_block, entry.status);
             }
 
             return entry;
@@ -54,9 +61,9 @@ namespace gxbuild3::stfs {
 
     } // namespace
 
-    std::vector<std::uint32_t> follow_block_chain(std::span<const std::byte> package,
-                                                  std::uint32_t starting_block,
-                                                  std::uint32_t header_size) {
+    Result<std::vector<std::uint32_t>> follow_block_chain(std::span<const std::byte> package,
+                                                          std::uint32_t starting_block,
+                                                          std::uint32_t header_size) {
         std::vector<std::uint32_t> chain;
         std::uint32_t current_block = starting_block;
 
@@ -65,15 +72,24 @@ namespace gxbuild3::stfs {
 
         while (current_block != kChainTerminator) {
             if (steps >= max_steps) {
-                throw std::runtime_error("Block chain exceeded maximum possible length");
+                return fail(ErrorCode::Malformed,
+                            "block chain from block {} exceeds the maximum possible length",
+                            starting_block);
             }
 
             chain.push_back(current_block);
 
-            std::uint32_t hash_block = compute_level_n_hash_block_number(current_block, 0);
-            HashEntry hash_entry = read_hash_entry(package, hash_block, current_block, header_size);
+            const auto hash_block = compute_level_n_hash_block_number(current_block, 0);
+            if (!hash_block) {
+                return std::unexpected(hash_block.error());
+            }
+            const auto hash_entry =
+                read_hash_entry(package, *hash_block, current_block, header_size);
+            if (!hash_entry) {
+                return std::unexpected(hash_entry.error());
+            }
 
-            current_block = hash_entry.next_block;
+            current_block = hash_entry->next_block;
             ++steps;
         }
 
@@ -84,23 +100,24 @@ namespace gxbuild3::stfs {
 
         // Logical blocks holding a non-empty file. Files flagged as consecutive occupy
         // starting_block onwards and need not have a usable hash chain; others follow the chain.
-        std::vector<std::uint32_t> file_blocks(std::span<const std::byte> package,
-                                               const FileEntry& entry, std::uint32_t header_size) {
+        [[nodiscard]] Result<std::vector<std::uint32_t>>
+        file_blocks(std::span<const std::byte> package, const FileEntry& entry,
+                    std::uint32_t header_size) {
             if (!entry.is_consecutive_blocks()) {
                 return follow_block_chain(package, entry.starting_block, header_size);
             }
 
             if (std::uint64_t{entry.blocks_allocated} * kBlockSize < entry.file_size) {
-                throw std::runtime_error("File " + entry.name +
-                                         " allocates fewer blocks than its size needs");
+                return fail(ErrorCode::Malformed,
+                            "file {} allocates fewer blocks than its size needs", entry.name);
             }
 
             const std::uint64_t needed =
                 (std::uint64_t{entry.file_size} + kBlockSize - 1) / kBlockSize;
             if (needed > package.size() / kBlockSize ||
                 std::uint64_t{entry.starting_block} + needed - 1 > kChainTerminator - 1) {
-                throw std::runtime_error("Consecutive blocks of " + entry.name +
-                                         " run past the end of the package");
+                return fail(ErrorCode::OutOfRange,
+                            "consecutive blocks of {} run past the end of the package", entry.name);
             }
 
             std::vector<std::uint32_t> blocks(static_cast<std::size_t>(needed));
@@ -112,42 +129,58 @@ namespace gxbuild3::stfs {
 
     } // namespace
 
-    std::vector<std::byte> extract_file(std::span<const std::byte> package, const FileEntry& entry,
-                                        Magic magic, std::uint32_t header_size, bool verify,
-                                        const std::array<std::byte, 0x14>* top_hash,
-                                        std::uint32_t total_blocks) {
+    Result<std::vector<std::byte>> extract_file(std::span<const std::byte> package,
+                                                const FileEntry& entry, Magic magic,
+                                                std::uint32_t header_size, bool verify,
+                                                const std::array<std::byte, 0x14>* top_hash,
+                                                std::uint32_t total_blocks) {
         if (magic == Magic::CON) {
-            throw std::runtime_error("CON packages are not yet supported");
+            return fail(ErrorCode::Unsupported, "CON packages are not yet supported");
         }
 
         if (verify && top_hash == nullptr) {
-            throw std::runtime_error("Verification requested but no top_hash provided");
+            return fail(ErrorCode::InvalidArgument,
+                        "verification requested but no top_hash provided");
         }
         if (verify && total_blocks == 0) {
-            throw std::runtime_error("total_blocks required for hash verification");
+            return fail(ErrorCode::InvalidArgument, "total_blocks required for hash verification");
         }
 
         if (entry.file_size == 0) {
-            return {};
+            return std::vector<std::byte>{};
         }
 
         const auto chain = file_blocks(package, entry, header_size);
+        if (!chain) {
+            return std::unexpected(chain.error());
+        }
 
         std::vector<std::byte> result;
-        result.reserve(std::min<std::size_t>(entry.file_size, chain.size() * kBlockSize));
+        result.reserve(std::min<std::size_t>(entry.file_size, chain->size() * kBlockSize));
 
-        for (std::uint32_t logical_block : chain) {
-            if (verify &&
-                !verify_data_block(package, logical_block, header_size, *top_hash, total_blocks)) {
-                throw std::runtime_error("Hash verification failed for block " +
-                                         std::to_string(logical_block) + " in file " + entry.name);
+        for (std::uint32_t logical_block : *chain) {
+            if (verify) {
+                auto verified =
+                    verify_data_block(package, logical_block, header_size, *top_hash, total_blocks);
+                if (!verified) {
+                    return std::unexpected(
+                        std::move(verified.error())
+                            .add_context(std::format("verifying block {} in file {}", logical_block,
+                                                     entry.name)));
+                }
             }
 
             std::uint32_t data_block = compute_data_block_number(logical_block);
-            const std::uint64_t offset = block_to_offset(data_block, header_size);
+            const auto block_offset = block_to_offset(data_block, header_size);
+            if (!block_offset) {
+                return std::unexpected(block_offset.error());
+            }
+            const std::uint64_t offset = *block_offset;
 
             if (offset + kBlockSize > package.size()) {
-                throw std::runtime_error("Data block offset out of bounds");
+                return fail(ErrorCode::OutOfRange,
+                            "data block {} of {} at 0x{:X} is outside the package", data_block,
+                            entry.name, offset);
             }
 
             const auto* block_ptr = package.data() + offset;
@@ -162,22 +195,24 @@ namespace gxbuild3::stfs {
         }
 
         if (result.size() < entry.file_size) {
-            throw std::runtime_error("Blocks of " + entry.name + " end after " +
-                                     std::to_string(result.size()) + " of " +
-                                     std::to_string(entry.file_size) + " bytes");
+            return fail(ErrorCode::Truncated, "blocks of {} end after {} of {} bytes", entry.name,
+                        result.size(), entry.file_size);
         }
 
         return result;
     }
 
-    void extract_file_to_disk(std::span<const std::byte> package, const FileEntry& entry,
-                              Magic magic, std::uint32_t header_size,
-                              const std::filesystem::path& output_path, bool verify,
-                              const std::array<std::byte, 0x14>* top_hash,
-                              std::uint32_t total_blocks) {
+    Result<void> extract_file_to_disk(std::span<const std::byte> package, const FileEntry& entry,
+                                      Magic magic, std::uint32_t header_size,
+                                      const std::filesystem::path& output_path, bool verify,
+                                      const std::array<std::byte, 0x14>* top_hash,
+                                      std::uint32_t total_blocks) {
         const auto data =
             extract_file(package, entry, magic, header_size, verify, top_hash, total_blocks);
-        detail::write_file(output_path, data);
+        if (!data) {
+            return std::unexpected(data.error());
+        }
+        return detail::write_file(output_path, *data);
     }
 
 } // namespace gxbuild3::stfs

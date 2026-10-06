@@ -23,8 +23,9 @@ namespace gxbuild3::stfs {
                 throw std::runtime_error("SVOD packages are not supported for file listing");
             }
 
-            auto table_data = detail::read_file_table(package, meta.header_size, *vd);
-            return parse_file_listing(table_data);
+            const auto table_data =
+                detail::value_or_throw(detail::read_file_table(package, meta.header_size, *vd));
+            return detail::value_or_throw(parse_file_listing(table_data));
         }
 
         const std::array<std::byte, 0x14>*
@@ -60,8 +61,8 @@ namespace gxbuild3::stfs {
     Package Package::from_data(std::vector<std::byte> data) {
         std::span<const std::byte> view(data);
 
-        auto header = parse_header(view);
-        auto metadata = parse_metadata(view);
+        auto header = detail::value_or_throw(parse_header(view));
+        auto metadata = detail::value_or_throw(parse_metadata(view));
         auto files = build_file_listing(view, metadata);
 
         return Package(std::move(data), std::move(header), std::move(metadata), std::move(files));
@@ -71,8 +72,9 @@ namespace gxbuild3::stfs {
         const auto* vd = std::get_if<StfsVolumeDescriptor>(&metadata_.volume_descriptor);
         auto total_blocks = vd ? static_cast<std::uint32_t>(vd->total_allocated_block_count) : 0u;
 
-        return stfs::extract_file(data_, entry, header_.magic, metadata_.header_size, verify,
-                                  top_hash_pointer(vd), total_blocks);
+        return detail::value_or_throw(stfs::extract_file(data_, entry, header_.magic,
+                                                         metadata_.header_size, verify,
+                                                         top_hash_pointer(vd), total_blocks));
     }
 
     void Package::extract_file_to_disk(const FileEntry& entry,
@@ -81,17 +83,18 @@ namespace gxbuild3::stfs {
         const auto* vd = std::get_if<StfsVolumeDescriptor>(&metadata_.volume_descriptor);
         auto total_blocks = vd ? static_cast<std::uint32_t>(vd->total_allocated_block_count) : 0u;
 
-        stfs::extract_file_to_disk(data_, entry, header_.magic, metadata_.header_size, output_path,
-                                   verify, top_hash_pointer(vd), total_blocks);
+        detail::value_or_throw(
+            stfs::extract_file_to_disk(data_, entry, header_.magic, metadata_.header_size,
+                                       output_path, verify, top_hash_pointer(vd), total_blocks));
     }
 
     void Package::extract_all(const std::filesystem::path& output_dir, bool verify) const {
         // Validate every destination before writing anything.
-        const auto relative_paths = detail::build_entry_paths(files_);
+        const auto relative_paths = detail::value_or_throw(detail::build_entry_paths(files_));
         std::vector<std::filesystem::path> destinations;
         destinations.reserve(relative_paths.size());
         for (const auto& relative : relative_paths) {
-            destinations.push_back(detail::safe_join(output_dir, relative));
+            destinations.push_back(detail::value_or_throw(detail::safe_join(output_dir, relative)));
         }
 
         for (std::size_t i = 0; i < files_.size(); ++i) {
