@@ -1104,11 +1104,49 @@ namespace gxbuild3::nand {
         }
 
         // What the write_to_driver stages share: the driver they lay into, the layout they lay
-        // by and the highest offset the boot chain and the update slots have reached so far.
+        // by and the highest offset the boot chain and the update slots have reached so far;
+        // then, for the data area, the usable block limit, the payload blocks kept out of it,
+        // the image's filesystem, the allocation block size and cursor and the spare layout
+        // the stages record.
         struct WriteContext {
             Driver& driver;
             const LayoutPlan& plan;
             size_t highest_used_offset;
+            size_t data_block_limit;
+            std::vector<BlockRange> payload_ranges;
+            FlashFileSystem* fs;
+            size_t fs_blk_size;
+            size_t current_blk;
+            NandLayout layout;
+
+            // The first run of `requested_blocks` blocks from `start_block` below the data
+            // limit that holds no bad block, no payload block and no block the filesystem uses.
+            [[nodiscard]] std::optional<size_t> find_data_free_run(size_t start_block,
+                                                                   size_t requested_blocks) const {
+                if (requested_blocks == 0 || requested_blocks > data_block_limit ||
+                    start_block > data_block_limit - requested_blocks) {
+                    return std::nullopt;
+                }
+                for (size_t candidate = start_block;
+                     candidate <= data_block_limit - requested_blocks; ++candidate) {
+                    bool all_free = true;
+                    for (size_t block = candidate; block < candidate + requested_blocks; ++block) {
+                        if (driver.is_bad_block(block) ||
+                            std::any_of(payload_ranges.begin(), payload_ranges.end(),
+                                        [block](const BlockRange& range) {
+                                            return range.contains(block);
+                                        }) ||
+                            (fs && !fs->is_block_free(block))) {
+                            all_free = false;
+                            break;
+                        }
+                    }
+                    if (all_free) {
+                        return candidate;
+                    }
+                }
+                return std::nullopt;
+            }
         };
 
         // The 0x80-byte NAND header a built or written-back image carries. Pure: every field
@@ -1308,6 +1346,273 @@ namespace gxbuild3::nand {
             return {};
         }
 
+        // Lays the console's settings block, then its statistics and manufacturing blocks one
+        // and two erase blocks below it, each only when the image carries it.
+        [[nodiscard]] Result<void> lay_console_blocks(WriteContext& ctx, const FlashImage& image,
+                                                      std::optional<size_t> smc_cfg_offset) {
+            auto& driver = ctx.driver;
+            const size_t block_size = driver.block_size_clean();
+            if (image.smc_config) {
+                if (!smc_cfg_offset) {
+                    return fail(ErrorCode::Unsupported, "this NAND shape has no SMC config block");
+                }
+                if (image.smc_config->size() != kSmcConfigLength ||
+                    !smc_config_sums(*image.smc_config)) {
+                    return fail(ErrorCode::Malformed,
+                                "SMC config block is not 0x{:X} bytes with a sound checksum",
+                                kSmcConfigLength);
+                }
+                std::vector<uint8_t> cfg_bytes(kSettingsSpan, 0xFF);
+                std::copy(image.smc_config->begin(), image.smc_config->end(), cfg_bytes.begin());
+                if (auto laid =
+                        lay_settings_block(driver, *smc_cfg_offset, cfg_bytes, "SMC config block");
+                    !laid) {
+                    return laid;
+                }
+            }
+            const std::array<std::pair<const std::optional<std::vector<uint8_t>>*, size_t>, 2>
+                console_blocks{{{&image.statistics, 1}, {&image.manufacturing, 2}}};
+            for (const auto& [bytes, steps] : console_blocks) {
+                if (!*bytes) {
+                    continue;
+                }
+                const std::string_view name =
+                    steps == 1 ? "statistics block" : "manufacturing block";
+                if (!smc_cfg_offset || *smc_cfg_offset < steps * block_size) {
+                    return fail(ErrorCode::Unsupported, "this NAND shape has no {}", name);
+                }
+                if ((*bytes)->size() != kSettingsSpan) {
+                    return fail(ErrorCode::Malformed,
+                                "Statistics and manufacturing blocks must be 0x{:X} bytes",
+                                kSettingsSpan);
+                }
+                if (auto laid = lay_settings_block(driver, *smc_cfg_offset - steps * block_size,
+                                                   **bytes, name);
+                    !laid) {
+                    return laid;
+                }
+            }
+            return {};
+        }
+
+        // Every older blob copy goes: a donor's mobile blocks are erased before the blobs are
+        // laid again, so no stale copy can outrank or trail the new ones.
+        void purge_stale_mobile_blocks(Driver& driver) {
+            if (driver.driver_mode() == Driver::DriverMode::Emmc) {
+                return;
+            }
+            const size_t total_blocks = driver.block_count();
+            for (size_t block = 0; block < total_blocks; ++block) {
+                if (!is_mobile_block_type(driver.interpret_block(block).block_type)) {
+                    continue;
+                }
+                if (driver.is_bad_block(block)) {
+                    BlockMetadata cleared{};
+                    cleared.logical_block_id = static_cast<uint16_t>(block);
+                    cleared.is_bad = true;
+                    driver.write_block_metadata(block, cleared);
+                    continue;
+                }
+                driver.erase_block(block);
+            }
+        }
+
+        // On NAND an image with a filesystem clears the spare of every cluster stamped as an
+        // older FlashFS root, keeping its bad mark.
+        void clear_stale_fs_roots(Driver& driver, bool has_filesystem) {
+            if (!has_filesystem || driver.driver_mode() == Driver::DriverMode::Emmc) {
+                return;
+            }
+            const size_t total_blocks = driver.block_count();
+            const size_t ratio = driver.block_size_clean() / 0x4000;
+            for (size_t cluster = 0; cluster < total_blocks * ratio; ++cluster) {
+                const auto old_meta = driver.interpret_cluster(cluster);
+                if (old_meta.block_type != 0x2C && old_meta.block_type != 0x30) {
+                    continue;
+                }
+                BlockMetadata cleared{};
+                cleared.logical_block_id = static_cast<uint16_t>(cluster / ratio);
+                cleared.is_bad = old_meta.is_bad;
+                driver.write_cluster_metadata(cluster, cleared);
+            }
+        }
+
+        // One version of each blob, as xeBuild lays them, in type order. Small block gives
+        // each its own block; big block packs them 0x800 apart in one erase block, where
+        // the free count is kept in those slots; eMMC gives each its own blocks and
+        // names them in the anchors, which hold types 0x31-0x34 only.
+        [[nodiscard]] Result<void> lay_mobile_data(WriteContext& ctx, const MobileData& mobile) {
+            auto& driver = ctx.driver;
+            const size_t fs_blk_size = ctx.fs_blk_size;
+            const bool emmc = driver.driver_mode() == Driver::DriverMode::Emmc;
+            const bool big = driver.driver_mode() == Driver::DriverMode::Big;
+            const size_t pages_per_block = driver.pages_per_block();
+            constexpr size_t kBigSlotPages = 0x800 / 512;
+            std::optional<size_t> open_block;
+            size_t next_page = 0;
+            for (uint8_t bt = 0x31; bt <= 0x39; ++bt) {
+                const auto* slot = mobile.get_slot(bt);
+                if (!slot || !*slot || (*slot)->empty()) {
+                    continue;
+                }
+                if (emmc && size_t(bt - CoronaConfig::kFirstBlobType) >= CoronaConfig::kBlobSlots) {
+                    Log::Warn("Mobile data type 0x{:02X} has no slot in an eMMC anchor block; "
+                              "it is left out",
+                              bt);
+                    continue;
+                }
+                const auto& mdata = **slot;
+                const size_t limit =
+                    std::min<size_t>(emmc ? std::numeric_limits<uint16_t>::max() : fs_blk_size,
+                                     std::numeric_limits<uint16_t>::max());
+                if (mdata.size() > limit) {
+                    return fail(ErrorCode::OutOfRange,
+                                "Mobile data type 0x{:02X} is 0x{:X} bytes; one copy holds at "
+                                "most 0x{:X}",
+                                bt, mdata.size(), limit);
+                }
+                const size_t pages = (mdata.size() + 511) / 512;
+                const size_t used_pages =
+                    big ? (pages + kBigSlotPages - 1) / kBigSlotPages * kBigSlotPages : pages;
+                const size_t blocks_needed =
+                    emmc ? (mdata.size() + fs_blk_size - 1) / fs_blk_size : 1;
+                if (!big || !open_block || next_page + used_pages > pages_per_block) {
+                    auto free_start = ctx.find_data_free_run(ctx.current_blk, blocks_needed);
+                    if (!free_start || *free_start > std::numeric_limits<uint16_t>::max()) {
+                        return fail(ErrorCode::Exhausted,
+                                    "Mobile data type 0x{:02X} does not fit below reserved NAND "
+                                    "tail",
+                                    bt);
+                    }
+                    for (size_t b = 0; b < blocks_needed; ++b) {
+                        driver.erase_block(*free_start + b);
+                    }
+                    // The table states a blob's blocks free (xeBuild 1.21); they are only
+                    // kept from the files and the root here.
+                    if (ctx.fs) {
+                        if (auto withheld = ctx.fs->withhold_blocks(*free_start, blocks_needed,
+                                                                    BlockMapStatus::Free);
+                            !withheld) {
+                            return with_context(
+                                std::move(withheld),
+                                std::format("reserving mobile data type 0x{:02X} in FlashFS", bt));
+                        }
+                    }
+                    // On big block the blobs start on an erase block, and the table never
+                    // names the clusters stepped over between the last file and them.
+                    if (ctx.fs && big && !open_block) {
+                        const size_t ratio = driver.block_size_clean() / 0x4000;
+                        const size_t blob_cluster = *free_start * ratio;
+                        const size_t floor = blob_cluster >= ratio ? blob_cluster - ratio : 0;
+                        size_t cluster = blob_cluster;
+                        while (cluster > floor &&
+                               ctx.fs->blockmap()[cluster - 1] == BlockMapStatus::Free) {
+                            --cluster;
+                        }
+                        if (cluster < blob_cluster) {
+                            if (auto withheld = ctx.fs->withhold_clusters(
+                                    cluster, blob_cluster - cluster, BlockMapStatus::Unnamed);
+                                !withheld) {
+                                return with_context(
+                                    std::move(withheld),
+                                    "withholding the clusters before the mobile data");
+                            }
+                        }
+                    }
+                    open_block = *free_start;
+                    next_page = 0;
+                    ctx.current_blk = *free_start + blocks_needed;
+                }
+                if (auto laid = write_or_fail(driver, *open_block * fs_blk_size + next_page * 512,
+                                              mdata, "mobile data");
+                    !laid) {
+                    return laid;
+                }
+                const size_t free_pages = emmc ? 0 : pages_per_block - next_page - used_pages;
+                ctx.layout.mobile_blocks.push_back(
+                    {bt, static_cast<uint16_t>(*open_block), static_cast<uint16_t>(next_page),
+                     static_cast<uint16_t>(pages),
+                     static_cast<uint8_t>(big ? free_pages / kBigSlotPages : free_pages), 1,
+                     static_cast<uint32_t>(mdata.size())});
+                next_page += used_pages;
+            }
+            return {};
+        }
+
+        // Places the FlashFS root in the first free block from the cursor, saves the filesystem
+        // and records its root, version, size stamp and data blocks in the layout.
+        [[nodiscard]] Result<void> place_and_save_filesystem(WriteContext& ctx,
+                                                             FlashFileSystem& fs) {
+            auto& driver = ctx.driver;
+            auto root_start = ctx.find_data_free_run(ctx.current_blk, 1);
+            if (!root_start || *root_start > std::numeric_limits<uint16_t>::max()) {
+                return fail(ErrorCode::Exhausted,
+                            "no block is free for the FlashFS root after payload allocations");
+            }
+            if (auto placed = fs.set_root_block(static_cast<uint16_t>(*root_start)); !placed) {
+                return with_context(std::move(placed),
+                                    "placing the FlashFS root block after payload allocations");
+            }
+            ctx.layout.fs_root_block = static_cast<uint16_t>(*root_start);
+            ctx.layout.fs_version = fs.version();
+            ctx.layout.big_fs_size = fs.big_fs_size();
+            fs.set_driver(&driver);
+            if (auto saved = fs.save(); !saved) {
+                return with_context(std::move(saved), "saving the Flash File System");
+            }
+            const size_t clusters_per_block = driver.block_size_clean() / 0x4000;
+            for (const uint16_t cluster : fs.get_all_file_blocks()) {
+                ctx.layout.fs_data_blocks.push_back(
+                    static_cast<uint16_t>(cluster / clusters_per_block));
+            }
+            return {};
+        }
+
+        // Records the JTAG programmed range and spare override, then hands the layout to the
+        // driver on NAND or writes it as the two anchor blocks on eMMC.
+        [[nodiscard]] Result<void> record_spare_layout_or_anchors(WriteContext& ctx,
+                                                                  const FlashImage& image) {
+            auto& driver = ctx.driver;
+            const auto& plan = ctx.plan;
+            const auto& payloads = image.payloads;
+            auto& layout = ctx.layout;
+            // The JTAG patch buffer is programmed whole, its erased tail included.
+            if (plan.jtag && payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag) {
+                layout.programmed_ranges.emplace_back(plan.window_base + 0x1000, kJTAGPatchesSize);
+            }
+            // xeBuild's JTAG image has 0x03 0x50 in spare bytes 10 and 11 of the page holding the
+            // SMC payload, in every shape and with the same payload; nothing else stamps them.
+            if (plan.jtag && payloads.payload) {
+                layout.spare_overrides.push_back({0x200, 10, {0x03, 0x50}});
+            }
+
+            if (driver.driver_mode() == Driver::DriverMode::Emmc) {
+                CoronaConfig cc{};
+                cc.table = layout.fs_root_block.value_or(0);
+                for (const auto& mob : layout.mobile_blocks) {
+                    const size_t slot = size_t(mob.block_type) - CoronaConfig::kFirstBlobType;
+                    cc.blobs[slot] = {mob.start_block, static_cast<uint16_t>(mob.data_size)};
+                }
+
+                // The copies are numbered 1 and 2, each given CoronaConfig::kSpan with zeros
+                // after the structure; the rest of its block stays erased.
+                for (size_t copy = 0; copy < CoronaConfig::kOffsets.size(); ++copy) {
+                    cc.number = static_cast<uint32_t>(copy + 1);
+                    auto cc_bytes = cc.serialize();
+                    cc_bytes.resize(CoronaConfig::kSpan, 0);
+                    cc_bytes.resize(CoronaConfig::kBlockSize, 0xFF);
+                    if (auto laid = write_or_fail(driver, CoronaConfig::kOffsets[copy], cc_bytes,
+                                                  "eMMC anchor block");
+                        !laid) {
+                        return laid;
+                    }
+                }
+            } else {
+                driver.set_layout(layout);
+            }
+            return {};
+        }
+
         // A FlashFS keeps a pointer to the driver it reads and writes; after a copy or a move it
         // must name the new object's driver, not the one it was copied or moved from.
         void rebind_filesystem(ImageState& state) {
@@ -1451,7 +1756,7 @@ namespace gxbuild3::nand {
                         "no usable NAND blocks remain below the geometry-reserved tail");
         }
 
-        const auto payload_block_ranges = active_payload_block_ranges();
+        auto payload_block_ranges = active_payload_block_ranges();
 
         const size_t smc_len = smc ? smc->data.size() : 0x3000;
         if (smc_len > kKeyvaultOffset - sizeof(nand_header)) {
@@ -1461,7 +1766,15 @@ namespace gxbuild3::nand {
         const uint32_t smc_offset = kKeyvaultOffset - static_cast<uint32_t>(smc_len);
         const auto smc_cfg_offset = smc_config_offset(driver);
 
-        WriteContext ctx{driver, plan, 0};
+        WriteContext ctx{.driver = driver,
+                         .plan = plan,
+                         .highest_used_offset = 0,
+                         .data_block_limit = data_block_limit,
+                         .payload_ranges = std::move(payload_block_ranges),
+                         .fs = filesystem ? &*filesystem : nullptr,
+                         .fs_blk_size = 0,
+                         .current_blk = 0,
+                         .layout = {}};
         if (auto laid =
                 lay_header_and_secure_head(ctx, *this, static_cast<uint32_t>(smc_len), smc_offset);
             !laid) {
@@ -1487,276 +1800,37 @@ namespace gxbuild3::nand {
             return with_context(std::move(laid), "update slot 1");
         }
 
-        if (smc_config) {
-            if (!smc_cfg_offset) {
-                return fail(ErrorCode::Unsupported, "this NAND shape has no SMC config block");
-            }
-            if (smc_config->size() != kSmcConfigLength || !smc_config_sums(*smc_config)) {
-                return fail(ErrorCode::Malformed,
-                            "SMC config block is not 0x{:X} bytes with a sound checksum",
-                            kSmcConfigLength);
-            }
-            std::vector<uint8_t> cfg_bytes(kSettingsSpan, 0xFF);
-            std::copy(smc_config->begin(), smc_config->end(), cfg_bytes.begin());
-            if (auto laid =
-                    lay_settings_block(driver, *smc_cfg_offset, cfg_bytes, "SMC config block");
-                !laid) {
-                return laid;
-            }
-        }
-        const std::array<std::pair<const std::optional<std::vector<uint8_t>>*, size_t>, 2>
-            console_blocks{{{&statistics, 1}, {&manufacturing, 2}}};
-        for (const auto& [bytes, steps] : console_blocks) {
-            if (!*bytes) {
-                continue;
-            }
-            const std::string_view name = steps == 1 ? "statistics block" : "manufacturing block";
-            if (!smc_cfg_offset || *smc_cfg_offset < steps * block_size) {
-                return fail(ErrorCode::Unsupported, "this NAND shape has no {}", name);
-            }
-            if ((*bytes)->size() != kSettingsSpan) {
-                return fail(ErrorCode::Malformed,
-                            "Statistics and manufacturing blocks must be 0x{:X} bytes",
-                            kSettingsSpan);
-            }
-            if (auto laid =
-                    lay_settings_block(driver, *smc_cfg_offset - steps * block_size, **bytes, name);
-                !laid) {
-                return laid;
-            }
+        if (auto laid = lay_console_blocks(ctx, *this, smc_cfg_offset); !laid) {
+            return laid;
         }
 
-        NandLayout layout{};
-        const size_t fs_blk_size =
-            (driver.driver_mode() == Driver::DriverMode::Emmc) ? 0x4000 : block_size;
+        ctx.fs_blk_size = (driver.driver_mode() == Driver::DriverMode::Emmc) ? 0x4000 : block_size;
+        const size_t min_blk = (ctx.highest_used_offset + ctx.fs_blk_size - 1) / ctx.fs_blk_size;
+        ctx.current_blk = std::max<size_t>(plan.fs_base / ctx.fs_blk_size, min_blk);
 
-        size_t min_blk = (ctx.highest_used_offset + fs_blk_size - 1) / fs_blk_size;
-        size_t current_blk = std::max<size_t>(plan.fs_base / fs_blk_size, min_blk);
-
-        auto* mutable_filesystem = filesystem ? &*filesystem : nullptr;
-        if (mutable_filesystem) {
+        if (ctx.fs) {
             // A donor FlashImage may have been moved since parsing its filesystem.
             // Rebind before checking allocation geometry, not just before saving.
-            mutable_filesystem->set_driver(&driver);
+            ctx.fs->set_driver(&driver);
         }
 
-        auto find_data_free_run = [&](size_t start_block,
-                                      size_t requested_blocks) -> std::optional<size_t> {
-            if (requested_blocks == 0 || requested_blocks > data_block_limit ||
-                start_block > data_block_limit - requested_blocks) {
-                return std::nullopt;
-            }
-            for (size_t candidate = start_block; candidate <= data_block_limit - requested_blocks;
-                 ++candidate) {
-                bool all_free = true;
-                for (size_t block = candidate; block < candidate + requested_blocks; ++block) {
-                    if (driver.is_bad_block(block) ||
-                        std::any_of(
-                            payload_block_ranges.begin(), payload_block_ranges.end(),
-                            [block](const BlockRange& range) { return range.contains(block); }) ||
-                        (filesystem && !filesystem->is_block_free(block))) {
-                        all_free = false;
-                        break;
-                    }
-                }
-                if (all_free) {
-                    return candidate;
-                }
-            }
-            return std::nullopt;
-        };
-
-        // Every older blob copy goes: a donor's mobile blocks are erased before the blobs are
-        // laid again, so no stale copy can outrank or trail the new ones.
-        if (driver.driver_mode() != Driver::DriverMode::Emmc) {
-            for (size_t block = 0; block < total_blocks; ++block) {
-                if (!is_mobile_block_type(driver.interpret_block(block).block_type)) {
-                    continue;
-                }
-                if (driver.is_bad_block(block)) {
-                    BlockMetadata cleared{};
-                    cleared.logical_block_id = static_cast<uint16_t>(block);
-                    cleared.is_bad = true;
-                    driver.write_block_metadata(block, cleared);
-                    continue;
-                }
-                driver.erase_block(block);
-            }
-        }
-
-        if (filesystem && driver.driver_mode() != Driver::DriverMode::Emmc) {
-            const size_t ratio = driver.block_size_clean() / 0x4000;
-            for (size_t cluster = 0; cluster < total_blocks * ratio; ++cluster) {
-                const auto old_meta = driver.interpret_cluster(cluster);
-                if (old_meta.block_type != 0x2C && old_meta.block_type != 0x30) {
-                    continue;
-                }
-                BlockMetadata cleared{};
-                cleared.logical_block_id = static_cast<uint16_t>(cluster / ratio);
-                cleared.is_bad = old_meta.is_bad;
-                driver.write_cluster_metadata(cluster, cleared);
-            }
-        }
+        purge_stale_mobile_blocks(driver);
+        clear_stale_fs_roots(driver, ctx.fs != nullptr);
 
         if (mobile_data) {
-            // One version of each blob, as xeBuild lays them, in type order. Small block gives
-            // each its own block; big block packs them 0x800 apart in one erase block, where
-            // the free count is kept in those slots; eMMC gives each its own blocks and
-            // names them in the anchors, which hold types 0x31-0x34 only.
-            const bool emmc = driver.driver_mode() == Driver::DriverMode::Emmc;
-            const bool big = driver.driver_mode() == Driver::DriverMode::Big;
-            const size_t pages_per_block = driver.pages_per_block();
-            constexpr size_t kBigSlotPages = 0x800 / 512;
-            std::optional<size_t> open_block;
-            size_t next_page = 0;
-            for (uint8_t bt = 0x31; bt <= 0x39; ++bt) {
-                const auto* slot = mobile_data->get_slot(bt);
-                if (!slot || !*slot || (*slot)->empty()) {
-                    continue;
-                }
-                if (emmc && size_t(bt - CoronaConfig::kFirstBlobType) >= CoronaConfig::kBlobSlots) {
-                    Log::Warn("Mobile data type 0x{:02X} has no slot in an eMMC anchor block; "
-                              "it is left out",
-                              bt);
-                    continue;
-                }
-                const auto& mdata = **slot;
-                const size_t limit =
-                    std::min<size_t>(emmc ? std::numeric_limits<uint16_t>::max() : fs_blk_size,
-                                     std::numeric_limits<uint16_t>::max());
-                if (mdata.size() > limit) {
-                    return fail(ErrorCode::OutOfRange,
-                                "Mobile data type 0x{:02X} is 0x{:X} bytes; one copy holds at "
-                                "most 0x{:X}",
-                                bt, mdata.size(), limit);
-                }
-                const size_t pages = (mdata.size() + 511) / 512;
-                const size_t used_pages =
-                    big ? (pages + kBigSlotPages - 1) / kBigSlotPages * kBigSlotPages : pages;
-                const size_t blocks_needed =
-                    emmc ? (mdata.size() + fs_blk_size - 1) / fs_blk_size : 1;
-                if (!big || !open_block || next_page + used_pages > pages_per_block) {
-                    auto free_start = find_data_free_run(current_blk, blocks_needed);
-                    if (!free_start || *free_start > std::numeric_limits<uint16_t>::max()) {
-                        return fail(ErrorCode::Exhausted,
-                                    "Mobile data type 0x{:02X} does not fit below reserved NAND "
-                                    "tail",
-                                    bt);
-                    }
-                    for (size_t b = 0; b < blocks_needed; ++b) {
-                        driver.erase_block(*free_start + b);
-                    }
-                    // The table states a blob's blocks free (xeBuild 1.21); they are only
-                    // kept from the files and the root here.
-                    if (mutable_filesystem) {
-                        if (auto withheld = mutable_filesystem->withhold_blocks(
-                                *free_start, blocks_needed, BlockMapStatus::Free);
-                            !withheld) {
-                            return with_context(
-                                std::move(withheld),
-                                std::format("reserving mobile data type 0x{:02X} in FlashFS", bt));
-                        }
-                    }
-                    // On big block the blobs start on an erase block, and the table never
-                    // names the clusters stepped over between the last file and them.
-                    if (mutable_filesystem && big && !open_block) {
-                        const size_t ratio = driver.block_size_clean() / 0x4000;
-                        const size_t blob_cluster = *free_start * ratio;
-                        const size_t floor = blob_cluster >= ratio ? blob_cluster - ratio : 0;
-                        size_t cluster = blob_cluster;
-                        while (cluster > floor &&
-                               filesystem->blockmap()[cluster - 1] == BlockMapStatus::Free) {
-                            --cluster;
-                        }
-                        if (cluster < blob_cluster) {
-                            if (auto withheld = mutable_filesystem->withhold_clusters(
-                                    cluster, blob_cluster - cluster, BlockMapStatus::Unnamed);
-                                !withheld) {
-                                return with_context(
-                                    std::move(withheld),
-                                    "withholding the clusters before the mobile data");
-                            }
-                        }
-                    }
-                    open_block = *free_start;
-                    next_page = 0;
-                    current_blk = *free_start + blocks_needed;
-                }
-                if (auto laid = write_or_fail(driver, *open_block * fs_blk_size + next_page * 512,
-                                              mdata, "mobile data");
-                    !laid) {
-                    return laid;
-                }
-                const size_t free_pages = emmc ? 0 : pages_per_block - next_page - used_pages;
-                layout.mobile_blocks.push_back(
-                    {bt, static_cast<uint16_t>(*open_block), static_cast<uint16_t>(next_page),
-                     static_cast<uint16_t>(pages),
-                     static_cast<uint8_t>(big ? free_pages / kBigSlotPages : free_pages), 1,
-                     static_cast<uint32_t>(mdata.size())});
-                next_page += used_pages;
+            if (auto laid = lay_mobile_data(ctx, *mobile_data); !laid) {
+                return laid;
             }
         }
 
-        if (filesystem) {
-            auto root_start = find_data_free_run(current_blk, 1);
-            if (!root_start || *root_start > std::numeric_limits<uint16_t>::max()) {
-                return fail(ErrorCode::Exhausted,
-                            "no block is free for the FlashFS root after payload allocations");
-            }
-            if (auto placed =
-                    mutable_filesystem->set_root_block(static_cast<uint16_t>(*root_start));
-                !placed) {
-                return with_context(std::move(placed),
-                                    "placing the FlashFS root block after payload allocations");
-            }
-            layout.fs_root_block = static_cast<uint16_t>(*root_start);
-            layout.fs_version = filesystem->version();
-            layout.big_fs_size = filesystem->big_fs_size();
-            auto& fs = *filesystem;
-            fs.set_driver(&driver);
-            if (auto saved = fs.save(); !saved) {
-                return with_context(std::move(saved), "saving the Flash File System");
-            }
-            const size_t clusters_per_block = driver.block_size_clean() / 0x4000;
-            for (const uint16_t cluster : fs.get_all_file_blocks()) {
-                layout.fs_data_blocks.push_back(
-                    static_cast<uint16_t>(cluster / clusters_per_block));
+        if (ctx.fs) {
+            if (auto saved = place_and_save_filesystem(ctx, *ctx.fs); !saved) {
+                return saved;
             }
         }
 
-        // The JTAG patch buffer is programmed whole, its erased tail included.
-        if (plan.jtag && payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag) {
-            layout.programmed_ranges.emplace_back(plan.window_base + 0x1000, kJTAGPatchesSize);
-        }
-        // xeBuild's JTAG image has 0x03 0x50 in spare bytes 10 and 11 of the page holding the SMC
-        // payload, in every shape and with the same payload; nothing else stamps them.
-        if (plan.jtag && payloads.payload) {
-            layout.spare_overrides.push_back({0x200, 10, {0x03, 0x50}});
-        }
-
-        if (driver.driver_mode() == Driver::DriverMode::Emmc) {
-            CoronaConfig cc{};
-            cc.table = layout.fs_root_block.value_or(0);
-            for (const auto& mob : layout.mobile_blocks) {
-                const size_t slot = size_t(mob.block_type) - CoronaConfig::kFirstBlobType;
-                cc.blobs[slot] = {mob.start_block, static_cast<uint16_t>(mob.data_size)};
-            }
-
-            // The copies are numbered 1 and 2, each given CoronaConfig::kSpan with zeros
-            // after the structure; the rest of its block stays erased.
-            for (size_t copy = 0; copy < CoronaConfig::kOffsets.size(); ++copy) {
-                cc.number = static_cast<uint32_t>(copy + 1);
-                auto cc_bytes = cc.serialize();
-                cc_bytes.resize(CoronaConfig::kSpan, 0);
-                cc_bytes.resize(CoronaConfig::kBlockSize, 0xFF);
-                if (auto laid = write_or_fail(driver, CoronaConfig::kOffsets[copy], cc_bytes,
-                                              "eMMC anchor block");
-                    !laid) {
-                    return laid;
-                }
-            }
-        } else {
-            driver.set_layout(layout);
+        if (auto recorded = record_spare_layout_or_anchors(ctx, *this); !recorded) {
+            return recorded;
         }
 
         // Remove any donor CF/CG header and stale bytes from the owned overlay.
