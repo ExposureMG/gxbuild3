@@ -249,6 +249,77 @@ namespace gxbuild3::nand {
             return manufacturing(image) ? update_base + stride : window_base + 0x5000;
         }
 
+        bool is_glitch_build(BuildType type) {
+            return type == BuildType::Glitch || type == BuildType::Glitch2 ||
+                   type == BuildType::Glitch2m || type == BuildType::Glitch3;
+        }
+
+        // Where an image lays its update slots and payloads. Build it where it is used: every
+        // field follows the image's build type, payloads and header, so a plan taken before a
+        // mutation goes stale.
+        struct LayoutPlan {
+            Driver::DriverMode mode;
+            bool big_or_emmc;
+            bool glitch;
+            bool jtag;
+            uint32_t slot_stride;
+            uint32_t update_base;
+            uint32_t window_base;
+            uint32_t fs_base;
+            uint32_t xell_offset;
+            uint32_t fuse_offset;
+            size_t khv_prefix;
+            bool manufacturing;
+        };
+
+        LayoutPlan make_plan(const FlashImage& image, bool glitch, bool jtag) {
+            const auto mode = image.flash_driver.driver_mode();
+            const bool big_or_emmc =
+                mode == Driver::DriverMode::Big || mode == Driver::DriverMode::Emmc;
+            const uint32_t slot_stride = slot_size(image);
+            const uint32_t base = update_base(image, jtag, glitch);
+            const uint32_t window_base = kJtagWindowOffset;
+            return LayoutPlan{
+                .mode = mode,
+                .big_or_emmc = big_or_emmc,
+                .glitch = glitch,
+                .jtag = jtag,
+                .slot_stride = slot_stride,
+                .update_base = base,
+                .window_base = window_base,
+                .fs_base = big_or_emmc ? kBigFsOffset : kSmallFsOffset,
+                .xell_offset = xell_offset(jtag, glitch, image.payloads),
+                .fuse_offset = fuse_offset(image, base, slot_stride, window_base),
+                .khv_prefix = khv_prefix(image),
+                .manufacturing = manufacturing(image),
+            };
+        }
+
+        // The layout the writer, the payload checks and the slot accessors share: a glitch
+        // image by its build type, its patchset or a XeLL ahead of the glitch slot offset; a
+        // JTAG image by its build type or its patchset.
+        LayoutPlan plan_layout(const FlashImage& image) {
+            const bool glitch =
+                (image.build_type && is_glitch_build(*image.build_type)) ||
+                (image.payloads.patchset &&
+                 image.payloads.patchset->kind == PatchSetKind::Glitch) ||
+                (image.payloads.xell &&
+                 image.header.cf_offset == glitch_slot_offset(image.flash_driver.driver_mode()));
+            return make_plan(image, glitch, is_jtag_image(image));
+        }
+
+        // The layout encrypt_all reserves the update slots by. It differs from plan_layout on
+        // purpose: the glitch test reads only the type being sealed (not the member build
+        // type, the patchset or the XeLL), and the JTAG test takes the sealed type in place of
+        // the member. encrypt_all can run on an image whose member build type is unset, and
+        // folding the two would move update_base there.
+        LayoutPlan plan_for_seal(const FlashImage& image, BuildType seal_type) {
+            const bool jtag =
+                seal_type == BuildType::Jtag ||
+                (image.payloads.patchset && image.payloads.patchset->kind == PatchSetKind::Jtag);
+            return make_plan(image, is_glitch_build(seal_type), jtag);
+        }
+
         bool ranges_overlap(size_t first_offset, size_t first_length, size_t second_offset,
                             size_t second_length) {
             if (first_length == 0 || second_length == 0) {
@@ -936,23 +1007,7 @@ namespace gxbuild3::nand {
             }
         }
 
-        const bool is_big_or_emmc = (driver.driver_mode() == Driver::DriverMode::Big ||
-                                     driver.driver_mode() == Driver::DriverMode::Emmc);
-        const auto slot_mode = driver.driver_mode();
-        const uint32_t slot_stride = slot_size(*this);
-        const bool is_glitch_patchset =
-            (build_type &&
-             (*build_type == BuildType::Glitch || *build_type == BuildType::Glitch2 ||
-              *build_type == BuildType::Glitch2m || *build_type == BuildType::Glitch3)) ||
-            (payloads.patchset && payloads.patchset->kind == PatchSetKind::Glitch) ||
-            (payloads.xell && header.cf_offset == glitch_slot_offset(slot_mode));
-        const bool is_jtag_patchset =
-            (build_type == BuildType::Jtag) ||
-            (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
-        const uint32_t patchslot_base = update_base(*this, is_jtag_patchset, is_glitch_patchset);
-        const uint32_t window_base = kJtagWindowOffset;
-
-        const uint32_t fs_base = is_big_or_emmc ? kBigFsOffset : kSmallFsOffset;
+        const LayoutPlan plan = plan_layout(*this);
         const size_t total_blocks = driver.block_count();
         const size_t block_size = driver.block_size_clean();
         const size_t data_block_limit = driver.data_block_limit();
@@ -979,16 +1034,16 @@ namespace gxbuild3::nand {
         // advances from the NAND header using this size.  It must therefore
         // terminate at the first system-update slot, not retain a donor image's
         // earlier boot-chain boundary.
-        raw.size = patchslot_base;
+        raw.size = plan.update_base;
         raw.kv_size =
             header.kv_size ? header.kv_size.get() : static_cast<uint32_t>(Keyvault::kSize);
-        raw.cf_offset = patchslot_base;
+        raw.cf_offset = plan.update_base;
         // Two update slots on every image, as xeBuild states them. On a glitch image the
         // second is the KHV patch slot, which the kernel passes over for want of a CF.
         raw.patch_slots = uint16_t{2};
         raw.kv_version = header.kv_version ? header.kv_version.get() : uint16_t{0x0712};
         raw.kv_addr = header.kv_addr ? header.kv_addr.get() : kKeyvaultOffset;
-        raw.fs_addr = slot_stride; // Runtime dwSysUpdateSlotSize (header + 0x70).
+        raw.fs_addr = plan.slot_stride; // Runtime dwSysUpdateSlotSize (header + 0x70).
         // Zero on every image, a donor's value or not: xeBuild never states the settings
         // block here (xerunner build.py `header`), and the three console dumps measured
         // carry zero. The block is found by its place in the layout instead.
@@ -1085,18 +1140,18 @@ namespace gxbuild3::nand {
                 end_offset = base_offset + align_16(static_cast<uint32_t>(cf_bytes.size()));
                 if (slot.cg) {
                     auto cg_bytes = slot.cg->serialize();
-                    if (end_offset > base_offset + slot_stride) {
+                    if (end_offset > base_offset + plan.slot_stride) {
                         return fail(ErrorCode::OutOfRange,
                                     "the CF (0x{:X} bytes) leaves no room for its CG in the "
                                     "0x{:X}-byte slot",
-                                    cf_bytes.size(), slot_stride);
+                                    cf_bytes.size(), plan.slot_stride);
                     }
                     const size_t prefix =
                         slot.cg_spill_blocks.empty()
                             ? cg_bytes.size()
                             : std::min<size_t>(cg_bytes.size(),
-                                               base_offset + slot_stride - end_offset);
-                    if (end_offset + prefix > base_offset + slot_stride) {
+                                               base_offset + plan.slot_stride - end_offset);
+                    if (end_offset + prefix > base_offset + plan.slot_stride) {
                         return fail(ErrorCode::Internal,
                                     "CG continuation has not been allocated before serialization");
                     }
@@ -1131,12 +1186,13 @@ namespace gxbuild3::nand {
 
         // A CG longer than its slot continues in spill blocks, so each slot ends within its
         // own stride.
-        size_t slot0_end = patchslot_base;
-        if (auto laid = write_patchslot(patchslot_base, system_update_0, slot0_end); !laid) {
+        size_t slot0_end = plan.update_base;
+        if (auto laid = write_patchslot(plan.update_base, system_update_0, slot0_end); !laid) {
             return with_context(std::move(laid), "update slot 0");
         }
-        size_t slot1_end = patchslot_base + slot_stride;
-        if (auto laid = write_patchslot(patchslot_base + slot_stride, system_update_1, slot1_end);
+        size_t slot1_end = plan.update_base + plan.slot_stride;
+        if (auto laid =
+                write_patchslot(plan.update_base + plan.slot_stride, system_update_1, slot1_end);
             !laid) {
             return with_context(std::move(laid), "update slot 1");
         }
@@ -1185,7 +1241,7 @@ namespace gxbuild3::nand {
             (driver.driver_mode() == Driver::DriverMode::Emmc) ? 0x4000 : block_size;
 
         size_t min_blk = (highest_used_offset + fs_blk_size - 1) / fs_blk_size;
-        size_t current_blk = std::max<size_t>(fs_base / fs_blk_size, min_blk);
+        size_t current_blk = std::max<size_t>(plan.fs_base / fs_blk_size, min_blk);
 
         auto* mutable_filesystem =
             filesystem ? &const_cast<FlashFileSystem&>(*filesystem) : nullptr;
@@ -1380,13 +1436,12 @@ namespace gxbuild3::nand {
         }
 
         // The JTAG patch buffer is programmed whole, its erased tail included.
-        if (is_jtag_patchset && payloads.patchset &&
-            payloads.patchset->kind == PatchSetKind::Jtag) {
-            layout.programmed_ranges.emplace_back(window_base + 0x1000, kJTAGPatchesSize);
+        if (plan.jtag && payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag) {
+            layout.programmed_ranges.emplace_back(plan.window_base + 0x1000, kJTAGPatchesSize);
         }
         // xeBuild's JTAG image has 0x03 0x50 in spare bytes 10 and 11 of the page holding the SMC
         // payload, in every shape and with the same payload; nothing else stamps them.
-        if (is_jtag_patchset && payloads.payload) {
+        if (plan.jtag && payloads.payload) {
             layout.spare_overrides.push_back({0x200, 10, {0x03, 0x50}});
         }
 
@@ -1417,10 +1472,10 @@ namespace gxbuild3::nand {
 
         // Remove any donor CF/CG header and stale bytes from the owned overlay.
         // Direct parsed images retain a recovered patchset, so it is rewritten below.
-        if (is_glitch_patchset && payloads.patchset) {
-            const std::vector<uint8_t> erased_overlay(slot_stride, 0xFF);
-            if (auto laid = write_or_fail(driver, patchslot_base + slot_stride, erased_overlay,
-                                          "erased patch slot");
+        if (plan.glitch && payloads.patchset) {
+            const std::vector<uint8_t> erased_overlay(plan.slot_stride, 0xFF);
+            if (auto laid = write_or_fail(driver, plan.update_base + plan.slot_stride,
+                                          erased_overlay, "erased patch slot");
                 !laid) {
                 return laid;
             }
@@ -1442,43 +1497,39 @@ namespace gxbuild3::nand {
             return zero_fill(end, (end + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize);
         };
         if (payloads.rebooter) {
-            if (auto laid = write_or_fail(driver, window_base, *payloads.rebooter, "rebooter");
+            if (auto laid = write_or_fail(driver, plan.window_base, *payloads.rebooter, "rebooter");
                 !laid) {
                 return laid;
             }
-            if (is_jtag_patchset) {
-                if (auto filled =
-                        zero_fill(window_base + payloads.rebooter->size(), window_base + 0x1000);
+            if (plan.jtag) {
+                if (auto filled = zero_fill(plan.window_base + payloads.rebooter->size(),
+                                            plan.window_base + 0x1000);
                     !filled) {
                     return filled;
                 }
             }
         }
         if (payloads.fuses) {
-            if (auto laid = write_or_fail(
-                    driver, fuse_offset(*this, patchslot_base, slot_stride, window_base),
-                    *payloads.fuses, "virtual fuses");
+            if (auto laid =
+                    write_or_fail(driver, plan.fuse_offset, *payloads.fuses, "virtual fuses");
                 !laid) {
                 return laid;
             }
         }
         if (payloads.xell) {
             const auto& xell_bytes = payloads.xell->data;
-            if (auto laid = write_or_fail(
-                    driver, xell_offset(is_jtag_patchset, is_glitch_patchset, payloads), xell_bytes,
-                    "XeLL");
-                !laid) {
+            if (auto laid = write_or_fail(driver, plan.xell_offset, xell_bytes, "XeLL"); !laid) {
                 return laid;
             }
         }
-        const size_t glitch_patch_offset = patchslot_base + slot_stride + khv_prefix(*this);
+        const size_t glitch_patch_offset = plan.update_base + plan.slot_stride + plan.khv_prefix;
         if (payloads.patchset) {
             std::vector<uint8_t> patch_bytes;
             size_t patch_offset = 0;
             size_t patch_capacity = 0;
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
                 patch_bytes = serialize_patch_set(*payloads.patchset);
-                patch_offset = window_base + 0x1000;
+                patch_offset = plan.window_base + 0x1000;
                 patch_capacity = kJTAGPatchesSize;
             } else {
                 const auto* khv = find_patch_section(*payloads.patchset, PatchSectionTarget::Khv);
@@ -1488,29 +1539,25 @@ namespace gxbuild3::nand {
                 }
                 patch_bytes = serialize_khv_payload(*khv);
                 patch_offset = glitch_patch_offset;
-                patch_capacity = slot_stride - khv_prefix(*this);
+                patch_capacity = plan.slot_stride - plan.khv_prefix;
             }
             if (patch_bytes.size() > patch_capacity) {
                 return fail(ErrorCode::OutOfRange,
                             "Patch payload (0x{:X} bytes) exceeds its 0x{:X}-byte region",
                             patch_bytes.size(), patch_capacity);
             }
-            if (payloads.xell &&
-                ranges_overlap(patch_offset, patch_bytes.size(),
-                               xell_offset(is_jtag_patchset, is_glitch_patchset, payloads),
-                               payloads.xell->data.size())) {
+            if (payloads.xell && ranges_overlap(patch_offset, patch_bytes.size(), plan.xell_offset,
+                                                payloads.xell->data.size())) {
                 return fail(ErrorCode::InvalidArgument,
                             "Patch payload overlaps the reserved XeLL region");
             }
-            if (payloads.rebooter && ranges_overlap(patch_offset, patch_bytes.size(), window_base,
-                                                    payloads.rebooter->size())) {
+            if (payloads.rebooter && ranges_overlap(patch_offset, patch_bytes.size(),
+                                                    plan.window_base, payloads.rebooter->size())) {
                 return fail(ErrorCode::InvalidArgument,
                             "Patch payload overlaps the reserved rebooter region");
             }
-            if (payloads.fuses &&
-                ranges_overlap(patch_offset, patch_bytes.size(),
-                               fuse_offset(*this, patchslot_base, slot_stride, window_base),
-                               payloads.fuses->size())) {
+            if (payloads.fuses && ranges_overlap(patch_offset, patch_bytes.size(), plan.fuse_offset,
+                                                 payloads.fuses->size())) {
                 return fail(ErrorCode::InvalidArgument,
                             "Patch payload overlaps the reserved virtual-fuse region");
             }
@@ -1540,7 +1587,7 @@ namespace gxbuild3::nand {
             // xeBuild programs the rest of the patch slot's first 0x4000 bytes zero after the
             // KHV terminator; the slot past them stays erased.
             const size_t khv_end = patch_offset + patch_bytes.size();
-            const size_t zero_end = size_t(patchslot_base) + slot_stride + kLayBlockSize;
+            const size_t zero_end = size_t(plan.update_base) + plan.slot_stride + kLayBlockSize;
             if (payloads.patchset->kind != PatchSetKind::Jtag && khv_end < zero_end) {
                 if (auto filled = zero_fill(khv_end, zero_end); !filled) {
                     return filled;
@@ -1549,8 +1596,8 @@ namespace gxbuild3::nand {
         }
 
         // The JTAG second CB/CD live in the window tail, directly past the fixed-size XeLL.
-        if (is_jtag_patchset) {
-            const auto extra = jtag_extra_offsets(window_base, payloads);
+        if (plan.jtag) {
+            const auto extra = jtag_extra_offsets(plan.window_base, payloads);
             if (payloads.extra_cb) {
                 if (auto laid = write_or_fail(driver, extra.cb, payloads.extra_cb->serialize(),
                                               "JTAG second CB");
@@ -1670,32 +1717,13 @@ namespace gxbuild3::nand {
     }
 
     uint32_t FlashImage::update_slots_end() const {
-        const auto slot_mode = flash_driver.driver_mode();
-        const bool is_glitch_patchset =
-            (build_type &&
-             (*build_type == BuildType::Glitch || *build_type == BuildType::Glitch2 ||
-              *build_type == BuildType::Glitch2m || *build_type == BuildType::Glitch3)) ||
-            (payloads.patchset && payloads.patchset->kind == PatchSetKind::Glitch) ||
-            (payloads.xell && header.cf_offset == glitch_slot_offset(slot_mode));
-        const bool is_jtag_patchset = is_jtag_image(*this);
-        return update_base(*this, is_jtag_patchset, is_glitch_patchset) + 2 * slot_size(*this);
+        const LayoutPlan plan = plan_layout(*this);
+        return plan.update_base + 2 * plan.slot_stride;
     }
 
     std::vector<BlockRange> FlashImage::active_payload_block_ranges() const {
         std::vector<BlockRange> ranges;
-        const auto slot_mode = flash_driver.driver_mode();
-        const bool is_glitch_patchset =
-            (build_type &&
-             (*build_type == BuildType::Glitch || *build_type == BuildType::Glitch2 ||
-              *build_type == BuildType::Glitch2m || *build_type == BuildType::Glitch3)) ||
-            (payloads.patchset && payloads.patchset->kind == PatchSetKind::Glitch) ||
-            (payloads.xell && header.cf_offset == glitch_slot_offset(slot_mode));
-        const bool is_jtag_patchset =
-            (build_type == BuildType::Jtag) ||
-            (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
-        const uint32_t slot_stride = slot_size(*this);
-        const uint32_t patchslot_base = update_base(*this, is_jtag_patchset, is_glitch_patchset);
-        const uint32_t window_base = kJtagWindowOffset;
+        const LayoutPlan plan = plan_layout(*this);
         const auto add_range = [&ranges, this](size_t offset, size_t length) {
             if (const auto range = flash_driver.block_range_for_byte_interval(offset, length)) {
                 ranges.push_back(*range);
@@ -1706,25 +1734,24 @@ namespace gxbuild3::nand {
             add_range(0x200, payloads.payload->size());
         }
         if (payloads.rebooter) {
-            add_range(window_base, payloads.rebooter->size());
+            add_range(plan.window_base, payloads.rebooter->size());
         }
         if (payloads.fuses) {
-            add_range(fuse_offset(*this, patchslot_base, slot_stride, window_base),
-                      payloads.fuses->size());
+            add_range(plan.fuse_offset, payloads.fuses->size());
         }
         if (payloads.xell && !payloads.xell->data.empty()) {
-            add_range(xell_offset(is_jtag_patchset, is_glitch_patchset, payloads),
-                      payloads.xell->data.size());
+            add_range(plan.xell_offset, payloads.xell->data.size());
         }
-        if (is_glitch_patchset)
-            add_range(patchslot_base + slot_stride, slot_stride);
+        if (plan.glitch)
+            add_range(plan.update_base + plan.slot_stride, plan.slot_stride);
         if (payloads.patchset) {
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
-                add_range(window_base + 0x1000, serialize_patch_set(*payloads.patchset).size());
+                add_range(plan.window_base + 0x1000,
+                          serialize_patch_set(*payloads.patchset).size());
             }
         }
-        if (is_jtag_patchset) {
-            const auto extra = jtag_extra_offsets(window_base, payloads);
+        if (plan.jtag) {
+            const auto extra = jtag_extra_offsets(plan.window_base, payloads);
             if (payloads.extra_cb) {
                 add_range(extra.cb, payloads.extra_cb->serialize().size());
             }
@@ -1736,19 +1763,7 @@ namespace gxbuild3::nand {
     }
 
     Result<void> FlashImage::payload_layout() const {
-        const auto slot_mode = flash_driver.driver_mode();
-        const uint32_t slot_stride = slot_size(*this);
-        const bool is_glitch_patchset =
-            (build_type &&
-             (*build_type == BuildType::Glitch || *build_type == BuildType::Glitch2 ||
-              *build_type == BuildType::Glitch2m || *build_type == BuildType::Glitch3)) ||
-            (payloads.patchset && payloads.patchset->kind == PatchSetKind::Glitch) ||
-            (payloads.xell && header.cf_offset == glitch_slot_offset(slot_mode));
-        const bool is_jtag_patchset =
-            (build_type == BuildType::Jtag) ||
-            (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
-        const uint32_t patchslot_base = update_base(*this, is_jtag_patchset, is_glitch_patchset);
-        const uint32_t window_base = kJtagWindowOffset;
+        const LayoutPlan plan = plan_layout(*this);
 
         const bool has_cb = has_parsed_bootloader_header(
             cb_section.cb_or_A, NANDBootloaderMagic::CB, sizeof(generic_header));
@@ -1763,13 +1778,13 @@ namespace gxbuild3::nand {
                         "Required CD bootloader has no payload and cannot be serialized");
         }
 
-        if (is_glitch_patchset && system_update_1.cf)
+        if (plan.glitch && system_update_1.cf)
             return fail(ErrorCode::InvalidArgument,
                         "Glitch overlay owns the second update slot; CF1/CG1 cannot be supplied");
         for (const auto* slot : {&system_update_0, &system_update_1}) {
             if (slot->cf &&
                 align_16(slot->cf->serialize().size()) + (slot->cg ? sizeof(cg_header) : 0) >
-                    slot_stride)
+                    plan.slot_stride)
                 return fail(ErrorCode::OutOfRange,
                             "CF leaves insufficient room in its update slot");
         }
@@ -1799,22 +1814,19 @@ namespace gxbuild3::nand {
         // Keep XeLL first so a collision explains that its historically fixed placement is the
         // conflicting writer, rather than implying that the fixed JTAG payload moved.
         if (payloads.xell) {
-            add_range("XeLL", xell_offset(is_jtag_patchset, is_glitch_patchset, payloads),
-                      payloads.xell->data.size());
+            add_range("XeLL", plan.xell_offset, payloads.xell->data.size());
         }
         if (payloads.payload) {
             add_range("SMC payload", 0x200, payloads.payload->size());
         }
         if (payloads.rebooter) {
-            add_range("rebooter", window_base, payloads.rebooter->size());
+            add_range("rebooter", plan.window_base, payloads.rebooter->size());
         }
         if (payloads.fuses) {
-            add_range("virtual-fuse payload",
-                      fuse_offset(*this, patchslot_base, slot_stride, window_base),
-                      payloads.fuses->size());
+            add_range("virtual-fuse payload", plan.fuse_offset, payloads.fuses->size());
         }
-        if (is_jtag_patchset) {
-            const auto extra = jtag_extra_offsets(window_base, payloads);
+        if (plan.jtag) {
+            const auto extra = jtag_extra_offsets(plan.window_base, payloads);
             if (payloads.extra_cb) {
                 add_range("JTAG extra CB", extra.cb, payloads.extra_cb->serialize().size());
             }
@@ -1868,9 +1880,9 @@ namespace gxbuild3::nand {
         size_t highest_used_offset = boot_chain_end;
 
         const auto add_system_update =
-            [&add_range, &highest_used_offset, &arithmetic_error,
-             slot_stride](std::string_view cf_name, std::string_view cg_name, size_t base,
-                          const SystemUpdate& slot) -> std::optional<size_t> {
+            [&add_range, &highest_used_offset, &arithmetic_error, slot_stride = plan.slot_stride](
+                std::string_view cf_name, std::string_view cg_name, size_t base,
+                const SystemUpdate& slot) -> std::optional<size_t> {
             size_t end = base;
             if (!slot.cf) {
                 return end;
@@ -1904,9 +1916,9 @@ namespace gxbuild3::nand {
         };
 
         const auto slot0_end = add_system_update("system-update CF0", "system-update CG0",
-                                                 patchslot_base, system_update_0);
+                                                 plan.update_base, system_update_0);
         size_t slot1_base = 0;
-        if (!slot0_end || !checked_add(patchslot_base, slot_stride, slot1_base)) {
+        if (!slot0_end || !checked_add(plan.update_base, plan.slot_stride, slot1_base)) {
             return fail(ErrorCode::OutOfRange, "{}",
                         arithmetic_error.value_or(
                             "System-update slot base exceeds the addressable payload layout"));
@@ -1926,14 +1938,14 @@ namespace gxbuild3::nand {
         if (payloads.patchset) {
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
                 const auto patch_bytes = serialize_patch_set(*payloads.patchset);
-                add_range("JTAG patch payload", window_base + 0x1000, patch_bytes.size());
+                add_range("JTAG patch payload", plan.window_base + 0x1000, patch_bytes.size());
             } else if (const auto* khv =
                            find_patch_section(*payloads.patchset, PatchSectionTarget::Khv)) {
-                if (serialize_khv_payload(*khv).size() > slot_stride - khv_prefix(*this))
+                if (serialize_khv_payload(*khv).size() > plan.slot_stride - plan.khv_prefix)
                     return fail(ErrorCode::OutOfRange,
                                 "Glitch KHV payload exceeds its patch-slot region");
-                add_range("Glitch KHV payload", slot1_base + khv_prefix(*this),
-                          slot_stride - khv_prefix(*this));
+                add_range("Glitch KHV payload", slot1_base + plan.khv_prefix,
+                          plan.slot_stride - plan.khv_prefix);
             }
         }
 
@@ -2311,9 +2323,6 @@ namespace gxbuild3::nand {
             }
         }
 
-        const bool glitch_layout =
-            build_type == BuildType::Glitch || build_type == BuildType::Glitch2 ||
-            build_type == BuildType::Glitch2m || build_type == BuildType::Glitch3;
         const size_t stride = slot_size(*this);
         auto prepare_update = [&](SystemUpdate& slot, const char* filename) -> Result<void> {
             if (!slot.cf || !slot.cg)
@@ -2371,10 +2380,8 @@ namespace gxbuild3::nand {
                                         "reserving payload blocks for a CG tail");
                 }
             }
-            const bool jtag_layout =
-                build_type == BuildType::Jtag ||
-                (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
-            const size_t base = update_base(*this, jtag_layout, glitch_layout);
+            // plan_for_seal, not plan_layout: the slots are reserved by the type being sealed.
+            const size_t base = plan_for_seal(*this, build_type).update_base;
             if (const auto range = flash_driver.block_range_for_byte_interval(base, 2 * stride)) {
                 if (auto reserved =
                         filesystem->reserve_blocks(range->start_block, range->block_count);
