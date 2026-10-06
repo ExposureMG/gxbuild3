@@ -164,6 +164,12 @@ if(BUILD_TESTING)
     target_compile_definitions(gxbuild3_flashimage_golden_tests PRIVATE
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
     set_tests_properties(gxbuild3_flashimage_golden_tests PROPERTIES TIMEOUT 600)
+    # Snapshot of every tracked bootloader stage fixture in common/*.bin
+    # (tests/golden/wire_corpus_bootloaders.txt): parse fields, serialize identity, per-box
+    # bytes and seals under fixed keys, with all-zero nonces pinned inside the test.
+    add_gxbuild3_test(gxbuild3_wire_corpus_tests tests/WireCorpusTests.cpp)
+    target_compile_definitions(gxbuild3_wire_corpus_tests PRIVATE
+        GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
 
     add_executable(gxbuild3_keyvault_crypto_tests tests/KeyvaultCryptoTests.cpp)
     target_link_libraries(gxbuild3_keyvault_crypto_tests PRIVATE gxbuild3_internal)
