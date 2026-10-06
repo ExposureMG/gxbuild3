@@ -1,0 +1,64 @@
+entries 31
+extract_to_memory files 31
+[00] name="$flash_aac.xexp" flags=0x4F blocks_allocated=0x000014 blocks_allocated_copy=0x000014 starting_block=0x000001 path_indicator=-1 file_size=0x00014000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[00] key="aac.xexp" size=0x00014000 sha1=600b902eede2e7a66c82600ad95305ac37eb5f35 verified_equal=yes
+[01] name="$flash_bootanim.xex" flags=0x53 blocks_allocated=0x000061 blocks_allocated_copy=0x000061 starting_block=0x000015 path_indicator=-1 file_size=0x00061000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[01] key="bootanim.xex" size=0x00061000 sha1=3c1bf1edc06a385455e74876c3aa28280e8f363c verified_equal=yes
+[02] name="$flash_createprofile.xex" flags=0x58 blocks_allocated=0x00000C blocks_allocated_copy=0x00000C starting_block=0x000076 path_indicator=-1 file_size=0x0000C000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[02] key="createprofile.xex" size=0x0000C000 sha1=3583aaa574eb64007d0d3967eff0785d22a85633 verified_equal=yes
+[03] name="$flash_dash.xex" flags=0x4F blocks_allocated=0x0005B2 blocks_allocated_copy=0x0005B2 starting_block=0x000082 path_indicator=-1 file_size=0x005B2000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[03] key="dash.xex" size=0x005B2000 sha1=3d44ef57781c20669705cd687e3b62b1c2f1ff6b verified_equal=yes
+[04] name="$flash_deviceselector.xex" flags=0x59 blocks_allocated=0x00000A blocks_allocated_copy=0x00000A starting_block=0x000634 path_indicator=-1 file_size=0x0000A000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[04] key="deviceselector.xex" size=0x0000A000 sha1=87581dce29bbbe9232a24ec5ef965f947a3ef186 verified_equal=yes
+[05] name="$flash_gamerprofile.xex" flags=0x57 blocks_allocated=0x00001B blocks_allocated_copy=0x00001B starting_block=0x00063E path_indicator=-1 file_size=0x0001B000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[05] key="gamerprofile.xex" size=0x0001B000 sha1=d2eaaa5c3b5b85ba98252d93b80c0521047d71e6 verified_equal=yes
+[06] name="$flash_hud.xex" flags=0x4E blocks_allocated=0x00001D blocks_allocated_copy=0x00001D starting_block=0x000659 path_indicator=-1 file_size=0x0001D000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[06] key="hud.xex" size=0x0001D000 sha1=b0ab65e560b674739821e54c3c8b6be9d6579c4a verified_equal=yes
+[07] name="$flash_huduiskin.xex" flags=0x54 blocks_allocated=0x000014 blocks_allocated_copy=0x000014 starting_block=0x000676 path_indicator=-1 file_size=0x00014000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[07] key="huduiskin.xex" size=0x00014000 sha1=45203d5b26b952436ed86a3c791610c9f61a7b04 verified_equal=yes
+[08] name="$flash_mfgbootlauncher.xex" flags=0x5A blocks_allocated=0x000008 blocks_allocated_copy=0x000008 starting_block=0x00068A path_indicator=-1 file_size=0x00008000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[08] key="mfgbootlauncher.xex" size=0x00008000 sha1=d8056c3eefd6e74c92f3ab90d872f88da05ec1b1 verified_equal=yes
+[09] name="$flash_minimediaplayer.xex" flags=0x5A blocks_allocated=0x00000C blocks_allocated_copy=0x00000C starting_block=0x000692 path_indicator=-1 file_size=0x0000C000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[09] key="minimediaplayer.xex" size=0x0000C000 sha1=903c1213b962660fe9837de14ba2a4a8fbdf63bf verified_equal=yes
+[10] name="$flash_nomni.xexp" flags=0x51 blocks_allocated=0x00000F blocks_allocated_copy=0x00000F starting_block=0x00069E path_indicator=-1 file_size=0x0000F000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[10] key="nomni.xexp" size=0x0000F000 sha1=9946ae6c431bcd1966e4808191d7578cce66c732 verified_equal=yes
+[11] name="$flash_nomnifwk.xexp" flags=0x54 blocks_allocated=0x000002 blocks_allocated_copy=0x000002 starting_block=0x0006AD path_indicator=-1 file_size=0x00002000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[11] key="nomnifwk.xexp" size=0x00002000 sha1=eda45c26077b067b541359e6e62f70b0668e5b12 verified_equal=yes
+[12] name="$flash_nomnifwm.xexp" flags=0x54 blocks_allocated=0x000005 blocks_allocated_copy=0x000005 starting_block=0x0006AF path_indicator=-1 file_size=0x00005000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[12] key="nomnifwm.xexp" size=0x00005000 sha1=ca76a96835f8709d588dbc47f5fe83749f455356 verified_equal=yes
+[13] name="$flash_oddupd1.xex" flags=0x52 blocks_allocated=0x00003F blocks_allocated_copy=0x00003F starting_block=0x0006B4 path_indicator=-1 file_size=0x0003F000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[13] key="oddupd1.xex" size=0x0003F000 sha1=59471e2c1e7d7ce4bb4b9134f830aca3977ec6bc verified_equal=yes
+[14] name="$flash_oddupd2.xex" flags=0x52 blocks_allocated=0x00001B blocks_allocated_copy=0x00001B starting_block=0x0006F3 path_indicator=-1 file_size=0x0001B000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[14] key="oddupd2.xex" size=0x0001B000 sha1=bd2dd2801eb25473b5460ec47b7c3dacf0165704 verified_equal=yes
+[15] name="$flash_oddupd3.xex" flags=0x52 blocks_allocated=0x00003F blocks_allocated_copy=0x00003F starting_block=0x00070E path_indicator=-1 file_size=0x0003F000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[15] key="oddupd3.xex" size=0x0003F000 sha1=2a06d946011646dab1f8d21400b265585fb317b9 verified_equal=yes
+[16] name="$flash_SegoeXbox-Light.xtt" flags=0x5A blocks_allocated=0x000006 blocks_allocated_copy=0x000006 starting_block=0x00074D path_indicator=-1 file_size=0x00006000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[16] key="segoexbox-light.xtt" size=0x00006000 sha1=1553e1172c83db7edc563f3c318e9fc607ce4769 verified_equal=yes
+[17] name="$flash_signin.xex" flags=0x51 blocks_allocated=0x00001A blocks_allocated_copy=0x00001A starting_block=0x000753 path_indicator=-1 file_size=0x0001A000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[17] key="signin.xex" size=0x0001A000 sha1=b135aad09174165b2e129700a8649d6f0aab3b8b verified_equal=yes
+[18] name="$flash_systemupdate.xex" flags=0x57 blocks_allocated=0x000043 blocks_allocated_copy=0x000043 starting_block=0x00076D path_indicator=-1 file_size=0x00043000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[18] key="systemupdate.xex" size=0x00043000 sha1=81fdd1bcfffb1d074065aacaec4a14bd11d8f8e7 verified_equal=yes
+[19] name="$flash_systemupdate2pre.xex" flags=0x5B blocks_allocated=0x000044 blocks_allocated_copy=0x000044 starting_block=0x0007B0 path_indicator=-1 file_size=0x00044000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[19] key="systemupdate2pre.xex" size=0x00044000 sha1=882754d527fec421270d30631b717f815cd5d06b verified_equal=yes
+[20] name="$flash_updater.xex" flags=0x52 blocks_allocated=0x000007 blocks_allocated_copy=0x000007 starting_block=0x0007F4 path_indicator=-1 file_size=0x00007000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[20] key="updater.xex" size=0x00007000 sha1=48c409fda2321e8c01c024b1319c5172be9d9174 verified_equal=yes
+[21] name="$flash_vk.xex" flags=0x4D blocks_allocated=0x00000B blocks_allocated_copy=0x00000B starting_block=0x0007FB path_indicator=-1 file_size=0x0000B000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[21] key="vk.xex" size=0x0000B000 sha1=a5ec3c4a93f15298cc178d0bcf36d69e5aea0e52 verified_equal=yes
+[22] name="$flash_xam.xex" flags=0x4E blocks_allocated=0x000250 blocks_allocated_copy=0x000250 starting_block=0x000806 path_indicator=-1 file_size=0x00250000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[22] key="xam.xex" size=0x00250000 sha1=32eedaacc2c67efbe48c31ff9e63e634c026181e verified_equal=yes
+[23] name="$flash_xenonclatin.xttp" flags=0x57 blocks_allocated=0x000018 blocks_allocated_copy=0x000018 starting_block=0x000A56 path_indicator=-1 file_size=0x00018000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[23] key="xenonclatin.xttp" size=0x00018000 sha1=4232347a84dd0e69d650ddfacd4896ed9d5795cf verified_equal=yes
+[24] name="$flash_xenonjklatin.xttp" flags=0x58 blocks_allocated=0x000007 blocks_allocated_copy=0x000007 starting_block=0x000A6E path_indicator=-1 file_size=0x00007000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[24] key="xenonjklatin.xttp" size=0x00007000 sha1=4030d06c26f1ba03f5dfb23e600f5fa9d1d03014 verified_equal=yes
+[25] name="$flash_ximecore.xex" flags=0x53 blocks_allocated=0x000017 blocks_allocated_copy=0x000017 starting_block=0x000A75 path_indicator=-1 file_size=0x00017000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[25] key="ximecore.xex" size=0x00017000 sha1=0728d06309f3197d107ceab5827c7ccf53f386d0 verified_equal=yes
+[26] name="$flash_ximedic.xexp" flags=0x53 blocks_allocated=0x000003 blocks_allocated_copy=0x000003 starting_block=0x000A8C path_indicator=-1 file_size=0x00002800 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[26] key="ximedic.xexp" size=0x00002800 sha1=53e58bc7432e0c265964b9d1b25c9bdbfac70b17 verified_equal=yes
+[27] name="$install_extender.xex" flags=0x55 blocks_allocated=0x00001F blocks_allocated_copy=0x00001F starting_block=0x000A8F path_indicator=-1 file_size=0x0001F000 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[27] key="$install_extender.xex" size=0x0001F000 sha1=6d86064a6261180f039baa071690582de4a33bb4 verified_equal=yes
+[28] name="crl.bin" flags=0x47 blocks_allocated=0x000001 blocks_allocated_copy=0x000001 starting_block=0x000AAE path_indicator=-1 file_size=0x00000A00 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[28] key="crl.bin" size=0x00000A00 sha1=2582635f38b5483cf50ea4bc9d754d06a1a4233f verified_equal=yes
+[29] name="dae.bin" flags=0x47 blocks_allocated=0x000008 blocks_allocated_copy=0x000008 starting_block=0x000AAF path_indicator=-1 file_size=0x00007090 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[29] key="dae.bin" size=0x00007090 sha1=9f461324616fbcb9f24c6af58662d4e16c82447a verified_equal=yes
+[30] name="xboxupd.bin" flags=0x4B blocks_allocated=0x00007C blocks_allocated_copy=0x00007C starting_block=0x000AB7 path_indicator=-1 file_size=0x0007BFE0 update_timestamp=0x2D6F0020 access_timestamp=0x2D6F0020
+[30] key="xboxupd.bin" size=0x0007BFE0 sha1=ea7666ebe2799812270581538b342b8143397ab9 verified_equal=yes

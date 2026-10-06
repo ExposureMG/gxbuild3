@@ -1,9 +1,21 @@
+// STFS reader tests. Besides the behavioural cases, three snapshot cases pin HEAD behaviour
+// before the parsing phase migrates this code:
+//   - the 31 file-table entries of the tracked 17559/su20076000_00000000 with the SHA-1 of every
+//     file StfsContainer::extract_to_memory() returns (tests/golden/stfs_su20076000_entries.txt);
+//   - every header and metadata field of that package through stfs::parse_header and
+//     stfs::parse_metadata (tests/golden/stfs_su20076000_metadata.txt);
+//   - the exact ErrorCode of every malformed-container case (an inline table).
+// --update rewrites the two goldens (CTest never passes it). GXBUILD3_STFS_SUPPORT overrides the
+// support directory of the snapshot cases, for mutation checks against scratch copies only.
+
 #include "Error.hpp"
+#include "GoldenSnapshot.hpp"
 #include "excrypt.h"
 #include "stfs/BlockParser.hpp"
 #include "stfs/FileExtractor.hpp"
 #include "stfs/HashVerifier.hpp"
 #include "stfs/HeaderParser.hpp"
+#include "stfs/MetadataParser.hpp"
 #include "stfs/Package.hpp"
 #include "stfs/PackageCommon.hpp"
 #include "stfs/StfsContainer.hpp"
@@ -12,19 +24,29 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <iterator>
+#include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 namespace {
     namespace fs = std::filesystem;
     namespace stfs = gxbuild3::stfs;
     using Bytes = std::vector<std::byte>;
+
+    // Set by main(); the golden snapshot cases compare against (or, with --update, rewrite)
+    // tests/golden/<name>.txt.
+    std::optional<gxbuild3::test::GoldenOptions> g_golden;
 
     void require(bool condition, std::string_view message) {
         if (!condition)
@@ -756,9 +778,519 @@ namespace {
                 "positive sizes are kept and clamped to 0x4000");
     }
 
+    // --- HEAD snapshots of the tracked system update package -------------------------------
+
+    std::string sha1_hex(std::span<const std::byte> data) {
+        std::uint8_t digest[0x14]{};
+        ExCryptSha(reinterpret_cast<const std::uint8_t*>(data.data()),
+                   static_cast<std::uint32_t>(data.size()), nullptr, 0, nullptr, 0, digest,
+                   sizeof(digest));
+        std::string hex;
+        for (const auto byte : digest)
+            hex += std::format("{:02x}", byte);
+        return hex;
+    }
+
+    std::string bytes_hex(std::span<const std::byte> data) {
+        std::string hex;
+        for (const auto byte : data)
+            hex += std::format("{:02x}", std::to_integer<unsigned>(byte));
+        return hex;
+    }
+
+    // Printable ASCII is kept; quotes, backslashes and every other byte are escaped.
+    std::string escaped_text(std::string_view text) {
+        std::string out = "\"";
+        for (const char ch : text) {
+            const auto byte = static_cast<unsigned char>(ch);
+            if (ch == '"' || ch == '\\')
+                out += std::format("\\{}", ch);
+            else if (byte >= 0x20 && byte < 0x7F)
+                out += ch;
+            else
+                out += std::format("\\x{:02x}", byte);
+        }
+        return out + "\"";
+    }
+
+    std::string escaped_text(const std::u8string& text) {
+        return escaped_text(
+            std::string_view(reinterpret_cast<const char*>(text.data()), text.size()));
+    }
+
+    fs::path snapshot_support_dir() {
+        if (const char* dir = std::getenv("GXBUILD3_STFS_SUPPORT");
+            dir != nullptr && *dir != '\0') {
+            std::cerr << "  note: support directory overridden by GXBUILD3_STFS_SUPPORT\n";
+            return dir;
+        }
+        return GXBUILD3_SUPPORT_DIR;
+    }
+
+    Bytes read_system_update_fixture() {
+        const auto path = snapshot_support_dir() / "17559" / "su20076000_00000000";
+        std::ifstream in(path, std::ios::binary);
+        const std::vector<char> raw(std::istreambuf_iterator<char>(in), {});
+        require(!raw.empty(), "fixture " + path.string() + " is readable");
+        Bytes bytes(raw.size());
+        std::transform(raw.begin(), raw.end(), bytes.begin(),
+                       [](char c) { return static_cast<std::byte>(c); });
+        return bytes;
+    }
+
+    std::string normalised_name(std::string name) {
+        if (name.size() >= 7) {
+            std::string prefix = name.substr(0, 7);
+            std::transform(prefix.begin(), prefix.end(), prefix.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (prefix == "$flash_")
+                name.erase(0, 7);
+        }
+        std::transform(name.begin(), name.end(), name.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return name;
+    }
+
+    std::size_t line_count(std::string_view text) {
+        return static_cast<std::size_t>(std::count(text.begin(), text.end(), '\n'));
+    }
+
+    // Compares `text` with tests/golden/<name>.txt and prints a compared N/M line counter.
+    void require_golden(std::string_view name, const std::string& text,
+                        const std::string& second_render) {
+        require(text == second_render, std::string(name) + ": two renderings differ");
+        require(g_golden.has_value(), "golden options are set");
+        const bool matched = gxbuild3::test::check_golden(*g_golden, name, text);
+        const auto lines = line_count(text);
+        std::cout << "  compared " << (matched ? lines : 0) << "/" << lines << " lines against "
+                  << name << ".txt\n";
+        require(matched, std::string(name) + ".txt does not match HEAD output (see diff above)");
+    }
+
+    struct EntrySnapshot {
+        std::string text;
+        std::size_t entries = 0;
+        std::size_t hashed = 0;
+        std::size_t files = 0;
+    };
+
+    EntrySnapshot render_entry_snapshot(const Bytes& bytes) {
+        const auto package = stfs::Package::from_data(bytes);
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value(), "StfsContainer opens the fixture");
+        const auto in_memory = container->extract_to_memory();
+        require(in_memory.has_value(), "StfsContainer extracts the fixture to memory");
+
+        EntrySnapshot snapshot;
+        std::string& out = snapshot.text;
+        out += std::format("entries {}\n", package.files().size());
+        out += std::format("extract_to_memory files {}\n", in_memory->size());
+        for (std::size_t i = 0; i < package.files().size(); ++i) {
+            const auto& entry = package.files()[i];
+            out +=
+                std::format("[{:02}] name={} flags=0x{:02X} blocks_allocated=0x{:06X} "
+                            "blocks_allocated_copy=0x{:06X} starting_block=0x{:06X} "
+                            "path_indicator={} file_size=0x{:08X} update_timestamp=0x{:08X} "
+                            "access_timestamp=0x{:08X}\n",
+                            i, escaped_text(entry.name), entry.flags, entry.blocks_allocated,
+                            entry.blocks_allocated_copy, entry.starting_block, entry.path_indicator,
+                            entry.file_size, entry.update_timestamp, entry.access_timestamp);
+            ++snapshot.entries;
+            if (entry.is_directory()) {
+                out += std::format("[{:02}] directory\n", i);
+                continue;
+            }
+            ++snapshot.files;
+            const auto key = normalised_name(entry.name);
+            const auto found = in_memory->find(key);
+            if (found == in_memory->end()) {
+                out += std::format("[{:02}] key={} missing from extract_to_memory\n", i,
+                                   escaped_text(key));
+                continue;
+            }
+            // Package's hash-verified extraction must agree with the unverified container bytes;
+            // a verification failure is rendered so the golden diff names the entry.
+            std::string verified;
+            try {
+                verified = package.extract_file(entry, true) == found->second ? "yes" : "no";
+            } catch (const std::exception&) {
+                verified = "verify-failed";
+            }
+            out += std::format("[{:02}] key={} size=0x{:08X} sha1={} verified_equal={}\n", i,
+                               escaped_text(key), found->second.size(), sha1_hex(found->second),
+                               verified);
+            ++snapshot.hashed;
+        }
+        return snapshot;
+    }
+
+    void test_system_update_fixture_entry_snapshot() {
+        const auto bytes = read_system_update_fixture();
+        const auto first = render_entry_snapshot(bytes);
+        const auto second = render_entry_snapshot(bytes);
+        std::cout << "  entries " << first.entries << "/31, files hashed " << first.hashed << "/"
+                  << first.files << '\n';
+        require(first.entries == 31, "fixture lists 31 entries");
+        require(first.hashed == first.files, "every file entry is hashed");
+        require_golden("stfs_su20076000_entries", first.text, second.text);
+    }
+
+    struct MetadataSnapshot {
+        std::string text;
+        std::size_t fields = 0;
+    };
+
+    MetadataSnapshot render_metadata_snapshot(const Bytes& bytes) {
+        const auto header = stfs::parse_header(bytes);
+        require(header.has_value(), "parse_header accepts the fixture");
+        const auto meta = stfs::parse_metadata(bytes);
+        require(meta.has_value(), "parse_metadata accepts the fixture");
+
+        MetadataSnapshot snapshot;
+        const auto field = [&snapshot](std::string_view name, const std::string& value) {
+            snapshot.text += std::format("{} {}\n", name, value);
+            ++snapshot.fields;
+        };
+        const auto hex32 = [](std::uint64_t value) { return std::format("0x{:08X}", value); };
+
+        constexpr std::string_view magic_names[] = {"CON", "PIRS", "LIVE"};
+        field("magic", std::string(magic_names[static_cast<std::size_t>(header->magic)]));
+        if (const auto* live = std::get_if<stfs::LiveSignature>(&header->signature)) {
+            field("signature", "live");
+            field("signature.package_signature.sha1", sha1_hex(live->package_signature));
+            field("signature.padding.sha1", sha1_hex(live->padding));
+        } else {
+            const auto& con = std::get<stfs::ConSignature>(header->signature);
+            field("signature", "con");
+            field("signature.public_key_certificate_size",
+                  std::to_string(con.public_key_certificate_size));
+            field("signature.signature.sha1", sha1_hex(con.signature));
+        }
+
+        field("license_entries.count", std::to_string(meta->license_entries.size()));
+        for (std::size_t i = 0; i < meta->license_entries.size(); ++i) {
+            const auto& license = meta->license_entries[i];
+            field(std::format("license_entries[{}]", i),
+                  std::format("id=0x{:016X} bits=0x{:08X} flags=0x{:08X}",
+                              static_cast<std::uint64_t>(license.license_id),
+                              static_cast<std::uint32_t>(license.license_bits),
+                              static_cast<std::uint32_t>(license.license_flags)));
+        }
+        field("header_sha1.sha1", sha1_hex(meta->header_sha1));
+        field("header_size", hex32(meta->header_size));
+        field("content_type", hex32(static_cast<std::uint32_t>(meta->content_type)));
+        field("metadata_version", std::to_string(meta->metadata_version));
+        field("content_size",
+              std::format("0x{:016X}", static_cast<std::uint64_t>(meta->content_size)));
+        field("media_id", hex32(meta->media_id));
+        field("version", hex32(static_cast<std::uint32_t>(meta->version)));
+        field("base_version", hex32(static_cast<std::uint32_t>(meta->base_version)));
+        field("title_id", hex32(meta->title_id));
+        field("platform", std::to_string(static_cast<unsigned>(meta->platform)));
+        field("executable_type", std::to_string(meta->executable_type));
+        field("disc_number", std::to_string(meta->disc_number));
+        field("disc_in_set", std::to_string(meta->disc_in_set));
+        field("save_game_id", hex32(meta->save_game_id));
+        field("console_id", bytes_hex(meta->console_id));
+        field("profile_id", bytes_hex(meta->profile_id));
+        field("descriptor_type", std::to_string(static_cast<std::uint32_t>(meta->descriptor_type)));
+        if (const auto* vd = std::get_if<stfs::StfsVolumeDescriptor>(&meta->volume_descriptor)) {
+            field("stfs.size", std::format("0x{:02X}", vd->size));
+            field("stfs.block_separation", std::format("0x{:02X}", vd->block_separation));
+            field("stfs.file_table_block_count", std::to_string(vd->file_table_block_count));
+            field("stfs.file_table_block_number", std::to_string(vd->file_table_block_number));
+            field("stfs.top_hash_table_hash", bytes_hex(vd->top_hash_table_hash));
+            field("stfs.total_allocated_block_count",
+                  std::to_string(vd->total_allocated_block_count));
+            field("stfs.total_unallocated_block_count",
+                  std::to_string(vd->total_unallocated_block_count));
+        } else {
+            field("volume_descriptor", "svod");
+        }
+        field("data_file_count", std::to_string(meta->data_file_count));
+        field("data_file_combined_size",
+              std::format("0x{:016X}", static_cast<std::uint64_t>(meta->data_file_combined_size)));
+        field("v2_extra", meta->v2_extra ? "present" : "absent");
+        if (meta->v2_extra) {
+            field("v2_extra.series_id", bytes_hex(meta->v2_extra->series_id));
+            field("v2_extra.season_id", bytes_hex(meta->v2_extra->season_id));
+            field("v2_extra.season_number", std::to_string(meta->v2_extra->season_number));
+            field("v2_extra.episode_number", std::to_string(meta->v2_extra->episode_number));
+        }
+        field("device_id.sha1", sha1_hex(meta->device_id));
+        field("display_name", escaped_text(meta->display_name));
+        field("display_description", escaped_text(meta->display_description));
+        field("publisher_name", escaped_text(meta->publisher_name));
+        field("title_name", escaped_text(meta->title_name));
+        field("transfer_flags", std::format("0x{:02X}", meta->transfer_flags));
+        field("thumbnail_image_size", std::to_string(meta->thumbnail_image_size));
+        field("title_thumbnail_image_size", std::to_string(meta->title_thumbnail_image_size));
+        field("thumbnail_image", std::format("size=0x{:X} sha1={}", meta->thumbnail_image.size(),
+                                             sha1_hex(meta->thumbnail_image)));
+        field("title_thumbnail_image",
+              std::format("size=0x{:X} sha1={}", meta->title_thumbnail_image.size(),
+                          sha1_hex(meta->title_thumbnail_image)));
+        return snapshot;
+    }
+
+    void test_system_update_fixture_metadata_snapshot() {
+        const auto bytes = read_system_update_fixture();
+        const auto first = render_metadata_snapshot(bytes);
+        const auto second = render_metadata_snapshot(bytes);
+        std::cout << "  metadata fields rendered " << first.fields << '\n';
+        require_golden("stfs_su20076000_metadata", first.text, second.text);
+    }
+
+    // --- Exact error codes -----------------------------------------------------------------
+
+    using ErrorCode = gxbuild3::ErrorCode;
+
+    template <typename R> std::optional<gxbuild3::Error> error_of(const R& result) {
+        if (result)
+            return std::nullopt;
+        return result.error();
+    }
+
+    // The container keeps a view of `bytes`; it is dropped before this returns.
+    std::optional<gxbuild3::Error> open_error(const Bytes& bytes) {
+        return error_of(stfs::StfsContainer::open(bytes));
+    }
+
+    gxbuild3::Error open_failed(const gxbuild3::Error& error) {
+        return {ErrorCode::Internal, "open unexpectedly failed: " + error.describe()};
+    }
+
+    std::optional<gxbuild3::Error> extract_by_name_error(const Bytes& bytes,
+                                                         std::string_view name) {
+        const auto container = stfs::StfsContainer::open(bytes);
+        if (!container)
+            return open_failed(container.error());
+        return error_of(container->extract_file_by_name(name));
+    }
+
+    std::optional<gxbuild3::Error> extract_all_error(const Bytes& bytes) {
+        const auto container = stfs::StfsContainer::open(bytes);
+        if (!container)
+            return open_failed(container.error());
+        TempDir dir;
+        return error_of(container->extract_all(dir.root / "out"));
+    }
+
+    Bytes with_magic(Bytes bytes, std::string_view magic) {
+        for (std::size_t i = 0; i < 4; ++i)
+            bytes[i] = static_cast<std::byte>(magic[i]);
+        return bytes;
+    }
+
+    Bytes pirs_buffer(std::size_t size) {
+        return with_magic(Bytes(size, std::byte{0}), "PIRS");
+    }
+
+    struct ErrorCase {
+        std::string name;
+        ErrorCode expected;
+        std::function<std::optional<gxbuild3::Error>()> run;
+        std::string_view must_contain = {};
+        bool needs_dev_full = false;
+    };
+
+    std::vector<ErrorCase> error_cases() {
+        const auto one_file = [] { return make_package({{"a.bin", pattern(10, 1)}}); };
+        const auto patched = [one_file](std::size_t offset, std::uint64_t value, std::size_t width,
+                                        bool big_endian) {
+            auto bytes = one_file();
+            if (big_endian)
+                put_be(bytes, offset, value, width);
+            else
+                put_le(bytes, offset, value, width);
+            return bytes;
+        };
+        const auto free_extract = [](const Bytes& bytes, stfs::Magic magic, bool verify) {
+            const auto package = stfs::Package::from_data(bytes);
+            const auto* vd =
+                std::get_if<stfs::StfsVolumeDescriptor>(&package.metadata().volume_descriptor);
+            require(vd != nullptr, "synthetic package has an STFS descriptor");
+            return error_of(stfs::extract_file(bytes, package.files().at(0), magic, 0xA000, verify,
+                                               &vd->top_hash_table_hash, total_blocks(bytes)));
+        };
+        const auto free_to_disk = [](const Bytes& bytes, const fs::path& path) {
+            const auto package = stfs::Package::from_data(bytes);
+            return error_of(stfs::extract_file_to_disk(bytes, package.files().at(0),
+                                                       stfs::Magic::PIRS, 0xA000, path));
+        };
+
+        std::vector<ErrorCase> cases;
+        // Open-time.
+        cases.push_back({"open: CON magic, full-size buffer", ErrorCode::Malformed,
+                         [=] { return open_error(with_magic(one_file(), "CON ")); }});
+        cases.push_back({"open: LIVE magic, full-size buffer", ErrorCode::Malformed,
+                         [=] { return open_error(with_magic(one_file(), "LIVE")); }});
+        cases.push_back({"open: 0x100-byte non-PIRS buffer", ErrorCode::Malformed,
+                         [] { return open_error(Bytes(0x100, std::byte{0x5A})); }});
+        cases.push_back({"open: 0x100-byte PIRS buffer", ErrorCode::Truncated,
+                         [] { return open_error(pirs_buffer(0x100)); }});
+        cases.push_back({"open: 0x1000-byte PIRS buffer", ErrorCode::Truncated,
+                         [] { return open_error(pirs_buffer(0x1000)); }});
+        for (const std::uint32_t header_size : {0x100u, 0x100000u, 0xFFFFF000u}) {
+            cases.push_back({std::format("open: header_size 0x{:X}", header_size),
+                             ErrorCode::Malformed,
+                             [=] { return open_error(patched(0x340, header_size, 4, true)); }});
+        }
+        for (const std::uint32_t type : {1u, 2u}) {
+            cases.push_back({std::format("open: descriptor_type {}", type), ErrorCode::Unsupported,
+                             [=] { return open_error(patched(0x3A9, type, 4, true)); }});
+        }
+        for (const std::uint32_t count : {0u, 0x8000u}) {
+            cases.push_back(
+                {std::format("open: file table block count 0x{:X}", count), ErrorCode::Malformed,
+                 [=] { return open_error(patched(kVolumeDescriptor + 0x03, count, 2, false)); }});
+        }
+        cases.push_back({"open: block_separation bit 0 clear", ErrorCode::Unsupported, [=] {
+                             auto bytes = one_file();
+                             bytes[kVolumeDescriptor + 0x02] = std::byte{0x00};
+                             return open_error(bytes);
+                         }});
+        cases.push_back({"open: table count 2 with a 1-block chain", ErrorCode::Truncated, [=] {
+                             return open_error(patched(kVolumeDescriptor + 0x03, 2, 2, false));
+                         }});
+        for (const std::uint8_t length : {std::uint8_t{0x29}, std::uint8_t{0x3F}}) {
+            cases.push_back(
+                {std::format("open: name_length 0x{:02X}", length), ErrorCode::Malformed, [=] {
+                     auto bytes = one_file();
+                     bytes[entry_offset(0) + 0x28] = static_cast<std::byte>(0x40 | length);
+                     return open_error(bytes);
+                 }});
+        }
+        cases.push_back({"open: name starting with NUL", ErrorCode::Malformed, [=] {
+                             auto bytes = one_file();
+                             bytes[entry_offset(0)] = std::byte{0};
+                             return open_error(bytes);
+                         }});
+        for (const std::string name : {"a/b", "a\\b", "../escaped"}) {
+            cases.push_back({std::format("open: name {}", escaped_text(name)), ErrorCode::Malformed,
+                             [=] { return open_error(make_package({{name, pattern(10, 1)}})); }});
+        }
+
+        // Extraction-time.
+        cases.push_back({"extract_file_by_name: broken 2-block chain", ErrorCode::Truncated, [] {
+                             auto bytes = make_package({{"a.bin", pattern(0x1800, 1), false}});
+                             put_be(bytes, hash_offset(1) + 0x15, 0xFFFFFF, 3);
+                             return extract_by_name_error(bytes, "a.bin");
+                         }});
+        cases.push_back({"extract_file_by_name: hash status 0xAB", ErrorCode::Malformed,
+                         [] {
+                             auto bytes = make_package({{"a.bin", pattern(10, 1), false}});
+                             bytes[hash_offset(1) + 0x14] = std::byte{0xAB};
+                             return extract_by_name_error(bytes, "a.bin");
+                         },
+                         "(0xAB)"});
+        cases.push_back({"extract_file_by_name: consecutive blocks_allocated too small",
+                         ErrorCode::Malformed, [] {
+                             auto bytes = make_package({{"a.bin", pattern(0x2800, 6), true}});
+                             put_le(bytes, entry_offset(0) + 0x29, 2, 3);
+                             return extract_by_name_error(bytes, "a.bin");
+                         }});
+        cases.push_back({"extract_file_by_name: consecutive starting_block 0xFFFFFE",
+                         ErrorCode::OutOfRange, [] {
+                             auto bytes = make_package({{"a.bin", pattern(0x2800, 6), true}});
+                             put_le(bytes, entry_offset(0) + 0x2F, 0xFFFFFE, 3);
+                             return extract_by_name_error(bytes, "a.bin");
+                         }});
+        cases.push_back({"extract_file_by_name: consecutive 0xFFFFFF blocks, size 0xFFFFFFFF",
+                         ErrorCode::OutOfRange, [] {
+                             auto bytes = make_package({{"a.bin", pattern(0x10, 6), true}});
+                             put_le(bytes, entry_offset(0) + 0x29, 0xFFFFFF, 3);
+                             put_be(bytes, entry_offset(0) + 0x34, 0xFFFFFFFF, 4);
+                             return extract_by_name_error(bytes, "a.bin");
+                         }});
+        cases.push_back(
+            {"extract_all: parent self-reference", ErrorCode::Malformed,
+             [] { return extract_all_error(make_package({{"a.bin", pattern(10, 1), true, 0}})); }});
+        cases.push_back({"extract_all: parent forward reference", ErrorCode::Malformed, [] {
+                             return extract_all_error(make_package(
+                                 {{"a", {}, true, 1, true}, {"b", {}, true, 0, true}}));
+                         }});
+        cases.push_back(
+            {"extract_all: .. directory", ErrorCode::InvalidArgument,
+             [] {
+                 return extract_all_error(make_package(
+                     {{"..", {}, true, -1, true}, {"escaped", pattern(10, 2), true, 0}}));
+             },
+             "escapes"});
+        cases.push_back({"free extract_file: Magic::CON", ErrorCode::Unsupported,
+                         [=] { return free_extract(one_file(), stfs::Magic::CON, false); }});
+        cases.push_back(
+            {"free extract_file: verify, corrupt data block", ErrorCode::HashMismatch, [=] {
+                 auto bytes = one_file();
+                 bytes[data_offset(1) + 0x800] ^= std::byte{0x01};
+                 return free_extract(bytes, stfs::Magic::PIRS, true);
+             }});
+        cases.push_back(
+            {"free extract_file: verify, corrupt hash table", ErrorCode::HashMismatch, [=] {
+                 auto bytes = one_file();
+                 bytes[hash_offset(5) + 0x3] ^= std::byte{0x01};
+                 return free_extract(bytes, stfs::Magic::PIRS, true);
+             }});
+        cases.push_back({"free extract_file_to_disk: /dev/full",
+                         ErrorCode::IoError,
+                         [=] { return free_to_disk(one_file(), "/dev/full"); },
+                         {},
+                         true});
+        cases.push_back({"free extract_file_to_disk: unopenable path", ErrorCode::IoError, [=] {
+                             TempDir dir;
+                             return free_to_disk(one_file(), dir.root / "no" / "dir" / "x");
+                         }});
+        return cases;
+    }
+
+    void test_error_codes_are_pinned() {
+        const bool have_dev_full = fs::exists("/dev/full");
+        std::size_t pinned = 0;
+        std::size_t skipped = 0;
+        std::vector<std::string> failures;
+        const auto cases = error_cases();
+        for (const auto& item : cases) {
+            if (item.needs_dev_full && !have_dev_full) {
+                std::cout << "  not compared: " << item.name << " (no /dev/full)\n";
+                ++skipped;
+                continue;
+            }
+            const auto error = item.run();
+            if (!error) {
+                failures.push_back(item.name + ": succeeded, expected " +
+                                   std::string(gxbuild3::to_string(item.expected)));
+                continue;
+            }
+            if (error->code != item.expected) {
+                failures.push_back(item.name + ": got " +
+                                   std::string(gxbuild3::to_string(error->code)) + ", expected " +
+                                   std::string(gxbuild3::to_string(item.expected)) + " (" +
+                                   error->describe() + ")");
+                continue;
+            }
+            if (!item.must_contain.empty() &&
+                error->describe().find(item.must_contain) == std::string::npos) {
+                failures.push_back(item.name + ": message lacks '" +
+                                   std::string(item.must_contain) + "': " + error->describe());
+                continue;
+            }
+            ++pinned;
+        }
+        for (const auto& failure : failures)
+            std::cerr << "  error case FAIL: " << failure << '\n';
+        std::cout << "  error codes pinned " << pinned << "/" << (cases.size() - skipped) << " ("
+                  << skipped << " not compared)\n";
+        require(failures.empty(), std::format("{} error case(s) differ", failures.size()));
+    }
+
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    const auto golden = gxbuild3::test::golden_options(argc, argv);
+    if (!golden)
+        return 2;
+    g_golden = *golden;
+
     const std::vector<std::pair<std::string_view, void (*)()>> tests = {
         {"parse_header rejects short buffer", test_parse_header_rejects_short_buffer},
         {"read_header_from_file requires full header",
@@ -790,6 +1322,9 @@ int main() {
         {"system update fixture", test_system_update_fixture},
         {"locale strings decode UTF-16BE", test_locale_strings_decode_utf16be},
         {"negative thumbnail size is empty", test_negative_thumbnail_size_is_empty},
+        {"system update fixture entry snapshot", test_system_update_fixture_entry_snapshot},
+        {"system update fixture metadata snapshot", test_system_update_fixture_metadata_snapshot},
+        {"error codes are pinned", test_error_codes_are_pinned},
     };
     int failed = 0;
     for (const auto& [name, test] : tests) {
