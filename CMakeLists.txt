@@ -179,6 +179,11 @@ if(BUILD_TESTING)
             -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-integration-tests
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/CliIntegrationTests.cmake)
 
+    add_test(NAME gxbuild3_error_convention_guard
+        COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/ErrorConventionGuard.cmake)
+
     find_program(GXBUILD3_BASH_EXECUTABLE NAMES bash)
     if(UNIX)
         add_test(NAME gxbuild3_flashimage_tests

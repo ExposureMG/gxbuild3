@@ -71,8 +71,8 @@ namespace gxbuild3::nand {
                                                   const cb_header* cb_a_header = nullptr);
 
         // Throwing shims over the Result API above (std::runtime_error carrying
-        // Error::describe()). TODO(E9/E10): src stops using them; tests keep them until the
-        // test rewrite.
+        // Error::describe()). TODO(test-phase): test-only; src must not call them
+        // (ErrorConventionGuard.cmake).
         static BootloaderCb parse_or_throw(const std::vector<uint8_t>& bytes) {
             return detail::value_or_throw(parse(bytes));
         }

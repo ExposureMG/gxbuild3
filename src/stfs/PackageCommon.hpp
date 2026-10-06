@@ -36,6 +36,7 @@ namespace gxbuild3::stfs::detail {
 
     // TODO(parsing): Package still reports failures by throwing. It unwraps the
     // Result-returning helpers through this shim until the parsing phase converts it.
+    // tests/ErrorConventionGuard.cmake keeps it out of the rest of src/.
     template <class T> [[nodiscard]] T value_or_throw(Result<T>&& result) {
         if (!result) {
             throw std::runtime_error(result.error().describe());

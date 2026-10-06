@@ -225,9 +225,9 @@ namespace gxbuild3::nand {
 
     namespace detail {
 
-        // TODO(E9/E10): the *_or_throw bootloader shims unwrap the Result API through these
-        // until FlashImage and BuildRunner consume it directly; tests keep them until the
-        // test rewrite deletes them.
+        // TODO(test-phase): the test-only *_or_throw bootloader shims unwrap the Result API
+        // through these; the test rewrite deletes both. tests/ErrorConventionGuard.cmake keeps
+        // them out of the rest of src/.
         template <class T> [[nodiscard]] T value_or_throw(Result<T>&& result) {
             if (!result) {
                 throw std::runtime_error(result.error().describe());

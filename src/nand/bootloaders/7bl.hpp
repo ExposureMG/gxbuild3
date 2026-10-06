@@ -24,7 +24,7 @@ namespace gxbuild3::nand {
         [[nodiscard]] Result<void> encrypt(const uint8_t cg_hmac[16]);
 
         // Throwing shims over the Result API (std::runtime_error carrying Error::describe()).
-        // TODO(E9/E10): src stops using them; tests keep them until the test rewrite.
+        // TODO(test-phase): test-only; src must not call them (ErrorConventionGuard.cmake).
         static BootloaderCg parse_or_throw(const std::vector<uint8_t>& bytes) {
             return detail::value_or_throw(parse(bytes));
         }

@@ -12,6 +12,10 @@
 #include <fstream>
 #include <stdexcept>
 
+// TODO(parsing): Package reports failures by throwing std::runtime_error. It is test-only (no
+// src caller) and is allowlisted in tests/ErrorConventionGuard.cmake until the parsing phase
+// replaces it with a Result-returning reader.
+
 namespace gxbuild3::stfs {
 
     namespace {
