@@ -850,15 +850,23 @@ namespace gxbuild3 {
             try {
                 Log::Info("Building image from donor NAND dump...");
                 auto donor_img = FlashImage::read(*input.metadata.nand_image);
-                if (!donor_img || !donor_img->parse()) {
+                if (!donor_img) {
                     Log::Error("Failed to parse donor NAND dump");
                     return build_error(BuildErrorCode::InvalidDonor,
                                        "Failed to parse donor NAND dump");
                 }
-                if (!donor_img->decrypt_all(input.metadata.cpu_key)) {
-                    Log::Error("Failed to decrypt donor NAND dump components");
+                if (auto parsed = donor_img->parse(); !parsed) {
+                    Log::Error("Failed to parse donor NAND dump: {}", parsed.error().describe());
                     return build_error(BuildErrorCode::InvalidDonor,
-                                       "Failed to decrypt donor NAND dump components");
+                                       "Failed to parse donor NAND dump: " +
+                                           parsed.error().describe());
+                }
+                if (auto decrypted = donor_img->decrypt_all(input.metadata.cpu_key); !decrypted) {
+                    Log::Error("Failed to decrypt donor NAND dump components: {}",
+                               decrypted.error().describe());
+                    return build_error(BuildErrorCode::InvalidDonor,
+                                       "Failed to decrypt donor NAND dump components: " +
+                                           decrypted.error().describe());
                 }
                 if (!donor_nonces) {
                     donor_nonces = collect_donor_nonces(*donor_img);
@@ -988,9 +996,10 @@ namespace gxbuild3 {
         }
 
         try {
-            if (!flash_image.clear_bootloader_chain()) {
+            if (auto cleared = flash_image.clear_bootloader_chain(); !cleared) {
                 return build_error(BuildErrorCode::SerializationFailure,
-                                   "Failed to clear donor bootloader records");
+                                   "Failed to clear donor bootloader records: " +
+                                       cleared.error().describe());
             }
             flash_image.preserve_layout = false;
             flash_image.cb_section.cb_x.reset();
@@ -1356,8 +1365,8 @@ namespace gxbuild3 {
             }
         }
 
-        if (const auto layout_error = flash_image.payload_layout_error(); layout_error) {
-            return build_error(BuildErrorCode::InvalidInput, *layout_error);
+        if (const auto layout = flash_image.payload_layout(); !layout) {
+            return build_error(BuildErrorCode::InvalidInput, layout.error().describe());
         }
 
         flash_image.raw_patches = input.raw_patches;
@@ -1518,20 +1527,23 @@ namespace gxbuild3 {
         }
 
         Log::Debug("Encrypting NAND image components");
-        if (!flash_image.encrypt_all(input.metadata.cpu_key, input.build_type)) {
-            Log::Error("Failed to encrypt NAND image components");
+        if (auto encrypted = flash_image.encrypt_all(input.metadata.cpu_key, input.build_type);
+            !encrypted) {
+            Log::Error("Failed to encrypt NAND image components: {}", encrypted.error().describe());
             return build_error(BuildErrorCode::EncryptionFailure,
-                               "Failed to encrypt NAND image components");
+                               "Failed to encrypt NAND image components: " +
+                                   encrypted.error().describe());
         }
 
         auto output = flash_image.write();
-        if (output.empty()) {
-            Log::Error("Failed to write/serialize built NAND image");
+        if (!output) {
+            Log::Error("Failed to write/serialize built NAND image: {}", output.error().describe());
             return build_error(BuildErrorCode::SerializationFailure,
-                               "Failed to write/serialize built NAND image");
+                               "Failed to write/serialize built NAND image: " +
+                                   output.error().describe());
         }
 
-        return output;
+        return std::move(*output);
     } catch (const std::exception& exception) {
         return build_error(BuildErrorCode::Internal, exception.what());
     }
@@ -1543,8 +1555,13 @@ namespace gxbuild3 {
         }
 
         auto img_opt = FlashImage::read(std::vector<uint8_t>(nand_image.begin(), nand_image.end()));
-        if (!img_opt || !img_opt->parse()) {
+        if (!img_opt) {
             Log::Error("Failed to parse NAND image structure for public info extraction");
+            return std::nullopt;
+        }
+        if (auto parsed = img_opt->parse(); !parsed) {
+            Log::Error("Failed to parse NAND image structure for public info extraction: {}",
+                       parsed.error().describe());
             return std::nullopt;
         }
 
@@ -1634,8 +1651,12 @@ namespace gxbuild3 {
         }
 
         auto img_opt = FlashImage::read(std::vector<uint8_t>(nand_image.begin(), nand_image.end()));
-        if (!img_opt || !img_opt->parse()) {
+        if (!img_opt) {
             Log::Error("Failed to parse donor NAND image structure");
+            return std::nullopt;
+        }
+        if (auto parsed = img_opt->parse(); !parsed) {
+            Log::Error("Failed to parse donor NAND image structure: {}", parsed.error().describe());
             return std::nullopt;
         }
 
@@ -1645,8 +1666,10 @@ namespace gxbuild3 {
             return std::nullopt;
         }
 
-        if (!img.decrypt_all(cpu_key)) {
-            Log::Error("Failed to decrypt donor NAND image components during metadata extraction");
+        if (auto decrypted = img.decrypt_all(cpu_key); !decrypted) {
+            Log::Error("Failed to decrypt donor NAND image components during metadata extraction: "
+                       "{}",
+                       decrypted.error().describe());
             return std::nullopt;
         }
 
@@ -1730,15 +1753,20 @@ namespace gxbuild3 {
         }
 
         auto img_opt = FlashImage::read(std::vector<uint8_t>(nand_image.begin(), nand_image.end()));
-        if (!img_opt || !img_opt->parse()) {
+        if (!img_opt) {
             Log::Error("Failed to parse donor NAND image structure");
+            return std::nullopt;
+        }
+        if (auto parsed = img_opt->parse(); !parsed) {
+            Log::Error("Failed to parse donor NAND image structure: {}", parsed.error().describe());
             return std::nullopt;
         }
 
         auto& img = *img_opt;
 
-        if (!img.decrypt_all(cpu_key)) {
-            Log::Error("Failed to decrypt donor NAND image components with provided CPU key");
+        if (auto decrypted = img.decrypt_all(cpu_key); !decrypted) {
+            Log::Error("Failed to decrypt donor NAND image components with provided CPU key: {}",
+                       decrypted.error().describe());
             return std::nullopt;
         }
 
@@ -2046,15 +2074,20 @@ namespace gxbuild3 {
         }
 
         auto img_opt = FlashImage::read(std::vector<uint8_t>(nand_image.begin(), nand_image.end()));
-        if (!img_opt || !img_opt->parse()) {
+        if (!img_opt) {
             Log::Error("Failed to parse donor NAND image structure");
+            return std::nullopt;
+        }
+        if (auto parsed = img_opt->parse(); !parsed) {
+            Log::Error("Failed to parse donor NAND image structure: {}", parsed.error().describe());
             return std::nullopt;
         }
 
         auto& img = *img_opt;
 
-        if (!img.decrypt_all(cpu_key)) {
-            Log::Error("Failed to decrypt donor NAND image components with provided CPU key");
+        if (auto decrypted = img.decrypt_all(cpu_key); !decrypted) {
+            Log::Error("Failed to decrypt donor NAND image components with provided CPU key: {}",
+                       decrypted.error().describe());
             return std::nullopt;
         }
 

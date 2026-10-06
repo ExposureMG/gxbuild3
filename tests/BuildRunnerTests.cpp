@@ -45,6 +45,14 @@ namespace {
         return true;
     }
 
+    bool require(const gxbuild3::Result<>& result, std::string_view message) {
+        if (!result) {
+            std::cerr << "FAIL: " << message << ": " << result.error().describe() << '\n';
+            return false;
+        }
+        return true;
+    }
+
     // A console's key: the all-zero key, which binds an image to no console, does not count.
     std::array<uint8_t, 16> valid_cpu_key() {
         for (size_t bit_count = 0; bit_count <= 106; ++bit_count) {
@@ -1096,8 +1104,10 @@ namespace {
             auto image = built ? FlashImage::read(*built) : std::nullopt;
             if (!require(image && image->parse(), "glitch donor with runtime KHV parses"))
                 return false;
-            image->flash_driver.write_offset(0x70000, Bytes{0, 0, 0, 0});
-            image->flash_driver.write_offset(0x95060, valid_xell());
+            if (!require(image->flash_driver.write_offset(0x70000, Bytes{0, 0, 0, 0}) &&
+                             image->flash_driver.write_offset(0x95060, valid_xell()),
+                         "the stale JTAG anchors are laid"))
+                return false;
             auto extracted = extract_all(image->flash_driver.serialize(), input.metadata.cpu_key);
             if (!require(extracted && (!extracted->payloads || !extracted->payloads->xell),
                          "known glitch image cannot infer JTAG XeLL inside its damaged payload"))
@@ -1281,7 +1291,7 @@ namespace {
         for (const auto& [block_type, bytes] : mobiles) {
             *donor.mobile_data->get_slot(block_type) = bytes;
         }
-        return donor.write();
+        return donor.write().value_or(Bytes{});
     }
 
     std::optional<FlashImage> parse_image(std::span<const uint8_t> bytes) {
@@ -1427,7 +1437,10 @@ namespace {
         const auto built = run_build(input);
         return require(!built.has_value(), "a mobile overlay longer than a block is refused") &&
                require(built.error().code == BuildErrorCode::SerializationFailure,
-                       "an over-long mobile reports SerializationFailure");
+                       "an over-long mobile reports SerializationFailure") &&
+               require(built.error().message.find("Mobile data type 0x32 is 0x4001 bytes") !=
+                           std::string::npos,
+                       "the writer's reason reaches the BuildError message");
     }
 
     bool test_extracted_plaintext_keyvault_reencrypts_for_a_fresh_layout() {
@@ -1728,7 +1741,7 @@ namespace {
             if (!require(parsed.has_value(), "header 0x74 fixture parses"))
                 return false;
             parsed->header.smc_config_offset = 0xF7C000;
-            if (!require(zero_at_0x74(parsed->write()),
+            if (!require(zero_at_0x74(parsed->write().value_or(Bytes{})),
                          "rewrite does not carry a donor's header 0x74"))
                 return false;
         }
@@ -2104,7 +2117,7 @@ namespace {
         image.mobile_data = MobileData{};
         image.mobile_data->x31 = Bytes(0x800, 0x31);
 
-        if (!require(image.write().empty(), "mobile allocation cannot enter the SMC tail")) {
+        if (!require(!image.write(), "mobile allocation cannot enter the SMC tail")) {
             return false;
         }
         for (size_t block = limit; block < image.flash_driver.block_count(); ++block) {
@@ -3258,11 +3271,11 @@ namespace {
         header_only_cd.kernel_section.cd.header.header.magic = NANDBootloaderMagic::CD;
         header_only_cd.kernel_section.cd.header.header.size = sizeof(cd_header);
 
-        const auto cb_error = header_only_cb.payload_layout_error();
-        const auto cd_error = header_only_cd.payload_layout_error();
-        return require(cb_error.has_value() && cb_error->find("CB/A") != std::string::npos,
+        const auto cb_layout = header_only_cb.payload_layout();
+        const auto cd_layout = header_only_cd.payload_layout();
+        return require(!cb_layout && cb_layout.error().message.find("CB/A") != std::string::npos,
                        "direct layout validation rejects a header-only required CB/A") &&
-               require(cd_error.has_value() && cd_error->find("CD") != std::string::npos,
+               require(!cd_layout && cd_layout.error().message.find("CD") != std::string::npos,
                        "direct layout validation rejects a header-only required CD");
     }
 
@@ -3580,7 +3593,7 @@ namespace {
             distinct = distinct && first_nonces[index] != second_nonces[index];
             non_zero = non_zero && first_nonces[index] != Bytes(0x10, 0);
         }
-        const bool decrypted = one->decrypt_all(input.metadata.cpu_key);
+        const bool decrypted = one->decrypt_all(input.metadata.cpu_key).has_value();
         return require(non_zero, "fresh CB, CD and CE take non-zero nonces") &&
                require(first_nonces[2] != Bytes(0x10, 0x55),
                        "a fresh CE does not keep its template's nonce") &&
@@ -3615,7 +3628,7 @@ namespace {
         const auto is = [](std::span<const uint8_t> bytes, uint8_t value) {
             return nonce_bytes(bytes) == Bytes(0x10, value);
         };
-        const bool decrypted = image->decrypt_all(input.metadata.cpu_key);
+        const bool decrypted = image->decrypt_all(input.metadata.cpu_key).has_value();
         return require(is(image->cb_section.cb_or_A.data, 0xA1) &&
                            is(image->kernel_section.cd.header.key, 0xA3) &&
                            is(image->kernel_section.ce->header.key, 0xA4),
@@ -3654,7 +3667,7 @@ namespace {
                      "max-LDV donor fixture re-encrypts")) {
             return false;
         }
-        const auto donor = staged->write();
+        const auto donor = staged->write().value_or(Bytes{});
         auto donor_image = parse_image(donor);
         const auto extracted = extract_all(donor, source.metadata.cpu_key);
         const auto metadata = extract_metadata(donor, source.metadata.cpu_key);
@@ -3745,7 +3758,7 @@ namespace {
         }
         const auto donor_copyright = copyright("2006");
         std::copy(donor_copyright.begin(), donor_copyright.end(), custom->header.copyright);
-        const auto donor = custom->write();
+        const auto donor = custom->write().value_or(Bytes{});
 
         auto same_board = input;
         same_board.metadata.nand_image = donor;
@@ -3770,7 +3783,7 @@ namespace {
             return false;
         }
         std::copy(donor_copyright.begin(), donor_copyright.end(), jasper_donor->header.copyright);
-        jasper.metadata.nand_image = jasper_donor->write();
+        jasper.metadata.nand_image = jasper_donor->write().value_or(Bytes{});
         const auto kept_jasper = run_build(jasper);
         auto jtag = jasper;
         jtag.build_type = BuildType::Jtag;
@@ -3967,7 +3980,10 @@ namespace {
             BlockMetadata stale{};
             stale.logical_block_id = static_cast<uint16_t>(block);
             stale.block_type = 0x28;
-            donor->flash_driver.write_block(block, Bytes(0x4000, 0x5A));
+            if (!require(donor->flash_driver.write_block(block, Bytes(0x4000, 0x5A)),
+                         "the donor's old data is laid")) {
+                return false;
+            }
             donor->flash_driver.write_block_metadata(block, stale);
         }
         donor->flash_driver.mark_bad_block(kBadBlock);

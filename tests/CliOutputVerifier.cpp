@@ -122,10 +122,10 @@ int main(int argc, char* argv[]) {
     if (!require(image.has_value(), "FlashImage::read rejected the built NAND")) {
         return 4;
     }
-    if (!require(image->parse(), "FlashImage::parse rejected the built NAND")) {
+    if (!require(image->parse().has_value(), "FlashImage::parse rejected the built NAND")) {
         return 5;
     }
-    if (!require(image->decrypt_all(kCpuKey), "FlashImage::decrypt_all failed")) {
+    if (!require(image->decrypt_all(kCpuKey).has_value(), "FlashImage::decrypt_all failed")) {
         return 6;
     }
 

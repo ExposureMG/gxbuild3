@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <format>
 #include <limits>
 #include <span>
 #include <string>
@@ -44,12 +45,37 @@ namespace gxbuild3::nand {
         // Everything in the JTAG window is counted from kJtagWindowOffset.
         constexpr uint32_t kJTAGPatchesSize = 0x4000;
 
-        // FlashImage still reports failure as bool: it logs a FlashFS Error once here.
-        [[nodiscard]] bool filesystem_ok(const Result<void>& result, std::string_view action) {
-            if (!result) {
-                Log::Error("Failed to {}: {}", action, result.error().describe());
+        // Lays `data` at the clean `offset`, turning the driver's range sentinel into an Error
+        // that names what was being laid.
+        [[nodiscard]] Result<void> write_or_fail(Driver& driver, size_t offset,
+                                                 std::span<const uint8_t> data,
+                                                 std::string_view what) {
+            if (!driver.write_offset(offset, data)) {
+                return fail(ErrorCode::OutOfRange,
+                            "{} (0x{:X} bytes at 0x{:X}) runs past the image", what, data.size(),
+                            offset);
             }
-            return result.has_value();
+            return {};
+        }
+
+        template <class T> struct StageOf {
+            using type = T;
+        };
+        template <class T> struct StageOf<std::optional<T>> {
+            using type = T;
+        };
+
+        // Parses one bootloader record into `target` (a stage or an optional stage).
+        template <class Target>
+        [[nodiscard]] Result<void> parse_stage(Target& target, std::span<const uint8_t> bytes,
+                                               std::string_view name, size_t offset) {
+            auto parsed = StageOf<Target>::type::parse(bytes);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error())
+                                           .add_context(std::format("{} at 0x{:X}", name, offset)));
+            }
+            target = std::move(*parsed);
+            return {};
         }
 
         // xeBuild lays a built image in 16 KiB blocks on erased flash: the block holding the
@@ -292,7 +318,9 @@ namespace gxbuild3::nand {
         // the head of its erase block, as xeBuild does: the erase block is erased, the bytes
         // go in and their pages carry a type-0 spare naming the block. A block of all 0xFF
         // stays erased, as on a console that keeps none. A bad block keeps its spare.
-        bool lay_settings_block(Driver& driver, size_t offset, std::span<const uint8_t> bytes) {
+        [[nodiscard]] Result<void> lay_settings_block(Driver& driver, size_t offset,
+                                                      std::span<const uint8_t> bytes,
+                                                      std::string_view what) {
             const size_t block_size = driver.block_size_clean();
             const size_t block = offset / block_size;
             const bool bad = driver.is_bad_block(block);
@@ -300,17 +328,17 @@ namespace gxbuild3::nand {
                 driver.erase_block(block);
             }
             if (std::all_of(bytes.begin(), bytes.end(), [](uint8_t b) { return b == 0xFF; })) {
-                return true;
+                return {};
             }
-            if (!driver.write_offset(offset, bytes)) {
-                return false;
+            if (auto laid = write_or_fail(driver, offset, bytes, what); !laid) {
+                return laid;
             }
             if (!bad && driver.driver_mode() != Driver::DriverMode::Emmc) {
                 BlockMetadata meta{};
                 meta.logical_block_id = static_cast<uint16_t>(block);
                 driver.write_page_metadata(offset / 512, (bytes.size() + 511) / 512, meta);
             }
-            return true;
+            return {};
         }
 
         // Where the settings block sits: the last block before the reserved tail, which is
@@ -356,23 +384,21 @@ namespace gxbuild3::nand {
         return image;
     }
 
-    bool FlashImage::parse() {
+    Result<void> FlashImage::parse() {
         if (flash_driver.block_count() == 0) {
-            Log::Error("Cannot parse NAND image: flash driver has 0 blocks");
-            return false;
+            return fail(ErrorCode::InvalidArgument, "the NAND image has no blocks");
         }
 
         const auto& image_bytes = std::as_const(flash_driver).serialize();
         if (image_bytes.size() < sizeof(nand_header)) {
-            Log::Error("Cannot parse NAND image: image size ({} bytes) smaller than NAND header",
-                       image_bytes.size());
-            return false;
+            return fail(ErrorCode::Truncated,
+                        "the NAND image ({} bytes) is smaller than the NAND header",
+                        image_bytes.size());
         }
 
         auto header_span = std::as_const(flash_driver).read_offset(0, sizeof(nand_header));
         if (header_span.size() < sizeof(nand_header)) {
-            Log::Error("Failed to read NAND header");
-            return false;
+            return fail(ErrorCode::Truncated, "the NAND header could not be read");
         }
 
         nand_header raw{};
@@ -425,7 +451,7 @@ namespace gxbuild3::nand {
                 Log::Debug("Extracted Keyvault from NAND (0x{:X} bytes)", kv_bytes.size());
             } else {
                 keyvault.reset();
-                Log::Error("Failed to parse the NAND's Keyvault: {}", parsed.error().describe());
+                Log::Warn("The NAND's Keyvault is not kept: {}", parsed.error().describe());
             }
         }
 
@@ -451,43 +477,43 @@ namespace gxbuild3::nand {
             // rounding then opens back to the zeros it was sealed from.
             auto bldr_data = flash_driver.read_clean(cursor, align_16(bldr_size));
 
+            std::string_view name;
+            Result<void> stage{};
             if (magic == NANDBootloaderMagic::SB && cb_section.cb_or_A.data.empty()) {
-                cb_section.cb_or_A = BootloaderCb::parse_or_throw(bldr_data);
-                Log::Debug("Parsed SB bootloader at offset 0x{:X} (version {}, size 0x{:X})",
-                           cursor, version, bldr_size);
+                name = "SB";
+                stage = parse_stage(cb_section.cb_or_A, bldr_data, name, cursor);
             } else if (magic == NANDBootloaderMagic::SD) {
-                kernel_section.cd = BootloaderCd::parse_or_throw(bldr_data);
-                Log::Debug("Parsed SD bootloader at offset 0x{:X} (version {}, size 0x{:X})",
-                           cursor, version, bldr_size);
+                name = "SD";
+                stage = parse_stage(kernel_section.cd, bldr_data, name, cursor);
             } else if (magic == NANDBootloaderMagic::SE) {
-                kernel_section.ce = BootloaderCe::parse_or_throw(bldr_data);
-                Log::Debug("Parsed SE bootloader at offset 0x{:X} (version {}, size 0x{:X})",
-                           cursor, version, bldr_size);
+                name = "SE";
+                stage = parse_stage(kernel_section.ce, bldr_data, name, cursor);
             } else if (magic == 0x4342) {
+                name = "CB";
                 if (version == 15432) {
-                    cb_section.cb_x = BootloaderCb::parse_or_throw(bldr_data);
+                    stage = parse_stage(cb_section.cb_x, bldr_data, name, cursor);
                 } else if (cb_section.cb_or_A.data.empty()) {
-                    cb_section.cb_or_A = BootloaderCb::parse_or_throw(bldr_data);
+                    stage = parse_stage(cb_section.cb_or_A, bldr_data, name, cursor);
                 } else {
-                    cb_section.cb_B = BootloaderCb::parse_or_throw(bldr_data);
+                    stage = parse_stage(cb_section.cb_B, bldr_data, name, cursor);
                 }
-                Log::Debug("Parsed CB bootloader at offset 0x{:X} (version {}, size 0x{:X})",
-                           cursor, version, bldr_size);
             } else if (magic == 0x5343) {
-                cb_section.sc = BootloaderSc::parse_or_throw(bldr_data);
-                Log::Debug("Parsed SC bootloader at offset 0x{:X} (version {}, size 0x{:X})",
-                           cursor, version, bldr_size);
+                name = "SC";
+                stage = parse_stage(cb_section.sc, bldr_data, name, cursor);
             } else if (magic == 0x4344) {
-                kernel_section.cd = BootloaderCd::parse_or_throw(bldr_data);
-                Log::Debug("Parsed CD bootloader at offset 0x{:X} (version {}, size 0x{:X})",
-                           cursor, version, bldr_size);
+                name = "CD";
+                stage = parse_stage(kernel_section.cd, bldr_data, name, cursor);
             } else if (magic == 0x4345) {
-                kernel_section.ce = BootloaderCe::parse_or_throw(bldr_data);
-                Log::Debug("Parsed CE bootloader at offset 0x{:X} (version {}, size 0x{:X})",
-                           cursor, version, bldr_size);
+                name = "CE";
+                stage = parse_stage(kernel_section.ce, bldr_data, name, cursor);
             } else {
                 break;
             }
+            if (!stage) {
+                return stage;
+            }
+            Log::Debug("Parsed {} bootloader at offset 0x{:X} (version {}, size 0x{:X})", name,
+                       cursor, version, bldr_size);
 
             cursor += align_16(bldr_size);
         }
@@ -499,15 +525,14 @@ namespace gxbuild3::nand {
                                             ? header.cf_offset
                                             : retail_slot_offset(slot_mode);
 
-        bool invalid_continuation = false;
-        auto parse_patchslot = [&](uint32_t base_offset, SystemUpdate& slot) {
+        auto parse_patchslot = [&](uint32_t base_offset, SystemUpdate& slot) -> Result<void> {
             slot = SystemUpdate{};
             if (base_offset + sizeof(generic_header) > image_bytes.size()) {
-                return;
+                return {};
             }
             auto slot_hdr_bytes = flash_driver.read_clean(base_offset, sizeof(generic_header));
             if (slot_hdr_bytes.size() < sizeof(generic_header)) {
-                return;
+                return {};
             }
 
             generic_header slot_hdr{};
@@ -516,7 +541,9 @@ namespace gxbuild3::nand {
                 uint32_t cf_size = bswap32(slot_hdr.size);
                 if (cf_size > 0 && base_offset + cf_size <= image_bytes.size()) {
                     auto cf_data = flash_driver.read_clean(base_offset, cf_size);
-                    slot.cf = BootloaderCf::parse_or_throw(cf_data);
+                    if (auto parsed = parse_stage(slot.cf, cf_data, "CF", base_offset); !parsed) {
+                        return parsed;
+                    }
 
                     size_t cg_offset = base_offset + align_16(cf_size);
                     if (cg_offset + sizeof(generic_header) <= image_bytes.size()) {
@@ -535,15 +562,23 @@ namespace gxbuild3::nand {
                                                      : 0);
                                     if (prefix < cg_size) {
                                         auto decoded_cf = *slot.cf;
-                                        decoded_cf.decrypt_or_throw(key_1bl);
+                                        if (auto opened = decoded_cf.decrypt(key_1bl); !opened) {
+                                            return with_context(
+                                                std::move(opened),
+                                                std::format("opening the CF at 0x{:X} for its "
+                                                            "CG continuation table",
+                                                            base_offset));
+                                        }
                                         const auto& table = decoded_cf.data;
                                         const size_t count =
                                             table.size() >= 2 ? (size_t(table[0]) << 8) | table[1]
                                                               : 0;
                                         const size_t needed = (cg_size - prefix + 0x3FFF) / 0x4000;
                                         if (count > 0 && count <= 223 && count != needed) {
-                                            invalid_continuation = true;
-                                            return;
+                                            return fail(ErrorCode::Malformed,
+                                                        "the CF at 0x{:X} names {} CG continuation "
+                                                        "clusters; the CG needs {}",
+                                                        base_offset, count, needed);
                                         }
                                         if (count == needed && count <= 223 &&
                                             table.size() >= 2 + count * 2) {
@@ -558,16 +593,22 @@ namespace gxbuild3::nand {
                                                     std::find(slot.cg_spill_blocks.begin(),
                                                               slot.cg_spill_blocks.end(), block) !=
                                                         slot.cg_spill_blocks.end()) {
-                                                    invalid_continuation = true;
-                                                    return;
+                                                    return fail(
+                                                        ErrorCode::Malformed,
+                                                        "the CF at 0x{:X} names CG continuation "
+                                                        "cluster 0x{:X} outside the data area or "
+                                                        "twice",
+                                                        base_offset, block);
                                                 }
                                                 const size_t length = std::min<size_t>(
                                                     0x4000, cg_size - cg_data.size());
                                                 auto part = flash_driver.read_clean(
                                                     size_t(block) * 0x4000, length);
                                                 if (part.size() != length) {
-                                                    invalid_continuation = true;
-                                                    return;
+                                                    return fail(ErrorCode::Truncated,
+                                                                "CG continuation cluster 0x{:X} "
+                                                                "could not be read",
+                                                                block);
                                                 }
                                                 cg_data.insert(cg_data.end(), part.begin(),
                                                                part.end());
@@ -575,19 +616,26 @@ namespace gxbuild3::nand {
                                             }
                                         }
                                     }
-                                    slot.cg = BootloaderCg::parse_or_throw(cg_data);
+                                    if (auto parsed =
+                                            parse_stage(slot.cg, cg_data, "CG", cg_offset);
+                                        !parsed) {
+                                        return parsed;
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+            return {};
         };
 
-        parse_patchslot(patchslot_base, system_update_0);
-        parse_patchslot(patchslot_base + slot_stride, system_update_1);
-        if (invalid_continuation)
-            return false;
+        if (auto slot = parse_patchslot(patchslot_base, system_update_0); !slot) {
+            return with_context(std::move(slot), "update slot 0");
+        }
+        if (auto slot = parse_patchslot(patchslot_base + slot_stride, system_update_1); !slot) {
+            return with_context(std::move(slot), "update slot 1");
+        }
 
         std::vector<uint8_t> inferred_khv;
         const auto valid_khv_at = [&](size_t offset, size_t prefix) {
@@ -838,21 +886,20 @@ namespace gxbuild3::nand {
                 payloads.fuses = std::move(fuses);
         }
 
-        return true;
+        return {};
     }
 
     bool FlashImage::devkit_chain() const {
         return cb_section.cb_or_A.header.header.magic == NANDBootloaderMagic::SB;
     }
 
-    bool FlashImage::write_to_driver() const {
+    Result<void> FlashImage::write_to_driver() const {
         if (flash_driver.block_count() == 0) {
-            return false;
+            return fail(ErrorCode::InvalidArgument, "the NAND image has no blocks");
         }
 
-        if (const auto layout_error = payload_layout_error(); layout_error) {
-            Log::Error("{}", *layout_error);
-            return false;
+        if (auto layout = payload_layout(); !layout) {
+            return layout;
         }
 
         auto& driver = const_cast<Driver&>(flash_driver);
@@ -890,16 +937,16 @@ namespace gxbuild3::nand {
         const size_t block_size = driver.block_size_clean();
         const size_t data_block_limit = driver.data_block_limit();
         if (data_block_limit == 0) {
-            Log::Error("No usable NAND blocks remain below the geometry-reserved tail");
-            return false;
+            return fail(ErrorCode::Exhausted,
+                        "no usable NAND blocks remain below the geometry-reserved tail");
         }
 
         const auto payload_block_ranges = active_payload_block_ranges();
 
         const size_t smc_len = smc ? smc->data.size() : 0x3000;
         if (smc_len > kKeyvaultOffset - sizeof(nand_header)) {
-            Log::Error("SMC payload (0x{:X} bytes) does not fit before the keyvault", smc_len);
-            return false;
+            return fail(ErrorCode::OutOfRange,
+                        "the SMC (0x{:X} bytes) does not fit before the keyvault", smc_len);
         }
         const uint32_t smc_offset = kKeyvaultOffset - static_cast<uint32_t>(smc_len);
         const auto smc_cfg_offset = smc_config_offset(driver);
@@ -934,146 +981,169 @@ namespace gxbuild3::nand {
         raw.smc_boot_size = bswap32(static_cast<uint32_t>(smc_len));
         raw.smc_boot_offset = bswap32(smc_offset);
 
-        if (!driver.write_offset(
-                0, std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&raw), sizeof(raw)))) {
-            return false;
+        if (auto laid = write_or_fail(
+                driver, 0,
+                std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&raw), sizeof(raw)),
+                "NAND header");
+            !laid) {
+            return laid;
         }
         // On a built image the header block is programmed zero from the header to the SMC.
-        if (!preserve_layout &&
-            !driver.write_offset(sizeof(raw), std::vector<uint8_t>(smc_offset - sizeof(raw), 0))) {
-            return false;
+        if (!preserve_layout) {
+            if (auto laid = write_or_fail(driver, sizeof(raw),
+                                          std::vector<uint8_t>(smc_offset - sizeof(raw), 0),
+                                          "header block fill");
+                !laid) {
+                return laid;
+            }
         }
 
         if (smc) {
-            if (!driver.write_offset(smc_offset, smc->data)) {
-                return false;
+            if (auto laid = write_or_fail(driver, smc_offset, smc->data, "SMC"); !laid) {
+                return laid;
             }
         }
 
         if (keyvault) {
             auto kv_data = keyvault->serialize();
-            if (!driver.write_offset(kKeyvaultOffset, kv_data)) {
-                return false;
+            if (auto laid = write_or_fail(driver, kKeyvaultOffset, kv_data, "keyvault"); !laid) {
+                return laid;
             }
         }
 
         size_t cursor = kEntryOffset;
-        if (!cb_section.cb_or_A.data.empty()) {
-            auto cb_a = cb_section.cb_or_A.serialize();
-            if (!driver.write_offset(cursor, cb_a)) {
-                return false;
+        const auto lay_stage = [&driver, &cursor](const auto& stage,
+                                                  std::string_view name) -> Result<void> {
+            const auto bytes = stage.serialize();
+            if (auto laid = write_or_fail(driver, cursor, bytes, name); !laid) {
+                return laid;
             }
-            cursor += align_16(static_cast<uint32_t>(cb_a.size()));
+            cursor += align_16(static_cast<uint32_t>(bytes.size()));
+            return {};
+        };
+        if (!cb_section.cb_or_A.data.empty()) {
+            if (auto laid = lay_stage(cb_section.cb_or_A, "CB_A"); !laid) {
+                return laid;
+            }
         }
         if (cb_section.cb_x) {
-            auto cb_x = cb_section.cb_x->serialize();
-            if (!driver.write_offset(cursor, cb_x)) {
-                return false;
+            if (auto laid = lay_stage(*cb_section.cb_x, "CB_X"); !laid) {
+                return laid;
             }
-            cursor += align_16(static_cast<uint32_t>(cb_x.size()));
         }
         if (cb_section.cb_B) {
-            auto cb_b = cb_section.cb_B->serialize();
-            if (!driver.write_offset(cursor, cb_b)) {
-                return false;
+            if (auto laid = lay_stage(*cb_section.cb_B, "CB_B"); !laid) {
+                return laid;
             }
-            cursor += align_16(static_cast<uint32_t>(cb_b.size()));
         }
         if (cb_section.sc) {
-            auto sc = cb_section.sc->serialize();
-            if (!driver.write_offset(cursor, sc)) {
-                return false;
+            if (auto laid = lay_stage(*cb_section.sc, "SC"); !laid) {
+                return laid;
             }
-            cursor += align_16(static_cast<uint32_t>(sc.size()));
         }
         if (!kernel_section.cd.data.empty()) {
-            auto cd = kernel_section.cd.serialize();
-            if (!driver.write_offset(cursor, cd)) {
-                return false;
+            if (auto laid = lay_stage(kernel_section.cd, "CD"); !laid) {
+                return laid;
             }
-            cursor += align_16(static_cast<uint32_t>(cd.size()));
         }
         if (kernel_section.ce) {
-            auto ce = kernel_section.ce->serialize();
-            if (!driver.write_offset(cursor, ce)) {
-                return false;
+            if (auto laid = lay_stage(*kernel_section.ce, "CE"); !laid) {
+                return laid;
             }
-            cursor += align_16(static_cast<uint32_t>(ce.size()));
         }
         if (!preserve_layout) {
             const size_t block_end = (cursor + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize;
-            if (!driver.write_offset(cursor, std::vector<uint8_t>(block_end - cursor, 0))) {
-                return false;
+            if (auto laid =
+                    write_or_fail(driver, cursor, std::vector<uint8_t>(block_end - cursor, 0),
+                                  "boot chain block fill");
+                !laid) {
+                return laid;
             }
         }
 
         size_t highest_used_offset = cursor;
 
         auto write_patchslot = [&](uint32_t base_offset, const SystemUpdate& slot,
-                                   size_t& end_offset) -> bool {
+                                   size_t& end_offset) -> Result<void> {
             end_offset = base_offset;
             if (slot.cf) {
                 auto cf_bytes = slot.cf->serialize();
-                if (!driver.write_offset(base_offset, cf_bytes)) {
-                    return false;
+                if (auto laid = write_or_fail(driver, base_offset, cf_bytes, "CF"); !laid) {
+                    return laid;
                 }
                 end_offset = base_offset + align_16(static_cast<uint32_t>(cf_bytes.size()));
                 if (slot.cg) {
                     auto cg_bytes = slot.cg->serialize();
-                    if (end_offset > base_offset + slot_stride)
-                        return false;
+                    if (end_offset > base_offset + slot_stride) {
+                        return fail(ErrorCode::OutOfRange,
+                                    "the CF (0x{:X} bytes) leaves no room for its CG in the "
+                                    "0x{:X}-byte slot",
+                                    cf_bytes.size(), slot_stride);
+                    }
                     const size_t prefix =
                         slot.cg_spill_blocks.empty()
                             ? cg_bytes.size()
                             : std::min<size_t>(cg_bytes.size(),
                                                base_offset + slot_stride - end_offset);
                     if (end_offset + prefix > base_offset + slot_stride) {
-                        Log::Error("CG continuation has not been allocated before serialization");
-                        return false;
+                        return fail(ErrorCode::Internal,
+                                    "CG continuation has not been allocated before serialization");
                     }
-                    if (!driver.write_offset(end_offset, std::span(cg_bytes).first(prefix)))
-                        return false;
+                    if (auto laid = write_or_fail(driver, end_offset,
+                                                  std::span(cg_bytes).first(prefix), "CG");
+                        !laid) {
+                        return laid;
+                    }
                     size_t consumed = prefix;
                     for (uint16_t block : slot.cg_spill_blocks) {
                         const size_t count = std::min<size_t>(0x4000, cg_bytes.size() - consumed);
-                        if (!driver.write_offset(size_t(block) * 0x4000,
-                                                 std::span(cg_bytes).subspan(consumed, count)))
-                            return false;
+                        if (auto laid = write_or_fail(driver, size_t(block) * 0x4000,
+                                                      std::span(cg_bytes).subspan(consumed, count),
+                                                      "CG continuation cluster");
+                            !laid) {
+                            return laid;
+                        }
                         consumed += count;
                     }
-                    if (consumed != cg_bytes.size())
-                        return false;
+                    if (consumed != cg_bytes.size()) {
+                        return fail(ErrorCode::Internal,
+                                    "the CG continuation clusters hold 0x{:X} of its 0x{:X} bytes",
+                                    consumed, cg_bytes.size());
+                    }
                     end_offset += align_16(static_cast<uint32_t>(prefix));
                 }
                 highest_used_offset = std::max(highest_used_offset, end_offset);
             }
-            return true;
+            return {};
         };
 
         // A CG longer than its slot continues in spill blocks, so each slot ends within its
         // own stride.
         size_t slot0_end = patchslot_base;
-        if (!write_patchslot(patchslot_base, system_update_0, slot0_end)) {
-            return false;
+        if (auto laid = write_patchslot(patchslot_base, system_update_0, slot0_end); !laid) {
+            return with_context(std::move(laid), "update slot 0");
         }
         size_t slot1_end = patchslot_base + slot_stride;
-        if (!write_patchslot(patchslot_base + slot_stride, system_update_1, slot1_end)) {
-            return false;
+        if (auto laid = write_patchslot(patchslot_base + slot_stride, system_update_1, slot1_end);
+            !laid) {
+            return with_context(std::move(laid), "update slot 1");
         }
 
         if (smc_config) {
             if (!smc_cfg_offset) {
-                return false;
+                return fail(ErrorCode::Unsupported, "this NAND shape has no SMC config block");
             }
             if (smc_config->size() != kSmcConfigLength || !smc_config_sums(*smc_config)) {
-                Log::Error("SMC config block is not 0x{:X} bytes with a sound checksum",
-                           kSmcConfigLength);
-                return false;
+                return fail(ErrorCode::Malformed,
+                            "SMC config block is not 0x{:X} bytes with a sound checksum",
+                            kSmcConfigLength);
             }
             std::vector<uint8_t> cfg_bytes(kSettingsSpan, 0xFF);
             std::copy(smc_config->begin(), smc_config->end(), cfg_bytes.begin());
-            if (!lay_settings_block(driver, *smc_cfg_offset, cfg_bytes)) {
-                return false;
+            if (auto laid =
+                    lay_settings_block(driver, *smc_cfg_offset, cfg_bytes, "SMC config block");
+                !laid) {
+                return laid;
             }
         }
         const std::array<std::pair<const std::optional<std::vector<uint8_t>>*, size_t>, 2>
@@ -1082,16 +1152,19 @@ namespace gxbuild3::nand {
             if (!*bytes) {
                 continue;
             }
+            const std::string_view name = steps == 1 ? "statistics block" : "manufacturing block";
             if (!smc_cfg_offset || *smc_cfg_offset < steps * block_size) {
-                return false;
+                return fail(ErrorCode::Unsupported, "this NAND shape has no {}", name);
             }
             if ((*bytes)->size() != kSettingsSpan) {
-                Log::Error("Statistics and manufacturing blocks must be 0x{:X} bytes",
-                           kSettingsSpan);
-                return false;
+                return fail(ErrorCode::Malformed,
+                            "Statistics and manufacturing blocks must be 0x{:X} bytes",
+                            kSettingsSpan);
             }
-            if (!lay_settings_block(driver, *smc_cfg_offset - steps * block_size, **bytes)) {
-                return false;
+            if (auto laid =
+                    lay_settings_block(driver, *smc_cfg_offset - steps * block_size, **bytes, name);
+                !laid) {
+                return laid;
             }
         }
 
@@ -1195,10 +1268,10 @@ namespace gxbuild3::nand {
                     std::min<size_t>(emmc ? std::numeric_limits<uint16_t>::max() : fs_blk_size,
                                      std::numeric_limits<uint16_t>::max());
                 if (mdata.size() > limit) {
-                    Log::Error("Mobile data type 0x{:02X} is 0x{:X} bytes; one copy holds at "
-                               "most 0x{:X}",
-                               bt, mdata.size(), limit);
-                    return false;
+                    return fail(ErrorCode::OutOfRange,
+                                "Mobile data type 0x{:02X} is 0x{:X} bytes; one copy holds at "
+                                "most 0x{:X}",
+                                bt, mdata.size(), limit);
                 }
                 const size_t pages = (mdata.size() + 511) / 512;
                 const size_t used_pages =
@@ -1208,9 +1281,10 @@ namespace gxbuild3::nand {
                 if (!big || !open_block || next_page + used_pages > pages_per_block) {
                     auto free_start = find_data_free_run(current_blk, blocks_needed);
                     if (!free_start || *free_start > std::numeric_limits<uint16_t>::max()) {
-                        Log::Error(
-                            "Mobile data type 0x{:02X} does not fit below reserved NAND tail", bt);
-                        return false;
+                        return fail(ErrorCode::Exhausted,
+                                    "Mobile data type 0x{:02X} does not fit below reserved NAND "
+                                    "tail",
+                                    bt);
                     }
                     for (size_t b = 0; b < blocks_needed; ++b) {
                         driver.erase_block(*free_start + b);
@@ -1218,12 +1292,12 @@ namespace gxbuild3::nand {
                     // The table states a blob's blocks free (xeBuild 1.21); they are only
                     // kept from the files and the root here.
                     if (mutable_filesystem) {
-                        if (const auto withheld = mutable_filesystem->withhold_blocks(
+                        if (auto withheld = mutable_filesystem->withhold_blocks(
                                 *free_start, blocks_needed, BlockMapStatus::Free);
                             !withheld) {
-                            Log::Error("Failed to reserve mobile data type 0x{:02X} in FlashFS: {}",
-                                       bt, withheld.error().describe());
-                            return false;
+                            return with_context(
+                                std::move(withheld),
+                                std::format("reserving mobile data type 0x{:02X} in FlashFS", bt));
                         }
                     }
                     // On big block the blobs start on an erase block, and the table never
@@ -1237,20 +1311,24 @@ namespace gxbuild3::nand {
                                filesystem->blockmap()[cluster - 1] == BlockMapStatus::Free) {
                             --cluster;
                         }
-                        if (cluster < blob_cluster &&
-                            !filesystem_ok(
-                                mutable_filesystem->withhold_clusters(
-                                    cluster, blob_cluster - cluster, BlockMapStatus::Unnamed),
-                                "withhold the clusters before the mobile data")) {
-                            return false;
+                        if (cluster < blob_cluster) {
+                            if (auto withheld = mutable_filesystem->withhold_clusters(
+                                    cluster, blob_cluster - cluster, BlockMapStatus::Unnamed);
+                                !withheld) {
+                                return with_context(
+                                    std::move(withheld),
+                                    "withholding the clusters before the mobile data");
+                            }
                         }
                     }
                     open_block = *free_start;
                     next_page = 0;
                     current_blk = *free_start + blocks_needed;
                 }
-                if (!driver.write_offset(*open_block * fs_blk_size + next_page * 512, mdata)) {
-                    return false;
+                if (auto laid = write_or_fail(driver, *open_block * fs_blk_size + next_page * 512,
+                                              mdata, "mobile data");
+                    !laid) {
+                    return laid;
                 }
                 const size_t free_pages = emmc ? 0 : pages_per_block - next_page - used_pages;
                 layout.mobile_blocks.push_back(
@@ -1265,21 +1343,22 @@ namespace gxbuild3::nand {
         if (filesystem) {
             auto root_start = find_data_free_run(current_blk, 1);
             if (!root_start || *root_start > std::numeric_limits<uint16_t>::max()) {
-                Log::Error("Failed to place FlashFS root block after payload allocations");
-                return false;
+                return fail(ErrorCode::Exhausted,
+                            "no block is free for the FlashFS root after payload allocations");
             }
-            if (!filesystem_ok(
-                    mutable_filesystem->set_root_block(static_cast<uint16_t>(*root_start)),
-                    "place the FlashFS root block after payload allocations")) {
-                return false;
+            if (auto placed =
+                    mutable_filesystem->set_root_block(static_cast<uint16_t>(*root_start));
+                !placed) {
+                return with_context(std::move(placed),
+                                    "placing the FlashFS root block after payload allocations");
             }
             layout.fs_root_block = static_cast<uint16_t>(*root_start);
             layout.fs_version = filesystem->version();
             layout.big_fs_size = filesystem->big_fs_size();
             auto& fs = const_cast<FlashFileSystem&>(*filesystem);
             fs.set_driver(&driver);
-            if (!filesystem_ok(fs.save(), "save the Flash File System to the NAND driver")) {
-                return false;
+            if (auto saved = fs.save(); !saved) {
+                return with_context(std::move(saved), "saving the Flash File System");
             }
             const size_t clusters_per_block = driver.block_size_clean() / 0x4000;
             for (const uint16_t cluster : fs.get_all_file_blocks()) {
@@ -1314,8 +1393,10 @@ namespace gxbuild3::nand {
                 auto cc_bytes = cc.serialize();
                 cc_bytes.resize(CoronaConfig::kSpan, 0);
                 cc_bytes.resize(CoronaConfig::kBlockSize, 0xFF);
-                if (!driver.write_offset(CoronaConfig::kOffsets[copy], cc_bytes)) {
-                    return false;
+                if (auto laid = write_or_fail(driver, CoronaConfig::kOffsets[copy], cc_bytes,
+                                              "eMMC anchor block");
+                    !laid) {
+                    return laid;
                 }
             }
         } else {
@@ -1326,42 +1407,56 @@ namespace gxbuild3::nand {
         // Direct parsed images retain a recovered patchset, so it is rewritten below.
         if (is_glitch_patchset && payloads.patchset) {
             const std::vector<uint8_t> erased_overlay(slot_stride, 0xFF);
-            if (!driver.write_offset(patchslot_base + slot_stride, erased_overlay))
-                return false;
+            if (auto laid = write_or_fail(driver, patchslot_base + slot_stride, erased_overlay,
+                                          "erased patch slot");
+                !laid) {
+                return laid;
+            }
         }
         if (payloads.payload) {
-            if (!driver.write_offset(0x200, *payloads.payload)) {
-                return false;
+            if (auto laid = write_or_fail(driver, 0x200, *payloads.payload, "SMC payload"); !laid) {
+                return laid;
             }
         }
         // xeBuild programs the bytes after each JTAG window item zero, up to the next item or the
         // end of the 16 KiB block that holds the item's end.
-        const auto zero_fill = [&driver](size_t from, size_t to) {
-            return from >= to || driver.write_offset(from, std::vector<uint8_t>(to - from, 0));
+        const auto zero_fill = [&driver](size_t from, size_t to) -> Result<void> {
+            if (from >= to) {
+                return {};
+            }
+            return write_or_fail(driver, from, std::vector<uint8_t>(to - from, 0), "zero fill");
         };
         const auto zero_to_block_end = [&zero_fill](size_t end) {
             return zero_fill(end, (end + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize);
         };
         if (payloads.rebooter) {
-            if (!driver.write_offset(window_base, *payloads.rebooter)) {
-                return false;
+            if (auto laid = write_or_fail(driver, window_base, *payloads.rebooter, "rebooter");
+                !laid) {
+                return laid;
             }
-            if (is_jtag_patchset &&
-                !zero_fill(window_base + payloads.rebooter->size(), window_base + 0x1000)) {
-                return false;
+            if (is_jtag_patchset) {
+                if (auto filled =
+                        zero_fill(window_base + payloads.rebooter->size(), window_base + 0x1000);
+                    !filled) {
+                    return filled;
+                }
             }
         }
         if (payloads.fuses) {
-            if (!driver.write_offset(fuse_offset(*this, patchslot_base, slot_stride, window_base),
-                                     *payloads.fuses)) {
-                return false;
+            if (auto laid = write_or_fail(
+                    driver, fuse_offset(*this, patchslot_base, slot_stride, window_base),
+                    *payloads.fuses, "virtual fuses");
+                !laid) {
+                return laid;
             }
         }
         if (payloads.xell) {
             const auto& xell_bytes = payloads.xell->data;
-            if (!driver.write_offset(xell_offset(is_jtag_patchset, is_glitch_patchset, payloads),
-                                     xell_bytes)) {
-                return false;
+            if (auto laid = write_or_fail(
+                    driver, xell_offset(is_jtag_patchset, is_glitch_patchset, payloads), xell_bytes,
+                    "XeLL");
+                !laid) {
+                return laid;
             }
         }
         const size_t glitch_patch_offset = patchslot_base + slot_stride + khv_prefix(*this);
@@ -1376,38 +1471,40 @@ namespace gxbuild3::nand {
             } else {
                 const auto* khv = find_patch_section(*payloads.patchset, PatchSectionTarget::Khv);
                 if (!khv) {
-                    return false;
+                    return fail(ErrorCode::InvalidArgument,
+                                "the glitch patch set has no KHV section");
                 }
                 patch_bytes = serialize_khv_payload(*khv);
                 patch_offset = glitch_patch_offset;
                 patch_capacity = slot_stride - khv_prefix(*this);
             }
             if (patch_bytes.size() > patch_capacity) {
-                Log::Error("Patch payload (0x{:X} bytes) exceeds its 0x{:X}-byte region",
-                           patch_bytes.size(), patch_capacity);
-                return false;
+                return fail(ErrorCode::OutOfRange,
+                            "Patch payload (0x{:X} bytes) exceeds its 0x{:X}-byte region",
+                            patch_bytes.size(), patch_capacity);
             }
             if (payloads.xell &&
                 ranges_overlap(patch_offset, patch_bytes.size(),
                                xell_offset(is_jtag_patchset, is_glitch_patchset, payloads),
                                payloads.xell->data.size())) {
-                Log::Error("Patch payload overlaps the reserved XeLL region");
-                return false;
+                return fail(ErrorCode::InvalidArgument,
+                            "Patch payload overlaps the reserved XeLL region");
             }
             if (payloads.rebooter && ranges_overlap(patch_offset, patch_bytes.size(), window_base,
                                                     payloads.rebooter->size())) {
-                Log::Error("Patch payload overlaps the reserved rebooter region");
-                return false;
+                return fail(ErrorCode::InvalidArgument,
+                            "Patch payload overlaps the reserved rebooter region");
             }
             if (payloads.fuses &&
                 ranges_overlap(patch_offset, patch_bytes.size(),
                                fuse_offset(*this, patchslot_base, slot_stride, window_base),
                                payloads.fuses->size())) {
-                Log::Error("Patch payload overlaps the reserved virtual-fuse region");
-                return false;
+                return fail(ErrorCode::InvalidArgument,
+                            "Patch payload overlaps the reserved virtual-fuse region");
             }
-            if (!patch_bytes.empty() && !driver.write_offset(patch_offset, patch_bytes)) {
-                return false;
+            if (auto laid = write_or_fail(driver, patch_offset, patch_bytes, "patch payload");
+                !laid) {
+                return laid;
             }
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
                 const size_t patch_end = patch_offset + patch_bytes.size();
@@ -1416,61 +1513,77 @@ namespace gxbuild3::nand {
                 const size_t region_end = patch_offset + patch_capacity;
                 // The patch buffer is programmed whole: zero to the end of its block, then
                 // erased bytes, written as pages, up to its fixed length.
-                if (!zero_fill(patch_end, block_end) ||
-                    (block_end < region_end &&
-                     !driver.write_offset(block_end,
-                                          std::vector<uint8_t>(region_end - block_end, 0xFF)))) {
-                    return false;
+                if (auto filled = zero_fill(patch_end, block_end); !filled) {
+                    return filled;
+                }
+                if (block_end < region_end) {
+                    if (auto laid = write_or_fail(
+                            driver, block_end, std::vector<uint8_t>(region_end - block_end, 0xFF),
+                            "erased patch buffer tail");
+                        !laid) {
+                        return laid;
+                    }
                 }
             }
             // xeBuild programs the rest of the patch slot's first 0x4000 bytes zero after the
             // KHV terminator; the slot past them stays erased.
             const size_t khv_end = patch_offset + patch_bytes.size();
             const size_t zero_end = size_t(patchslot_base) + slot_stride + kLayBlockSize;
-            if (payloads.patchset->kind != PatchSetKind::Jtag && khv_end < zero_end &&
-                !driver.write_offset(khv_end, std::vector<uint8_t>(zero_end - khv_end, 0))) {
-                return false;
+            if (payloads.patchset->kind != PatchSetKind::Jtag && khv_end < zero_end) {
+                if (auto filled = zero_fill(khv_end, zero_end); !filled) {
+                    return filled;
+                }
             }
         }
 
         // The JTAG second CB/CD live in the window tail, directly past the fixed-size XeLL.
         if (is_jtag_patchset) {
             const auto extra = jtag_extra_offsets(window_base, payloads);
-            if (payloads.extra_cb &&
-                !driver.write_offset(extra.cb, payloads.extra_cb->serialize())) {
-                return false;
+            if (payloads.extra_cb) {
+                if (auto laid = write_or_fail(driver, extra.cb, payloads.extra_cb->serialize(),
+                                              "JTAG second CB");
+                    !laid) {
+                    return laid;
+                }
             }
-            if (payloads.extra_cd &&
-                !driver.write_offset(extra.cd, payloads.extra_cd->serialize())) {
-                return false;
+            if (payloads.extra_cd) {
+                if (auto laid = write_or_fail(driver, extra.cd, payloads.extra_cd->serialize(),
+                                              "JTAG second CD");
+                    !laid) {
+                    return laid;
+                }
             }
             const size_t second_chain_end =
                 payloads.extra_cd   ? extra.cd + payloads.extra_cd->serialize().size()
                 : payloads.extra_cb ? extra.cb + payloads.extra_cb->serialize().size()
                                     : 0;
-            if (second_chain_end != 0 && !zero_to_block_end(second_chain_end)) {
-                return false;
+            if (second_chain_end != 0) {
+                if (auto filled = zero_to_block_end(second_chain_end); !filled) {
+                    return filled;
+                }
             }
         }
 
         const size_t clean_size = total_blocks * block_size;
         for (const auto& patch : raw_patches) {
             if (patch.offset > clean_size || patch.data.size() > clean_size - patch.offset) {
-                Log::Error("[rawpatch] '{}' (0x{:X} bytes at 0x{:X}) runs past the image",
-                           patch.name, patch.data.size(), patch.offset);
-                return false;
+                return fail(ErrorCode::OutOfRange,
+                            "[rawpatch] '{}' (0x{:X} bytes at 0x{:X}) runs past the image",
+                            patch.name, patch.data.size(), patch.offset);
             }
-            if (!driver.write_offset(patch.offset, patch.data)) {
-                return false;
+            if (auto laid = write_or_fail(driver, patch.offset, patch.data,
+                                          std::format("[rawpatch] '{}'", patch.name));
+                !laid) {
+                return laid;
             }
         }
 
-        return true;
+        return {};
     }
 
-    bool FlashImage::clear_bootloader_chain() {
+    Result<void> FlashImage::clear_bootloader_chain() {
         if (flash_driver.block_count() == 0) {
-            return false;
+            return fail(ErrorCode::InvalidArgument, "the NAND image has no blocks");
         }
 
         size_t boot_chain_end = kEntryOffset;
@@ -1504,11 +1617,14 @@ namespace gxbuild3::nand {
         }
 
         if (!size_is_valid) {
-            return false;
+            return fail(ErrorCode::OutOfRange,
+                        "the donor boot chain exceeds the addressable payload layout");
         }
         const std::vector<uint8_t> cleared_chain(boot_chain_end - kEntryOffset, 0);
-        if (!flash_driver.write_offset(kEntryOffset, cleared_chain)) {
-            return false;
+        if (auto cleared =
+                write_or_fail(flash_driver, kEntryOffset, cleared_chain, "cleared boot chain");
+            !cleared) {
+            return cleared;
         }
 
         const auto slot_mode = flash_driver.driver_mode();
@@ -1516,9 +1632,10 @@ namespace gxbuild3::nand {
         const uint32_t donor_patchslot_base =
             header.cf_offset != 0 && header.cf_offset != 0xFFFFFFFF ? header.cf_offset
                                                                     : retail_slot_offset(slot_mode);
-        const auto clear_patchslot = [&](uint32_t base_offset, const SystemUpdate& slot) {
+        const auto clear_patchslot = [&](uint32_t base_offset,
+                                         const SystemUpdate& slot) -> Result<void> {
             if (!slot.cf) {
-                return true;
+                return {};
             }
             size_t span_size = align_16(static_cast<uint32_t>(slot.cf->serialize().size()));
             if (slot.cg) {
@@ -1527,10 +1644,13 @@ namespace gxbuild3::nand {
                                  : std::min<size_t>(align_16(slot.cg->serialize().size()),
                                                     slot_stride - span_size);
             }
-            return flash_driver.write_offset(base_offset, std::vector<uint8_t>(span_size, 0xFF));
+            return write_or_fail(flash_driver, base_offset, std::vector<uint8_t>(span_size, 0xFF),
+                                 "cleared update slot");
         };
-        return clear_patchslot(donor_patchslot_base, system_update_0) &&
-               clear_patchslot(donor_patchslot_base + slot_stride, system_update_1);
+        if (auto cleared = clear_patchslot(donor_patchslot_base, system_update_0); !cleared) {
+            return cleared;
+        }
+        return clear_patchslot(donor_patchslot_base + slot_stride, system_update_1);
     }
 
     uint32_t FlashImage::patch_slot_offset() const {
@@ -1603,7 +1723,7 @@ namespace gxbuild3::nand {
         return ranges;
     }
 
-    std::optional<std::string> FlashImage::payload_layout_error() const {
+    Result<void> FlashImage::payload_layout() const {
         const auto slot_mode = flash_driver.driver_mode();
         const uint32_t slot_stride = slot_size(*this);
         const bool is_glitch_patchset =
@@ -1623,25 +1743,31 @@ namespace gxbuild3::nand {
         const bool has_cd = has_parsed_bootloader_header(kernel_section.cd, NANDBootloaderMagic::CD,
                                                          sizeof(cd_header));
         if (has_cb && cb_section.cb_or_A.data.empty()) {
-            return "Required CB/A bootloader has no payload and cannot be serialized";
+            return fail(ErrorCode::InvalidArgument,
+                        "Required CB/A bootloader has no payload and cannot be serialized");
         }
         if (has_cd && kernel_section.cd.data.empty()) {
-            return "Required CD bootloader has no payload and cannot be serialized";
+            return fail(ErrorCode::InvalidArgument,
+                        "Required CD bootloader has no payload and cannot be serialized");
         }
 
         if (is_glitch_patchset && system_update_1.cf)
-            return "Glitch overlay owns the second update slot; CF1/CG1 cannot be supplied";
+            return fail(ErrorCode::InvalidArgument,
+                        "Glitch overlay owns the second update slot; CF1/CG1 cannot be supplied");
         for (const auto* slot : {&system_update_0, &system_update_1}) {
             if (slot->cf &&
                 align_16(slot->cf->serialize().size()) + (slot->cg ? sizeof(cg_header) : 0) >
                     slot_stride)
-                return "CF leaves insufficient room in its update slot";
+                return fail(ErrorCode::OutOfRange,
+                            "CF leaves insufficient room in its update slot");
         }
         if (system_update_0.cg && !system_update_0.cf) {
-            return "System-update CG0 requires a corresponding CF0";
+            return fail(ErrorCode::InvalidArgument,
+                        "System-update CG0 requires a corresponding CF0");
         }
         if (system_update_1.cg && !system_update_1.cf) {
-            return "System-update CG1 requires a corresponding CF1";
+            return fail(ErrorCode::InvalidArgument,
+                        "System-update CG1 requires a corresponding CF1");
         }
 
         std::vector<PayloadRange> ranges;
@@ -1715,12 +1841,16 @@ namespace gxbuild3::nand {
         if (kernel_section.ce) {
             account_for_bootloader(*kernel_section.ce);
         }
+        // Every arithmetic failure in the layout is an address that would overflow.
+        const auto overflow = [&arithmetic_error] {
+            return fail(ErrorCode::OutOfRange, "{}", *arithmetic_error);
+        };
         if (arithmetic_error) {
-            return arithmetic_error;
+            return overflow();
         }
         add_range("serialized boot chain", kEntryOffset, boot_chain_end - kEntryOffset);
         if (arithmetic_error) {
-            return arithmetic_error;
+            return overflow();
         }
 
         size_t highest_used_offset = boot_chain_end;
@@ -1765,17 +1895,19 @@ namespace gxbuild3::nand {
                                                  patchslot_base, system_update_0);
         size_t slot1_base = 0;
         if (!slot0_end || !checked_add(patchslot_base, slot_stride, slot1_base)) {
-            return arithmetic_error.value_or(
-                "System-update slot base exceeds the addressable payload layout");
+            return fail(ErrorCode::OutOfRange, "{}",
+                        arithmetic_error.value_or(
+                            "System-update slot base exceeds the addressable payload layout"));
         }
         if (*slot0_end > slot1_base && system_update_1.cf) {
-            return "System-update CF0/CG0 exceeds its slot stride while CF1/CG1 is supplied";
+            return fail(ErrorCode::InvalidArgument,
+                        "System-update CF0/CG0 exceeds its slot stride while CF1/CG1 is supplied");
         }
         if (*slot0_end <= slot1_base) {
             add_system_update("system-update CF1", "system-update CG1", slot1_base,
                               system_update_1);
             if (arithmetic_error) {
-                return arithmetic_error;
+                return overflow();
             }
         }
 
@@ -1786,488 +1918,547 @@ namespace gxbuild3::nand {
             } else if (const auto* khv =
                            find_patch_section(*payloads.patchset, PatchSectionTarget::Khv)) {
                 if (serialize_khv_payload(*khv).size() > slot_stride - khv_prefix(*this))
-                    return "Glitch KHV payload exceeds its patch-slot region";
+                    return fail(ErrorCode::OutOfRange,
+                                "Glitch KHV payload exceeds its patch-slot region");
                 add_range("Glitch KHV payload", slot1_base + khv_prefix(*this),
                           slot_stride - khv_prefix(*this));
             }
         }
 
         if (arithmetic_error) {
-            return arithmetic_error;
+            return overflow();
         }
 
         for (size_t first = 0; first < ranges.size(); ++first) {
             for (size_t second = first + 1; second < ranges.size(); ++second) {
                 if (ranges_overlap(ranges[first].offset, ranges[first].length,
                                    ranges[second].offset, ranges[second].length)) {
-                    return "Payload layout collision: " + std::string(ranges[first].name) +
-                           " overlaps " + std::string(ranges[second].name);
+                    return fail(ErrorCode::InvalidArgument,
+                                "Payload layout collision: {} overlaps {}", ranges[first].name,
+                                ranges[second].name);
                 }
             }
         }
-        return std::nullopt;
+        return {};
     }
 
-    std::vector<uint8_t> FlashImage::write() const {
-        if (!const_cast<FlashImage*>(this)->write_to_driver()) {
-            return {};
+    Result<std::vector<uint8_t>> FlashImage::write() const {
+        if (auto laid = write_to_driver(); !laid) {
+            return std::unexpected(std::move(laid.error()));
         }
+        // The mutable serialize() stamps the spare layout write_to_driver recorded.
         return const_cast<Driver&>(flash_driver).serialize();
     }
 
-    bool FlashImage::decrypt_all(std::span<const uint8_t> cpu_key) {
-        try {
-            // Use the parser's full plaintext check, not is_decrypted()'s legacy
-            // single-byte hint: encrypted CBs can contain that byte by chance.
-            if (!cb_section.cb_or_A.data.empty() && !cb_section.cb_or_A.decrypted) {
-                cb_section.cb_or_A.decrypt_or_throw(key_1bl);
+    Result<void> FlashImage::decrypt_all(std::span<const uint8_t> cpu_key) {
+        // Use the parser's full plaintext check, not is_decrypted()'s legacy
+        // single-byte hint: encrypted CBs can contain that byte by chance.
+        if (!cb_section.cb_or_A.data.empty() && !cb_section.cb_or_A.decrypted) {
+            if (auto opened = cb_section.cb_or_A.decrypt(key_1bl); !opened) {
+                return with_context(std::move(opened), "decrypting CB_A");
             }
-
-            if (cb_section.cb_x && !cb_section.cb_x->data.empty() && !cb_section.cb_x->decrypted) {
-                if (!cb_section.cb_or_A.derived_key) {
-                    Log::Error("Cannot decrypt CB_X: CB_A derived key is missing");
-                    return false;
-                }
-                const std::array<uint8_t, 16> zero_cpu_key{};
-                if ((cb_section.cb_or_A.header.header.flags & 0x1000) != 0) {
-                    cb_section.cb_x->decrypt_v2_or_throw(cb_section.cb_or_A.header,
-                                                         cb_section.cb_or_A.derived_key->data(),
-                                                         zero_cpu_key.data());
-                } else {
-                    cb_section.cb_x->decrypt_v1_or_throw(cb_section.cb_or_A.derived_key->data(),
-                                                         zero_cpu_key.data());
-                }
-            }
-
-            // CB_X loads the real CB_B as plaintext. Its key slot is already the
-            // handoff key (as written by RGH2to3), not a nonce to derive again.
-            if (cb_section.cb_x && cb_section.cb_B && cb_section.cb_B->data.size() >= 16) {
-                cb_section.cb_B->decrypted = true;
-                cb_section.cb_B->populate_metadata();
-                std::array<uint8_t, 16> key{};
-                std::copy_n(cb_section.cb_B->data.begin(), key.size(), key.begin());
-                cb_section.cb_B->derived_key = key;
-            }
-
-            if (cb_section.cb_B.has_value() && !cb_section.cb_B->data.empty() &&
-                !cb_section.cb_B->decrypted) {
-                if (!cb_section.cb_or_A.derived_key.has_value()) {
-                    Log::Error("Cannot decrypt CB_B: CB_A derived key is missing");
-                    return false;
-                }
-                cb_section.cb_B->decrypt_cb_b_or_throw(cb_section.cb_or_A.header,
-                                                       cb_section.cb_or_A.derived_key->data(),
-                                                       cpu_key.data());
-            }
-
-            // SC is keyed from sixteen zero bytes, not from its parent. One with a zero nonce
-            // is taken as plaintext.
-            if (cb_section.sc.has_value() && !cb_section.sc->data.empty() &&
-                !cb_section.sc->is_decrypted() &&
-                std::any_of(std::begin(cb_section.sc->header.key),
-                            std::end(cb_section.sc->header.key),
-                            [](uint8_t byte) { return byte != 0; })) {
-                cb_section.sc->decrypt_or_throw(BootloaderSc::kZeroSecret);
-            }
-
-            if (!kernel_section.cd.data.empty() && !kernel_section.cd.is_decrypted()) {
-                if (devkit_chain()) {
-                    if (!cb_section.sc || !cb_section.sc->derived_key) {
-                        Log::Error("Cannot decrypt SD: the SC key is missing");
-                        return false;
-                    }
-                    kernel_section.cd.decrypt_or_throw(cb_section.sc->derived_key->data());
-                } else if (cb_section.cb_B.has_value() &&
-                           cb_section.cb_B->derived_key.has_value()) {
-                    kernel_section.cd.decrypt_or_throw(cb_section.cb_B->derived_key->data());
-                } else if (cb_section.cb_or_A.derived_key.has_value()) {
-                    const uint8_t* cd_cpu_key = nullptr;
-                    if (cb_section.cb_or_A.requires_cpu_key_for_cd()) {
-                        if (cpu_key.size() < 16) {
-                            Log::Error("Cannot decrypt CD: single-CB chain requires a CPU key");
-                            return false;
-                        }
-                        cd_cpu_key = cpu_key.data();
-                    }
-                    kernel_section.cd.decrypt_or_throw(cb_section.cb_or_A.derived_key->data(),
-                                                       cd_cpu_key);
-                } else {
-                    Log::Error("Cannot decrypt CD: parent derived key is missing");
-                    return false;
-                }
-            }
-
-            if (kernel_section.ce.has_value() && !kernel_section.ce->data.empty() &&
-                !kernel_section.ce->is_decrypted()) {
-                if (!kernel_section.cd.decrypted) {
-                    Log::Error("Cannot decrypt CE: CD is not decrypted");
-                    return false;
-                }
-                // When CD arrived plaintext, its key slot is already the handoff
-                // key. For encrypted CD, use the key derived during decryption.
-                kernel_section.ce->decrypt_or_throw(kernel_section.cd.derived_key
-                                                        ? kernel_section.cd.derived_key->data()
-                                                        : kernel_section.cd.header.key);
-            }
-
-            if (system_update_0.cf.has_value() && !system_update_0.cf->is_decrypted()) {
-                system_update_0.cf->decrypt_or_throw(key_1bl);
-            }
-            if (system_update_1.cf.has_value() && !system_update_1.cf->is_decrypted()) {
-                system_update_1.cf->decrypt_or_throw(key_1bl);
-            }
-            if (system_update_0.cg.has_value() && !system_update_0.cg->is_decrypted()) {
-                if (!system_update_0.cf.has_value() || !system_update_0.cf->is_decrypted()) {
-                    Log::Error("Cannot decrypt CG0: parent CF0 is missing or not decrypted");
-                    return false;
-                }
-                const auto cg_key = system_update_0.cf->cg_key();
-                if (!cg_key) {
-                    Log::Error("Cannot decrypt CG0: CF0 payload lacks a 7BL nonce at +0x330");
-                    return false;
-                }
-                system_update_0.cg->decrypt_or_throw(cg_key->data());
-            }
-            if (system_update_1.cg.has_value() && !system_update_1.cg->is_decrypted()) {
-                if (!system_update_1.cf.has_value() || !system_update_1.cf->is_decrypted()) {
-                    Log::Error("Cannot decrypt CG1: parent CF1 is missing or not decrypted");
-                    return false;
-                }
-                const auto cg_key = system_update_1.cf->cg_key();
-                if (!cg_key) {
-                    Log::Error("Cannot decrypt CG1: CF1 payload lacks a 7BL nonce at +0x330");
-                    return false;
-                }
-                system_update_1.cg->decrypt_or_throw(cg_key->data());
-            }
-
-            if (smc.has_value() && smc->encrypted) {
-                smc->decrypt();
-            }
-
-            // A console's keyvault does not open under the all-zero CPU key (only an image built
-            // under that key carries one that does), so under it a keyvault that does not open
-            // stays sealed and the build takes the console's from a kv.bin instead.
-            if (keyvault.has_value() && keyvault->encrypted && !cpu_key.empty()) {
-                if (is_zero_cpu_key(cpu_key)) {
-                    if (auto opened = open_loose_keyvault(cpu_key, keyvault->raw_data);
-                        opened && opened->form == LooseKeyvault::Form::Sealed) {
-                        keyvault->raw_data = std::move(opened->plain);
-                        std::memcpy(&keyvault->data, keyvault->raw_data.data(),
-                                    sizeof(XE_KEYVAULT_DATA));
-                        keyvault->encrypted = false;
-                    } else {
-                        Log::Warn("The keyvault does not open under the all-zero CPU key; it is "
-                                  "left sealed");
-                    }
-                } else if (const auto decrypted = keyvault->decrypt(cpu_key); !decrypted) {
-                    Log::Error("Failed to decrypt Keyvault with provided CPU key: {}",
-                               decrypted.error().describe());
-                    return false;
-                }
-            }
-        } catch (const std::exception& e) {
-            Log::Error("Decryption error in FlashImage: {}", e.what());
-            return false;
         }
 
-        return true;
+        if (cb_section.cb_x && !cb_section.cb_x->data.empty() && !cb_section.cb_x->decrypted) {
+            if (!cb_section.cb_or_A.derived_key) {
+                return fail(ErrorCode::Malformed,
+                            "Cannot decrypt CB_X: CB_A derived key is missing");
+            }
+            const std::array<uint8_t, 16> zero_cpu_key{};
+            auto opened = (cb_section.cb_or_A.header.header.flags & 0x1000) != 0
+                              ? cb_section.cb_x->decrypt_v2(cb_section.cb_or_A.header,
+                                                            cb_section.cb_or_A.derived_key->data(),
+                                                            zero_cpu_key.data())
+                              : cb_section.cb_x->decrypt_v1(cb_section.cb_or_A.derived_key->data(),
+                                                            zero_cpu_key.data());
+            if (!opened) {
+                return with_context(std::move(opened), "decrypting CB_X");
+            }
+        }
+
+        // CB_X loads the real CB_B as plaintext. Its key slot is already the
+        // handoff key (as written by RGH2to3), not a nonce to derive again.
+        if (cb_section.cb_x && cb_section.cb_B && cb_section.cb_B->data.size() >= 16) {
+            cb_section.cb_B->decrypted = true;
+            cb_section.cb_B->populate_metadata();
+            std::array<uint8_t, 16> key{};
+            std::copy_n(cb_section.cb_B->data.begin(), key.size(), key.begin());
+            cb_section.cb_B->derived_key = key;
+        }
+
+        if (cb_section.cb_B.has_value() && !cb_section.cb_B->data.empty() &&
+            !cb_section.cb_B->decrypted) {
+            if (!cb_section.cb_or_A.derived_key.has_value()) {
+                return fail(ErrorCode::Malformed,
+                            "Cannot decrypt CB_B: CB_A derived key is missing");
+            }
+            if (auto opened = cb_section.cb_B->decrypt_cb_b(cb_section.cb_or_A.header,
+                                                            cb_section.cb_or_A.derived_key->data(),
+                                                            cpu_key.data());
+                !opened) {
+                return with_context(std::move(opened), "decrypting CB_B");
+            }
+        }
+
+        // SC is keyed from sixteen zero bytes, not from its parent. One with a zero nonce
+        // is taken as plaintext.
+        if (cb_section.sc.has_value() && !cb_section.sc->data.empty() &&
+            !cb_section.sc->is_decrypted() &&
+            std::any_of(std::begin(cb_section.sc->header.key), std::end(cb_section.sc->header.key),
+                        [](uint8_t byte) { return byte != 0; })) {
+            if (auto opened = cb_section.sc->decrypt(BootloaderSc::kZeroSecret); !opened) {
+                return with_context(std::move(opened), "decrypting SC");
+            }
+        }
+
+        if (!kernel_section.cd.data.empty() && !kernel_section.cd.is_decrypted()) {
+            Result<void> opened{};
+            if (devkit_chain()) {
+                if (!cb_section.sc || !cb_section.sc->derived_key) {
+                    return fail(ErrorCode::Malformed, "Cannot decrypt SD: the SC key is missing");
+                }
+                opened = kernel_section.cd.decrypt(cb_section.sc->derived_key->data());
+            } else if (cb_section.cb_B.has_value() && cb_section.cb_B->derived_key.has_value()) {
+                opened = kernel_section.cd.decrypt(cb_section.cb_B->derived_key->data());
+            } else if (cb_section.cb_or_A.derived_key.has_value()) {
+                const uint8_t* cd_cpu_key = nullptr;
+                if (cb_section.cb_or_A.requires_cpu_key_for_cd()) {
+                    if (cpu_key.size() < 16) {
+                        return fail(ErrorCode::InvalidArgument,
+                                    "Cannot decrypt CD: single-CB chain requires a CPU key");
+                    }
+                    cd_cpu_key = cpu_key.data();
+                }
+                opened =
+                    kernel_section.cd.decrypt(cb_section.cb_or_A.derived_key->data(), cd_cpu_key);
+            } else {
+                return fail(ErrorCode::Malformed,
+                            "Cannot decrypt CD: parent derived key is missing");
+            }
+            if (!opened) {
+                return with_context(std::move(opened), "decrypting CD");
+            }
+        }
+
+        if (kernel_section.ce.has_value() && !kernel_section.ce->data.empty() &&
+            !kernel_section.ce->is_decrypted()) {
+            if (!kernel_section.cd.decrypted) {
+                return fail(ErrorCode::Malformed, "Cannot decrypt CE: CD is not decrypted");
+            }
+            // When CD arrived plaintext, its key slot is already the handoff
+            // key. For encrypted CD, use the key derived during decryption.
+            if (auto opened = kernel_section.ce->decrypt(kernel_section.cd.derived_key
+                                                             ? kernel_section.cd.derived_key->data()
+                                                             : kernel_section.cd.header.key);
+                !opened) {
+                return with_context(std::move(opened), "decrypting CE");
+            }
+        }
+
+        if (system_update_0.cf.has_value() && !system_update_0.cf->is_decrypted()) {
+            if (auto opened = system_update_0.cf->decrypt(key_1bl); !opened) {
+                return with_context(std::move(opened), "decrypting CF0");
+            }
+        }
+        if (system_update_1.cf.has_value() && !system_update_1.cf->is_decrypted()) {
+            if (auto opened = system_update_1.cf->decrypt(key_1bl); !opened) {
+                return with_context(std::move(opened), "decrypting CF1");
+            }
+        }
+        if (system_update_0.cg.has_value() && !system_update_0.cg->is_decrypted()) {
+            if (!system_update_0.cf.has_value() || !system_update_0.cf->is_decrypted()) {
+                return fail(ErrorCode::Malformed,
+                            "Cannot decrypt CG0: parent CF0 is missing or not decrypted");
+            }
+            const auto cg_key = system_update_0.cf->cg_key();
+            if (!cg_key) {
+                return fail(ErrorCode::Malformed,
+                            "Cannot decrypt CG0: CF0 payload lacks a 7BL nonce at +0x330");
+            }
+            if (auto opened = system_update_0.cg->decrypt(cg_key->data()); !opened) {
+                return with_context(std::move(opened), "decrypting CG0");
+            }
+        }
+        if (system_update_1.cg.has_value() && !system_update_1.cg->is_decrypted()) {
+            if (!system_update_1.cf.has_value() || !system_update_1.cf->is_decrypted()) {
+                return fail(ErrorCode::Malformed,
+                            "Cannot decrypt CG1: parent CF1 is missing or not decrypted");
+            }
+            const auto cg_key = system_update_1.cf->cg_key();
+            if (!cg_key) {
+                return fail(ErrorCode::Malformed,
+                            "Cannot decrypt CG1: CF1 payload lacks a 7BL nonce at +0x330");
+            }
+            if (auto opened = system_update_1.cg->decrypt(cg_key->data()); !opened) {
+                return with_context(std::move(opened), "decrypting CG1");
+            }
+        }
+
+        if (smc.has_value() && smc->encrypted) {
+            smc->decrypt();
+        }
+
+        // A console's keyvault does not open under the all-zero CPU key (only an image built
+        // under that key carries one that does), so under it a keyvault that does not open
+        // stays sealed and the build takes the console's from a kv.bin instead.
+        if (keyvault.has_value() && keyvault->encrypted && !cpu_key.empty()) {
+            if (is_zero_cpu_key(cpu_key)) {
+                if (auto opened = open_loose_keyvault(cpu_key, keyvault->raw_data);
+                    opened && opened->form == LooseKeyvault::Form::Sealed) {
+                    keyvault->raw_data = std::move(opened->plain);
+                    std::memcpy(&keyvault->data, keyvault->raw_data.data(),
+                                sizeof(XE_KEYVAULT_DATA));
+                    keyvault->encrypted = false;
+                } else {
+                    Log::Warn("The keyvault does not open under the all-zero CPU key; it is "
+                              "left sealed");
+                }
+            } else if (auto decrypted = keyvault->decrypt(cpu_key); !decrypted) {
+                return with_context(std::move(decrypted),
+                                    "decrypting the Keyvault with the provided CPU key");
+            }
+        }
+
+        return {};
     }
 
-    bool FlashImage::encrypt_all(std::span<const uint8_t> cpu_key, BuildType build_type) {
-        try {
-            const bool plaintext_cb_b = build_type == BuildType::Glitch3;
-            if (plaintext_cb_b && (!cb_section.cb_x || cb_section.cb_x->data.empty() ||
-                                   !cb_section.cb_B || !cb_section.cb_B->decrypted)) {
-                Log::Error("Glitch3 requires CB_X and a plaintext CB_B");
-                return false;
-            }
-            const bool devkit = devkit_chain();
-            if (devkit && (!cb_section.sc || cb_section.sc->data.empty())) {
-                Log::Error("A devkit chain needs an SC to key its SD");
-                return false;
-            }
-            const bool cd_requires_cpu_key = !devkit && !cb_section.cb_B.has_value() &&
-                                             cb_section.cb_or_A.requires_cpu_key_for_cd();
+    Result<void> FlashImage::encrypt_all(std::span<const uint8_t> cpu_key, BuildType build_type) {
+        const bool plaintext_cb_b = build_type == BuildType::Glitch3;
+        if (plaintext_cb_b && (!cb_section.cb_x || cb_section.cb_x->data.empty() ||
+                               !cb_section.cb_B || !cb_section.cb_B->decrypted)) {
+            return fail(ErrorCode::InvalidArgument, "Glitch3 requires CB_X and a plaintext CB_B");
+        }
+        const bool devkit = devkit_chain();
+        if (devkit && (!cb_section.sc || cb_section.sc->data.empty())) {
+            return fail(ErrorCode::InvalidArgument, "A devkit chain needs an SC to key its SD");
+        }
+        const bool cd_requires_cpu_key =
+            !devkit && !cb_section.cb_B.has_value() && cb_section.cb_or_A.requires_cpu_key_for_cd();
 
-            if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted() &&
-                cd_requires_cpu_key && cpu_key.size() < 16) {
-                Log::Error("Cannot encrypt CD: single-CB chain requires a CPU key");
-                return false;
-            }
-
-            // CB_B binds the final encrypted SMC on every split chain, whatever the image
-            // type (xerunner build.py `chain`); a retail single CB binds it as well.
-            // Glitch3 emits CB_B plaintext, so it binds nothing here.
-            const bool bind_cb_b = cb_section.cb_B.has_value() && !plaintext_cb_b;
-            // A devkit SB carries the console's block bound to the SMC, as a retail single CB
-            // does (xeBuild 1.21 devkit); a devgl SB is zero-paired and binds nothing.
-            const bool bind_single_cb =
-                (build_type == BuildType::Retail && cd_requires_cpu_key) ||
-                (devkit && build_type != BuildType::Devgl && cb_section.cb_or_A.decrypted);
-            // A JTAG image's second CB carries the console's block itself, bound to the SMC
-            // under its own 1BL-derived key (xerunner build.py `_wears_console`).
-            const bool bind_extra_cb = payloads.extra_cb.has_value() &&
-                                       !payloads.extra_cb->data.empty() &&
-                                       payloads.extra_cb->decrypted;
-            if (bind_cb_b || bind_single_cb || bind_extra_cb) {
-                if (cpu_key.size() != 16 || !smc || smc->data.empty() ||
-                    smc->data.size() % 4 != 0) {
-                    Log::Error("CB authentication requires a CPU key and an aligned SMC");
-                    return false;
-                }
-                // Authentication covers the exact SMC ciphertext written to NAND.
-                if (!smc->encrypted)
-                    smc->encrypt();
-            }
-
-            if (!cb_section.cb_or_A.data.empty() && cb_section.cb_or_A.decrypted) {
-                if (bind_single_cb)
-                    cb_section.cb_or_A.encrypt_retail_or_throw(key_1bl, cpu_key, smc->data);
-                else
-                    cb_section.cb_or_A.encrypt_or_throw(key_1bl);
-            }
-
-            if (plaintext_cb_b && cb_section.cb_x->decrypted) {
-                if (!cb_section.cb_or_A.derived_key) {
-                    Log::Error("Cannot encrypt CB_X: CB_A derived key is missing");
-                    return false;
-                }
-                const std::array<uint8_t, 16> zero_cpu_key{};
-                if ((cb_section.cb_or_A.header.header.flags & 0x1000) != 0) {
-                    cb_section.cb_x->encrypt_v2_or_throw(cb_section.cb_or_A.header,
-                                                         cb_section.cb_or_A.derived_key->data(),
-                                                         zero_cpu_key.data());
-                } else {
-                    cb_section.cb_x->encrypt_v1_or_throw(cb_section.cb_or_A.derived_key->data(),
-                                                         zero_cpu_key.data());
-                }
-            }
-
-            if (plaintext_cb_b) {
-                if (cb_section.cb_B->data.size() < 16) {
-                    Log::Error("Plaintext CB_B has no handoff key");
-                    return false;
-                }
-                if (cb_section.cb_B->derived_key) {
-                    // An encrypted replacement CB_B may have been decrypted for metadata.
-                    // Preserve its derived handoff key when emitting it in plaintext.
-                    std::copy(cb_section.cb_B->derived_key->begin(),
-                              cb_section.cb_B->derived_key->end(), cb_section.cb_B->data.begin());
-                } else {
-                    // Plaintext CB_B already carries its runtime key, as in RGH2to3.
-                    // CD is encrypted with this key, not the CB_X key or a new HMAC.
-                    cb_section.cb_B->derived_key.emplace();
-                    std::copy_n(cb_section.cb_B->data.begin(), 16,
-                                cb_section.cb_B->derived_key->begin());
-                }
-            }
-
-            if (!plaintext_cb_b && cb_section.cb_B.has_value() && !cb_section.cb_B->data.empty() &&
-                cb_section.cb_B->decrypted) {
-                if (!cb_section.cb_or_A.derived_key.has_value()) {
-                    Log::Error("Cannot encrypt CB_B: CB_A derived key is missing");
-                    return false;
-                }
-                // Computes the digest, or zeros it for a manufacturing chain or a zero
-                // CPU key, then seals under CB_A's regime.
-                cb_section.cb_B->encrypt_retail_or_throw(cb_section.cb_or_A.derived_key->data(),
-                                                         cpu_key, smc->data,
-                                                         &cb_section.cb_or_A.header);
-            }
-
-            // A devkit SC is sealed under the zero secret; its key seals SD. A sealed SC is
-            // opened first, so its key is known.
-            if (devkit) {
-                auto& sc = *cb_section.sc;
-                if (!sc.decrypted) {
-                    sc.decrypt_or_throw(BootloaderSc::kZeroSecret);
-                }
-                sc.encrypt_or_throw(BootloaderSc::kZeroSecret);
-            }
-
-            // xeBuild's CB_B patches keep CD decryption enabled. Plaintext CD is
-            // specific to separate XeLL ECC payloads, not these dashboard builds.
-            if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted()) {
-                if (devkit) {
-                    kernel_section.cd.encrypt_or_throw(cb_section.sc->derived_key->data());
-                } else if (cb_section.cb_B.has_value()) {
-                    if (!cb_section.cb_B->derived_key.has_value()) {
-                        Log::Error("Cannot encrypt CD: CB_B derived key is missing");
-                        return false;
-                    }
-                    kernel_section.cd.encrypt_or_throw(cb_section.cb_B->derived_key->data());
-                } else if (cb_section.cb_or_A.derived_key.has_value()) {
-                    kernel_section.cd.encrypt_or_throw(cb_section.cb_or_A.derived_key->data(),
-                                                       cd_requires_cpu_key ? cpu_key.data()
-                                                                           : nullptr);
-                } else {
-                    Log::Error("Cannot encrypt CD: parent derived key is missing");
-                    return false;
-                }
-            }
-
-            if (kernel_section.ce.has_value() && !kernel_section.ce->data.empty() &&
-                kernel_section.ce->is_decrypted()) {
-                if (!kernel_section.cd.derived_key) {
-                    Log::Error("Cannot encrypt CE: CD derived key is missing");
-                    return false;
-                }
-                kernel_section.ce->encrypt_or_throw(kernel_section.cd.derived_key->data());
-            }
-
-            // The JTAG second chain: its CB sealed under HMAC(1BL key, nonce) with the
-            // console's block bound to the SMC, and its CD under HMAC(CB key, nonce) with no
-            // CPU-key pass, which only a retail single-CB chain takes.
-            if (bind_extra_cb) {
-                payloads.extra_cb->encrypt_retail_or_throw(key_1bl, cpu_key, smc->data);
-            }
-            if (payloads.extra_cd && !payloads.extra_cd->data.empty() &&
-                payloads.extra_cd->is_decrypted()) {
-                if (!payloads.extra_cb || !payloads.extra_cb->derived_key) {
-                    Log::Error("Cannot encrypt the JTAG second CD: its CB key is missing");
-                    return false;
-                }
-                payloads.extra_cd->encrypt_or_throw(payloads.extra_cb->derived_key->data());
-            }
-
-            const bool glitch_layout =
-                build_type == BuildType::Glitch || build_type == BuildType::Glitch2 ||
-                build_type == BuildType::Glitch2m || build_type == BuildType::Glitch3;
-            const size_t stride = slot_size(*this);
-            auto prepare_update = [&](SystemUpdate& slot, const char* filename) {
-                if (!slot.cf || !slot.cg)
-                    return true;
-                if (slot.cg->decrypted) {
-                    slot.cf->decrypt_or_throw(key_1bl);
-                    const auto cg_key = slot.cf->cg_key();
-                    if (!cg_key) {
-                        Log::Error("Cannot encrypt CG: CF payload lacks a 7BL nonce at +0x330");
-                        return false;
-                    }
-                    slot.cg->encrypt_or_throw(cg_key->data());
-                }
-                const auto cg = slot.cg->serialize();
-                const size_t cf_size = align_16(slot.cf->serialize().size());
-                if (cf_size + sizeof(cg_header) > stride)
-                    return false;
-                const size_t prefix = std::min(cg.size(), stride - cf_size);
-                if (prefix == cg.size()) {
-                    slot.cf->decrypt_or_throw(key_1bl);
-                    if (slot.cf->data.size() >= 0x1C0)
-                        std::fill_n(slot.cf->data.begin(), 0x1C0, 0);
-                    slot.cg_spill_blocks.clear();
-                    if (filesystem) {
-                        filesystem->set_driver(&flash_driver);
-                        if (filesystem->exists(filename) &&
-                            !filesystem_ok(filesystem->delete_file(filename), "delete a CG tail"))
-                            return false;
-                    }
-                    return true;
-                }
-                if (!filesystem) {
-                    Log::Error("CG continuation requires a Flash File System");
-                    return false;
-                }
-                filesystem->set_driver(&flash_driver);
-                for (auto range : active_payload_block_ranges())
-                    if (!filesystem_ok(
-                            filesystem->reserve_blocks(range.start_block, range.block_count),
-                            "reserve payload blocks for a CG tail"))
-                        return false;
-                const bool jtag_layout =
-                    build_type == BuildType::Jtag ||
-                    (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
-                const size_t base = update_base(*this, jtag_layout, glitch_layout);
-                if (const auto range = flash_driver.block_range_for_byte_interval(base, 2 * stride))
-                    if (!filesystem_ok(
-                            filesystem->reserve_blocks(range->start_block, range->block_count),
-                            "reserve the update slots for a CG tail"))
-                        return false;
-                if (filesystem->exists(filename) &&
-                    !filesystem_ok(filesystem->delete_file(filename), "delete a CG tail"))
-                    return false;
-                // A built image lists each CG tail first, in slot order, and lays it on the
-                // filesystem's first free blocks, directly past the slots (xeBuild 1.21).
-                // A parsed image keeps its other files where they are.
-                if (preserve_layout) {
-                    if (!filesystem_ok(
-                            filesystem->add_file(filename, std::span(cg).subspan(prefix)),
-                            "add a CG tail"))
-                        return false;
-                } else {
-                    if (!filesystem_ok(filesystem->insert_file(leading_cg_tails(*filesystem),
-                                                               filename,
-                                                               std::span(cg).subspan(prefix)),
-                                       "insert a CG tail"))
-                        return false;
-                }
-                auto entry = filesystem->stat(filename);
-                if (!entry)
-                    return false;
-                auto chain = filesystem->get_chain(entry->block_number);
-                if (chain.size() > 223 || chain.size() != (cg.size() - prefix + 0x3FFF) / 0x4000)
-                    return false;
-                slot.cf->decrypt_or_throw(key_1bl);
-                if (slot.cf->data.size() < 0x1C0)
-                    return false;
-                std::fill_n(slot.cf->data.begin(), 0x1C0, 0);
-                slot.cf->data[0] = uint8_t(chain.size() >> 8);
-                slot.cf->data[1] = uint8_t(chain.size());
-                for (size_t i = 0; i < chain.size(); ++i) {
-                    slot.cf->data[2 + i * 2] = uint8_t(chain[i] >> 8);
-                    slot.cf->data[3 + i * 2] = uint8_t(chain[i]);
-                }
-                slot.cg_spill_blocks = std::move(chain);
-                return true;
-            };
-            if (!prepare_update(system_update_0, "sysupdate.xexp1") ||
-                !prepare_update(system_update_1, "sysupdate.xexp2"))
-                return false;
-
-            // Writes a plaintext CF's per-box data back and, when its slot binds the console,
-            // re-MACs it over what it now states.
-            const auto bind_cf = [&](BootloaderCf& cf, size_t slot_index) -> Result<void> {
-                if (cf.perbox.has_value()) {
-                    if (auto stored = cf.serialize_perbox(); !stored)
-                        return stored;
-                }
-                if (!cpu_key.empty() && update_slot_binds_console(build_type, slot_index))
-                    return cf.calc_mac(key_1bl, cpu_key.data());
-                return {};
-            };
-            if (system_update_0.cf.has_value() && system_update_0.cf->is_decrypted()) {
-                if (auto bound = bind_cf(*system_update_0.cf, 0); !bound) {
-                    Log::Error("Failed to bind CF0: {}", bound.error().describe());
-                    return false;
-                }
-                system_update_0.cf->encrypt_or_throw(key_1bl);
-            }
-            if (system_update_1.cf.has_value() && system_update_1.cf->is_decrypted()) {
-                if (auto bound = bind_cf(*system_update_1.cf, 1); !bound) {
-                    Log::Error("Failed to bind CF1: {}", bound.error().describe());
-                    return false;
-                }
-                system_update_1.cf->encrypt_or_throw(key_1bl);
-            }
-
-            if (smc.has_value() && !smc->encrypted) {
-                smc->encrypt();
-            }
-
-            if (keyvault.has_value() && !keyvault->encrypted && !cpu_key.empty()) {
-                if (const auto encrypted = keyvault->encrypt(cpu_key); !encrypted) {
-                    Log::Error("Failed to encrypt Keyvault with provided CPU key: {}",
-                               encrypted.error().describe());
-                    return false;
-                }
-            }
-        } catch (const std::exception& e) {
-            Log::Error("Encryption error in FlashImage: {}", e.what());
-            return false;
+        if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted() &&
+            cd_requires_cpu_key && cpu_key.size() < 16) {
+            return fail(ErrorCode::InvalidArgument,
+                        "Cannot encrypt CD: single-CB chain requires a CPU key");
         }
 
-        return true;
+        // CB_B binds the final encrypted SMC on every split chain, whatever the image
+        // type (xerunner build.py `chain`); a retail single CB binds it as well.
+        // Glitch3 emits CB_B plaintext, so it binds nothing here.
+        const bool bind_cb_b = cb_section.cb_B.has_value() && !plaintext_cb_b;
+        // A devkit SB carries the console's block bound to the SMC, as a retail single CB
+        // does (xeBuild 1.21 devkit); a devgl SB is zero-paired and binds nothing.
+        const bool bind_single_cb =
+            (build_type == BuildType::Retail && cd_requires_cpu_key) ||
+            (devkit && build_type != BuildType::Devgl && cb_section.cb_or_A.decrypted);
+        // A JTAG image's second CB carries the console's block itself, bound to the SMC
+        // under its own 1BL-derived key (xerunner build.py `_wears_console`).
+        const bool bind_extra_cb = payloads.extra_cb.has_value() &&
+                                   !payloads.extra_cb->data.empty() && payloads.extra_cb->decrypted;
+        if (bind_cb_b || bind_single_cb || bind_extra_cb) {
+            if (cpu_key.size() != 16 || !smc || smc->data.empty() || smc->data.size() % 4 != 0) {
+                return fail(ErrorCode::InvalidArgument,
+                            "CB authentication requires a CPU key and an aligned SMC");
+            }
+            // Authentication covers the exact SMC ciphertext written to NAND.
+            if (!smc->encrypted)
+                smc->encrypt();
+        }
+
+        if (!cb_section.cb_or_A.data.empty() && cb_section.cb_or_A.decrypted) {
+            auto sealed = bind_single_cb
+                              ? cb_section.cb_or_A.encrypt_retail(key_1bl, cpu_key, smc->data)
+                              : cb_section.cb_or_A.encrypt(key_1bl);
+            if (!sealed) {
+                return with_context(std::move(sealed), "encrypting CB_A");
+            }
+        }
+
+        if (plaintext_cb_b && cb_section.cb_x->decrypted) {
+            if (!cb_section.cb_or_A.derived_key) {
+                return fail(ErrorCode::Malformed,
+                            "Cannot encrypt CB_X: CB_A derived key is missing");
+            }
+            const std::array<uint8_t, 16> zero_cpu_key{};
+            auto sealed = (cb_section.cb_or_A.header.header.flags & 0x1000) != 0
+                              ? cb_section.cb_x->encrypt_v2(cb_section.cb_or_A.header,
+                                                            cb_section.cb_or_A.derived_key->data(),
+                                                            zero_cpu_key.data())
+                              : cb_section.cb_x->encrypt_v1(cb_section.cb_or_A.derived_key->data(),
+                                                            zero_cpu_key.data());
+            if (!sealed) {
+                return with_context(std::move(sealed), "encrypting CB_X");
+            }
+        }
+
+        if (plaintext_cb_b) {
+            if (cb_section.cb_B->data.size() < 16) {
+                return fail(ErrorCode::Malformed, "Plaintext CB_B has no handoff key");
+            }
+            if (cb_section.cb_B->derived_key) {
+                // An encrypted replacement CB_B may have been decrypted for metadata.
+                // Preserve its derived handoff key when emitting it in plaintext.
+                std::copy(cb_section.cb_B->derived_key->begin(),
+                          cb_section.cb_B->derived_key->end(), cb_section.cb_B->data.begin());
+            } else {
+                // Plaintext CB_B already carries its runtime key, as in RGH2to3.
+                // CD is encrypted with this key, not the CB_X key or a new HMAC.
+                cb_section.cb_B->derived_key.emplace();
+                std::copy_n(cb_section.cb_B->data.begin(), 16,
+                            cb_section.cb_B->derived_key->begin());
+            }
+        }
+
+        if (!plaintext_cb_b && cb_section.cb_B.has_value() && !cb_section.cb_B->data.empty() &&
+            cb_section.cb_B->decrypted) {
+            if (!cb_section.cb_or_A.derived_key.has_value()) {
+                return fail(ErrorCode::Malformed,
+                            "Cannot encrypt CB_B: CB_A derived key is missing");
+            }
+            // Computes the digest, or zeros it for a manufacturing chain or a zero
+            // CPU key, then seals under CB_A's regime.
+            if (auto sealed =
+                    cb_section.cb_B->encrypt_retail(cb_section.cb_or_A.derived_key->data(), cpu_key,
+                                                    smc->data, &cb_section.cb_or_A.header);
+                !sealed) {
+                return with_context(std::move(sealed), "encrypting CB_B");
+            }
+        }
+
+        // A devkit SC is sealed under the zero secret; its key seals SD. A sealed SC is
+        // opened first, so its key is known.
+        if (devkit) {
+            auto& sc = *cb_section.sc;
+            if (!sc.decrypted) {
+                if (auto opened = sc.decrypt(BootloaderSc::kZeroSecret); !opened) {
+                    return with_context(std::move(opened), "opening the devkit SC");
+                }
+            }
+            if (auto sealed = sc.encrypt(BootloaderSc::kZeroSecret); !sealed) {
+                return with_context(std::move(sealed), "encrypting SC");
+            }
+        }
+
+        // xeBuild's CB_B patches keep CD decryption enabled. Plaintext CD is
+        // specific to separate XeLL ECC payloads, not these dashboard builds.
+        if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted()) {
+            Result<void> sealed{};
+            if (devkit) {
+                sealed = kernel_section.cd.encrypt(cb_section.sc->derived_key->data());
+            } else if (cb_section.cb_B.has_value()) {
+                if (!cb_section.cb_B->derived_key.has_value()) {
+                    return fail(ErrorCode::Malformed,
+                                "Cannot encrypt CD: CB_B derived key is missing");
+                }
+                sealed = kernel_section.cd.encrypt(cb_section.cb_B->derived_key->data());
+            } else if (cb_section.cb_or_A.derived_key.has_value()) {
+                sealed = kernel_section.cd.encrypt(cb_section.cb_or_A.derived_key->data(),
+                                                   cd_requires_cpu_key ? cpu_key.data() : nullptr);
+            } else {
+                return fail(ErrorCode::Malformed,
+                            "Cannot encrypt CD: parent derived key is missing");
+            }
+            if (!sealed) {
+                return with_context(std::move(sealed), "encrypting CD");
+            }
+        }
+
+        if (kernel_section.ce.has_value() && !kernel_section.ce->data.empty() &&
+            kernel_section.ce->is_decrypted()) {
+            if (!kernel_section.cd.derived_key) {
+                return fail(ErrorCode::Malformed, "Cannot encrypt CE: CD derived key is missing");
+            }
+            if (auto sealed = kernel_section.ce->encrypt(kernel_section.cd.derived_key->data());
+                !sealed) {
+                return with_context(std::move(sealed), "encrypting CE");
+            }
+        }
+
+        // The JTAG second chain: its CB sealed under HMAC(1BL key, nonce) with the
+        // console's block bound to the SMC, and its CD under HMAC(CB key, nonce) with no
+        // CPU-key pass, which only a retail single-CB chain takes.
+        if (bind_extra_cb) {
+            if (auto sealed = payloads.extra_cb->encrypt_retail(key_1bl, cpu_key, smc->data);
+                !sealed) {
+                return with_context(std::move(sealed), "encrypting the JTAG second CB");
+            }
+        }
+        if (payloads.extra_cd && !payloads.extra_cd->data.empty() &&
+            payloads.extra_cd->is_decrypted()) {
+            if (!payloads.extra_cb || !payloads.extra_cb->derived_key) {
+                return fail(ErrorCode::Malformed,
+                            "Cannot encrypt the JTAG second CD: its CB key is missing");
+            }
+            if (auto sealed = payloads.extra_cd->encrypt(payloads.extra_cb->derived_key->data());
+                !sealed) {
+                return with_context(std::move(sealed), "encrypting the JTAG second CD");
+            }
+        }
+
+        const bool glitch_layout =
+            build_type == BuildType::Glitch || build_type == BuildType::Glitch2 ||
+            build_type == BuildType::Glitch2m || build_type == BuildType::Glitch3;
+        const size_t stride = slot_size(*this);
+        auto prepare_update = [&](SystemUpdate& slot, const char* filename) -> Result<void> {
+            if (!slot.cf || !slot.cg)
+                return {};
+            if (slot.cg->decrypted) {
+                if (auto opened = slot.cf->decrypt(key_1bl); !opened) {
+                    return with_context(std::move(opened), "opening the CF for its CG key");
+                }
+                const auto cg_key = slot.cf->cg_key();
+                if (!cg_key) {
+                    return fail(ErrorCode::Malformed,
+                                "Cannot encrypt CG: CF payload lacks a 7BL nonce at +0x330");
+                }
+                if (auto sealed = slot.cg->encrypt(cg_key->data()); !sealed) {
+                    return with_context(std::move(sealed), "encrypting CG");
+                }
+            }
+            const auto cg = slot.cg->serialize();
+            const size_t cf_size = align_16(slot.cf->serialize().size());
+            if (cf_size + sizeof(cg_header) > stride) {
+                return fail(ErrorCode::OutOfRange,
+                            "the CF (0x{:X} bytes) leaves no room for its CG in the 0x{:X}-byte "
+                            "slot",
+                            cf_size, stride);
+            }
+            const size_t prefix = std::min(cg.size(), stride - cf_size);
+            if (prefix == cg.size()) {
+                if (auto opened = slot.cf->decrypt(key_1bl); !opened) {
+                    return with_context(std::move(opened),
+                                        "opening the CF to clear its continuation table");
+                }
+                if (slot.cf->data.size() >= 0x1C0)
+                    std::fill_n(slot.cf->data.begin(), 0x1C0, 0);
+                slot.cg_spill_blocks.clear();
+                if (filesystem) {
+                    filesystem->set_driver(&flash_driver);
+                    if (filesystem->exists(filename)) {
+                        if (auto deleted = filesystem->delete_file(filename); !deleted) {
+                            return with_context(std::move(deleted), "deleting a stale CG tail");
+                        }
+                    }
+                }
+                return {};
+            }
+            if (!filesystem) {
+                return fail(ErrorCode::Unsupported, "CG continuation requires a Flash File System");
+            }
+            filesystem->set_driver(&flash_driver);
+            for (auto range : active_payload_block_ranges()) {
+                if (auto reserved =
+                        filesystem->reserve_blocks(range.start_block, range.block_count);
+                    !reserved) {
+                    return with_context(std::move(reserved),
+                                        "reserving payload blocks for a CG tail");
+                }
+            }
+            const bool jtag_layout =
+                build_type == BuildType::Jtag ||
+                (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
+            const size_t base = update_base(*this, jtag_layout, glitch_layout);
+            if (const auto range = flash_driver.block_range_for_byte_interval(base, 2 * stride)) {
+                if (auto reserved =
+                        filesystem->reserve_blocks(range->start_block, range->block_count);
+                    !reserved) {
+                    return with_context(std::move(reserved),
+                                        "reserving the update slots for a CG tail");
+                }
+            }
+            if (filesystem->exists(filename)) {
+                if (auto deleted = filesystem->delete_file(filename); !deleted) {
+                    return with_context(std::move(deleted), "deleting a stale CG tail");
+                }
+            }
+            // A built image lists each CG tail first, in slot order, and lays it on the
+            // filesystem's first free blocks, directly past the slots (xeBuild 1.21).
+            // A parsed image keeps its other files where they are.
+            auto added = preserve_layout
+                             ? filesystem->add_file(filename, std::span(cg).subspan(prefix))
+                             : filesystem->insert_file(leading_cg_tails(*filesystem), filename,
+                                                       std::span(cg).subspan(prefix));
+            if (!added) {
+                return with_context(std::move(added), "adding a CG tail");
+            }
+            auto entry = filesystem->stat(filename);
+            if (!entry) {
+                return fail(ErrorCode::Internal, "the CG tail {} is missing after it was added",
+                            filename);
+            }
+            auto chain = filesystem->get_chain(entry->block_number);
+            const size_t needed = (cg.size() - prefix + 0x3FFF) / 0x4000;
+            if (chain.size() > 223 || chain.size() != needed) {
+                return fail(ErrorCode::OutOfRange,
+                            "the CG tail {} spans {} clusters; it needs {} and a CF names at most "
+                            "223",
+                            filename, chain.size(), needed);
+            }
+            if (auto opened = slot.cf->decrypt(key_1bl); !opened) {
+                return with_context(std::move(opened),
+                                    "opening the CF to write its continuation table");
+            }
+            if (slot.cf->data.size() < 0x1C0) {
+                return fail(ErrorCode::Malformed,
+                            "the CF payload (0x{:X} bytes) is too short for a continuation table",
+                            slot.cf->data.size());
+            }
+            std::fill_n(slot.cf->data.begin(), 0x1C0, 0);
+            slot.cf->data[0] = uint8_t(chain.size() >> 8);
+            slot.cf->data[1] = uint8_t(chain.size());
+            for (size_t i = 0; i < chain.size(); ++i) {
+                slot.cf->data[2 + i * 2] = uint8_t(chain[i] >> 8);
+                slot.cf->data[3 + i * 2] = uint8_t(chain[i]);
+            }
+            slot.cg_spill_blocks = std::move(chain);
+            return {};
+        };
+        if (auto prepared = prepare_update(system_update_0, "sysupdate.xexp1"); !prepared) {
+            return with_context(std::move(prepared), "update slot 0");
+        }
+        if (auto prepared = prepare_update(system_update_1, "sysupdate.xexp2"); !prepared) {
+            return with_context(std::move(prepared), "update slot 1");
+        }
+
+        // Writes a plaintext CF's per-box data back and, when its slot binds the console,
+        // re-MACs it over what it now states.
+        const auto bind_cf = [&](BootloaderCf& cf, size_t slot_index) -> Result<void> {
+            if (cf.perbox.has_value()) {
+                if (auto stored = cf.serialize_perbox(); !stored)
+                    return stored;
+            }
+            if (!cpu_key.empty() && update_slot_binds_console(build_type, slot_index))
+                return cf.calc_mac(key_1bl, cpu_key.data());
+            return {};
+        };
+        if (system_update_0.cf.has_value() && system_update_0.cf->is_decrypted()) {
+            if (auto bound = bind_cf(*system_update_0.cf, 0); !bound) {
+                return with_context(std::move(bound), "binding CF0");
+            }
+            if (auto sealed = system_update_0.cf->encrypt(key_1bl); !sealed) {
+                return with_context(std::move(sealed), "encrypting CF0");
+            }
+        }
+        if (system_update_1.cf.has_value() && system_update_1.cf->is_decrypted()) {
+            if (auto bound = bind_cf(*system_update_1.cf, 1); !bound) {
+                return with_context(std::move(bound), "binding CF1");
+            }
+            if (auto sealed = system_update_1.cf->encrypt(key_1bl); !sealed) {
+                return with_context(std::move(sealed), "encrypting CF1");
+            }
+        }
+
+        if (smc.has_value() && !smc->encrypted) {
+            smc->encrypt();
+        }
+
+        if (keyvault.has_value() && !keyvault->encrypted && !cpu_key.empty()) {
+            if (auto encrypted = keyvault->encrypt(cpu_key); !encrypted) {
+                return with_context(std::move(encrypted),
+                                    "encrypting the Keyvault with the provided CPU key");
+            }
+        }
+
+        return {};
     }
 
 } // namespace gxbuild3::nand

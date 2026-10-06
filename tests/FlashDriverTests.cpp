@@ -12,6 +12,7 @@
 #include <iostream>
 #include <limits>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -164,7 +165,8 @@ namespace {
         const auto block = sound_smc_config_block();
         for (const auto& shape : kConfigShapes) {
             Driver source(shape.size, shape.mode);
-            source.write_offset(shape.offset, block);
+            ok =
+                check(source.write_offset(shape.offset, block), "the settings block is laid") && ok;
 
             auto image = FlashImage::read(source.serialize());
             ok = check(image.has_value(), "FlashImage must accept a valid-sized NAND image") && ok;
@@ -183,7 +185,9 @@ namespace {
         Driver source(Driver::Smallblock, Driver::DriverMode::Small);
         auto block = sound_smc_config_block();
         block[0x50] ^= 0xFF;
-        source.write_offset(0xF7C000, block);
+        if (!check(source.write_offset(0xF7C000, block), "the settings block is laid")) {
+            return false;
+        }
 
         auto image = FlashImage::read(source.serialize());
         return check(image && image->parse() && !image->smc_config.has_value(),
@@ -202,8 +206,10 @@ namespace {
             // The statistics and manufacturing blocks lie one and two erase blocks below.
             const std::vector<uint8_t> statistics(0x1000, 0xA5);
             const std::vector<uint8_t> manufacturing(0x1000, 0x5A);
-            image.flash_driver.write_offset(shape.offset - step, statistics);
-            image.flash_driver.write_offset(shape.offset - 2 * step, manufacturing);
+            ok = check(image.flash_driver.write_offset(shape.offset - step, statistics) &&
+                           image.flash_driver.write_offset(shape.offset - 2 * step, manufacturing),
+                       "the neighbouring blocks are laid") &&
+                 ok;
             image.smc_config = block;
 
             ok = check(image.write_to_driver(), "an image with a settings block writes") && ok;
@@ -377,7 +383,7 @@ namespace {
                            uint32_t sequence, uint8_t free_count, size_t tagged_pages,
                            const std::vector<uint8_t>& bytes) {
         const size_t page = block * driver.pages_per_block() + first_page;
-        driver.write_offset(page * 512, bytes);
+        check(driver.write_offset(page * 512, bytes), "a mobile copy is laid");
         BlockMetadata meta{};
         meta.logical_block_id = static_cast<uint16_t>(block);
         meta.sequence = sequence;
@@ -499,8 +505,8 @@ namespace {
             mobile.x32 = mobile_c;
             image.mobile_data = mobile;
             const auto bytes = image.write();
-            ok = check(!bytes.empty(), "an image with mobile data writes") && ok;
-            if (bytes.empty()) {
+            ok = check(bytes.has_value(), "an image with mobile data writes") && ok;
+            if (!bytes) {
                 continue;
             }
             const auto& driver = std::as_const(image.flash_driver);
@@ -529,7 +535,7 @@ namespace {
                        "the pages after a blob stay erased") &&
                  ok;
 
-            auto parsed = FlashImage::read(bytes);
+            auto parsed = FlashImage::read(*bytes);
             ok = check(parsed && parsed->parse() && parsed->mobile_data &&
                            parsed->mobile_data->x31 == mobile_b &&
                            parsed->mobile_data->x32 == mobile_c,
@@ -551,7 +557,7 @@ namespace {
         }
         image->mobile_data->x31 = std::vector<uint8_t>(0x800, 0x5A);
         const auto bytes = image->write();
-        auto parsed = bytes.empty() ? std::nullopt : FlashImage::read(bytes);
+        auto parsed = bytes ? FlashImage::read(*bytes) : std::nullopt;
         return check(parsed && parsed->parse() && parsed->mobile_data &&
                          parsed->mobile_data->x31 == std::vector<uint8_t>(0x800, 0x5A),
                      "the replacement blob is the one read back") &&
@@ -565,8 +571,7 @@ namespace {
         gxbuild3::nand::MobileData mobile;
         mobile.x31 = std::vector<uint8_t>(0x4001, 0x31);
         image.mobile_data = mobile;
-        return check(image.write().empty(),
-                     "a small-block blob longer than its block cannot be written");
+        return check(!image.write(), "a small-block blob longer than its block cannot be written");
     }
 
     bool test_settings_blocks_are_laid_at_the_head_of_erased_blocks() {
@@ -584,8 +589,8 @@ namespace {
             image.statistics = statistics;
             image.manufacturing = no_manufacturing;
             const auto bytes = image.write();
-            ok = check(!bytes.empty(), "an image with settings blocks writes") && ok;
-            if (bytes.empty()) {
+            ok = check(bytes.has_value(), "an image with settings blocks writes") && ok;
+            if (!bytes) {
                 continue;
             }
             const auto& driver = std::as_const(image.flash_driver);
@@ -622,7 +627,7 @@ namespace {
                            "pages past the 0x1000 and an erased block carry no spare") &&
                      ok;
             }
-            auto parsed = FlashImage::read(bytes);
+            auto parsed = FlashImage::read(*bytes);
             ok = check(parsed && parsed->parse() && parsed->smc_config == block &&
                            parsed->statistics == statistics &&
                            parsed->manufacturing == no_manufacturing,
@@ -700,7 +705,7 @@ namespace {
         image.filesystem = std::move(filesystem);
 
         const auto output = image.write();
-        if (!check(!output.empty(),
+        if (!check(output.has_value(),
                    "FlashImage must serialize a data region with one free block")) {
             return false;
         }
@@ -715,7 +720,7 @@ namespace {
             return false;
         }
 
-        auto parsed = FlashImage::read(output);
+        auto parsed = FlashImage::read(*output);
         if (!check(parsed.has_value() && parsed->parse() && parsed->filesystem.has_value(),
                    "FlashImage must parse the packed filesystem it just wrote")) {
             return false;
@@ -756,9 +761,9 @@ namespace {
         const size_t image_size = driver.block_count() * driver.block_size_clean();
         const std::array<uint8_t, 2> bytes{0xAA, 0xBB};
         const auto before = driver.read_clean(image_size - 1, 1);
-        driver.write_offset(image_size - 1, bytes);
+        const bool written = driver.write_offset(image_size - 1, bytes);
         const auto after = driver.read_clean(image_size - 1, 1);
-        return check(before.size() == 1 && after.size() == 1 && before[0] == after[0],
+        return check(!written && before.size() == 1 && after.size() == 1 && before[0] == after[0],
                      "Driver must reject offset writes that exceed clean NAND capacity");
     }
 
@@ -806,7 +811,8 @@ namespace {
         oversized_smc.data.resize(0x4001, 0xA5);
         image.smc = std::move(oversized_smc);
 
-        return check(!image.write_to_driver(),
+        const auto written = image.write_to_driver();
+        return check(!written && written.error().code == gxbuild3::ErrorCode::OutOfRange,
                      "FlashImage must reject an SMC that cannot fit before writing it");
     }
 
@@ -900,7 +906,8 @@ namespace {
         image.kernel_section.cd.decrypted = true;
         const auto cd_before = image.kernel_section.cd.serialize();
 
-        return check(!image.encrypt_all(std::array<uint8_t, 16>{}),
+        const auto encrypted = image.encrypt_all(std::array<uint8_t, 16>{});
+        return check(!encrypted.has_value(),
                      "split-CB chain must reject a missing CB_B-derived key") &&
                check(image.kernel_section.cd.serialize() == cd_before,
                      "failed split-CB encryption must not fall back to the CB_A-derived key");
@@ -925,7 +932,8 @@ namespace {
 
         const auto cb_before = cb.serialize();
         const auto cd_before = image.kernel_section.cd.serialize();
-        if (!check(!image.encrypt_all({}),
+        const auto encrypted = image.encrypt_all({});
+        if (!check(!encrypted && encrypted.error().code == gxbuild3::ErrorCode::InvalidArgument,
                    "qualifying single-CB encryption must reject a missing CPU key")) {
             return false;
         }
