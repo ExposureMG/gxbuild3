@@ -5,23 +5,24 @@
 
 #include <cstdint>
 #include <cstring>
+#include <format>
+#include <utility>
 
 namespace gxbuild3::patchers {
 
-    bool apply_patch(uint8_t* data, uint32_t dataSize, uint32_t address, uint32_t length,
-                     const uint32_t* patchWords) {
+    Result<> apply_patch(uint8_t* data, uint32_t dataSize, uint32_t address, uint32_t length,
+                         const uint32_t* patchWords) {
         if (!data || !patchWords) {
-            Log::Error("Invalid patch arguments (data={}, words={})", data != nullptr,
-                       patchWords != nullptr);
-            return false;
+            return fail(ErrorCode::InvalidArgument, "invalid patch arguments (data={}, words={})",
+                        data != nullptr, patchWords != nullptr);
         }
 
         uint64_t endOffset = static_cast<uint64_t>(address) + static_cast<uint64_t>(length) * 4;
         if (endOffset > dataSize) {
-            Log::Error("Patch write out of range (address=0x{:X}, length=0x{:X} words, end=0x{:X}, "
-                       "buffer=0x{:X})",
-                       address, length, endOffset, dataSize);
-            return false;
+            return fail(ErrorCode::OutOfRange,
+                        "patch write out of range (address=0x{:X}, length=0x{:X} words, "
+                        "end=0x{:X}, buffer=0x{:X})",
+                        address, length, endOffset, dataSize);
         }
 
         for (uint32_t i = 0; i < length; i++) {
@@ -31,22 +32,22 @@ namespace gxbuild3::patchers {
             memcpy(data + targetAddr, &beWord, sizeof(uint32_t));
         }
 
-        return true;
+        return {};
     }
 
-    bool apply_patch_entry(uint8_t* data, uint32_t dataSize, const nand::XePatchEntry& entry) {
+    Result<> apply_patch_entry(uint8_t* data, uint32_t dataSize, const nand::XePatchEntry& entry) {
         if (entry.words.size() < entry.length) {
-            Log::Error("Entry word count mismatch (address=0x{:X}, length_words=0x{:X}, "
-                       "words_available=0x{:X})",
-                       entry.address, entry.length, entry.words.size());
-            return false;
+            return fail(ErrorCode::Malformed,
+                        "entry word count mismatch (address=0x{:X}, length_words=0x{:X}, "
+                        "words_available=0x{:X})",
+                        entry.address, entry.length, entry.words.size());
         }
 
         return apply_patch(data, dataSize, entry.address, entry.length, entry.words.data());
     }
 
-    bool apply_patch_section(uint8_t* data, uint32_t dataSize,
-                             const nand::XePatchSection& section) {
+    Result<> apply_patch_section(uint8_t* data, uint32_t dataSize,
+                                 const nand::XePatchSection& section) {
         Log::Info("Applying section '{}' with {} entries to buffer 0x{:X} bytes",
                   section.identifier, section.entries.size(), dataSize);
 
@@ -56,16 +57,17 @@ namespace gxbuild3::patchers {
                 "Section '{}' entry {} -> address 0x{:X}, length_words 0x{:X}, length_bytes 0x{:X}",
                 section.identifier, entry_index, entry.address, entry.length, entry.length * 4U);
 
-            if (!apply_patch_entry(data, dataSize, entry)) {
-                Log::Error("Section '{}' failed at entry {} (address=0x{:X}, length_words=0x{:X}, "
-                           "buffer=0x{:X})",
-                           section.identifier, entry_index, entry.address, entry.length, dataSize);
-                return false;
+            auto applied = apply_patch_entry(data, dataSize, entry);
+            if (!applied) {
+                return std::unexpected(
+                    std::move(applied.error())
+                        .add_context(
+                            std::format("section '{}' entry {}", section.identifier, entry_index)));
             }
         }
 
         Log::Info("Section '{}' applied successfully", section.identifier);
-        return true;
+        return {};
     }
 
 } // namespace gxbuild3::patchers

@@ -323,18 +323,13 @@ namespace gxbuild3 {
             // A patched stage is as long as its greatest patched end rounded up to 0x10, the
             // rounding zero, and its header states that length (xeBuild: glitch2m CD 9452 0x52A8
             // of patched bytes states 0x52B0). The padding is sealed with the stage.
-            try {
-                bytes.resize(align_16(*required_end), 0);
-                XePatchSection xe_section{section.identifier, section.entries};
-                if (!gxbuild3::patchers::apply_patch_section(
-                        bytes.data(), static_cast<uint32_t>(bytes.size()), xe_section)) {
-                    return std::unexpected(PatchError{"Failed to apply " + std::string(stage_name) +
-                                                      " patch section"});
-                }
-            } catch (const std::exception& exception) {
-                return std::unexpected(PatchError{"Failed to allocate/apply " +
-                                                  std::string(stage_name) +
-                                                  " patch: " + exception.what()});
+            bytes.resize(align_16(*required_end), 0);
+            const XePatchSection xe_section{section.identifier, section.entries};
+            const auto applied = gxbuild3::patchers::apply_patch_section(
+                bytes.data(), static_cast<uint32_t>(bytes.size()), xe_section);
+            if (!applied) {
+                return std::unexpected(PatchError{"Failed to apply " + std::string(stage_name) +
+                                                  " patch section: " + applied.error().describe()});
             }
 
             if (bytes.size() < sizeof(generic_header)) {
@@ -906,11 +901,16 @@ namespace gxbuild3 {
 
             flash_image.smc->decrypt();
 
-            const uint32_t hits = gxbuild3::patchers::apply_signature_patch(
+            const auto hits = gxbuild3::patchers::apply_signature_patch(
                 flash_image.smc->data.data(), static_cast<uint32_t>(flash_image.smc->data.size()),
                 gxbuild3::patchers::Glitch.addr, gxbuild3::patchers::Glitch.value);
 
-            if (hits == 0) {
+            if (!hits) {
+                return build_error(BuildErrorCode::InvalidSmc,
+                                   "Failed to apply the SMC reboot patch: " +
+                                       hits.error().describe());
+            }
+            if (*hits == 0) {
                 Log::Warn("SMC reboot patch site not found - "
                           "SMC may not be a supported retail variant");
             } else {
