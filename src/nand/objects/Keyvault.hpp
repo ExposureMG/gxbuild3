@@ -13,13 +13,6 @@ namespace gxbuild3::nand {
 
 #pragma pack(push, 1)
 
-    struct KV_CONTROLLER_DATA {
-        uint32_t dwKey1Idx;
-        uint32_t dwKey2Idx;
-        uint8_t dwKey1Data[0x10];
-        uint8_t dwKey2Data[0x10];
-    };
-
     struct CONSOLE_PUBLIC_KEY {
         uint32_t PublicExponent;
         uint8_t Modulus[0x80];
@@ -101,64 +94,6 @@ namespace gxbuild3::nand {
         uint8_t b37Padding[0x1146];
         uint8_t b39SpecialKeyVaultSignature[0x100];
         uint8_t b38CardeaCertificate[0x2108];
-    };
-
-    struct XE_FCRT_DATA {
-        uint8_t bSignature[0x100];
-        uint8_t bAesIv[0x10];
-        uint32_t dwUnknown;
-        uint32_t dwUnknown2;
-        uint32_t dwDataLength;
-        uint32_t dwDataOffset;
-        uint8_t bUnknown[0xC];
-        uint8_t bDigest[0x14];
-        uint8_t bData[0x3ec0];
-    };
-
-    struct XE_CERTIFICATE_REVOCATION_DATA {
-        uint32_t dwLength;
-        uint32_t dwVersion;
-        uint32_t dwCount;
-        uint8_t bRevokedDigests[0x884];
-    };
-
-    struct XE_CERTIFICATE_REVOCATION_BOX_DATA {
-        uint8_t bFileTimestamp[0x8];
-        uint8_t bUnknown[0x7];
-        uint8_t bLockDownValue;
-    };
-
-    struct XE_CRL_DATA {
-        uint32_t dwMagic;
-        uint8_t bConsoleId[0x5];
-        uint8_t bPadding[0x3];
-        uint8_t bDigest[0x14];
-        uint8_t bSignature[0x100];
-        uint8_t bAesNonce[0x10];
-        uint8_t bAesKey1[0x10];
-        XE_CERTIFICATE_REVOCATION_BOX_DATA xeBoxData;
-        XE_CERTIFICATE_REVOCATION_DATA xeData;
-    };
-
-    struct XE_SEC_DATA {
-        uint8_t bPairingData[0x3];
-        uint8_t bPadding[0x3];
-        uint8_t bSecurityInitialised;
-        uint8_t bLockDownValue;
-        uint8_t bFileTimestamp[0x8];
-        uint8_t bDetectedViolations;
-        uint64_t qwSecurityActivated;
-        uint64_t qwDvdDisconnectedCount;
-        uint64_t qwLockSystemUpdateCount;
-        uint8_t WhateverMan[0x4000];
-    };
-
-    struct XE_EXTENDED_KV_DATA {
-        uint8_t WhateverMan[0x4000];
-    };
-
-    struct XE_DAE_DATA {
-        uint8_t WhateverMan[0x4000];
     };
 
 #pragma pack(pop)
