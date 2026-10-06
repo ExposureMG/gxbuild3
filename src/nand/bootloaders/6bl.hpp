@@ -42,7 +42,6 @@ namespace gxbuild3::nand {
         }
 
         bool is_decrypted() const;
-        bool verify_signature() const;
         // The CG/7BL RC4 key material: the 7BL nonce in the decrypted CF payload at
         // kCfCgNonceOffset (0x330), never the header fixpoint at +0x20. Empty while the CF is
         // still encrypted or too short to carry the nonce.

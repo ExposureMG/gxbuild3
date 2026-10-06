@@ -73,41 +73,15 @@ namespace gxbuild3::nand {
         uint8_t console_type;
         uint8_t console_sequence;
         uint16_t console_sequence_allow;
-
-        [[nodiscard]] bool console_type_is_allowed(uint64_t fuseline) const noexcept {
-            if ((fuseline & 0xF) == 0) {
-                return console_type == 0;
-            }
-            return console_type == 1;
-        }
-
-        [[nodiscard]] bool console_sequence_is_allowed(uint64_t fuseline) const noexcept {
-            if (fuseline == 0) {
-                return true;
-            }
-            int i = 0;
-            for (i = 0; i < 0x10; ++i) {
-                if ((fuseline & 0xF) == 0xF) {
-                    break;
-                }
-                fuseline >>= 4;
-            }
-
-            if (i == 0 || (0x10 - i) == console_sequence) {
-                return true;
-            }
-
-            return ((1 << ((0x10 - i) - 1)) & console_sequence_allow) > 0;
-        }
     };
 
     struct cb_header {
         generic_header header;
         uint8_t key[0x10];
-        uint64_t padding_or_args[4];
-        EXCRYPT_SIG signature;
+        uint8_t padding_or_args[0x20];
+        uint8_t signature[0x100];
         uint8_t globals[0x128];
-        EXCRYPT_RSAPUB_2048 dev_pub_key;
+        uint8_t dev_pub_key[0x110];
         uint8_t nonce_3bl[0x10];
         char salt_3bl[10];
         char salt_4bl[10];
@@ -124,14 +98,14 @@ namespace gxbuild3::nand {
     struct sc_header {
         generic_header header;
         uint8_t key[0x10];
-        EXCRYPT_SIG signature;
+        uint8_t signature[0x100];
     };
 
     struct cd_header {
         generic_header header;
         uint8_t key[0x10];
-        EXCRYPT_SIG signature;
-        EXCRYPT_RSAPUB_2048 rsa_pub_key;
+        uint8_t signature[0x100];
+        uint8_t rsa_pub_key[0x110];
         uint8_t nonce_6bl[0x10];
         char salt_6bl[10];
         uint16_t padding;

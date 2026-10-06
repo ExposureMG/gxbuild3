@@ -1,6 +1,7 @@
 #include "nand/bootloaders/BootloaderPacker.hpp"
 
 #include "excrypt.h"
+#include "nand/bootloaders/Common.hpp"
 #include "utils/Log.hpp"
 #include "utils/Utils.hpp"
 
@@ -15,8 +16,6 @@ namespace gxbuild3::nand {
 
     namespace {
 
-        constexpr uint8_t k1BlKey[16] = {0xDD, 0x88, 0xAD, 0x0C, 0x9E, 0xD6, 0x69, 0xE7,
-                                         0xB5, 0x67, 0x94, 0xFB, 0x68, 0x56, 0x3E, 0xFA};
         constexpr uint8_t kSbKey[16] = {0};
 
         void hmac_sha1_16(const uint8_t key[16], const uint8_t* d1, uint32_t l1, const uint8_t* d2,
@@ -90,7 +89,7 @@ namespace gxbuild3::nand {
         uint8_t use_cpu_key[16] = {};
         uint8_t cba_hdr[16] = {};
 
-        std::memcpy(cur_key, k1BlKey, 16);
+        std::memcpy(cur_key, key_1bl, sizeof(key_1bl));
         if (cpu_key.size() >= 16) {
             std::memcpy(use_cpu_key, cpu_key.data(), 16);
         }
