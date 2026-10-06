@@ -10,6 +10,9 @@ namespace gxbuild3::nand {
     namespace {
 
         constexpr uint8_t kSmcKey[4] = {0x42, 0x75, 0x4E, 0x79};
+        // parse() reads the board and version at 0x100..0x107; no SMC is larger than 16 KiB.
+        constexpr size_t kMinSize = 0x108;
+        constexpr size_t kMaxSize = 0x4000;
 
         SmcMotherboard parse_motherboard(uint8_t b) {
             uint8_t nibble = (b >> 4) & 0xF;
@@ -309,9 +312,14 @@ namespace gxbuild3::nand {
         return contains(cygnos_mark) || contains(jtag_mark);
     }
 
-    std::optional<Smc> Smc::parse(std::span<const uint8_t> bytes) {
-        if (bytes.size() < 0x108 || bytes.size() > 0x4000) {
-            return std::nullopt;
+    Result<Smc> Smc::parse(std::span<const uint8_t> bytes) {
+        if (bytes.size() < kMinSize) {
+            return fail(ErrorCode::Truncated, "SMC is 0x{:X} bytes, need at least 0x{:X}",
+                        bytes.size(), kMinSize);
+        }
+        if (bytes.size() > kMaxSize) {
+            return fail(ErrorCode::OutOfRange, "SMC is 0x{:X} bytes, at most 0x{:X} fit",
+                        bytes.size(), kMaxSize);
         }
 
         Smc smc;
@@ -336,7 +344,7 @@ namespace gxbuild3::nand {
         return smc;
     }
 
-    std::optional<Smc> Smc::parse(const std::vector<uint8_t>& bytes) {
+    Result<Smc> Smc::parse(const std::vector<uint8_t>& bytes) {
         return parse(std::span<const uint8_t>(bytes.data(), bytes.size()));
     }
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Error.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -42,12 +44,13 @@ namespace gxbuild3::nand {
         uint16_t table = 0;
         std::array<Blob, kBlobSlots> blobs{};
 
-        // Refuses a block that is short or whose hash does not match what follows it.
-        static std::optional<CoronaConfig> parse(std::span<const uint8_t> bytes);
-        static std::optional<CoronaConfig> parse(const std::vector<uint8_t>& bytes);
+        // Refuses a block that is short (Truncated) or whose hash does not match what follows
+        // it (HashMismatch).
+        [[nodiscard]] static Result<CoronaConfig> parse(std::span<const uint8_t> bytes);
+        [[nodiscard]] static Result<CoronaConfig> parse(const std::vector<uint8_t>& bytes);
 
         // The anchor a console would believe: the highest number among the copies that parse.
-        static std::optional<CoronaConfig>
+        [[nodiscard]] static std::optional<CoronaConfig>
         choose(const std::array<std::span<const uint8_t>, 2>& copies);
 
         [[nodiscard]] std::vector<uint8_t> serialize() const;

@@ -100,9 +100,10 @@ namespace gxbuild3::nand {
 
     } // namespace
 
-    std::optional<XeLL> XeLL::parse(std::span<const uint8_t> bytes) {
+    Result<XeLL> XeLL::parse(std::span<const uint8_t> bytes) {
         if (bytes.size() != kSize) {
-            return std::nullopt;
+            return fail(bytes.size() < kSize ? ErrorCode::Truncated : ErrorCode::OutOfRange,
+                        "XeLL is 0x{:X} bytes, expected 0x{:X}", bytes.size(), kSize);
         }
 
         // NAND XeLL starts with PPC exception-vector branches, not an ELF container.
@@ -110,7 +111,8 @@ namespace gxbuild3::nand {
                                          0x48, 0, 0, 0,    0x48, 0, 0, 0};
         if (!std::equal(std::begin(raw_entry), std::end(raw_entry), bytes.begin()) &&
             !std::equal(std::begin(kElfMagic), std::end(kElfMagic), bytes.begin())) {
-            return std::nullopt;
+            return fail(ErrorCode::Malformed,
+                        "XeLL starts with neither the exception vectors nor an ELF header");
         }
 
         XeLL xell;
@@ -121,7 +123,7 @@ namespace gxbuild3::nand {
         return xell;
     }
 
-    std::optional<XeLL> XeLL::parse(const std::vector<uint8_t>& bytes) {
+    Result<XeLL> XeLL::parse(const std::vector<uint8_t>& bytes) {
         return parse(std::span<const uint8_t>(bytes.data(), bytes.size()));
     }
 

@@ -4,6 +4,7 @@
 #include "utils/Log.hpp"
 
 #include <cstring>
+#include <utility>
 
 namespace gxbuild3::nand {
 
@@ -39,17 +40,17 @@ namespace gxbuild3::nand {
 
     } // namespace
 
-    std::optional<CoronaConfig> CoronaConfig::parse(std::span<const uint8_t> bytes) {
+    Result<CoronaConfig> CoronaConfig::parse(std::span<const uint8_t> bytes) {
         if (bytes.size() < kSize) {
-            Log::Error("Invalid anchor block size: expected {} bytes, got {}", kSize, bytes.size());
-            return std::nullopt;
+            return fail(ErrorCode::Truncated, "anchor block is 0x{:X} bytes, need 0x{:X}",
+                        bytes.size(), kSize);
         }
 
         uint8_t digest[kDigestLength];
         digest_of(bytes.data(), digest);
         if (std::memcmp(digest, bytes.data(), kDigestLength) != 0) {
-            Log::Debug("Anchor block digest does not match what follows it");
-            return std::nullopt;
+            return fail(ErrorCode::HashMismatch,
+                        "anchor block digest does not match what follows it");
         }
 
         CoronaConfig cfg;
@@ -64,7 +65,7 @@ namespace gxbuild3::nand {
         return cfg;
     }
 
-    std::optional<CoronaConfig> CoronaConfig::parse(const std::vector<uint8_t>& bytes) {
+    Result<CoronaConfig> CoronaConfig::parse(const std::vector<uint8_t>& bytes) {
         return parse(std::span<const uint8_t>(bytes.data(), bytes.size()));
     }
 
@@ -76,8 +77,12 @@ namespace gxbuild3::nand {
                 continue;
             }
             auto parsed = parse(copy);
-            if (parsed && (!best || parsed->number > best->number)) {
-                best = parsed;
+            if (!parsed) {
+                Log::Debug("Anchor block copy skipped: {}", parsed.error().describe());
+                continue;
+            }
+            if (!best || parsed->number > best->number) {
+                best = std::move(*parsed);
             }
         }
         return best;

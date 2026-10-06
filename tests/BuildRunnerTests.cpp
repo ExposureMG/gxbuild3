@@ -1265,7 +1265,7 @@ namespace {
                      std::initializer_list<std::pair<uint8_t, Bytes>> mobiles) {
         FlashImage donor{};
         donor.flash_driver = Driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
-        donor.smc = Smc::parse(*source.metadata.smc);
+        donor.smc = Smc::parse(*source.metadata.smc).value();
         donor.keyvault = Keyvault::parse(*source.metadata.keyvault).value();
         donor.keyvault->encrypted = false;
         if (!donor.keyvault->encrypt(source.metadata.cpu_key)) {

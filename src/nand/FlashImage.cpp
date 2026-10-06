@@ -410,8 +410,12 @@ namespace gxbuild3::nand {
         const uint32_t smc_offset = kKeyvaultOffset - smc_size;
         auto smc_bytes = flash_driver.read_clean(smc_offset, smc_size);
         if (!smc_bytes.empty()) {
-            smc = Smc::parse(smc_bytes);
-            Log::Debug("Extracted SMC from NAND (0x{:X} bytes)", smc_bytes.size());
+            if (auto parsed = Smc::parse(smc_bytes)) {
+                smc = std::move(*parsed);
+                Log::Debug("Extracted SMC from NAND (0x{:X} bytes)", smc_bytes.size());
+            } else {
+                Log::Debug("SMC not extracted: {}", parsed.error().describe());
+            }
         }
 
         auto kv_bytes = flash_driver.read_clean(kKeyvaultOffset, Keyvault::kSize);
@@ -780,7 +784,15 @@ namespace gxbuild3::nand {
                 return std::nullopt;
             }
             auto xell_span = std::as_const(flash_driver).read_offset(offset, XeLL::kSize);
-            return xell_span.size() == XeLL::kSize ? XeLL::parse(xell_span) : std::nullopt;
+            if (xell_span.size() != XeLL::kSize) {
+                return std::nullopt;
+            }
+            auto parsed = XeLL::parse(xell_span);
+            if (!parsed) {
+                Log::Debug("No XeLL at 0x{:X}: {}", offset, parsed.error().describe());
+                return std::nullopt;
+            }
+            return std::move(*parsed);
         };
 
         if (!inferred_khv.empty()) {

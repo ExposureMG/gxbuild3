@@ -902,7 +902,8 @@ namespace gxbuild3 {
 
         const auto smc = Smc::parse(*input.metadata.smc);
         if (!smc) {
-            return build_error(BuildErrorCode::InvalidSmc, "Failed to parse input SMC");
+            return build_error(BuildErrorCode::InvalidSmc,
+                               "Failed to parse input SMC: " + smc.error().describe());
         }
         flash_image.smc = *smc;
 
@@ -1328,12 +1329,11 @@ namespace gxbuild3 {
             if (input.payloads->xell && !input.payloads->xell->empty()) {
                 auto xell_parsed = XeLL::parse(*input.payloads->xell);
                 if (!xell_parsed) {
-                    Log::Error(
-                        "Failed to parse XeLL payload (invalid executable signature or size)");
                     return build_error(BuildErrorCode::InvalidBootloader,
-                                       "Failed to parse XeLL payload");
+                                       "Failed to parse XeLL payload: " +
+                                           xell_parsed.error().describe());
                 }
-                flash_image.payloads.xell = std::move(xell_parsed);
+                flash_image.payloads.xell = std::move(*xell_parsed);
                 Log::Info("Adding XeLL payload (version='{}', size=0x{:X})",
                           flash_image.payloads.xell->metadata.version,
                           flash_image.payloads.xell->data.size());
