@@ -114,6 +114,9 @@ if(BUILD_TESTING)
         add_executable(${name} ${source})
         target_link_libraries(${name} PRIVATE gxbuild3_internal)
         gxbuild3_enable_warnings(${name})
+        # Tracked text goldens for tests/GoldenSnapshot.hpp. CTest never passes --update.
+        target_compile_definitions(${name} PRIVATE
+            GXBUILD3_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden")
         add_test(NAME ${name} COMMAND ${name})
     endfunction()
 
@@ -137,6 +140,13 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_crypto_reference_tests tests/CryptoReferenceTests.cpp)
     add_gxbuild3_test(gxbuild3_stfs_tests tests/StfsTests.cpp)
     add_gxbuild3_test(gxbuild3_error_tests tests/ErrorTests.cpp)
+    add_gxbuild3_test(gxbuild3_golden_snapshot_tests tests/GoldenSnapshotTests.cpp)
+    target_compile_definitions(gxbuild3_golden_snapshot_tests PRIVATE
+        GXBUILD3_TEST_SCRATCH_DIR="${CMAKE_CURRENT_BINARY_DIR}/golden-snapshot-tests")
+    add_test(NAME gxbuild3_must_abort_tests
+        COMMAND ${CMAKE_COMMAND}
+            -DGXBUILD3_SELFTEST=$<TARGET_FILE:gxbuild3_golden_snapshot_tests>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/MustAbortTest.cmake)
     foreach(cli_test gxbuild3_commandline_tests gxbuild3_resolver_tests
             gxbuild3_buildcommand_tests)
         target_link_libraries(${cli_test} PRIVATE gxbuild3_cli)
