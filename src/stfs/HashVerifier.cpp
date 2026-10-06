@@ -1,11 +1,13 @@
 #include "stfs/HashVerifier.hpp"
 
+#include "Wire.hpp"
 #include "excrypt.h"
 #include "stfs/BlockParser.hpp"
 #include "stfs/Commons.hpp"
 #include "stfs/Layout.hpp"
 
 #include <array>
+#include <bit>
 #include <cstring>
 #include <format>
 #include <string_view>
@@ -51,9 +53,12 @@ namespace gxbuild3::stfs {
                             hash_offset);
             }
 
-            Digest hash;
-            std::memcpy(hash.data(), package.data() + hash_offset, hash.size());
-            return hash;
+            const auto record = wire::read<stfs_hash_entry>(
+                wire::as_u8(package), static_cast<std::size_t>(hash_offset), "STFS hash entry");
+            if (!record) {
+                return std::unexpected(record.error());
+            }
+            return std::bit_cast<Digest>(record->sha1);
         }
 
     } // namespace

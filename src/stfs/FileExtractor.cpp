@@ -1,7 +1,7 @@
 #include "stfs/FileExtractor.hpp"
 
 #include "ContainerDetail.hpp"
-#include "Endian.hpp"
+#include "Wire.hpp"
 #include "stfs/BlockParser.hpp"
 #include "stfs/Commons.hpp"
 #include "stfs/HashVerifier.hpp"
@@ -36,11 +36,15 @@ namespace gxbuild3::stfs {
                             offset);
             }
 
-            const auto* ptr = package.data() + offset;
+            const auto record = wire::read<stfs_hash_entry>(
+                wire::as_u8(package), static_cast<std::size_t>(offset), "STFS hash entry");
+            if (!record) {
+                return std::unexpected(record.error());
+            }
 
             HashEntry entry;
-            entry.status = static_cast<std::uint8_t>(ptr[0x14]);
-            entry.next_block = read_be24(ptr + 0x15);
+            entry.status = record->status;
+            entry.next_block = record->next_block.get();
 
             constexpr std::uint8_t kStatusUsed = 0x80;
             constexpr std::uint8_t kStatusNewlyAllocated = 0xC0;

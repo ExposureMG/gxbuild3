@@ -55,6 +55,18 @@ namespace gxbuild3::stfs {
     static_assert(offsetof(stfs_file_table_entry, update_timestamp) == 0x38);
     static_assert(offsetof(stfs_file_table_entry, access_timestamp) == 0x3C);
 
+    // One 0x18-byte hash table entry: the SHA-1 of the block it covers, the block's status and,
+    // at level 0, the next block of the file's chain (24-bit big-endian; kChainTerminator ends it).
+    struct stfs_hash_entry {
+        std::uint8_t sha1[0x14];
+        std::uint8_t status;
+        wire::be24 next_block;
+    };
+    static_assert(wire::WireLayout<stfs_hash_entry>);
+    static_assert(sizeof(stfs_hash_entry) == kHashEntrySize);
+    static_assert(offsetof(stfs_hash_entry, status) == 0x14);
+    static_assert(offsetof(stfs_hash_entry, next_block) == 0x15);
+
     // Byte offset of the level-`level` hash entry for logical block `block`: the entry's index in
     // the hash table block that covers it, scaled by kHashEntrySize, added to that table block's
     // offset. Fails like compute_level_n_hash_block_number and block_to_offset.
