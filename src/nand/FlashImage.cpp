@@ -1,5 +1,6 @@
 #include "nand/FlashImage.hpp"
 
+#include "Wire.hpp"
 #include "excrypt.h"
 #include "nand/FlashDriver.hpp"
 #include "nand/bootloaders/BootloaderPacker.hpp"
@@ -441,17 +442,16 @@ namespace gxbuild3::nand {
 
         size_t cursor = kEntryOffset;
         while (cursor + sizeof(generic_header) <= image_bytes.size()) {
-            auto bldr_hdr_bytes = flash_driver.read_clean(cursor, sizeof(generic_header));
-            if (bldr_hdr_bytes.size() < sizeof(generic_header)) {
+            const auto bldr_hdr_bytes = flash_driver.read_clean(cursor, sizeof(generic_header));
+            const auto bldr_hdr =
+                wire::read<generic_header>(bldr_hdr_bytes, 0, "bootloader stage header");
+            if (!bldr_hdr) {
                 break;
             }
 
-            generic_header bldr_hdr{};
-            std::memcpy(&bldr_hdr, bldr_hdr_bytes.data(), sizeof(generic_header));
-
-            const uint16_t magic = bldr_hdr.magic;
-            const uint16_t version = bldr_hdr.version;
-            const uint32_t bldr_size = bldr_hdr.size;
+            const uint16_t magic = bldr_hdr->magic.get();
+            const uint16_t version = bldr_hdr->version.get();
+            const uint32_t bldr_size = bldr_hdr->size.get();
 
             if (bldr_size == 0 || bldr_size > 0x100000 || cursor + bldr_size > image_bytes.size()) {
                 break;
@@ -472,7 +472,7 @@ namespace gxbuild3::nand {
             } else if (magic == NANDBootloaderMagic::SE) {
                 name = "SE";
                 stage = parse_stage(kernel_section.ce, bldr_data, name, cursor);
-            } else if (magic == 0x4342) {
+            } else if (magic == NANDBootloaderMagic::CB) {
                 name = "CB";
                 if (version == 15432) {
                     stage = parse_stage(cb_section.cb_x, bldr_data, name, cursor);
@@ -481,13 +481,13 @@ namespace gxbuild3::nand {
                 } else {
                     stage = parse_stage(cb_section.cb_B, bldr_data, name, cursor);
                 }
-            } else if (magic == 0x5343) {
+            } else if (magic == NANDBootloaderMagic::SC) {
                 name = "SC";
                 stage = parse_stage(cb_section.sc, bldr_data, name, cursor);
-            } else if (magic == 0x4344) {
+            } else if (magic == NANDBootloaderMagic::CD) {
                 name = "CD";
                 stage = parse_stage(kernel_section.cd, bldr_data, name, cursor);
-            } else if (magic == 0x4345) {
+            } else if (magic == NANDBootloaderMagic::CE) {
                 name = "CE";
                 stage = parse_stage(kernel_section.ce, bldr_data, name, cursor);
             } else {
@@ -514,15 +514,17 @@ namespace gxbuild3::nand {
             if (base_offset + sizeof(generic_header) > image_bytes.size()) {
                 return {};
             }
-            auto slot_hdr_bytes = flash_driver.read_clean(base_offset, sizeof(generic_header));
-            if (slot_hdr_bytes.size() < sizeof(generic_header)) {
+            const auto slot_hdr_bytes =
+                flash_driver.read_clean(base_offset, sizeof(generic_header));
+            const auto slot_hdr =
+                wire::read<generic_header>(slot_hdr_bytes, 0, "patch slot CF header");
+            if (!slot_hdr) {
                 return {};
             }
 
-            generic_header slot_hdr{};
-            std::memcpy(&slot_hdr, slot_hdr_bytes.data(), sizeof(generic_header));
-            if (const uint16_t cf_magic = slot_hdr.magic; cf_magic == 0x4346) {
-                const uint32_t cf_size = slot_hdr.size;
+            if (const uint16_t cf_magic = slot_hdr->magic.get();
+                cf_magic == NANDBootloaderMagic::CF) {
+                const uint32_t cf_size = slot_hdr->size.get();
                 if (cf_size > 0 && base_offset + cf_size <= image_bytes.size()) {
                     auto cf_data = flash_driver.read_clean(base_offset, cf_size);
                     if (auto parsed = parse_stage(slot.cf, cf_data, "CF", base_offset); !parsed) {
@@ -531,13 +533,15 @@ namespace gxbuild3::nand {
 
                     size_t cg_offset = base_offset + align_16(cf_size);
                     if (cg_offset + sizeof(generic_header) <= image_bytes.size()) {
-                        auto cg_hdr_bytes =
+                        const auto cg_hdr_bytes =
                             flash_driver.read_clean(cg_offset, sizeof(generic_header));
-                        if (cg_hdr_bytes.size() == sizeof(generic_header)) {
-                            generic_header cg_hdr{};
-                            std::memcpy(&cg_hdr, cg_hdr_bytes.data(), sizeof(generic_header));
-                            if (const uint16_t cg_magic = cg_hdr.magic; cg_magic == 0x4347) {
-                                const uint32_t cg_size = cg_hdr.size;
+                        // read_clean returns the full length or nothing, so this read
+                        // fails exactly when the CG header is cut short.
+                        if (const auto cg_hdr = wire::read<generic_header>(
+                                cg_hdr_bytes, 0, "patch slot CG header")) {
+                            if (const uint16_t cg_magic = cg_hdr->magic.get();
+                                cg_magic == NANDBootloaderMagic::CG) {
+                                const uint32_t cg_size = cg_hdr->size.get();
                                 if (cg_size > 0 && cg_offset + cg_size <= image_bytes.size()) {
                                     auto cg_data = flash_driver.read_clean(cg_offset, cg_size);
                                     const size_t prefix = std::min<size_t>(
