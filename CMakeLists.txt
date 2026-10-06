@@ -135,6 +135,7 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_xe_rsa_tests tests/XeRsaTests.cpp)
     add_gxbuild3_test(gxbuild3_crypto_reference_tests tests/CryptoReferenceTests.cpp)
     add_gxbuild3_test(gxbuild3_stfs_tests tests/StfsTests.cpp)
+    add_gxbuild3_test(gxbuild3_error_tests tests/ErrorTests.cpp)
     foreach(cli_test gxbuild3_commandline_tests gxbuild3_resolver_tests
             gxbuild3_buildcommand_tests)
         target_link_libraries(${cli_test} PRIVATE gxbuild3_cli)
