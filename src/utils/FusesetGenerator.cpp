@@ -1,10 +1,9 @@
 #include "utils/FusesetGenerator.hpp"
 
-#include "Endian.hpp"
+#include "Wire.hpp"
 
 #include <algorithm>
 #include <array>
-#include <cstring>
 #include <utility>
 
 namespace gxbuild3::utils {
@@ -36,9 +35,12 @@ namespace gxbuild3::utils {
                         "CB of 0x{:X} bytes is too short to carry its console word at 0x{:X}",
                         cb.size(), kCbWordOffset);
         }
-        uint32_t wire_value = 0;
-        std::memcpy(&wire_value, cb.data() + kCbWordOffset, sizeof(wire_value));
-        return bswap32(wire_value);
+        // The size check above keeps its own message; the read cannot fail after it.
+        const auto word = wire::read<wire::be32>(cb, kCbWordOffset, "CB console word");
+        if (!word) {
+            return std::unexpected(word.error());
+        }
+        return word->get();
     }
 
     Result<std::array<uint8_t, kFuseLineSize>> encode_console_type_line(uint8_t console_type) {
