@@ -70,52 +70,6 @@ namespace gxbuild3::nand {
                                                   std::span<const uint8_t> encrypted_smc,
                                                   const cb_header* cb_a_header = nullptr);
 
-        // Throwing shims over the Result API above (std::runtime_error carrying
-        // Error::describe()). TODO(test-phase): test-only; src must not call them
-        // (ErrorConventionGuard.cmake).
-        static BootloaderCb parse_or_throw(const std::vector<uint8_t>& bytes) {
-            return detail::value_or_throw(parse(bytes));
-        }
-        void decrypt_or_throw(const uint8_t onebl_key[16]) {
-            detail::value_or_throw(decrypt(onebl_key));
-        }
-        void decrypt_v1_or_throw(const uint8_t cb_a_key[16], const uint8_t cpu_key[16]) {
-            detail::value_or_throw(decrypt_v1(cb_a_key, cpu_key));
-        }
-        void decrypt_v2_or_throw(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
-                                 const uint8_t cpu_key[16]) {
-            detail::value_or_throw(decrypt_v2(cb_a_hdr, cb_a_key, cpu_key));
-        }
-        void decrypt_mfg_or_throw(const uint8_t cb_a_key[16]) {
-            detail::value_or_throw(decrypt_mfg(cb_a_key));
-        }
-        void encrypt_or_throw(const uint8_t onebl_key[16]) {
-            detail::value_or_throw(encrypt(onebl_key));
-        }
-        void encrypt_v1_or_throw(const uint8_t cb_a_key[16], const uint8_t cpu_key[16]) {
-            detail::value_or_throw(encrypt_v1(cb_a_key, cpu_key));
-        }
-        void encrypt_v2_or_throw(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
-                                 const uint8_t cpu_key[16]) {
-            detail::value_or_throw(encrypt_v2(cb_a_hdr, cb_a_key, cpu_key));
-        }
-        void encrypt_mfg_or_throw(const uint8_t cb_a_key[16]) {
-            detail::value_or_throw(encrypt_mfg(cb_a_key));
-        }
-        void decrypt_cb_b_or_throw(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
-                                   const uint8_t cpu_key[16]) {
-            detail::value_or_throw(decrypt_cb_b(cb_a_hdr, cb_a_key, cpu_key));
-        }
-        void encrypt_cb_b_or_throw(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
-                                   const uint8_t cpu_key[16]) {
-            detail::value_or_throw(encrypt_cb_b(cb_a_hdr, cb_a_key, cpu_key));
-        }
-        void encrypt_retail_or_throw(const uint8_t parent_key[16], std::span<const uint8_t> cpu_key,
-                                     std::span<const uint8_t> encrypted_smc,
-                                     const cb_header* cb_a_header = nullptr) {
-            detail::value_or_throw(encrypt_retail(parent_key, cpu_key, encrypted_smc, cb_a_header));
-        }
-
         // A plaintext v1 RGH3 CB_X (big-endian word 0x646A0002, "oris r10,r3,2", at +0x354)
         // gets the four-word fix RGH2to3 applies, which moves that sequence from r10 to r9.
         // Returns true when it patched; any other CB_X, v2 included, is left untouched.

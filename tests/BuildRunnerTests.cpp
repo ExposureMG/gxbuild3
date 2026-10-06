@@ -1290,7 +1290,7 @@ namespace {
         if (!donor.keyvault->encrypt(source.metadata.cpu_key)) {
             std::abort();
         }
-        donor.cb_section.cb_or_A = BootloaderCb::parse_or_throw(source.bootloaders.cb_or_a);
+        donor.cb_section.cb_or_A = test::must(BootloaderCb::parse(source.bootloaders.cb_or_a));
         donor.cb_section.sc = test::must(BootloaderSc::parse(*source.bootloaders.sc));
         donor.kernel_section.cd = test::must(BootloaderCd::parse(source.bootloaders.cd));
         if (!donor.encrypt_all(source.metadata.cpu_key)) {
@@ -2693,7 +2693,7 @@ namespace {
     bool test_metadata_overrides_reach_final_patched_cb_b_and_cf0() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Glitch2;
-        auto cb_a = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
+        auto cb_a = test::must(BootloaderCb::parse(input.bootloaders.cb_or_a));
         if (!cb_a.parse_perbox()) {
             std::abort();
         }
@@ -2706,7 +2706,7 @@ namespace {
         }
         input.bootloaders.cb_or_a = cb_a.serialize();
 
-        auto cb_b = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
+        auto cb_b = test::must(BootloaderCb::parse(input.bootloaders.cb_or_a));
         if (!cb_b.parse_perbox()) {
             std::abort();
         }
@@ -2863,7 +2863,7 @@ namespace {
 
     bool test_present_unwritable_cb_b_remains_metadata_authoritative() {
         auto input = fresh_input(ImageType::SmallBlock);
-        auto cb_a = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
+        auto cb_a = test::must(BootloaderCb::parse(input.bootloaders.cb_or_a));
         cb_a.data[0x260] = 0x01;
         cb_a.decrypted = false;
         input.bootloaders.cb_or_a = cb_a.serialize();
@@ -2882,7 +2882,7 @@ namespace {
 
     bool test_donor_bootloader_chain_is_replaced_by_input_presence() {
         auto donor_input = fresh_input(ImageType::SmallBlock);
-        auto donor_cb = BootloaderCb::parse_or_throw(donor_input.bootloaders.cb_or_a);
+        auto donor_cb = test::must(BootloaderCb::parse(donor_input.bootloaders.cb_or_a));
         donor_cb.data[0x260] = 0x01;
         donor_cb.decrypted = false;
         donor_input.bootloaders.cb_or_a = donor_cb.serialize();
@@ -3198,10 +3198,11 @@ namespace {
         cb.header.header.pairing = pairing;
         cb.header.header.size = sizeof(generic_header);
         const auto cb_wire = cb.serialize();
-        passed = require(has_big_endian_pairing(cb_wire) &&
-                             BootloaderCb::parse_or_throw(cb_wire).header.header.pairing == pairing,
-                         "CB generic pairing is big-endian on wire and host-order after parse") &&
-                 passed;
+        passed =
+            require(has_big_endian_pairing(cb_wire) &&
+                        test::must(BootloaderCb::parse(cb_wire)).header.header.pairing == pairing,
+                    "CB generic pairing is big-endian on wire and host-order after parse") &&
+            passed;
 
         BootloaderSc sc{};
         sc.header.header.magic = NANDBootloaderMagic::SC;
@@ -3283,7 +3284,7 @@ namespace {
             offsetof(ConsoleTypeSeqAllow, console_sequence_allow) - sizeof(generic_header);
         cb.data[console_allow_offset] = 0x12;
         cb.data[console_allow_offset + 1] = 0x34;
-        const auto parsed_cb = BootloaderCb::parse_or_throw(cb.serialize());
+        const auto parsed_cb = test::must(BootloaderCb::parse(cb.serialize()));
         passed = require(parsed_cb.header.console_seq_allow.console_sequence_allow == 0x1234,
                          "CB console sequence allowance is normalized after parse") &&
                  passed;
@@ -3364,7 +3365,7 @@ namespace {
         constexpr size_t console_allow_wire_offset =
             offsetof(cb_header, console_seq_allow) +
             offsetof(ConsoleTypeSeqAllow, console_sequence_allow);
-        auto cb = BootloaderCb::parse_or_throw(asymmetric_decrypted_cb(0x1357).serialize());
+        auto cb = test::must(BootloaderCb::parse(asymmetric_decrypted_cb(0x1357).serialize()));
         const Bytes original_perbox(cb.data.begin() + 0x10,
                                     cb.data.begin() + 0x10 + sizeof(cb_perbox));
         cb.header.console_seq_allow.console_sequence_allow = 0xBEEF;
@@ -3381,13 +3382,13 @@ namespace {
     }
 
     bool test_cb_console_allow_host_value_encrypts_and_roundtrips_asymmetrically() {
-        auto cb = BootloaderCb::parse_or_throw(asymmetric_decrypted_cb(0x1357).serialize());
+        auto cb = test::must(BootloaderCb::parse(asymmetric_decrypted_cb(0x1357).serialize()));
         const Bytes original_perbox(cb.data.begin() + 0x10,
                                     cb.data.begin() + 0x10 + sizeof(cb_perbox));
         cb.header.console_seq_allow.console_sequence_allow = 0xBEEF;
-        cb.encrypt_or_throw(key_1bl);
-        auto parsed_encrypted = BootloaderCb::parse_or_throw(cb.serialize());
-        parsed_encrypted.decrypt_or_throw(key_1bl);
+        test::must(cb.encrypt(key_1bl));
+        auto parsed_encrypted = test::must(BootloaderCb::parse(cb.serialize()));
+        test::must(parsed_encrypted.decrypt(key_1bl));
         return require(
                    parsed_encrypted.header.console_seq_allow.console_sequence_allow == 0xBEEF,
                    "encrypted CB roundtrip retains the host-order asymmetric console allowance") &&
@@ -3404,7 +3405,7 @@ namespace {
 
         FlashImage header_only_cd{};
         const auto bootloaders = valid_bootloaders();
-        header_only_cd.cb_section.cb_or_A = BootloaderCb::parse_or_throw(bootloaders.cb_or_a);
+        header_only_cd.cb_section.cb_or_A = test::must(BootloaderCb::parse(bootloaders.cb_or_a));
         header_only_cd.kernel_section.cd.header.header.magic = NANDBootloaderMagic::CD;
         header_only_cd.kernel_section.cd.header.header.size = sizeof(cd_header);
 

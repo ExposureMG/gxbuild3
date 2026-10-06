@@ -26,11 +26,9 @@ if(NOT DEFINED SOURCE_ROOT OR NOT IS_DIRECTORY "${SOURCE_ROOT}/src")
 endif()
 
 # Shim inventory.
-#   TODO(test-phase): the bootloader *_or_throw shims (2bl.hpp) and their
-#     detail::value_or_throw helper (Common.hpp) exist only for the tests; the test rewrite
-#     migrates those call sites to the Result API and deletes them.
+#   TODO(test-phase): the bootloader detail::value_or_throw helper (Common.hpp) outlived the
+#     *_or_throw shims it backed; it goes next.
 set(shim_name_allowlist
-    src/nand/bootloaders/2bl.hpp
     src/nand/bootloaders/Common.hpp
 )
 
