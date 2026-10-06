@@ -3229,10 +3229,11 @@ namespace {
         ce.header.header.pairing = pairing;
         ce.header.header.size = sizeof(ce_header);
         const auto ce_wire = ce.serialize();
-        passed = require(has_big_endian_pairing(ce_wire) &&
-                             BootloaderCe::parse_or_throw(ce_wire).header.header.pairing == pairing,
-                         "CE generic pairing is big-endian on wire and host-order after parse") &&
-                 passed;
+        passed =
+            require(has_big_endian_pairing(ce_wire) &&
+                        test::must(BootloaderCe::parse(ce_wire)).header.header.pairing == pairing,
+                    "CE generic pairing is big-endian on wire and host-order after parse") &&
+            passed;
 
         BootloaderCf cf{};
         cf.header.header.magic = NANDBootloaderMagic::CF;
@@ -3301,7 +3302,7 @@ namespace {
         ce.header.size = 0x11223344;
         ce.header.padding = 0x55667788;
         const auto ce_wire = ce.serialize();
-        const auto parsed_ce = BootloaderCe::parse_or_throw(ce_wire);
+        const auto parsed_ce = test::must(BootloaderCe::parse(ce_wire));
         passed =
             require(read_be64(ce_wire, offsetof(ce_header, address)) == 0x0102030405060708ULL &&
                         read_be32(ce_wire, offsetof(ce_header, size)) == 0x11223344 &&
