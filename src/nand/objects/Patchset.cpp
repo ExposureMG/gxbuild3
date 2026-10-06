@@ -1,11 +1,10 @@
 #include "nand/objects/Patchset.hpp"
 
+#include "Wire.hpp"
 #include "utils/Log.hpp"
-#include "utils/Utils.hpp"
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <format>
 #include <span>
 
@@ -14,27 +13,6 @@ namespace gxbuild3::nand {
     namespace {
 
         constexpr uint32_t kSectionDelimiter = 0xFFFFFFFFU;
-
-        // Every caller guards the range first, so this read never runs past the end.
-        uint32_t read_be32(std::span<const uint8_t> data, size_t offset) {
-            uint32_t value = 0;
-            std::memcpy(&value, data.data() + offset, sizeof(uint32_t));
-            return swap32(value);
-        }
-
-        [[nodiscard]] Result<uint32_t> try_read_be32(std::span<const uint8_t> data, size_t offset) {
-            if (offset > data.size() || data.size() - offset < sizeof(uint32_t)) {
-                return fail(ErrorCode::Truncated, "no 32-bit word at offset 0x{:X} of 0x{:X} bytes",
-                            offset, data.size());
-            }
-            return read_be32(data, offset);
-        }
-
-        void append_be32(std::vector<uint8_t>& data, uint32_t value) {
-            value = swap32(value);
-            const auto* value_bytes = reinterpret_cast<const uint8_t*>(&value);
-            data.insert(data.end(), value_bytes, value_bytes + sizeof(uint32_t));
-        }
 
         struct XePatchSectionBytes {
             std::vector<XePatchEntry> entries;
@@ -45,42 +23,44 @@ namespace gxbuild3::nand {
         parse_xe_patch_section_bytes(std::span<const uint8_t> data, size_t startOffset) {
             XePatchSectionBytes parsed;
 
-            size_t cursor = startOffset;
+            wire::Cursor cursor(data.subspan(startOffset), startOffset);
             while (true) {
-                const auto address = try_read_be32(data, cursor);
+                const auto address = cursor.take<wire::be32>("patch entry address");
                 if (!address) {
                     return std::unexpected(address.error());
                 }
-                cursor += sizeof(uint32_t);
+                const uint32_t entryAddress = *address;
 
-                if (*address == kSectionDelimiter) {
-                    parsed.consumed = cursor - startOffset;
+                if (entryAddress == kSectionDelimiter) {
+                    parsed.consumed = cursor.offset() - startOffset;
                     return parsed;
                 }
 
-                auto length = try_read_be32(data, cursor);
+                auto length = cursor.take<wire::be32>("patch entry length");
                 if (!length) {
-                    return std::unexpected(
-                        std::move(length.error())
-                            .add_context(std::format("entry at 0x{:X} has no length", *address)));
+                    return std::unexpected(std::move(length.error())
+                                               .add_context(std::format(
+                                                   "entry at 0x{:X} has no length", entryAddress)));
                 }
-                cursor += sizeof(uint32_t);
+                const uint32_t wordCount = *length;
 
-                const uint64_t wordsByteCount = static_cast<uint64_t>(*length) * sizeof(uint32_t);
-                if (cursor + wordsByteCount > data.size()) {
+                if (wordCount > cursor.remaining() / sizeof(uint32_t)) {
                     return fail(ErrorCode::Truncated,
                                 "entry at 0x{:X} needs {} words but only 0x{:X} bytes remain",
-                                *address, *length, data.size() - cursor);
+                                entryAddress, wordCount, cursor.remaining());
                 }
 
                 XePatchEntry entry;
-                entry.address = *address;
-                entry.length = *length;
-                entry.words.resize(*length);
+                entry.address = entryAddress;
+                entry.length = wordCount;
+                entry.words.resize(wordCount);
 
-                for (uint32_t i = 0; i < *length; ++i) {
-                    entry.words[i] = read_be32(data, cursor);
-                    cursor += sizeof(uint32_t);
+                for (auto& word : entry.words) {
+                    const auto value = cursor.take<wire::be32>("patch entry word");
+                    if (!value) {
+                        return std::unexpected(value.error());
+                    }
+                    word = *value;
                 }
 
                 parsed.entries.push_back(std::move(entry));
@@ -93,7 +73,8 @@ namespace gxbuild3::nand {
             size_t sectionStart = 0;
             size_t cursor = 0;
             while (cursor + sizeof(uint32_t) <= data.size()) {
-                if (read_be32(data, cursor) == kSectionDelimiter) {
+                const auto word = wire::read<wire::be32>(data, cursor, "patchset word");
+                if (word && *word == kSectionDelimiter) {
                     sections.emplace_back(data.begin() + sectionStart, data.begin() + cursor);
                     cursor += sizeof(uint32_t);
                     sectionStart = cursor;
@@ -203,7 +184,9 @@ namespace gxbuild3::nand {
         khvSection.raw_data.assign(fileData.begin() + cursor, fileData.end());
         if (khvSection.raw_data.size() >= sizeof(uint32_t)) {
             const auto tail = khvSection.raw_data.size() - sizeof(uint32_t);
-            if (read_be32(khvSection.raw_data, tail) == kSectionDelimiter) {
+            const auto word =
+                wire::read<wire::be32>(khvSection.raw_data, tail, "KHV section delimiter");
+            if (word && *word == kSectionDelimiter) {
                 khvSection.raw_data.resize(tail);
             }
         }
@@ -250,15 +233,15 @@ namespace gxbuild3::nand {
         for (size_t i = 0; i < patchSet.sections.size(); ++i) {
             const auto& section = patchSet.sections[i];
             for (const auto& entry : section.entries) {
-                append_be32(out, entry.address);
-                append_be32(out, entry.length);
+                wire::append(out, wire::be32{entry.address});
+                wire::append(out, wire::be32{entry.length});
                 for (const auto word : entry.words) {
-                    append_be32(out, word);
+                    wire::append(out, wire::be32{word});
                 }
             }
             out.insert(out.end(), section.raw_data.begin(), section.raw_data.end());
 
-            append_be32(out, kSectionDelimiter);
+            wire::append(out, wire::be32{kSectionDelimiter});
         }
 
         return out;
@@ -266,7 +249,7 @@ namespace gxbuild3::nand {
 
     std::vector<uint8_t> serialize_khv_payload(const ParsedPatchSection& section) {
         std::vector<uint8_t> out = section.raw_data;
-        append_be32(out, kSectionDelimiter);
+        wire::append(out, wire::be32{kSectionDelimiter});
         return out;
     }
 
