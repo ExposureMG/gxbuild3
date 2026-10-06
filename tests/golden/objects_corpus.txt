@@ -1,0 +1,1530 @@
+# Objects corpus over tracked tests/gxBuild-support-files fixtures; one line per item and operation.
+patchset.files 25
+patchset.addons 14
+patchset.addon.corona_key_fix.bin size=0x18 sha1=63505dc874c31fbff3de0eec517dff5aaf5af5f8
+patchset.addon.hddssauth.bin size=0x28 sha1=91e0d131ec59d658f739d89480dabb2bc88ed983
+patchset.addon.hvFixKeys.bin size=0x1C sha1=ea261a4c8a459ba6e1d889c2f65996f367bc0efd
+patchset.addon.noSShdd.bin size=0x28 sha1=fa70ee5ab8a49841ac74bb5d2df7a866f17c086d
+patchset.addon.nofcrt.bin size=0x20 sha1=41d140f924c6ced6a7741e8c29f873bcb46e9c1b
+patchset.addon.nohdd.bin size=0xC sha1=0a4838dc9734b4e8cf83ca867920f511effa4f4b
+patchset.addon.nohdmiwait.bin size=0xC sha1=62be6905700ffda4ac875cf30ef5ea1ebd89bc01
+patchset.addon.nointmu.bin size=0x24 sha1=dab19f4a42a2cda001f15bb48662dfb325bee32e
+patchset.addon.nolan.bin size=0xC sha1=e718836261e1fc8be6592da37be2585731a2bb4c
+patchset.addon.nowifi.bin size=0x20 sha1=929319f3596b2a4ffc35c91cf25488033864ec3a
+patchset.addon.usbdsec.bin size=0x1C sha1=ae9a827cd2950952c3d24a33c76a1ca02d595eb5
+patchset.addon.xl_both.bin size=0xEA0 sha1=06c1eec2c70b6c40bf626c662cbf4fc9be6a247d
+patchset.addon.xl_hdd.bin size=0xD88 sha1=818b1e0d5e8b57df795d5af9a2ab0326bfdb4630
+patchset.addon.xl_usb.bin size=0xCF8 sha1=9c5daf5078f2e68c4ab0a2680bc7c3793324d312
+patchset.patches_falcon.bin.input size=0xA6C sha1=29de93099be6c731875d71e13ee7d0d79d374153
+patchset.patches_falcon.bin.jtag.parse ok
+patchset.patches_falcon.bin.jtag kind=jtag manufacturing=0 sections=4
+patchset.patches_falcon.bin.jtag.section0 target=jtag1 id=jtag_section_1 entries=0 entry_words=0 raw_size=0x120 raw_sha1=307d054606d98595598c08f405858658d3b35e5f
+patchset.patches_falcon.bin.jtag.section1 target=jtag2 id=jtag_section_2 entries=0 entry_words=0 raw_size=0x1B8 raw_sha1=94e66c39a0a58c972cb7388a3b459d47fca738ae
+patchset.patches_falcon.bin.jtag.section2 target=jtag3 id=jtag_section_3 entries=0 entry_words=0 raw_size=0x10C raw_sha1=5588eee026bb08b879a7b15ea0d4ddd1648f933c
+patchset.patches_falcon.bin.jtag.section3 target=jtag4 id=jtag_section_4 entries=0 entry_words=0 raw_size=0x678 raw_sha1=9821df9f092ff279fdbc8c377f179cd6abf5954a
+patchset.patches_falcon.bin.jtag.serialize identity=yes size=0xA6C sha1=29de93099be6c731875d71e13ee7d0d79d374153
+patchset.patches_falcon.bin.jtag.khv_payload of=jtag4 size=0x67C sha1=fcb2fa441e360eaae40c281b8c79de39d3c3670a
+patchset.patches_falcon.bin.jtag.merge_all ok sections=4 size=0x34B4 sha1=1fb3482fcbdadbec097addc39b214291cff93097 last=jtag4 last_raw_size=0x30C0 khv_payload_sha1=85fc32b26d48adf054e003aaec736e979a75b740
+patchset.patches_falcon.bin.glitch.parse err=malformed
+patchset.patches_falcon.bin.glitch.merge_all err=malformed ctx=[automatic patchset patches_falcon.bin]
+patchset.patches_falcon.bin.glitch2.parse err=malformed
+patchset.patches_falcon.bin.glitch2.merge_all err=malformed ctx=[automatic patchset patches_falcon.bin]
+patchset.patches_falcon.bin.glitch2m.parse err=malformed
+patchset.patches_falcon.bin.glitch2m.merge_all err=malformed ctx=[automatic patchset patches_falcon.bin]
+patchset.patches_falcon.bin.glitch3.parse err=malformed
+patchset.patches_falcon.bin.glitch3.merge_all err=malformed ctx=[automatic patchset patches_falcon.bin]
+patchset.patches_falcon.bin.devgl.parse err=malformed
+patchset.patches_falcon.bin.devgl.merge_all err=malformed ctx=[automatic patchset patches_falcon.bin]
+patchset.patches_fat.bin.input size=0x904 sha1=81766504607537a07308dd48b278b1f8c4b6d382
+patchset.patches_fat.bin.jtag.parse err=malformed
+patchset.patches_fat.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_fat.bin]
+patchset.patches_fat.bin.glitch.parse ok
+patchset.patches_fat.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_fat.bin.glitch.section0 target=cb id=cb entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_fat.bin.glitch.section1 target=cd id=cd entries=5 entry_words=228 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_fat.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x540 raw_sha1=70ef312d2455661228048c49a9fc40c55dd4b4bf
+patchset.patches_fat.bin.glitch.serialize identity=yes size=0x904 sha1=81766504607537a07308dd48b278b1f8c4b6d382
+patchset.patches_fat.bin.glitch.khv_payload of=khv size=0x544 sha1=b28030e53fd51056129280995d3f37c05bb58c01
+patchset.patches_fat.bin.glitch.merge_all ok sections=3 size=0x334C sha1=8d7902041f78431d8878773520dd733785393173 last=khv last_raw_size=0x2F88 khv_payload_sha1=de9f41119bb8f4218456ade9d94f4583f24954d4
+patchset.patches_fat.bin.glitch2.parse ok
+patchset.patches_fat.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_fat.bin.glitch2.section0 target=cbb id=cbb entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_fat.bin.glitch2.section1 target=cd id=cd entries=5 entry_words=228 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_fat.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x540 raw_sha1=70ef312d2455661228048c49a9fc40c55dd4b4bf
+patchset.patches_fat.bin.glitch2.serialize identity=yes size=0x904 sha1=81766504607537a07308dd48b278b1f8c4b6d382
+patchset.patches_fat.bin.glitch2.khv_payload of=khv size=0x544 sha1=b28030e53fd51056129280995d3f37c05bb58c01
+patchset.patches_fat.bin.glitch2.merge_all ok sections=3 size=0x334C sha1=8d7902041f78431d8878773520dd733785393173 last=khv last_raw_size=0x2F88 khv_payload_sha1=de9f41119bb8f4218456ade9d94f4583f24954d4
+patchset.patches_fat.bin.glitch2m.parse ok
+patchset.patches_fat.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_fat.bin.glitch2m.section0 target=cbb id=cbb entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_fat.bin.glitch2m.section1 target=cd id=cd entries=5 entry_words=228 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_fat.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x540 raw_sha1=70ef312d2455661228048c49a9fc40c55dd4b4bf
+patchset.patches_fat.bin.glitch2m.serialize identity=yes size=0x904 sha1=81766504607537a07308dd48b278b1f8c4b6d382
+patchset.patches_fat.bin.glitch2m.khv_payload of=khv size=0x544 sha1=b28030e53fd51056129280995d3f37c05bb58c01
+patchset.patches_fat.bin.glitch2m.merge_all ok sections=3 size=0x334C sha1=8d7902041f78431d8878773520dd733785393173 last=khv last_raw_size=0x2F88 khv_payload_sha1=de9f41119bb8f4218456ade9d94f4583f24954d4
+patchset.patches_fat.bin.glitch3.parse ok
+patchset.patches_fat.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_fat.bin.glitch3.section0 target=cbb id=cbb entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_fat.bin.glitch3.section1 target=cd id=cd entries=5 entry_words=228 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_fat.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x540 raw_sha1=70ef312d2455661228048c49a9fc40c55dd4b4bf
+patchset.patches_fat.bin.glitch3.serialize identity=yes size=0x904 sha1=81766504607537a07308dd48b278b1f8c4b6d382
+patchset.patches_fat.bin.glitch3.khv_payload of=khv size=0x544 sha1=b28030e53fd51056129280995d3f37c05bb58c01
+patchset.patches_fat.bin.glitch3.merge_all ok sections=3 size=0x334C sha1=8d7902041f78431d8878773520dd733785393173 last=khv last_raw_size=0x2F88 khv_payload_sha1=de9f41119bb8f4218456ade9d94f4583f24954d4
+patchset.patches_fat.bin.devgl.parse ok
+patchset.patches_fat.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_fat.bin.devgl.section0 target=cbb id=cbb entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_fat.bin.devgl.section1 target=cd id=cd entries=5 entry_words=228 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_fat.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x540 raw_sha1=70ef312d2455661228048c49a9fc40c55dd4b4bf
+patchset.patches_fat.bin.devgl.serialize identity=yes size=0x904 sha1=81766504607537a07308dd48b278b1f8c4b6d382
+patchset.patches_fat.bin.devgl.khv_payload of=khv size=0x544 sha1=b28030e53fd51056129280995d3f37c05bb58c01
+patchset.patches_fat.bin.devgl.merge_all ok sections=3 size=0x334C sha1=8d7902041f78431d8878773520dd733785393173 last=khv last_raw_size=0x2F88 khv_payload_sha1=de9f41119bb8f4218456ade9d94f4583f24954d4
+patchset.patches_g2corona.bin.input size=0x92C sha1=1fda644280a2b8a2c36e740d0d7413f49f642bac
+patchset.patches_g2corona.bin.jtag.parse err=malformed
+patchset.patches_g2corona.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2corona.bin]
+patchset.patches_g2corona.bin.glitch.parse ok
+patchset.patches_g2corona.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2corona.bin.glitch.section0 target=cb id=cb entries=4 entry_words=4 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona.bin.glitch.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona.bin.glitch.serialize identity=yes size=0x92C sha1=1fda644280a2b8a2c36e740d0d7413f49f642bac
+patchset.patches_g2corona.bin.glitch.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona.bin.glitch.merge_all ok sections=3 size=0x3374 sha1=efee956fc98eef243a0f0732f4f166f4fc3e752d last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona.bin.glitch2.parse ok
+patchset.patches_g2corona.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2corona.bin.glitch2.section0 target=cbb id=cbb entries=4 entry_words=4 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona.bin.glitch2.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona.bin.glitch2.serialize identity=yes size=0x92C sha1=1fda644280a2b8a2c36e740d0d7413f49f642bac
+patchset.patches_g2corona.bin.glitch2.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona.bin.glitch2.merge_all ok sections=3 size=0x3374 sha1=efee956fc98eef243a0f0732f4f166f4fc3e752d last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona.bin.glitch2m.parse ok
+patchset.patches_g2corona.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2corona.bin.glitch2m.section0 target=cbb id=cbb entries=4 entry_words=4 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona.bin.glitch2m.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona.bin.glitch2m.serialize identity=yes size=0x92C sha1=1fda644280a2b8a2c36e740d0d7413f49f642bac
+patchset.patches_g2corona.bin.glitch2m.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona.bin.glitch2m.merge_all ok sections=3 size=0x3374 sha1=efee956fc98eef243a0f0732f4f166f4fc3e752d last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona.bin.glitch3.parse ok
+patchset.patches_g2corona.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2corona.bin.glitch3.section0 target=cbb id=cbb entries=4 entry_words=4 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona.bin.glitch3.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona.bin.glitch3.serialize identity=yes size=0x92C sha1=1fda644280a2b8a2c36e740d0d7413f49f642bac
+patchset.patches_g2corona.bin.glitch3.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona.bin.glitch3.merge_all ok sections=3 size=0x3374 sha1=efee956fc98eef243a0f0732f4f166f4fc3e752d last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona.bin.devgl.parse ok
+patchset.patches_g2corona.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2corona.bin.devgl.section0 target=cbb id=cbb entries=4 entry_words=4 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona.bin.devgl.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona.bin.devgl.serialize identity=yes size=0x92C sha1=1fda644280a2b8a2c36e740d0d7413f49f642bac
+patchset.patches_g2corona.bin.devgl.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona.bin.devgl.merge_all ok sections=3 size=0x3374 sha1=efee956fc98eef243a0f0732f4f166f4fc3e752d last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona_WB.bin.input size=0x9A4 sha1=e9ef9d412a913a39d3f2cb07519868a99f242857
+patchset.patches_g2corona_WB.bin.jtag.parse err=malformed
+patchset.patches_g2corona_WB.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2corona_WB.bin]
+patchset.patches_g2corona_WB.bin.glitch.parse ok
+patchset.patches_g2corona_WB.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2corona_WB.bin.glitch.section0 target=cb id=cb entries=7 entry_words=28 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB.bin.glitch.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona_WB.bin.glitch.serialize identity=yes size=0x9A4 sha1=e9ef9d412a913a39d3f2cb07519868a99f242857
+patchset.patches_g2corona_WB.bin.glitch.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona_WB.bin.glitch.merge_all ok sections=3 size=0x33EC sha1=9568864f73fc19ce296b42b0f1d9108eb4951a51 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona_WB.bin.glitch2.parse ok
+patchset.patches_g2corona_WB.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2corona_WB.bin.glitch2.section0 target=cbb id=cbb entries=7 entry_words=28 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB.bin.glitch2.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona_WB.bin.glitch2.serialize identity=yes size=0x9A4 sha1=e9ef9d412a913a39d3f2cb07519868a99f242857
+patchset.patches_g2corona_WB.bin.glitch2.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona_WB.bin.glitch2.merge_all ok sections=3 size=0x33EC sha1=9568864f73fc19ce296b42b0f1d9108eb4951a51 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona_WB.bin.glitch2m.parse ok
+patchset.patches_g2corona_WB.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2corona_WB.bin.glitch2m.section0 target=cbb id=cbb entries=7 entry_words=28 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB.bin.glitch2m.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona_WB.bin.glitch2m.serialize identity=yes size=0x9A4 sha1=e9ef9d412a913a39d3f2cb07519868a99f242857
+patchset.patches_g2corona_WB.bin.glitch2m.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona_WB.bin.glitch2m.merge_all ok sections=3 size=0x33EC sha1=9568864f73fc19ce296b42b0f1d9108eb4951a51 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona_WB.bin.glitch3.parse ok
+patchset.patches_g2corona_WB.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2corona_WB.bin.glitch3.section0 target=cbb id=cbb entries=7 entry_words=28 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB.bin.glitch3.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona_WB.bin.glitch3.serialize identity=yes size=0x9A4 sha1=e9ef9d412a913a39d3f2cb07519868a99f242857
+patchset.patches_g2corona_WB.bin.glitch3.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona_WB.bin.glitch3.merge_all ok sections=3 size=0x33EC sha1=9568864f73fc19ce296b42b0f1d9108eb4951a51 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona_WB.bin.devgl.parse ok
+patchset.patches_g2corona_WB.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2corona_WB.bin.devgl.section0 target=cbb id=cbb entries=7 entry_words=28 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB.bin.devgl.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona_WB.bin.devgl.serialize identity=yes size=0x9A4 sha1=e9ef9d412a913a39d3f2cb07519868a99f242857
+patchset.patches_g2corona_WB.bin.devgl.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona_WB.bin.devgl.merge_all ok sections=3 size=0x33EC sha1=9568864f73fc19ce296b42b0f1d9108eb4951a51 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona_WB4G.bin.input size=0x1A2C sha1=fe14436d0073e9051400285247a9a8b53596f20c
+patchset.patches_g2corona_WB4G.bin.jtag.parse err=malformed
+patchset.patches_g2corona_WB4G.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2corona_WB4G.bin]
+patchset.patches_g2corona_WB4G.bin.glitch.parse ok
+patchset.patches_g2corona_WB4G.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2corona_WB4G.bin.glitch.section0 target=cb id=cb entries=8 entry_words=1084 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB4G.bin.glitch.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB4G.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona_WB4G.bin.glitch.serialize identity=yes size=0x1A2C sha1=fe14436d0073e9051400285247a9a8b53596f20c
+patchset.patches_g2corona_WB4G.bin.glitch.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona_WB4G.bin.glitch.merge_all ok sections=3 size=0x4474 sha1=9a2feebd8aeb2c412f2b16bbf2d3f0011dc65a83 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona_WB4G.bin.glitch2.parse ok
+patchset.patches_g2corona_WB4G.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2corona_WB4G.bin.glitch2.section0 target=cbb id=cbb entries=8 entry_words=1084 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB4G.bin.glitch2.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB4G.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona_WB4G.bin.glitch2.serialize identity=yes size=0x1A2C sha1=fe14436d0073e9051400285247a9a8b53596f20c
+patchset.patches_g2corona_WB4G.bin.glitch2.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona_WB4G.bin.glitch2.merge_all ok sections=3 size=0x4474 sha1=9a2feebd8aeb2c412f2b16bbf2d3f0011dc65a83 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona_WB4G.bin.glitch2m.parse ok
+patchset.patches_g2corona_WB4G.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2corona_WB4G.bin.glitch2m.section0 target=cbb id=cbb entries=8 entry_words=1084 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB4G.bin.glitch2m.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB4G.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona_WB4G.bin.glitch2m.serialize identity=yes size=0x1A2C sha1=fe14436d0073e9051400285247a9a8b53596f20c
+patchset.patches_g2corona_WB4G.bin.glitch2m.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona_WB4G.bin.glitch2m.merge_all ok sections=3 size=0x4474 sha1=9a2feebd8aeb2c412f2b16bbf2d3f0011dc65a83 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona_WB4G.bin.glitch3.parse ok
+patchset.patches_g2corona_WB4G.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2corona_WB4G.bin.glitch3.section0 target=cbb id=cbb entries=8 entry_words=1084 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB4G.bin.glitch3.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB4G.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona_WB4G.bin.glitch3.serialize identity=yes size=0x1A2C sha1=fe14436d0073e9051400285247a9a8b53596f20c
+patchset.patches_g2corona_WB4G.bin.glitch3.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona_WB4G.bin.glitch3.merge_all ok sections=3 size=0x4474 sha1=9a2feebd8aeb2c412f2b16bbf2d3f0011dc65a83 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2corona_WB4G.bin.devgl.parse ok
+patchset.patches_g2corona_WB4G.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2corona_WB4G.bin.devgl.section0 target=cbb id=cbb entries=8 entry_words=1084 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB4G.bin.devgl.section1 target=cd id=cd entries=5 entry_words=224 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2corona_WB4G.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2corona_WB4G.bin.devgl.serialize identity=yes size=0x1A2C sha1=fe14436d0073e9051400285247a9a8b53596f20c
+patchset.patches_g2corona_WB4G.bin.devgl.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2corona_WB4G.bin.devgl.merge_all ok sections=3 size=0x4474 sha1=9a2feebd8aeb2c412f2b16bbf2d3f0011dc65a83 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2falcon.bin.input size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2falcon.bin.jtag.parse err=malformed
+patchset.patches_g2falcon.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2falcon.bin]
+patchset.patches_g2falcon.bin.glitch.parse ok
+patchset.patches_g2falcon.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2falcon.bin.glitch.section0 target=cb id=cb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2falcon.bin.glitch.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2falcon.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2falcon.bin.glitch.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2falcon.bin.glitch.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2falcon.bin.glitch.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2falcon.bin.glitch2.parse ok
+patchset.patches_g2falcon.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2falcon.bin.glitch2.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2falcon.bin.glitch2.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2falcon.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2falcon.bin.glitch2.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2falcon.bin.glitch2.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2falcon.bin.glitch2.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2falcon.bin.glitch2m.parse ok
+patchset.patches_g2falcon.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2falcon.bin.glitch2m.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2falcon.bin.glitch2m.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2falcon.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2falcon.bin.glitch2m.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2falcon.bin.glitch2m.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2falcon.bin.glitch2m.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2falcon.bin.glitch3.parse ok
+patchset.patches_g2falcon.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2falcon.bin.glitch3.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2falcon.bin.glitch3.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2falcon.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2falcon.bin.glitch3.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2falcon.bin.glitch3.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2falcon.bin.glitch3.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2falcon.bin.devgl.parse ok
+patchset.patches_g2falcon.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2falcon.bin.devgl.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2falcon.bin.devgl.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2falcon.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2falcon.bin.devgl.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2falcon.bin.devgl.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2falcon.bin.devgl.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2jasper.bin.input size=0x91C sha1=cdc003a39c5afad29682db6b5b9fea94c64e9805
+patchset.patches_g2jasper.bin.jtag.parse err=malformed
+patchset.patches_g2jasper.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2jasper.bin]
+patchset.patches_g2jasper.bin.glitch.parse ok
+patchset.patches_g2jasper.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2jasper.bin.glitch.section0 target=cb id=cb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2jasper.bin.glitch.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2jasper.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2jasper.bin.glitch.serialize identity=yes size=0x91C sha1=cdc003a39c5afad29682db6b5b9fea94c64e9805
+patchset.patches_g2jasper.bin.glitch.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2jasper.bin.glitch.merge_all ok sections=3 size=0x3364 sha1=7d58db2dc23efa55c6303207d255230c401411ce last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2jasper.bin.glitch2.parse ok
+patchset.patches_g2jasper.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2jasper.bin.glitch2.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2jasper.bin.glitch2.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2jasper.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2jasper.bin.glitch2.serialize identity=yes size=0x91C sha1=cdc003a39c5afad29682db6b5b9fea94c64e9805
+patchset.patches_g2jasper.bin.glitch2.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2jasper.bin.glitch2.merge_all ok sections=3 size=0x3364 sha1=7d58db2dc23efa55c6303207d255230c401411ce last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2jasper.bin.glitch2m.parse ok
+patchset.patches_g2jasper.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2jasper.bin.glitch2m.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2jasper.bin.glitch2m.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2jasper.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2jasper.bin.glitch2m.serialize identity=yes size=0x91C sha1=cdc003a39c5afad29682db6b5b9fea94c64e9805
+patchset.patches_g2jasper.bin.glitch2m.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2jasper.bin.glitch2m.merge_all ok sections=3 size=0x3364 sha1=7d58db2dc23efa55c6303207d255230c401411ce last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2jasper.bin.glitch3.parse ok
+patchset.patches_g2jasper.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2jasper.bin.glitch3.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2jasper.bin.glitch3.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2jasper.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2jasper.bin.glitch3.serialize identity=yes size=0x91C sha1=cdc003a39c5afad29682db6b5b9fea94c64e9805
+patchset.patches_g2jasper.bin.glitch3.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2jasper.bin.glitch3.merge_all ok sections=3 size=0x3364 sha1=7d58db2dc23efa55c6303207d255230c401411ce last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2jasper.bin.devgl.parse ok
+patchset.patches_g2jasper.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2jasper.bin.devgl.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2jasper.bin.devgl.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2jasper.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2jasper.bin.devgl.serialize identity=yes size=0x91C sha1=cdc003a39c5afad29682db6b5b9fea94c64e9805
+patchset.patches_g2jasper.bin.devgl.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2jasper.bin.devgl.merge_all ok sections=3 size=0x3364 sha1=7d58db2dc23efa55c6303207d255230c401411ce last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2mcorona.bin.input size=0xB48 sha1=47f1d7ec88d7cea4e5bca323021eac4f2ef41764
+patchset.patches_g2mcorona.bin.jtag.parse err=malformed
+patchset.patches_g2mcorona.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2mcorona.bin]
+patchset.patches_g2mcorona.bin.glitch.parse ok
+patchset.patches_g2mcorona.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mcorona.bin.glitch.section0 target=cb id=cb entries=7 entry_words=21 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona.bin.glitch.section1 target=cd id=cd entries=10 entry_words=241 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mcorona.bin.glitch.serialize identity=yes size=0xB48 sha1=47f1d7ec88d7cea4e5bca323021eac4f2ef41764
+patchset.patches_g2mcorona.bin.glitch.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mcorona.bin.glitch.merge_all ok sections=3 size=0x3590 sha1=f0465984470913f2a9559258447eb926b361935c last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mcorona.bin.glitch2.parse ok
+patchset.patches_g2mcorona.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mcorona.bin.glitch2.section0 target=cbb id=cbb entries=7 entry_words=21 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona.bin.glitch2.section1 target=cd id=cd entries=10 entry_words=241 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mcorona.bin.glitch2.serialize identity=yes size=0xB48 sha1=47f1d7ec88d7cea4e5bca323021eac4f2ef41764
+patchset.patches_g2mcorona.bin.glitch2.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mcorona.bin.glitch2.merge_all ok sections=3 size=0x3590 sha1=f0465984470913f2a9559258447eb926b361935c last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mcorona.bin.glitch2m.parse ok
+patchset.patches_g2mcorona.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mcorona.bin.glitch2m.section0 target=cbb id=cbb entries=7 entry_words=21 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona.bin.glitch2m.section1 target=cd id=cd entries=10 entry_words=241 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mcorona.bin.glitch2m.serialize identity=yes size=0xB48 sha1=47f1d7ec88d7cea4e5bca323021eac4f2ef41764
+patchset.patches_g2mcorona.bin.glitch2m.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mcorona.bin.glitch2m.merge_all ok sections=3 size=0x3590 sha1=f0465984470913f2a9559258447eb926b361935c last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mcorona.bin.glitch3.parse ok
+patchset.patches_g2mcorona.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mcorona.bin.glitch3.section0 target=cbb id=cbb entries=7 entry_words=21 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona.bin.glitch3.section1 target=cd id=cd entries=10 entry_words=241 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mcorona.bin.glitch3.serialize identity=yes size=0xB48 sha1=47f1d7ec88d7cea4e5bca323021eac4f2ef41764
+patchset.patches_g2mcorona.bin.glitch3.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mcorona.bin.glitch3.merge_all ok sections=3 size=0x3590 sha1=f0465984470913f2a9559258447eb926b361935c last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mcorona.bin.devgl.parse ok
+patchset.patches_g2mcorona.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mcorona.bin.devgl.section0 target=cbb id=cbb entries=7 entry_words=21 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona.bin.devgl.section1 target=cd id=cd entries=10 entry_words=241 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mcorona.bin.devgl.serialize identity=yes size=0xB48 sha1=47f1d7ec88d7cea4e5bca323021eac4f2ef41764
+patchset.patches_g2mcorona.bin.devgl.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mcorona.bin.devgl.merge_all ok sections=3 size=0x3590 sha1=f0465984470913f2a9559258447eb926b361935c last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mcorona_WB.bin.input size=0xB1C sha1=0c759d2899e3b6cbd3d731d1e43190ed5e3f2735
+patchset.patches_g2mcorona_WB.bin.jtag.parse err=malformed
+patchset.patches_g2mcorona_WB.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2mcorona_WB.bin]
+patchset.patches_g2mcorona_WB.bin.glitch.parse ok
+patchset.patches_g2mcorona_WB.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mcorona_WB.bin.glitch.section0 target=cb id=cb entries=7 entry_words=28 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB.bin.glitch.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mcorona_WB.bin.glitch.serialize identity=yes size=0xB1C sha1=0c759d2899e3b6cbd3d731d1e43190ed5e3f2735
+patchset.patches_g2mcorona_WB.bin.glitch.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mcorona_WB.bin.glitch.merge_all ok sections=3 size=0x3564 sha1=61264d01ad5b7e2d395b0c80f6c42d1fa3dfb028 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mcorona_WB.bin.glitch2.parse ok
+patchset.patches_g2mcorona_WB.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mcorona_WB.bin.glitch2.section0 target=cbb id=cbb entries=7 entry_words=28 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB.bin.glitch2.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mcorona_WB.bin.glitch2.serialize identity=yes size=0xB1C sha1=0c759d2899e3b6cbd3d731d1e43190ed5e3f2735
+patchset.patches_g2mcorona_WB.bin.glitch2.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mcorona_WB.bin.glitch2.merge_all ok sections=3 size=0x3564 sha1=61264d01ad5b7e2d395b0c80f6c42d1fa3dfb028 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mcorona_WB.bin.glitch2m.parse ok
+patchset.patches_g2mcorona_WB.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mcorona_WB.bin.glitch2m.section0 target=cbb id=cbb entries=7 entry_words=28 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB.bin.glitch2m.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mcorona_WB.bin.glitch2m.serialize identity=yes size=0xB1C sha1=0c759d2899e3b6cbd3d731d1e43190ed5e3f2735
+patchset.patches_g2mcorona_WB.bin.glitch2m.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mcorona_WB.bin.glitch2m.merge_all ok sections=3 size=0x3564 sha1=61264d01ad5b7e2d395b0c80f6c42d1fa3dfb028 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mcorona_WB.bin.glitch3.parse ok
+patchset.patches_g2mcorona_WB.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mcorona_WB.bin.glitch3.section0 target=cbb id=cbb entries=7 entry_words=28 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB.bin.glitch3.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mcorona_WB.bin.glitch3.serialize identity=yes size=0xB1C sha1=0c759d2899e3b6cbd3d731d1e43190ed5e3f2735
+patchset.patches_g2mcorona_WB.bin.glitch3.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mcorona_WB.bin.glitch3.merge_all ok sections=3 size=0x3564 sha1=61264d01ad5b7e2d395b0c80f6c42d1fa3dfb028 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mcorona_WB.bin.devgl.parse ok
+patchset.patches_g2mcorona_WB.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mcorona_WB.bin.devgl.section0 target=cbb id=cbb entries=7 entry_words=28 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB.bin.devgl.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mcorona_WB.bin.devgl.serialize identity=yes size=0xB1C sha1=0c759d2899e3b6cbd3d731d1e43190ed5e3f2735
+patchset.patches_g2mcorona_WB.bin.devgl.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mcorona_WB.bin.devgl.merge_all ok sections=3 size=0x3564 sha1=61264d01ad5b7e2d395b0c80f6c42d1fa3dfb028 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mcorona_WB4G.bin.input size=0x1BA4 sha1=a01d79f79aac91ed207abc4db0e9d5ef2fd19d6c
+patchset.patches_g2mcorona_WB4G.bin.jtag.parse err=malformed
+patchset.patches_g2mcorona_WB4G.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2mcorona_WB4G.bin]
+patchset.patches_g2mcorona_WB4G.bin.glitch.parse ok
+patchset.patches_g2mcorona_WB4G.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mcorona_WB4G.bin.glitch.section0 target=cb id=cb entries=8 entry_words=1084 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB4G.bin.glitch.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB4G.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mcorona_WB4G.bin.glitch.serialize identity=yes size=0x1BA4 sha1=a01d79f79aac91ed207abc4db0e9d5ef2fd19d6c
+patchset.patches_g2mcorona_WB4G.bin.glitch.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mcorona_WB4G.bin.glitch.merge_all ok sections=3 size=0x45EC sha1=0e3f43429d5d5b6b23840d5e4fcdabd5c47e1628 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mcorona_WB4G.bin.glitch2.parse ok
+patchset.patches_g2mcorona_WB4G.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mcorona_WB4G.bin.glitch2.section0 target=cbb id=cbb entries=8 entry_words=1084 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB4G.bin.glitch2.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB4G.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mcorona_WB4G.bin.glitch2.serialize identity=yes size=0x1BA4 sha1=a01d79f79aac91ed207abc4db0e9d5ef2fd19d6c
+patchset.patches_g2mcorona_WB4G.bin.glitch2.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mcorona_WB4G.bin.glitch2.merge_all ok sections=3 size=0x45EC sha1=0e3f43429d5d5b6b23840d5e4fcdabd5c47e1628 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mcorona_WB4G.bin.glitch2m.parse ok
+patchset.patches_g2mcorona_WB4G.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mcorona_WB4G.bin.glitch2m.section0 target=cbb id=cbb entries=8 entry_words=1084 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB4G.bin.glitch2m.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB4G.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mcorona_WB4G.bin.glitch2m.serialize identity=yes size=0x1BA4 sha1=a01d79f79aac91ed207abc4db0e9d5ef2fd19d6c
+patchset.patches_g2mcorona_WB4G.bin.glitch2m.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mcorona_WB4G.bin.glitch2m.merge_all ok sections=3 size=0x45EC sha1=0e3f43429d5d5b6b23840d5e4fcdabd5c47e1628 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mcorona_WB4G.bin.glitch3.parse ok
+patchset.patches_g2mcorona_WB4G.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mcorona_WB4G.bin.glitch3.section0 target=cbb id=cbb entries=8 entry_words=1084 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB4G.bin.glitch3.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB4G.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mcorona_WB4G.bin.glitch3.serialize identity=yes size=0x1BA4 sha1=a01d79f79aac91ed207abc4db0e9d5ef2fd19d6c
+patchset.patches_g2mcorona_WB4G.bin.glitch3.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mcorona_WB4G.bin.glitch3.merge_all ok sections=3 size=0x45EC sha1=0e3f43429d5d5b6b23840d5e4fcdabd5c47e1628 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mcorona_WB4G.bin.devgl.parse ok
+patchset.patches_g2mcorona_WB4G.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mcorona_WB4G.bin.devgl.section0 target=cbb id=cbb entries=8 entry_words=1084 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB4G.bin.devgl.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mcorona_WB4G.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mcorona_WB4G.bin.devgl.serialize identity=yes size=0x1BA4 sha1=a01d79f79aac91ed207abc4db0e9d5ef2fd19d6c
+patchset.patches_g2mcorona_WB4G.bin.devgl.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mcorona_WB4G.bin.devgl.merge_all ok sections=3 size=0x45EC sha1=0e3f43429d5d5b6b23840d5e4fcdabd5c47e1628 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mfalcon.bin.input size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mfalcon.bin.jtag.parse err=malformed
+patchset.patches_g2mfalcon.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2mfalcon.bin]
+patchset.patches_g2mfalcon.bin.glitch.parse ok
+patchset.patches_g2mfalcon.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mfalcon.bin.glitch.section0 target=cb id=cb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mfalcon.bin.glitch.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mfalcon.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mfalcon.bin.glitch.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mfalcon.bin.glitch.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mfalcon.bin.glitch.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mfalcon.bin.glitch2.parse ok
+patchset.patches_g2mfalcon.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mfalcon.bin.glitch2.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mfalcon.bin.glitch2.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mfalcon.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mfalcon.bin.glitch2.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mfalcon.bin.glitch2.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mfalcon.bin.glitch2.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mfalcon.bin.glitch2m.parse ok
+patchset.patches_g2mfalcon.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mfalcon.bin.glitch2m.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mfalcon.bin.glitch2m.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mfalcon.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mfalcon.bin.glitch2m.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mfalcon.bin.glitch2m.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mfalcon.bin.glitch2m.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mfalcon.bin.glitch3.parse ok
+patchset.patches_g2mfalcon.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mfalcon.bin.glitch3.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mfalcon.bin.glitch3.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mfalcon.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mfalcon.bin.glitch3.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mfalcon.bin.glitch3.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mfalcon.bin.glitch3.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mfalcon.bin.devgl.parse ok
+patchset.patches_g2mfalcon.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mfalcon.bin.devgl.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mfalcon.bin.devgl.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mfalcon.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mfalcon.bin.devgl.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mfalcon.bin.devgl.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mfalcon.bin.devgl.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mjasper.bin.input size=0xB38 sha1=281d456d1929ab99b7903c764703a767db5687a3
+patchset.patches_g2mjasper.bin.jtag.parse err=malformed
+patchset.patches_g2mjasper.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2mjasper.bin]
+patchset.patches_g2mjasper.bin.glitch.parse ok
+patchset.patches_g2mjasper.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mjasper.bin.glitch.section0 target=cb id=cb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mjasper.bin.glitch.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mjasper.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mjasper.bin.glitch.serialize identity=yes size=0xB38 sha1=281d456d1929ab99b7903c764703a767db5687a3
+patchset.patches_g2mjasper.bin.glitch.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mjasper.bin.glitch.merge_all ok sections=3 size=0x3580 sha1=3c0c648af0bed7c33d90811471fe274aaf87cac2 last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mjasper.bin.glitch2.parse ok
+patchset.patches_g2mjasper.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mjasper.bin.glitch2.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mjasper.bin.glitch2.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mjasper.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mjasper.bin.glitch2.serialize identity=yes size=0xB38 sha1=281d456d1929ab99b7903c764703a767db5687a3
+patchset.patches_g2mjasper.bin.glitch2.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mjasper.bin.glitch2.merge_all ok sections=3 size=0x3580 sha1=3c0c648af0bed7c33d90811471fe274aaf87cac2 last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mjasper.bin.glitch2m.parse ok
+patchset.patches_g2mjasper.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mjasper.bin.glitch2m.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mjasper.bin.glitch2m.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mjasper.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mjasper.bin.glitch2m.serialize identity=yes size=0xB38 sha1=281d456d1929ab99b7903c764703a767db5687a3
+patchset.patches_g2mjasper.bin.glitch2m.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mjasper.bin.glitch2m.merge_all ok sections=3 size=0x3580 sha1=3c0c648af0bed7c33d90811471fe274aaf87cac2 last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mjasper.bin.glitch3.parse ok
+patchset.patches_g2mjasper.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mjasper.bin.glitch3.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mjasper.bin.glitch3.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mjasper.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mjasper.bin.glitch3.serialize identity=yes size=0xB38 sha1=281d456d1929ab99b7903c764703a767db5687a3
+patchset.patches_g2mjasper.bin.glitch3.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mjasper.bin.glitch3.merge_all ok sections=3 size=0x3580 sha1=3c0c648af0bed7c33d90811471fe274aaf87cac2 last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mjasper.bin.devgl.parse ok
+patchset.patches_g2mjasper.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mjasper.bin.devgl.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mjasper.bin.devgl.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mjasper.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mjasper.bin.devgl.serialize identity=yes size=0xB38 sha1=281d456d1929ab99b7903c764703a767db5687a3
+patchset.patches_g2mjasper.bin.devgl.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mjasper.bin.devgl.merge_all ok sections=3 size=0x3580 sha1=3c0c648af0bed7c33d90811471fe274aaf87cac2 last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mtrinity.bin.input size=0xB08 sha1=79306eeecd037c26fb8e450c744cd3cd1f1ad4bd
+patchset.patches_g2mtrinity.bin.jtag.parse err=malformed
+patchset.patches_g2mtrinity.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2mtrinity.bin]
+patchset.patches_g2mtrinity.bin.glitch.parse ok
+patchset.patches_g2mtrinity.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mtrinity.bin.glitch.section0 target=cb id=cb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mtrinity.bin.glitch.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mtrinity.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mtrinity.bin.glitch.serialize identity=yes size=0xB08 sha1=79306eeecd037c26fb8e450c744cd3cd1f1ad4bd
+patchset.patches_g2mtrinity.bin.glitch.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mtrinity.bin.glitch.merge_all ok sections=3 size=0x3550 sha1=fb9d38729018ad73b8f2477f4b076092cfa6de59 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mtrinity.bin.glitch2.parse ok
+patchset.patches_g2mtrinity.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mtrinity.bin.glitch2.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mtrinity.bin.glitch2.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mtrinity.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mtrinity.bin.glitch2.serialize identity=yes size=0xB08 sha1=79306eeecd037c26fb8e450c744cd3cd1f1ad4bd
+patchset.patches_g2mtrinity.bin.glitch2.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mtrinity.bin.glitch2.merge_all ok sections=3 size=0x3550 sha1=fb9d38729018ad73b8f2477f4b076092cfa6de59 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mtrinity.bin.glitch2m.parse ok
+patchset.patches_g2mtrinity.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mtrinity.bin.glitch2m.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mtrinity.bin.glitch2m.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mtrinity.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mtrinity.bin.glitch2m.serialize identity=yes size=0xB08 sha1=79306eeecd037c26fb8e450c744cd3cd1f1ad4bd
+patchset.patches_g2mtrinity.bin.glitch2m.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mtrinity.bin.glitch2m.merge_all ok sections=3 size=0x3550 sha1=fb9d38729018ad73b8f2477f4b076092cfa6de59 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mtrinity.bin.glitch3.parse ok
+patchset.patches_g2mtrinity.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mtrinity.bin.glitch3.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mtrinity.bin.glitch3.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mtrinity.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mtrinity.bin.glitch3.serialize identity=yes size=0xB08 sha1=79306eeecd037c26fb8e450c744cd3cd1f1ad4bd
+patchset.patches_g2mtrinity.bin.glitch3.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mtrinity.bin.glitch3.merge_all ok sections=3 size=0x3550 sha1=fb9d38729018ad73b8f2477f4b076092cfa6de59 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mtrinity.bin.devgl.parse ok
+patchset.patches_g2mtrinity.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mtrinity.bin.devgl.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mtrinity.bin.devgl.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mtrinity.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x66C raw_sha1=12c17d4578dffd6b4038e376fbd9c0ef70e2bb20
+patchset.patches_g2mtrinity.bin.devgl.serialize identity=yes size=0xB08 sha1=79306eeecd037c26fb8e450c744cd3cd1f1ad4bd
+patchset.patches_g2mtrinity.bin.devgl.khv_payload of=khv size=0x670 sha1=f3219bf6fbfac25fc87786d7b5de3d213626f92b
+patchset.patches_g2mtrinity.bin.devgl.merge_all ok sections=3 size=0x3550 sha1=fb9d38729018ad73b8f2477f4b076092cfa6de59 last=khv last_raw_size=0x30B4 khv_payload_sha1=5281853f93de172ad97d7064bbd41f0bd0240bbd
+patchset.patches_g2mwinchester.bin.input size=0xB34 sha1=6348588dcf676366b613878d67368ecac1bf1428
+patchset.patches_g2mwinchester.bin.jtag.parse err=malformed
+patchset.patches_g2mwinchester.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2mwinchester.bin]
+patchset.patches_g2mwinchester.bin.glitch.parse ok
+patchset.patches_g2mwinchester.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mwinchester.bin.glitch.section0 target=cb id=cb entries=3 entry_words=23 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mwinchester.bin.glitch.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mwinchester.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x6B8 raw_sha1=44e79f57f1ec406a316c1c4289e6e86a0c38fee1
+patchset.patches_g2mwinchester.bin.glitch.serialize identity=yes size=0xB34 sha1=6348588dcf676366b613878d67368ecac1bf1428
+patchset.patches_g2mwinchester.bin.glitch.khv_payload of=khv size=0x6BC sha1=c5c1cf5ec9faf25d0ff0a957939585d831c0d3f8
+patchset.patches_g2mwinchester.bin.glitch.merge_all ok sections=3 size=0x357C sha1=9372012cdae591d68c1a8da2e1ad11efa962fad7 last=khv last_raw_size=0x3100 khv_payload_sha1=3e5ed62f4aae5b3041887e4fab25570d4a275d08
+patchset.patches_g2mwinchester.bin.glitch2.parse ok
+patchset.patches_g2mwinchester.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mwinchester.bin.glitch2.section0 target=cbb id=cbb entries=3 entry_words=23 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mwinchester.bin.glitch2.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mwinchester.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x6B8 raw_sha1=44e79f57f1ec406a316c1c4289e6e86a0c38fee1
+patchset.patches_g2mwinchester.bin.glitch2.serialize identity=yes size=0xB34 sha1=6348588dcf676366b613878d67368ecac1bf1428
+patchset.patches_g2mwinchester.bin.glitch2.khv_payload of=khv size=0x6BC sha1=c5c1cf5ec9faf25d0ff0a957939585d831c0d3f8
+patchset.patches_g2mwinchester.bin.glitch2.merge_all ok sections=3 size=0x357C sha1=9372012cdae591d68c1a8da2e1ad11efa962fad7 last=khv last_raw_size=0x3100 khv_payload_sha1=3e5ed62f4aae5b3041887e4fab25570d4a275d08
+patchset.patches_g2mwinchester.bin.glitch2m.parse ok
+patchset.patches_g2mwinchester.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mwinchester.bin.glitch2m.section0 target=cbb id=cbb entries=3 entry_words=23 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mwinchester.bin.glitch2m.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mwinchester.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x6B8 raw_sha1=44e79f57f1ec406a316c1c4289e6e86a0c38fee1
+patchset.patches_g2mwinchester.bin.glitch2m.serialize identity=yes size=0xB34 sha1=6348588dcf676366b613878d67368ecac1bf1428
+patchset.patches_g2mwinchester.bin.glitch2m.khv_payload of=khv size=0x6BC sha1=c5c1cf5ec9faf25d0ff0a957939585d831c0d3f8
+patchset.patches_g2mwinchester.bin.glitch2m.merge_all ok sections=3 size=0x357C sha1=9372012cdae591d68c1a8da2e1ad11efa962fad7 last=khv last_raw_size=0x3100 khv_payload_sha1=3e5ed62f4aae5b3041887e4fab25570d4a275d08
+patchset.patches_g2mwinchester.bin.glitch3.parse ok
+patchset.patches_g2mwinchester.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mwinchester.bin.glitch3.section0 target=cbb id=cbb entries=3 entry_words=23 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mwinchester.bin.glitch3.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mwinchester.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x6B8 raw_sha1=44e79f57f1ec406a316c1c4289e6e86a0c38fee1
+patchset.patches_g2mwinchester.bin.glitch3.serialize identity=yes size=0xB34 sha1=6348588dcf676366b613878d67368ecac1bf1428
+patchset.patches_g2mwinchester.bin.glitch3.khv_payload of=khv size=0x6BC sha1=c5c1cf5ec9faf25d0ff0a957939585d831c0d3f8
+patchset.patches_g2mwinchester.bin.glitch3.merge_all ok sections=3 size=0x357C sha1=9372012cdae591d68c1a8da2e1ad11efa962fad7 last=khv last_raw_size=0x3100 khv_payload_sha1=3e5ed62f4aae5b3041887e4fab25570d4a275d08
+patchset.patches_g2mwinchester.bin.devgl.parse ok
+patchset.patches_g2mwinchester.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mwinchester.bin.devgl.section0 target=cbb id=cbb entries=3 entry_words=23 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mwinchester.bin.devgl.section1 target=cd id=cd entries=8 entry_words=239 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mwinchester.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x6B8 raw_sha1=44e79f57f1ec406a316c1c4289e6e86a0c38fee1
+patchset.patches_g2mwinchester.bin.devgl.serialize identity=yes size=0xB34 sha1=6348588dcf676366b613878d67368ecac1bf1428
+patchset.patches_g2mwinchester.bin.devgl.khv_payload of=khv size=0x6BC sha1=c5c1cf5ec9faf25d0ff0a957939585d831c0d3f8
+patchset.patches_g2mwinchester.bin.devgl.merge_all ok sections=3 size=0x357C sha1=9372012cdae591d68c1a8da2e1ad11efa962fad7 last=khv last_raw_size=0x3100 khv_payload_sha1=3e5ed62f4aae5b3041887e4fab25570d4a275d08
+patchset.patches_g2mxenon.bin.input size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mxenon.bin.jtag.parse err=malformed
+patchset.patches_g2mxenon.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2mxenon.bin]
+patchset.patches_g2mxenon.bin.glitch.parse ok
+patchset.patches_g2mxenon.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mxenon.bin.glitch.section0 target=cb id=cb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon.bin.glitch.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mxenon.bin.glitch.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mxenon.bin.glitch.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mxenon.bin.glitch.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mxenon.bin.glitch2.parse ok
+patchset.patches_g2mxenon.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mxenon.bin.glitch2.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon.bin.glitch2.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mxenon.bin.glitch2.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mxenon.bin.glitch2.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mxenon.bin.glitch2.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mxenon.bin.glitch2m.parse ok
+patchset.patches_g2mxenon.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mxenon.bin.glitch2m.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon.bin.glitch2m.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mxenon.bin.glitch2m.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mxenon.bin.glitch2m.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mxenon.bin.glitch2m.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mxenon.bin.glitch3.parse ok
+patchset.patches_g2mxenon.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mxenon.bin.glitch3.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon.bin.glitch3.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mxenon.bin.glitch3.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mxenon.bin.glitch3.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mxenon.bin.glitch3.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mxenon.bin.devgl.parse ok
+patchset.patches_g2mxenon.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mxenon.bin.devgl.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon.bin.devgl.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mxenon.bin.devgl.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mxenon.bin.devgl.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mxenon.bin.devgl.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mxenon_ELPIS.bin.input size=0xB04 sha1=ccef3333d6650bf112b738230414010037a452a3
+patchset.patches_g2mxenon_ELPIS.bin.jtag.parse err=malformed
+patchset.patches_g2mxenon_ELPIS.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2mxenon_ELPIS.bin]
+patchset.patches_g2mxenon_ELPIS.bin.glitch.parse ok
+patchset.patches_g2mxenon_ELPIS.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mxenon_ELPIS.bin.glitch.section0 target=cb id=cb entries=6 entry_words=9 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon_ELPIS.bin.glitch.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon_ELPIS.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mxenon_ELPIS.bin.glitch.serialize identity=yes size=0xB04 sha1=ccef3333d6650bf112b738230414010037a452a3
+patchset.patches_g2mxenon_ELPIS.bin.glitch.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mxenon_ELPIS.bin.glitch.merge_all ok sections=3 size=0x354C sha1=e3c4dcfd9bf64d5e57ace62ae5c635654976958b last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mxenon_ELPIS.bin.glitch2.parse ok
+patchset.patches_g2mxenon_ELPIS.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mxenon_ELPIS.bin.glitch2.section0 target=cbb id=cbb entries=6 entry_words=9 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon_ELPIS.bin.glitch2.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon_ELPIS.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mxenon_ELPIS.bin.glitch2.serialize identity=yes size=0xB04 sha1=ccef3333d6650bf112b738230414010037a452a3
+patchset.patches_g2mxenon_ELPIS.bin.glitch2.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mxenon_ELPIS.bin.glitch2.merge_all ok sections=3 size=0x354C sha1=e3c4dcfd9bf64d5e57ace62ae5c635654976958b last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mxenon_ELPIS.bin.glitch2m.parse ok
+patchset.patches_g2mxenon_ELPIS.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mxenon_ELPIS.bin.glitch2m.section0 target=cbb id=cbb entries=6 entry_words=9 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon_ELPIS.bin.glitch2m.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon_ELPIS.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mxenon_ELPIS.bin.glitch2m.serialize identity=yes size=0xB04 sha1=ccef3333d6650bf112b738230414010037a452a3
+patchset.patches_g2mxenon_ELPIS.bin.glitch2m.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mxenon_ELPIS.bin.glitch2m.merge_all ok sections=3 size=0x354C sha1=e3c4dcfd9bf64d5e57ace62ae5c635654976958b last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mxenon_ELPIS.bin.glitch3.parse ok
+patchset.patches_g2mxenon_ELPIS.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mxenon_ELPIS.bin.glitch3.section0 target=cbb id=cbb entries=6 entry_words=9 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon_ELPIS.bin.glitch3.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon_ELPIS.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mxenon_ELPIS.bin.glitch3.serialize identity=yes size=0xB04 sha1=ccef3333d6650bf112b738230414010037a452a3
+patchset.patches_g2mxenon_ELPIS.bin.glitch3.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mxenon_ELPIS.bin.glitch3.merge_all ok sections=3 size=0x354C sha1=e3c4dcfd9bf64d5e57ace62ae5c635654976958b last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mxenon_ELPIS.bin.devgl.parse ok
+patchset.patches_g2mxenon_ELPIS.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mxenon_ELPIS.bin.devgl.section0 target=cbb id=cbb entries=6 entry_words=9 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon_ELPIS.bin.devgl.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mxenon_ELPIS.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mxenon_ELPIS.bin.devgl.serialize identity=yes size=0xB04 sha1=ccef3333d6650bf112b738230414010037a452a3
+patchset.patches_g2mxenon_ELPIS.bin.devgl.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mxenon_ELPIS.bin.devgl.merge_all ok sections=3 size=0x354C sha1=e3c4dcfd9bf64d5e57ace62ae5c635654976958b last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mzephyr.bin.input size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mzephyr.bin.jtag.parse err=malformed
+patchset.patches_g2mzephyr.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2mzephyr.bin]
+patchset.patches_g2mzephyr.bin.glitch.parse ok
+patchset.patches_g2mzephyr.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mzephyr.bin.glitch.section0 target=cb id=cb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mzephyr.bin.glitch.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mzephyr.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mzephyr.bin.glitch.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mzephyr.bin.glitch.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mzephyr.bin.glitch.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mzephyr.bin.glitch2.parse ok
+patchset.patches_g2mzephyr.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mzephyr.bin.glitch2.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mzephyr.bin.glitch2.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mzephyr.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mzephyr.bin.glitch2.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mzephyr.bin.glitch2.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mzephyr.bin.glitch2.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mzephyr.bin.glitch2m.parse ok
+patchset.patches_g2mzephyr.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mzephyr.bin.glitch2m.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mzephyr.bin.glitch2m.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mzephyr.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mzephyr.bin.glitch2m.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mzephyr.bin.glitch2m.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mzephyr.bin.glitch2m.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mzephyr.bin.glitch3.parse ok
+patchset.patches_g2mzephyr.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2mzephyr.bin.glitch3.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mzephyr.bin.glitch3.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mzephyr.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mzephyr.bin.glitch3.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mzephyr.bin.glitch3.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mzephyr.bin.glitch3.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2mzephyr.bin.devgl.parse ok
+patchset.patches_g2mzephyr.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2mzephyr.bin.devgl.section0 target=cbb id=cbb entries=6 entry_words=22 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mzephyr.bin.devgl.section1 target=cd id=cd entries=8 entry_words=242 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2mzephyr.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x69C raw_sha1=f525029a522adab7f0f66597184523636a596eca
+patchset.patches_g2mzephyr.bin.devgl.serialize identity=yes size=0xB38 sha1=b127e88943ab11905f6fcea3aad86b16cd07bb06
+patchset.patches_g2mzephyr.bin.devgl.khv_payload of=khv size=0x6A0 sha1=2615a7f5a03537cf8dfef573e8996dc596ae3f61
+patchset.patches_g2mzephyr.bin.devgl.merge_all ok sections=3 size=0x3580 sha1=72a594e18ed408483dec9d8bf27bf9bb69d64cfc last=khv last_raw_size=0x30E4 khv_payload_sha1=467fdad6a65e1a6e1bca88faf3dba3e242e82b2b
+patchset.patches_g2trinity.bin.input size=0x91C sha1=227c1d5301b3f51eedec4fd5fea9c1761b03af99
+patchset.patches_g2trinity.bin.jtag.parse err=malformed
+patchset.patches_g2trinity.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2trinity.bin]
+patchset.patches_g2trinity.bin.glitch.parse ok
+patchset.patches_g2trinity.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2trinity.bin.glitch.section0 target=cb id=cb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2trinity.bin.glitch.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2trinity.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2trinity.bin.glitch.serialize identity=yes size=0x91C sha1=227c1d5301b3f51eedec4fd5fea9c1761b03af99
+patchset.patches_g2trinity.bin.glitch.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2trinity.bin.glitch.merge_all ok sections=3 size=0x3364 sha1=1f23846b4cfa9651cc6c7c7546b805474b9dad23 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2trinity.bin.glitch2.parse ok
+patchset.patches_g2trinity.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2trinity.bin.glitch2.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2trinity.bin.glitch2.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2trinity.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2trinity.bin.glitch2.serialize identity=yes size=0x91C sha1=227c1d5301b3f51eedec4fd5fea9c1761b03af99
+patchset.patches_g2trinity.bin.glitch2.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2trinity.bin.glitch2.merge_all ok sections=3 size=0x3364 sha1=1f23846b4cfa9651cc6c7c7546b805474b9dad23 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2trinity.bin.glitch2m.parse ok
+patchset.patches_g2trinity.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2trinity.bin.glitch2m.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2trinity.bin.glitch2m.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2trinity.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2trinity.bin.glitch2m.serialize identity=yes size=0x91C sha1=227c1d5301b3f51eedec4fd5fea9c1761b03af99
+patchset.patches_g2trinity.bin.glitch2m.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2trinity.bin.glitch2m.merge_all ok sections=3 size=0x3364 sha1=1f23846b4cfa9651cc6c7c7546b805474b9dad23 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2trinity.bin.glitch3.parse ok
+patchset.patches_g2trinity.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2trinity.bin.glitch3.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2trinity.bin.glitch3.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2trinity.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2trinity.bin.glitch3.serialize identity=yes size=0x91C sha1=227c1d5301b3f51eedec4fd5fea9c1761b03af99
+patchset.patches_g2trinity.bin.glitch3.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2trinity.bin.glitch3.merge_all ok sections=3 size=0x3364 sha1=1f23846b4cfa9651cc6c7c7546b805474b9dad23 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2trinity.bin.devgl.parse ok
+patchset.patches_g2trinity.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2trinity.bin.devgl.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2trinity.bin.devgl.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2trinity.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2trinity.bin.devgl.serialize identity=yes size=0x91C sha1=227c1d5301b3f51eedec4fd5fea9c1761b03af99
+patchset.patches_g2trinity.bin.devgl.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2trinity.bin.devgl.merge_all ok sections=3 size=0x3364 sha1=1f23846b4cfa9651cc6c7c7546b805474b9dad23 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2xenon.bin.input size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2xenon.bin.jtag.parse err=malformed
+patchset.patches_g2xenon.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2xenon.bin]
+patchset.patches_g2xenon.bin.glitch.parse ok
+patchset.patches_g2xenon.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2xenon.bin.glitch.section0 target=cb id=cb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon.bin.glitch.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2xenon.bin.glitch.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2xenon.bin.glitch.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2xenon.bin.glitch.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2xenon.bin.glitch2.parse ok
+patchset.patches_g2xenon.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2xenon.bin.glitch2.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon.bin.glitch2.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2xenon.bin.glitch2.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2xenon.bin.glitch2.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2xenon.bin.glitch2.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2xenon.bin.glitch2m.parse ok
+patchset.patches_g2xenon.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2xenon.bin.glitch2m.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon.bin.glitch2m.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2xenon.bin.glitch2m.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2xenon.bin.glitch2m.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2xenon.bin.glitch2m.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2xenon.bin.glitch3.parse ok
+patchset.patches_g2xenon.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2xenon.bin.glitch3.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon.bin.glitch3.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2xenon.bin.glitch3.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2xenon.bin.glitch3.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2xenon.bin.glitch3.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2xenon.bin.devgl.parse ok
+patchset.patches_g2xenon.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2xenon.bin.devgl.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon.bin.devgl.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2xenon.bin.devgl.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2xenon.bin.devgl.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2xenon.bin.devgl.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2xenon_ELPIS.bin.input size=0xC24 sha1=1da62ae891e0b555636b1baa96b5480f6c4df691
+patchset.patches_g2xenon_ELPIS.bin.jtag.parse err=malformed
+patchset.patches_g2xenon_ELPIS.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2xenon_ELPIS.bin]
+patchset.patches_g2xenon_ELPIS.bin.glitch.parse ok
+patchset.patches_g2xenon_ELPIS.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2xenon_ELPIS.bin.glitch.section0 target=cb id=cb entries=37 entry_words=131 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon_ELPIS.bin.glitch.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon_ELPIS.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2xenon_ELPIS.bin.glitch.serialize identity=yes size=0xC24 sha1=1da62ae891e0b555636b1baa96b5480f6c4df691
+patchset.patches_g2xenon_ELPIS.bin.glitch.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2xenon_ELPIS.bin.glitch.merge_all ok sections=3 size=0x366C sha1=d31932186cdf07254781f2df998392419e345636 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2xenon_ELPIS.bin.glitch2.parse ok
+patchset.patches_g2xenon_ELPIS.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2xenon_ELPIS.bin.glitch2.section0 target=cbb id=cbb entries=37 entry_words=131 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon_ELPIS.bin.glitch2.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon_ELPIS.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2xenon_ELPIS.bin.glitch2.serialize identity=yes size=0xC24 sha1=1da62ae891e0b555636b1baa96b5480f6c4df691
+patchset.patches_g2xenon_ELPIS.bin.glitch2.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2xenon_ELPIS.bin.glitch2.merge_all ok sections=3 size=0x366C sha1=d31932186cdf07254781f2df998392419e345636 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2xenon_ELPIS.bin.glitch2m.parse ok
+patchset.patches_g2xenon_ELPIS.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2xenon_ELPIS.bin.glitch2m.section0 target=cbb id=cbb entries=37 entry_words=131 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon_ELPIS.bin.glitch2m.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon_ELPIS.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2xenon_ELPIS.bin.glitch2m.serialize identity=yes size=0xC24 sha1=1da62ae891e0b555636b1baa96b5480f6c4df691
+patchset.patches_g2xenon_ELPIS.bin.glitch2m.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2xenon_ELPIS.bin.glitch2m.merge_all ok sections=3 size=0x366C sha1=d31932186cdf07254781f2df998392419e345636 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2xenon_ELPIS.bin.glitch3.parse ok
+patchset.patches_g2xenon_ELPIS.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2xenon_ELPIS.bin.glitch3.section0 target=cbb id=cbb entries=37 entry_words=131 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon_ELPIS.bin.glitch3.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon_ELPIS.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2xenon_ELPIS.bin.glitch3.serialize identity=yes size=0xC24 sha1=1da62ae891e0b555636b1baa96b5480f6c4df691
+patchset.patches_g2xenon_ELPIS.bin.glitch3.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2xenon_ELPIS.bin.glitch3.merge_all ok sections=3 size=0x366C sha1=d31932186cdf07254781f2df998392419e345636 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2xenon_ELPIS.bin.devgl.parse ok
+patchset.patches_g2xenon_ELPIS.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2xenon_ELPIS.bin.devgl.section0 target=cbb id=cbb entries=37 entry_words=131 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon_ELPIS.bin.devgl.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2xenon_ELPIS.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2xenon_ELPIS.bin.devgl.serialize identity=yes size=0xC24 sha1=1da62ae891e0b555636b1baa96b5480f6c4df691
+patchset.patches_g2xenon_ELPIS.bin.devgl.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2xenon_ELPIS.bin.devgl.merge_all ok sections=3 size=0x366C sha1=d31932186cdf07254781f2df998392419e345636 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2zephyr.bin.input size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2zephyr.bin.jtag.parse err=malformed
+patchset.patches_g2zephyr.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_g2zephyr.bin]
+patchset.patches_g2zephyr.bin.glitch.parse ok
+patchset.patches_g2zephyr.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_g2zephyr.bin.glitch.section0 target=cb id=cb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2zephyr.bin.glitch.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2zephyr.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2zephyr.bin.glitch.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2zephyr.bin.glitch.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2zephyr.bin.glitch.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2zephyr.bin.glitch2.parse ok
+patchset.patches_g2zephyr.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2zephyr.bin.glitch2.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2zephyr.bin.glitch2.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2zephyr.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2zephyr.bin.glitch2.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2zephyr.bin.glitch2.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2zephyr.bin.glitch2.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2zephyr.bin.glitch2m.parse ok
+patchset.patches_g2zephyr.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_g2zephyr.bin.glitch2m.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2zephyr.bin.glitch2m.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2zephyr.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2zephyr.bin.glitch2m.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2zephyr.bin.glitch2m.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2zephyr.bin.glitch2m.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2zephyr.bin.glitch3.parse ok
+patchset.patches_g2zephyr.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_g2zephyr.bin.glitch3.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2zephyr.bin.glitch3.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2zephyr.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2zephyr.bin.glitch3.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2zephyr.bin.glitch3.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2zephyr.bin.glitch3.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_g2zephyr.bin.devgl.parse ok
+patchset.patches_g2zephyr.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_g2zephyr.bin.devgl.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2zephyr.bin.devgl.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_g2zephyr.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_g2zephyr.bin.devgl.serialize identity=yes size=0x91C sha1=c61fc816856e2ce046ac2fc97fe0b5de239457b7
+patchset.patches_g2zephyr.bin.devgl.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_g2zephyr.bin.devgl.merge_all ok sections=3 size=0x3364 sha1=46a45870ccbf6779de9ddfd2d5a7c1fdbe959269 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_jasper.bin.input size=0xA6C sha1=e77edb34c0c6573ad8242980299ffc955ca06aac
+patchset.patches_jasper.bin.jtag.parse ok
+patchset.patches_jasper.bin.jtag kind=jtag manufacturing=0 sections=4
+patchset.patches_jasper.bin.jtag.section0 target=jtag1 id=jtag_section_1 entries=0 entry_words=0 raw_size=0x120 raw_sha1=307d054606d98595598c08f405858658d3b35e5f
+patchset.patches_jasper.bin.jtag.section1 target=jtag2 id=jtag_section_2 entries=0 entry_words=0 raw_size=0x1B8 raw_sha1=2a13dc219fe8ff713a3b04f3708e53950081e2d8
+patchset.patches_jasper.bin.jtag.section2 target=jtag3 id=jtag_section_3 entries=0 entry_words=0 raw_size=0x10C raw_sha1=5a578baac60b728e4bef724343f572174c89250a
+patchset.patches_jasper.bin.jtag.section3 target=jtag4 id=jtag_section_4 entries=0 entry_words=0 raw_size=0x678 raw_sha1=9821df9f092ff279fdbc8c377f179cd6abf5954a
+patchset.patches_jasper.bin.jtag.serialize identity=yes size=0xA6C sha1=e77edb34c0c6573ad8242980299ffc955ca06aac
+patchset.patches_jasper.bin.jtag.khv_payload of=jtag4 size=0x67C sha1=fcb2fa441e360eaae40c281b8c79de39d3c3670a
+patchset.patches_jasper.bin.jtag.merge_all ok sections=4 size=0x34B4 sha1=83de9a3b0c84616ff3cc2d547ca0aad1f719b5f3 last=jtag4 last_raw_size=0x30C0 khv_payload_sha1=85fc32b26d48adf054e003aaec736e979a75b740
+patchset.patches_jasper.bin.glitch.parse err=malformed
+patchset.patches_jasper.bin.glitch.merge_all err=malformed ctx=[automatic patchset patches_jasper.bin]
+patchset.patches_jasper.bin.glitch2.parse err=malformed
+patchset.patches_jasper.bin.glitch2.merge_all err=malformed ctx=[automatic patchset patches_jasper.bin]
+patchset.patches_jasper.bin.glitch2m.parse err=malformed
+patchset.patches_jasper.bin.glitch2m.merge_all err=malformed ctx=[automatic patchset patches_jasper.bin]
+patchset.patches_jasper.bin.glitch3.parse err=malformed
+patchset.patches_jasper.bin.glitch3.merge_all err=malformed ctx=[automatic patchset patches_jasper.bin]
+patchset.patches_jasper.bin.devgl.parse err=malformed
+patchset.patches_jasper.bin.devgl.merge_all err=malformed ctx=[automatic patchset patches_jasper.bin]
+patchset.patches_trinity.bin.input size=0x91C sha1=227c1d5301b3f51eedec4fd5fea9c1761b03af99
+patchset.patches_trinity.bin.jtag.parse err=malformed
+patchset.patches_trinity.bin.jtag.merge_all err=malformed ctx=[automatic patchset patches_trinity.bin]
+patchset.patches_trinity.bin.glitch.parse ok
+patchset.patches_trinity.bin.glitch kind=glitch manufacturing=0 sections=3
+patchset.patches_trinity.bin.glitch.section0 target=cb id=cb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_trinity.bin.glitch.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_trinity.bin.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_trinity.bin.glitch.serialize identity=yes size=0x91C sha1=227c1d5301b3f51eedec4fd5fea9c1761b03af99
+patchset.patches_trinity.bin.glitch.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_trinity.bin.glitch.merge_all ok sections=3 size=0x3364 sha1=1f23846b4cfa9651cc6c7c7546b805474b9dad23 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_trinity.bin.glitch2.parse ok
+patchset.patches_trinity.bin.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.patches_trinity.bin.glitch2.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_trinity.bin.glitch2.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_trinity.bin.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_trinity.bin.glitch2.serialize identity=yes size=0x91C sha1=227c1d5301b3f51eedec4fd5fea9c1761b03af99
+patchset.patches_trinity.bin.glitch2.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_trinity.bin.glitch2.merge_all ok sections=3 size=0x3364 sha1=1f23846b4cfa9651cc6c7c7546b805474b9dad23 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_trinity.bin.glitch2m.parse ok
+patchset.patches_trinity.bin.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.patches_trinity.bin.glitch2m.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_trinity.bin.glitch2m.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_trinity.bin.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_trinity.bin.glitch2m.serialize identity=yes size=0x91C sha1=227c1d5301b3f51eedec4fd5fea9c1761b03af99
+patchset.patches_trinity.bin.glitch2m.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_trinity.bin.glitch2m.merge_all ok sections=3 size=0x3364 sha1=1f23846b4cfa9651cc6c7c7546b805474b9dad23 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_trinity.bin.glitch3.parse ok
+patchset.patches_trinity.bin.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.patches_trinity.bin.glitch3.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_trinity.bin.glitch3.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_trinity.bin.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_trinity.bin.glitch3.serialize identity=yes size=0x91C sha1=227c1d5301b3f51eedec4fd5fea9c1761b03af99
+patchset.patches_trinity.bin.glitch3.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_trinity.bin.glitch3.merge_all ok sections=3 size=0x3364 sha1=1f23846b4cfa9651cc6c7c7546b805474b9dad23 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_trinity.bin.devgl.parse ok
+patchset.patches_trinity.bin.devgl kind=glitch manufacturing=1 sections=3
+patchset.patches_trinity.bin.devgl.section0 target=cbb id=cbb entries=3 entry_words=5 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_trinity.bin.devgl.section1 target=cd id=cd entries=4 entry_words=223 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.patches_trinity.bin.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x548 raw_sha1=490be47cd9d1bc4eb9e2302aad4f480ec8abe8bc
+patchset.patches_trinity.bin.devgl.serialize identity=yes size=0x91C sha1=227c1d5301b3f51eedec4fd5fea9c1761b03af99
+patchset.patches_trinity.bin.devgl.khv_payload of=khv size=0x54C sha1=c691cdb245151237796ac49ff61720117041fe4c
+patchset.patches_trinity.bin.devgl.merge_all ok sections=3 size=0x3364 sha1=1f23846b4cfa9651cc6c7c7546b805474b9dad23 last=khv last_raw_size=0x2F90 khv_payload_sha1=7af8aa1df6c6827be51a954bfa8befa0038b1b88
+patchset.patches_xenon.bin.input size=0xA6C sha1=5829b8696626d031c438d60e56d84330a8aff946
+patchset.patches_xenon.bin.jtag.parse ok
+patchset.patches_xenon.bin.jtag kind=jtag manufacturing=0 sections=4
+patchset.patches_xenon.bin.jtag.section0 target=jtag1 id=jtag_section_1 entries=0 entry_words=0 raw_size=0x120 raw_sha1=307d054606d98595598c08f405858658d3b35e5f
+patchset.patches_xenon.bin.jtag.section1 target=jtag2 id=jtag_section_2 entries=0 entry_words=0 raw_size=0x1B8 raw_sha1=a613218984f052a15f2e0ade242dd776fe765c32
+patchset.patches_xenon.bin.jtag.section2 target=jtag3 id=jtag_section_3 entries=0 entry_words=0 raw_size=0x10C raw_sha1=a0071e4ab6d8a16916b257d5ebf5e9533dd4f438
+patchset.patches_xenon.bin.jtag.section3 target=jtag4 id=jtag_section_4 entries=0 entry_words=0 raw_size=0x678 raw_sha1=9821df9f092ff279fdbc8c377f179cd6abf5954a
+patchset.patches_xenon.bin.jtag.serialize identity=yes size=0xA6C sha1=5829b8696626d031c438d60e56d84330a8aff946
+patchset.patches_xenon.bin.jtag.khv_payload of=jtag4 size=0x67C sha1=fcb2fa441e360eaae40c281b8c79de39d3c3670a
+patchset.patches_xenon.bin.jtag.merge_all ok sections=4 size=0x34B4 sha1=93feeb10cb82015c46e371cc179a65aea212904f last=jtag4 last_raw_size=0x30C0 khv_payload_sha1=85fc32b26d48adf054e003aaec736e979a75b740
+patchset.patches_xenon.bin.glitch.parse err=malformed
+patchset.patches_xenon.bin.glitch.merge_all err=malformed ctx=[automatic patchset patches_xenon.bin]
+patchset.patches_xenon.bin.glitch2.parse err=malformed
+patchset.patches_xenon.bin.glitch2.merge_all err=malformed ctx=[automatic patchset patches_xenon.bin]
+patchset.patches_xenon.bin.glitch2m.parse err=malformed
+patchset.patches_xenon.bin.glitch2m.merge_all err=malformed ctx=[automatic patchset patches_xenon.bin]
+patchset.patches_xenon.bin.glitch3.parse err=malformed
+patchset.patches_xenon.bin.glitch3.merge_all err=malformed ctx=[automatic patchset patches_xenon.bin]
+patchset.patches_xenon.bin.devgl.parse err=malformed
+patchset.patches_xenon.bin.devgl.merge_all err=malformed ctx=[automatic patchset patches_xenon.bin]
+patchset.patches_zephyr.bin.input size=0xA6C sha1=7c3a007ff0a313bf5242fe5e8809d4e6be4fa6a0
+patchset.patches_zephyr.bin.jtag.parse ok
+patchset.patches_zephyr.bin.jtag kind=jtag manufacturing=0 sections=4
+patchset.patches_zephyr.bin.jtag.section0 target=jtag1 id=jtag_section_1 entries=0 entry_words=0 raw_size=0x120 raw_sha1=307d054606d98595598c08f405858658d3b35e5f
+patchset.patches_zephyr.bin.jtag.section1 target=jtag2 id=jtag_section_2 entries=0 entry_words=0 raw_size=0x1B8 raw_sha1=c69b912610d5ba3c0ed00be3d11484aae6ac517d
+patchset.patches_zephyr.bin.jtag.section2 target=jtag3 id=jtag_section_3 entries=0 entry_words=0 raw_size=0x10C raw_sha1=b42dcbdeef6e44ec735666b08270a444e8b6a823
+patchset.patches_zephyr.bin.jtag.section3 target=jtag4 id=jtag_section_4 entries=0 entry_words=0 raw_size=0x678 raw_sha1=9821df9f092ff279fdbc8c377f179cd6abf5954a
+patchset.patches_zephyr.bin.jtag.serialize identity=yes size=0xA6C sha1=7c3a007ff0a313bf5242fe5e8809d4e6be4fa6a0
+patchset.patches_zephyr.bin.jtag.khv_payload of=jtag4 size=0x67C sha1=fcb2fa441e360eaae40c281b8c79de39d3c3670a
+patchset.patches_zephyr.bin.jtag.merge_all ok sections=4 size=0x34B4 sha1=bebc94d8b51f368c42dbd8f4e4be44119b062f98 last=jtag4 last_raw_size=0x30C0 khv_payload_sha1=85fc32b26d48adf054e003aaec736e979a75b740
+patchset.patches_zephyr.bin.glitch.parse err=malformed
+patchset.patches_zephyr.bin.glitch.merge_all err=malformed ctx=[automatic patchset patches_zephyr.bin]
+patchset.patches_zephyr.bin.glitch2.parse err=malformed
+patchset.patches_zephyr.bin.glitch2.merge_all err=malformed ctx=[automatic patchset patches_zephyr.bin]
+patchset.patches_zephyr.bin.glitch2m.parse err=malformed
+patchset.patches_zephyr.bin.glitch2m.merge_all err=malformed ctx=[automatic patchset patches_zephyr.bin]
+patchset.patches_zephyr.bin.glitch3.parse err=malformed
+patchset.patches_zephyr.bin.glitch3.merge_all err=malformed ctx=[automatic patchset patches_zephyr.bin]
+patchset.patches_zephyr.bin.devgl.parse err=malformed
+patchset.patches_zephyr.bin.devgl.merge_all err=malformed ctx=[automatic patchset patches_zephyr.bin]
+patchset.merge_one.patches_jasper.bin.jtag.corona_key_fix.bin ok last=jtag4 last_raw_size=0x690 size=0xA84 sha1=ad5363a34ca249cded184832342f4a5ffabec7a1
+patchset.merge_one.patches_jasper.bin.jtag.hddssauth.bin ok last=jtag4 last_raw_size=0x6A0 size=0xA94 sha1=d9c5375e0b53db87cf2c774e4b6f9321f2c36e55
+patchset.merge_one.patches_jasper.bin.jtag.hvFixKeys.bin ok last=jtag4 last_raw_size=0x694 size=0xA88 sha1=8410eb57aa16a4c5fb2fe22253e8a54b6ce082b7
+patchset.merge_one.patches_jasper.bin.jtag.noSShdd.bin ok last=jtag4 last_raw_size=0x6A0 size=0xA94 sha1=7b66668261e8ad3af497d4e930fa154c7075c251
+patchset.merge_one.patches_jasper.bin.jtag.nofcrt.bin ok last=jtag4 last_raw_size=0x698 size=0xA8C sha1=98eae53da1f23f815bdad52ed9296e384524b94f
+patchset.merge_one.patches_jasper.bin.jtag.nohdd.bin ok last=jtag4 last_raw_size=0x684 size=0xA78 sha1=335c935989d1d320b3a51cabb953bb362088e206
+patchset.merge_one.patches_jasper.bin.jtag.nohdmiwait.bin ok last=jtag4 last_raw_size=0x684 size=0xA78 sha1=b6b2b0c6cbcf4100be4982c34497b7e543dd9b66
+patchset.merge_one.patches_jasper.bin.jtag.nointmu.bin ok last=jtag4 last_raw_size=0x69C size=0xA90 sha1=4a87a4f2f30bf0ed82327e1b2d7c18b18bcafa4f
+patchset.merge_one.patches_jasper.bin.jtag.nolan.bin ok last=jtag4 last_raw_size=0x684 size=0xA78 sha1=bf24725c032f7ea19b50cbbf364197c45769b0f5
+patchset.merge_one.patches_jasper.bin.jtag.nowifi.bin ok last=jtag4 last_raw_size=0x698 size=0xA8C sha1=9b32a530202002a1836e6cbfd9172071df3eaecc
+patchset.merge_one.patches_jasper.bin.jtag.usbdsec.bin ok last=jtag4 last_raw_size=0x694 size=0xA88 sha1=f2170f273a2dbf84803b73f38effc49ba186b089
+patchset.merge_one.patches_jasper.bin.jtag.xl_both.bin ok last=jtag4 last_raw_size=0x1518 size=0x190C sha1=c019b2f41b3ffd6277ace6d2e108a07b9f39a5c4
+patchset.merge_one.patches_jasper.bin.jtag.xl_hdd.bin ok last=jtag4 last_raw_size=0x1400 size=0x17F4 sha1=59d75b5c3410eff659e1aca6fb83cee1b74d4ee7
+patchset.merge_one.patches_jasper.bin.jtag.xl_usb.bin ok last=jtag4 last_raw_size=0x1370 size=0x1764 sha1=4d58be9a2e6e4df70ac6b20d65232ac4d9a10d82
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.corona_key_fix.bin ok last=khv last_raw_size=0x6B4 size=0xB50 sha1=e6f474ec1ac8c5f79694690ca631518ff0c32223
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.hddssauth.bin ok last=khv last_raw_size=0x6C4 size=0xB60 sha1=98f09409e33e4ae6a627d17291e9aba3401de679
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.hvFixKeys.bin ok last=khv last_raw_size=0x6B8 size=0xB54 sha1=e1d15ec8e2c3740ef74c7b1a3b1e685a0ed3d33c
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.noSShdd.bin ok last=khv last_raw_size=0x6C4 size=0xB60 sha1=1e9054f6f855e757badd8dec40ae53db3f54081e
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.nofcrt.bin ok last=khv last_raw_size=0x6BC size=0xB58 sha1=16dd22fc737c293cda217325b66aa6390e5b6eab
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.nohdd.bin ok last=khv last_raw_size=0x6A8 size=0xB44 sha1=42d84285933298fab3586e24de834a4a1d2b608a
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.nohdmiwait.bin ok last=khv last_raw_size=0x6A8 size=0xB44 sha1=67686b5fa9527913382202b530f0c61dcaa5f7a7
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.nointmu.bin ok last=khv last_raw_size=0x6C0 size=0xB5C sha1=728d98a41e7ce259fa77f83fee11286af9529907
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.nolan.bin ok last=khv last_raw_size=0x6A8 size=0xB44 sha1=3c15772b592d15d65ec6a5fd1bdc8d18cf130e3e
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.nowifi.bin ok last=khv last_raw_size=0x6BC size=0xB58 sha1=6674f39e0854e480ab22f1fc09cd4034e42f896d
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.usbdsec.bin ok last=khv last_raw_size=0x6B8 size=0xB54 sha1=cda7bdf92a5134b4ef531f9079a2bfd14344a433
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.xl_both.bin ok last=khv last_raw_size=0x153C size=0x19D8 sha1=cb3898c1eaed9f11367227fb7e8736ea469fe6ff
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.xl_hdd.bin ok last=khv last_raw_size=0x1424 size=0x18C0 sha1=5236dccdf939333317084adc18e7676f191f6139
+patchset.merge_one.patches_g2mjasper.bin.glitch2m.xl_usb.bin ok last=khv last_raw_size=0x1394 size=0x1830 sha1=5e986878b5692b397a6a46fea756a48bcd67bcfb
+patchset.synthetic.empty.jtag.parse err=malformed
+patchset.synthetic.empty.jtag.merge_none err=malformed ctx=[automatic patchset empty]
+patchset.synthetic.empty.glitch.parse err=malformed
+patchset.synthetic.empty.glitch.merge_none err=malformed ctx=[automatic patchset empty]
+patchset.synthetic.empty.glitch2.parse err=malformed
+patchset.synthetic.empty.glitch2.merge_none err=malformed ctx=[automatic patchset empty]
+patchset.synthetic.empty.glitch2m.parse err=malformed
+patchset.synthetic.empty.glitch2m.merge_none err=malformed ctx=[automatic patchset empty]
+patchset.synthetic.empty.glitch3.parse err=malformed
+patchset.synthetic.empty.glitch3.merge_none err=malformed ctx=[automatic patchset empty]
+patchset.synthetic.empty.devgl.parse err=malformed
+patchset.synthetic.empty.devgl.merge_none err=malformed ctx=[automatic patchset empty]
+patchset.synthetic.one_delimiter.jtag.parse err=malformed
+patchset.synthetic.one_delimiter.jtag.merge_none err=malformed ctx=[automatic patchset one_delimiter]
+patchset.synthetic.one_delimiter.glitch.parse err=malformed
+patchset.synthetic.one_delimiter.glitch.merge_none err=malformed ctx=[automatic patchset one_delimiter]
+patchset.synthetic.one_delimiter.glitch2.parse err=malformed
+patchset.synthetic.one_delimiter.glitch2.merge_none err=malformed ctx=[automatic patchset one_delimiter]
+patchset.synthetic.one_delimiter.glitch2m.parse err=malformed
+patchset.synthetic.one_delimiter.glitch2m.merge_none err=malformed ctx=[automatic patchset one_delimiter]
+patchset.synthetic.one_delimiter.glitch3.parse err=malformed
+patchset.synthetic.one_delimiter.glitch3.merge_none err=malformed ctx=[automatic patchset one_delimiter]
+patchset.synthetic.one_delimiter.devgl.parse err=malformed
+patchset.synthetic.one_delimiter.devgl.merge_none err=malformed ctx=[automatic patchset one_delimiter]
+patchset.synthetic.three_empty_sections.jtag.parse err=malformed
+patchset.synthetic.three_empty_sections.jtag.merge_none err=malformed ctx=[automatic patchset three_empty_sections]
+patchset.synthetic.three_empty_sections.glitch.parse ok
+patchset.synthetic.three_empty_sections.glitch kind=glitch manufacturing=0 sections=3
+patchset.synthetic.three_empty_sections.glitch.section0 target=cb id=cb entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.glitch.section1 target=cd id=cd entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.glitch.serialize identity=yes size=0xC sha1=a4a22152faab8db4a63de422ae0d5852fd35b04a
+patchset.synthetic.three_empty_sections.glitch.khv_payload of=khv size=0x4 sha1=d9be6524a5f5047db5866813acf3277892a7a30a
+patchset.synthetic.three_empty_sections.glitch.merge_none ok
+patchset.synthetic.three_empty_sections.glitch2.parse ok
+patchset.synthetic.three_empty_sections.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.synthetic.three_empty_sections.glitch2.section0 target=cbb id=cbb entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.glitch2.section1 target=cd id=cd entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.glitch2.serialize identity=yes size=0xC sha1=a4a22152faab8db4a63de422ae0d5852fd35b04a
+patchset.synthetic.three_empty_sections.glitch2.khv_payload of=khv size=0x4 sha1=d9be6524a5f5047db5866813acf3277892a7a30a
+patchset.synthetic.three_empty_sections.glitch2.merge_none ok
+patchset.synthetic.three_empty_sections.glitch2m.parse ok
+patchset.synthetic.three_empty_sections.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.synthetic.three_empty_sections.glitch2m.section0 target=cbb id=cbb entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.glitch2m.section1 target=cd id=cd entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.glitch2m.serialize identity=yes size=0xC sha1=a4a22152faab8db4a63de422ae0d5852fd35b04a
+patchset.synthetic.three_empty_sections.glitch2m.khv_payload of=khv size=0x4 sha1=d9be6524a5f5047db5866813acf3277892a7a30a
+patchset.synthetic.three_empty_sections.glitch2m.merge_none ok
+patchset.synthetic.three_empty_sections.glitch3.parse ok
+patchset.synthetic.three_empty_sections.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.synthetic.three_empty_sections.glitch3.section0 target=cbb id=cbb entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.glitch3.section1 target=cd id=cd entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.glitch3.serialize identity=yes size=0xC sha1=a4a22152faab8db4a63de422ae0d5852fd35b04a
+patchset.synthetic.three_empty_sections.glitch3.khv_payload of=khv size=0x4 sha1=d9be6524a5f5047db5866813acf3277892a7a30a
+patchset.synthetic.three_empty_sections.glitch3.merge_none ok
+patchset.synthetic.three_empty_sections.devgl.parse ok
+patchset.synthetic.three_empty_sections.devgl kind=glitch manufacturing=1 sections=3
+patchset.synthetic.three_empty_sections.devgl.section0 target=cbb id=cbb entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.devgl.section1 target=cd id=cd entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.three_empty_sections.devgl.serialize identity=yes size=0xC sha1=a4a22152faab8db4a63de422ae0d5852fd35b04a
+patchset.synthetic.three_empty_sections.devgl.khv_payload of=khv size=0x4 sha1=d9be6524a5f5047db5866813acf3277892a7a30a
+patchset.synthetic.three_empty_sections.devgl.merge_none ok
+patchset.synthetic.four_empty_sections.jtag.parse ok
+patchset.synthetic.four_empty_sections.jtag kind=jtag manufacturing=0 sections=4
+patchset.synthetic.four_empty_sections.jtag.section0 target=jtag1 id=jtag_section_1 entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.four_empty_sections.jtag.section1 target=jtag2 id=jtag_section_2 entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.four_empty_sections.jtag.section2 target=jtag3 id=jtag_section_3 entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.four_empty_sections.jtag.section3 target=jtag4 id=jtag_section_4 entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.four_empty_sections.jtag.serialize identity=yes size=0x10 sha1=52e0e9d4f46c97ca5bcb0708d18633698d60fa5f
+patchset.synthetic.four_empty_sections.jtag.khv_payload of=jtag4 size=0x4 sha1=d9be6524a5f5047db5866813acf3277892a7a30a
+patchset.synthetic.four_empty_sections.jtag.merge_none ok
+patchset.synthetic.four_empty_sections.glitch.parse err=malformed
+patchset.synthetic.four_empty_sections.glitch.merge_none err=malformed ctx=[automatic patchset four_empty_sections]
+patchset.synthetic.four_empty_sections.glitch2.parse err=malformed
+patchset.synthetic.four_empty_sections.glitch2.merge_none err=malformed ctx=[automatic patchset four_empty_sections]
+patchset.synthetic.four_empty_sections.glitch2m.parse err=malformed
+patchset.synthetic.four_empty_sections.glitch2m.merge_none err=malformed ctx=[automatic patchset four_empty_sections]
+patchset.synthetic.four_empty_sections.glitch3.parse err=malformed
+patchset.synthetic.four_empty_sections.glitch3.merge_none err=malformed ctx=[automatic patchset four_empty_sections]
+patchset.synthetic.four_empty_sections.devgl.parse err=malformed
+patchset.synthetic.four_empty_sections.devgl.merge_none err=malformed ctx=[automatic patchset four_empty_sections]
+patchset.synthetic.entry_without_length.jtag.parse ok
+patchset.synthetic.entry_without_length.jtag kind=jtag manufacturing=0 sections=4
+patchset.synthetic.entry_without_length.jtag.section0 target=jtag1 id=jtag_section_1 entries=0 entry_words=0 raw_size=0x4 raw_sha1=eb5dd39b5f69f5f44f1d8a3fc951df076fd86c9c
+patchset.synthetic.entry_without_length.jtag.section1 target=jtag2 id=jtag_section_2 entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.entry_without_length.jtag.section2 target=jtag3 id=jtag_section_3 entries=0 entry_words=0 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.entry_without_length.jtag.section3 target=jtag4 id=jtag_section_4 entries=0 entry_words=0 raw_size=0x4 raw_sha1=d803a89c5942a5aa89da76a8dd3cde7b39455dfb
+patchset.synthetic.entry_without_length.jtag.serialize identity=no size=0x18 sha1=64cdbb31f2075f94cdf5cfc20da458b7e64a9df3
+patchset.synthetic.entry_without_length.jtag.khv_payload of=jtag4 size=0x8 sha1=c2551c3e36fb1f2618ed5870d29f7f13454f4526
+patchset.synthetic.entry_without_length.jtag.merge_none ok
+patchset.synthetic.entry_without_length.glitch.parse err=malformed
+patchset.synthetic.entry_without_length.glitch.merge_none err=malformed ctx=[automatic patchset entry_without_length]
+patchset.synthetic.entry_without_length.glitch2.parse err=malformed
+patchset.synthetic.entry_without_length.glitch2.merge_none err=malformed ctx=[automatic patchset entry_without_length]
+patchset.synthetic.entry_without_length.glitch2m.parse err=malformed
+patchset.synthetic.entry_without_length.glitch2m.merge_none err=malformed ctx=[automatic patchset entry_without_length]
+patchset.synthetic.entry_without_length.glitch3.parse err=malformed
+patchset.synthetic.entry_without_length.glitch3.merge_none err=malformed ctx=[automatic patchset entry_without_length]
+patchset.synthetic.entry_without_length.devgl.parse err=malformed
+patchset.synthetic.entry_without_length.devgl.merge_none err=malformed ctx=[automatic patchset entry_without_length]
+patchset.synthetic.entry_words_overrun.jtag.parse err=malformed
+patchset.synthetic.entry_words_overrun.jtag.merge_none err=malformed ctx=[automatic patchset entry_words_overrun]
+patchset.synthetic.entry_words_overrun.glitch.parse err=truncated ctx=[cb patch section]
+patchset.synthetic.entry_words_overrun.glitch.merge_none err=truncated ctx=[automatic patchset entry_words_overrun | cb patch section]
+patchset.synthetic.entry_words_overrun.glitch2.parse err=truncated ctx=[cbb patch section]
+patchset.synthetic.entry_words_overrun.glitch2.merge_none err=truncated ctx=[automatic patchset entry_words_overrun | cbb patch section]
+patchset.synthetic.entry_words_overrun.glitch2m.parse err=truncated ctx=[cbb patch section]
+patchset.synthetic.entry_words_overrun.glitch2m.merge_none err=truncated ctx=[automatic patchset entry_words_overrun | cbb patch section]
+patchset.synthetic.entry_words_overrun.glitch3.parse err=truncated ctx=[cbb patch section]
+patchset.synthetic.entry_words_overrun.glitch3.merge_none err=truncated ctx=[automatic patchset entry_words_overrun | cbb patch section]
+patchset.synthetic.entry_words_overrun.devgl.parse err=truncated ctx=[cbb patch section]
+patchset.synthetic.entry_words_overrun.devgl.merge_none err=truncated ctx=[automatic patchset entry_words_overrun | cbb patch section]
+patchset.synthetic.glitch_minimal.jtag.parse err=malformed
+patchset.synthetic.glitch_minimal.jtag.merge_none err=malformed ctx=[automatic patchset glitch_minimal]
+patchset.synthetic.glitch_minimal.glitch.parse ok
+patchset.synthetic.glitch_minimal.glitch kind=glitch manufacturing=0 sections=3
+patchset.synthetic.glitch_minimal.glitch.section0 target=cb id=cb entries=1 entry_words=1 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.glitch_minimal.glitch.section1 target=cd id=cd entries=1 entry_words=2 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.glitch_minimal.glitch.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x4 raw_sha1=a7b7e9592daa0896db0517bf8ad53e56b1246923
+patchset.synthetic.glitch_minimal.glitch.serialize identity=yes size=0x2C sha1=fb0a8c9a9d33ebe880025598f036e12e7130f844
+patchset.synthetic.glitch_minimal.glitch.khv_payload of=khv size=0x8 sha1=fafa6bcc7528d05f5f28a03f8db95d33849619b5
+patchset.synthetic.glitch_minimal.glitch.merge_none ok
+patchset.synthetic.glitch_minimal.glitch2.parse ok
+patchset.synthetic.glitch_minimal.glitch2 kind=glitch manufacturing=0 sections=3
+patchset.synthetic.glitch_minimal.glitch2.section0 target=cbb id=cbb entries=1 entry_words=1 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.glitch_minimal.glitch2.section1 target=cd id=cd entries=1 entry_words=2 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.glitch_minimal.glitch2.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x4 raw_sha1=a7b7e9592daa0896db0517bf8ad53e56b1246923
+patchset.synthetic.glitch_minimal.glitch2.serialize identity=yes size=0x2C sha1=fb0a8c9a9d33ebe880025598f036e12e7130f844
+patchset.synthetic.glitch_minimal.glitch2.khv_payload of=khv size=0x8 sha1=fafa6bcc7528d05f5f28a03f8db95d33849619b5
+patchset.synthetic.glitch_minimal.glitch2.merge_none ok
+patchset.synthetic.glitch_minimal.glitch2m.parse ok
+patchset.synthetic.glitch_minimal.glitch2m kind=glitch manufacturing=1 sections=3
+patchset.synthetic.glitch_minimal.glitch2m.section0 target=cbb id=cbb entries=1 entry_words=1 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.glitch_minimal.glitch2m.section1 target=cd id=cd entries=1 entry_words=2 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.glitch_minimal.glitch2m.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x4 raw_sha1=a7b7e9592daa0896db0517bf8ad53e56b1246923
+patchset.synthetic.glitch_minimal.glitch2m.serialize identity=yes size=0x2C sha1=fb0a8c9a9d33ebe880025598f036e12e7130f844
+patchset.synthetic.glitch_minimal.glitch2m.khv_payload of=khv size=0x8 sha1=fafa6bcc7528d05f5f28a03f8db95d33849619b5
+patchset.synthetic.glitch_minimal.glitch2m.merge_none ok
+patchset.synthetic.glitch_minimal.glitch3.parse ok
+patchset.synthetic.glitch_minimal.glitch3 kind=glitch manufacturing=0 sections=3
+patchset.synthetic.glitch_minimal.glitch3.section0 target=cbb id=cbb entries=1 entry_words=1 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.glitch_minimal.glitch3.section1 target=cd id=cd entries=1 entry_words=2 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.glitch_minimal.glitch3.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x4 raw_sha1=a7b7e9592daa0896db0517bf8ad53e56b1246923
+patchset.synthetic.glitch_minimal.glitch3.serialize identity=yes size=0x2C sha1=fb0a8c9a9d33ebe880025598f036e12e7130f844
+patchset.synthetic.glitch_minimal.glitch3.khv_payload of=khv size=0x8 sha1=fafa6bcc7528d05f5f28a03f8db95d33849619b5
+patchset.synthetic.glitch_minimal.glitch3.merge_none ok
+patchset.synthetic.glitch_minimal.devgl.parse ok
+patchset.synthetic.glitch_minimal.devgl kind=glitch manufacturing=1 sections=3
+patchset.synthetic.glitch_minimal.devgl.section0 target=cbb id=cbb entries=1 entry_words=1 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.glitch_minimal.devgl.section1 target=cd id=cd entries=1 entry_words=2 raw_size=0x0 raw_sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+patchset.synthetic.glitch_minimal.devgl.section2 target=khv id=khv entries=0 entry_words=0 raw_size=0x4 raw_sha1=a7b7e9592daa0896db0517bf8ad53e56b1246923
+patchset.synthetic.glitch_minimal.devgl.serialize identity=yes size=0x2C sha1=fb0a8c9a9d33ebe880025598f036e12e7130f844
+patchset.synthetic.glitch_minimal.devgl.khv_payload of=khv size=0x8 sha1=fafa6bcc7528d05f5f28a03f8db95d33849619b5
+patchset.synthetic.glitch_minimal.devgl.merge_none ok
+patchset.unsupported.retail.parse err=unsupported
+patchset.unsupported.retail.merge_none err=unsupported ctx=[automatic patchset four_empty_sections]
+patchset.unsupported.devkit.parse err=unsupported
+patchset.unsupported.devkit.merge_none err=unsupported ctx=[automatic patchset four_empty_sections]
+patchset.no_automatic.merge err=invalid argument
+xell.xell-1f.bin.input size=0x40000 sha1=cb2df30e7a25db74782eb4f39772e8393132b9f1
+xell.xell-1f.bin.parse ok version="-" author="" date="" data_identity=yes
+xell.xell-2f.bin.input size=0x40000 sha1=198d67bbf3282a03ca20b34ec46c67bfa5b42c18
+xell.xell-2f.bin.parse ok version="-" author="" date="" data_identity=yes
+xell.xell-gggggg.bin.input size=0x40000 sha1=bd0f28b77bf594ac24f634f6ce96cffbdcf4d2bd
+xell.xell-gggggg.bin.parse ok version="-" author="" date="" data_identity=yes
+xell.synthetic.short.input size=0x3FFFF sha1=cd300ae0b02584a77707e9707a7ca798a50ec13a
+xell.synthetic.short.parse err=truncated
+xell.synthetic.long.input size=0x40001 sha1=3127995accbe8a4ea4e6c7fad0f4823e21f65e3c
+xell.synthetic.long.parse err=out of range
+xell.synthetic.zero_head.input size=0x40000 sha1=2e000fa7e85759c7f4c254d4d9c33ef481e459a7
+xell.synthetic.zero_head.parse err=malformed
+xell.synthetic.elf_bare.input size=0x40000 sha1=b498fe0b01e0115860d97ae13227db789848b013
+xell.synthetic.elf_bare.parse ok version="" author="" date="" data_identity=yes
+xell.synthetic.vectors_dated.input size=0x40000 sha1=73fc0950bb6c42a987f16586da81e7668d96632c
+xell.synthetic.vectors_dated.parse ok version="v9.9" author="synthetic author" date="2012-03-04" data_identity=yes
+xell.synthetic.vectors_prefix.input size=0x40000 sha1=977b766cda574c63a43420a99d634cfd8f17dc50
+xell.synthetic.vectors_prefix.parse ok version="0.991" author="Free60.org" date="" data_identity=yes
+xell.synthetic.elf_bad_date.input size=0x40000 sha1=a0c4e56efdfc89771af9a69383056fb42adbda70
+xell.synthetic.elf_bad_date.parse ok version="1.0" author="LibXenon.org" date="" data_identity=yes
+secured.crl.bin.input size=0xA00 sha1=2582635f38b5483cf50ea4bc9d754d06a1a4233f
+secured.crl.bin.image_key.crl_sealing err=authentication failed
+secured.crl.bin.image_key.reseal_own skipped
+secured.crl.bin.image_key.reseal_fixed ok size=0xA00 sha1=53aaa091ddecc000064bc101d859c83c0ff48c83
+secured.crl.bin.other_key.crl_sealing err=authentication failed
+secured.crl.bin.other_key.reseal_own skipped
+secured.crl.bin.other_key.reseal_fixed ok size=0xA00 sha1=66641a8d10d53f763b0a5dcc7154274302ada6a8
+secured.dae.bin.input size=0xAD30 sha1=0d5d95bb59ed47604591e26ed0ad42d2279c8d33
+secured.dae.bin.image_key.dae_sealing err=authentication failed
+secured.dae.bin.image_key.reseal_own skipped
+secured.dae.bin.image_key.reseal_fixed ok size=0xAD30 sha1=99066c4225e6080050d7fc1d8baec36c86f07c2d
+secured.dae.bin.other_key.dae_sealing err=authentication failed
+secured.dae.bin.other_key.reseal_own skipped
+secured.dae.bin.other_key.reseal_fixed ok size=0xAD30 sha1=b002e0fd998bb8ca25d68d4c170190632b601152
+secured.extended.bin.input size=0x4000 sha1=897256b6709e1a4da9daba92b6bde39ccfccd8c1
+secured.extended.bin.image_key.open_loose ok size=0x4000 sha1=bc52a49f393880935c458a941602a0df86d26efa
+secured.extended.bin.image_key.opened yes
+secured.extended.bin.image_key.reseal ok size=0x4000 sha1=205f2bba87ec4d181958ba59ac9af93e40ea29c5
+secured.extended.bin.other_key.open_loose ok size=0x4000 sha1=d27593f2f479b5a12e9c382d33cbb69b7f42f617
+secured.extended.bin.other_key.opened yes
+secured.extended.bin.other_key.reseal ok size=0x4000 sha1=b997398143bef64285ed833af5562bc61c15ad9b
+secured.secdata.bin.input size=0x400 sha1=60cacbf3d72e1e7834203da608037b1bf83b40e8
+secured.secdata.bin.image_key.open_loose ok size=0x400 sha1=4e129f3674a08d1586e43ce7aeb481a288ddf0c4
+secured.secdata.bin.image_key.opened yes
+secured.secdata.bin.image_key.head ok sha1=05fe405753166f125559e7c9ac558654f107c7e9
+secured.secdata.bin.image_key.reseal_no_head ok size=0x400 sha1=1e9893e487acc9a9b59c20b6b4d23c70d2e2f2c5
+secured.secdata.bin.image_key.reseal_fixed_head ok size=0x400 sha1=1881a3482d1e507311b06fd3805d3bea05de9bf0
+secured.secdata.bin.other_key.open_loose ok size=0x400 sha1=213bc9512794684bc29694a5319d31c28756f911
+secured.secdata.bin.other_key.opened yes
+secured.secdata.bin.other_key.head ok sha1=05fe405753166f125559e7c9ac558654f107c7e9
+secured.secdata.bin.other_key.reseal_no_head ok size=0x400 sha1=509ae749f06ed7b8e328ce7c04e6b1bf2df58a8f
+secured.secdata.bin.other_key.reseal_fixed_head ok size=0x400 sha1=0cbed0407c19eeef585f2ace3d4fe2668a108cd9
+secured.fcrt.bin.input size=0x4000 sha1=c7aeeb9d6bb0e27c858e3a0416cc7bacb0d7fbcd
+secured.fcrt.bin.image_key.seal_fcrt sealing=sealed identity=no size=0x4000 sha1=712ca3e33c354119da50218b943b7f44a73ca7de
+secured.fcrt.bin.image_key.seal_fcrt_again sealing=carried identity=yes size=0x4000 sha1=712ca3e33c354119da50218b943b7f44a73ca7de
+secured.fcrt.bin.other_key.seal_fcrt sealing=sealed identity=no size=0x4000 sha1=3a49e85805ff0f356309e800b6cf0d0c4fff8d93
+secured.fcrt.bin.other_key.seal_fcrt_again sealing=carried identity=yes size=0x4000 sha1=3a49e85805ff0f356309e800b6cf0d0c4fff8d93
+secured.clean_extended ok size=0x4000 sha1=205f2bba87ec4d181958ba59ac9af93e40ea29c5
+secured.clean_secdata ok size=0x400 sha1=1881a3482d1e507311b06fd3805d3bea05de9bf0
+secured.clean_extended.short_key err=invalid argument
+secured.open_loose_extended.short_blob err=truncated
+secured.open_loose_secdata.short_blob err=truncated
+secured.crl_sealing.empty err=malformed
+secured.dae_sealing.empty err=truncated
+secured.fcrt.synthetic.short sealing=invalid_size identity=yes size=0x3FFF sha1=af6e3154ad981019d4f7a04f7f6ee105b06aee15
+secured.fcrt.synthetic.offset_0x4000 sealing=invalid_offset identity=yes size=0x4000 sha1=b68dc047ecd121172d1ab92e7c52eea48ee6f5ea
+secured.fcrt.synthetic.clear_hash_holds sealing=sealed identity=no size=0x4000 sha1=9db5e52a39cb5a5adcff57891a7eeedc7bc3b741
+secured.fcrt.synthetic.hash_broken sealing=damaged identity=no size=0x4000 sha1=b33724e29a12599761d0ea13165e386947d78016
+secured.stamp.0 019db1ded66fad00
+secured.stamp.1 019db1ded66fad00
+secured.stamp.2 019db1ded7a0da00
+secured.stamp.3 019db1ded7a0da00
+secured.stamp.1511142487 01d361a19d443c00
+secured.stamp.1791105724 01dd53e1d2c73300
+secured.stamp.1791105725 01dd53e1d2c73300
+secured.stamp.2147483647 01e9fd1ed53e8000
+secured.fcrt_requirement.0x0000 not_required
+secured.fcrt_requirement.0x0020 required
+secured.fcrt_requirement.0x0100 required_by_drive
+secured.fcrt_requirement.0x0200 required_by_drive
+secured.fcrt_requirement.0x0300 required_by_drive
+secured.fcrt_requirement.0x0320 required_by_drive
+secured.fcrt_requirement.0xFFDF required_by_drive
+secured.fcrt_requirement.0xFFFF required_by_drive
+secured.fcrt_requirement.short not_required
+xboxupd.package size=0xB50000 sha1=dab521dfed2cb3d374b6feada4bcc8bfc74f093b
+xboxupd.open ok
+xboxupd.extract ok
+xboxupd.file size=0x7BFE0 sha1=ea7666ebe2799812270581538b342b8143397ab9
+xboxupd.split ok cf_size=0x4560 cf_sha1=716bbfcd549647e682131e2589a995a2dd95b88f cg_size=0x77A80 cg_sha1=023b58becb9b9188055f0f467d090220b61b9019
+xboxupd.split_u8_same yes
+xboxupd.synthetic.valid ok cf_size=0x40 cf_sha1=529d6a922b1933869714a571224da48561cc2ae9 cg_size=0x40 cg_sha1=668120d5bff792963f4bd148bc3f1d946fe799ef
+xboxupd.synthetic.valid_trailing ok cf_size=0x40 cf_sha1=529d6a922b1933869714a571224da48561cc2ae9 cg_size=0x40 cg_sha1=668120d5bff792963f4bd148bc3f1d946fe799ef
+xboxupd.synthetic.valid_high_nibble ok cf_size=0x40 cf_sha1=060a5e862c759f5fa170b079165aa0d60ee1145e cg_size=0x40 cg_sha1=748b1c6ba0a3e74dc6edce2237a2c47475334961
+xboxupd.synthetic.short_0x1f err=truncated
+xboxupd.synthetic.bad_cf_magic err=malformed
+xboxupd.synthetic.cf_size_below_0x20 err=malformed
+xboxupd.synthetic.cf_overflow err=truncated
+xboxupd.synthetic.cg_overflow err=truncated
+xboxupd.synthetic.bad_cg_magic err=malformed
+xboxupd.synthetic.cg_size_below_0x20 err=malformed
+corona.config0.serialize size=0x200 sha1=cf239db3ca7aeb9a321cfd962f403af7269c06ff
+corona.config0.parse ok number=0x00000001 table=0x0BF6 blob0=0x0BF7/0x1000 blob1=0x0BF8/0x0200 blob2=0x0000/0x0000 blob3=0x0BFA/0x4000 reserialize_identity=yes
+corona.config1.serialize size=0x200 sha1=f655bbdf6f08a0348c768211632d76907f61007a
+corona.config1.parse ok number=0x00000102 table=0x0010 blob0=0x0011/0x0001 blob1=0x0012/0x0002 blob2=0x0013/0x0003 blob3=0x0014/0x0004 reserialize_identity=yes
+corona.config2.serialize size=0x200 sha1=d8ca4cdd467c4c8dc099393ab71cc95b849903bb
+corona.config2.parse ok number=0xFFFFFFFF table=0xFFFF blob0=0xFFFF/0xFFFF blob1=0x0000/0x0000 blob2=0x0000/0x0000 blob3=0x0000/0x0000 reserialize_identity=yes
+corona.parse.short err=truncated
+corona.parse.body_flip err=hash mismatch
+corona.parse.digest_flip err=hash mismatch
+corona.parse.span_0x1000 ok number=0x00000001 table=0x0BF6 blob0=0x0BF7/0x1000 blob1=0x0BF8/0x0200 blob2=0x0000/0x0000 blob3=0x0BFA/0x4000
+corona.choose.a_b number=0x00000102 table=0x0010 blob0=0x0011/0x0001 blob1=0x0012/0x0002 blob2=0x0013/0x0003 blob3=0x0014/0x0004
+corona.choose.b_a number=0x00000102 table=0x0010 blob0=0x0011/0x0001 blob1=0x0012/0x0002 blob2=0x0013/0x0003 blob3=0x0014/0x0004
+corona.choose.a_corruptb number=0x00000001 table=0x0BF6 blob0=0x0BF7/0x1000 blob1=0x0BF8/0x0200 blob2=0x0000/0x0000 blob3=0x0BFA/0x4000
+corona.choose.corruptb_a number=0x00000001 table=0x0BF6 blob0=0x0BF7/0x1000 blob1=0x0BF8/0x0200 blob2=0x0000/0x0000 blob3=0x0BFA/0x4000
+corona.choose.corruptdigest_b number=0x00000102 table=0x0010 blob0=0x0011/0x0001 blob1=0x0012/0x0002 blob2=0x0013/0x0003 blob3=0x0014/0x0004
+corona.choose.short_b number=0x00000102 table=0x0010 blob0=0x0011/0x0001 blob1=0x0012/0x0002 blob2=0x0013/0x0003 blob3=0x0014/0x0004
+corona.choose.a_a number=0x00000001 table=0x0BF6 blob0=0x0BF7/0x1000 blob1=0x0BF8/0x0200 blob2=0x0000/0x0000 blob3=0x0BFA/0x4000
+corona.choose.corrupt_corrupt none
+corona.choose.empty_empty none
+corona.choose.max_a number=0xFFFFFFFF table=0xFFFF blob0=0xFFFF/0xFFFF blob1=0x0000/0x0000 blob2=0x0000/0x0000 blob3=0x0000/0x0000
+freeboot.rebooter size=0xD40 sha1=01a72ff80d21c3902c7a51a6f7d6edeaf6b0c8f6
+freeboot.payload size=0x200 sha1=cb62e6eb2b89f22f6c3c9d554d0163ade0e2c830
+freeboot.payload_for.0x0 size=0x200 sha1=f3574161d2367388eae977047f5c280d69b53d06 words_field=0000
+freeboot.payload_for.0x1 size=0x200 sha1=c57147e463cb01d5991fb4e396e5148b75fabaa1 words_field=0001
+freeboot.payload_for.0x4 size=0x200 sha1=c57147e463cb01d5991fb4e396e5148b75fabaa1 words_field=0001
+freeboot.payload_for.0x5 size=0x200 sha1=9de8631766220a68d77d1176014b1e158b82aa08 words_field=0002
+freeboot.payload_for.0xD40 size=0x200 sha1=0f22adcd938108d7640cdbfffbe6dc3eb86627b2 words_field=0350
+freeboot.payload_for.0x3FFFF size=0x200 sha1=f3574161d2367388eae977047f5c280d69b53d06 words_field=0000
+freeboot.payload_for.0x3FFFC size=0x200 sha1=cb62e6eb2b89f22f6c3c9d554d0163ade0e2c830 words_field=ffff
+freeboot.payload_for.0x40000 size=0x200 sha1=f3574161d2367388eae977047f5c280d69b53d06 words_field=0000
+freeboot.rebooter_for."9199" size=0xD40 sha1=5788d7b99b432e3486e5119954b2124abab41fa9
+freeboot.rebooter_for."17559" size=0xD40 sha1=35f97373b1cc816241ad454dc65af1eedfc5bc13
+freeboot.rebooter_for."17489" size=0xD40 sha1=0212b6ca8373dc980d20ec5ed4ef803fa61aa65d
+freeboot.rebooter_for."" size=0xD40 sha1=8f15d7df0b9786711195451897975d002a6b5d0f
+freeboot.rebooter_for."0123456789ABCDEF0123456789ABCDEF-overflow" size=0xD40 sha1=04ddf50ca4a446b455b2b937f6ef6b0513b4dfeb
+xconfig.input size=0x10000 sha1=a1cca882a3d01a8dc1a538828d6a69b4ec08aab0
+xconfig.base_0x0.parse ok
+xconfig.base_0x0.serialize size=0x10000 sha1=76f9eb3dd901ca1e0fa075ce23570716abc332a9 inside_equal=0x1A18/0x1A18 outside_zero=0xE5E8/0xE5E8
+xconfig.base_0x0.namespace_same yes
+xconfig.base_0xC000.parse ok
+xconfig.base_0xC000.serialize size=0x10000 sha1=88312179f0ce1643314e85e3668e678b6d382e01 inside_equal=0x1A18/0x1A18 outside_zero=0xE5E8/0xE5E8
+xconfig.base_0xC000.namespace_same yes
+xconfig.namespace_default_base ok size=0x10000 sha1=88312179f0ce1643314e85e3668e678b6d382e01
+xconfig.parse.short err=truncated
+xconfig.parse.exact ok
+xconfig.parse.base_past_end err=truncated
+xconfig.parse.base_0xF000 err=truncated
+xconfig.serialize.default_small_total size=0x1A38 sha1=a6a4e0b0e9e97af77033a641ac515fbb4e2c9493
+smc.image.as_parsed.input size=0x3000 sha1=26f752efaff58714ce5221ae1186016676f0b6fa
+smc.image.as_parsed.classify is_encrypted=yes type=Retail jtag_mark=no
+smc.image.as_parsed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=Retail
+smc.image.other_form.input size=0x3000 sha1=872468a38c42c4d340755e00389c089f06cf2143
+smc.image.other_form.classify is_encrypted=no type=Retail jtag_mark=no
+smc.image.other_form.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=Retail
+smc.synthetic.neutral.plain.input size=0x3000 sha1=4778dbccd9aa0c10f6fef864dea68a8e6f93286a
+smc.synthetic.neutral.plain.classify is_encrypted=no type=Unknown jtag_mark=no
+smc.synthetic.neutral.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=Unknown
+smc.synthetic.neutral.sealed.input size=0x3000 sha1=e54985b7c124320dfb1e55e07604682a0e0cbb32
+smc.synthetic.neutral.sealed.classify is_encrypted=yes type=Unknown jtag_mark=no
+smc.synthetic.neutral.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=Unknown
+smc.synthetic.neutral.roundtrip yes
+smc.synthetic.retail.plain.input size=0x3000 sha1=09eff2869692d10185ce890815d75d7c2ed3aed9
+smc.synthetic.retail.plain.classify is_encrypted=no type=Retail jtag_mark=no
+smc.synthetic.retail.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=Retail
+smc.synthetic.retail.sealed.input size=0x3000 sha1=059eeec8525fb195a6d08c180080e94fa67dc330
+smc.synthetic.retail.sealed.classify is_encrypted=yes type=Retail jtag_mark=no
+smc.synthetic.retail.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=Retail
+smc.synthetic.retail.roundtrip yes
+smc.synthetic.glitch.plain.input size=0x3000 sha1=1d33b6f36e21b0b772fc681632fda63def6b8bd5
+smc.synthetic.glitch.plain.classify is_encrypted=no type=Glitch jtag_mark=no
+smc.synthetic.glitch.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=Glitch
+smc.synthetic.glitch.sealed.input size=0x3000 sha1=295fbbd4bd74eb1593816828f6e18363a18c7b8a
+smc.synthetic.glitch.sealed.classify is_encrypted=yes type=Glitch jtag_mark=no
+smc.synthetic.glitch.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=Glitch
+smc.synthetic.glitch.roundtrip yes
+smc.synthetic.glitch_d4_write_75.plain.input size=0x3000 sha1=a6c33c25ff940ddb40fdb716b09e4d6f9b9f3862
+smc.synthetic.glitch_d4_write_75.plain.classify is_encrypted=no type=RGH3 v2 jtag_mark=no
+smc.synthetic.glitch_d4_write_75.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=RGH3 v2
+smc.synthetic.glitch_d4_write_75.sealed.input size=0x3000 sha1=c7ed8aa7547245a0f444351e27990f4bdc7d1af7
+smc.synthetic.glitch_d4_write_75.sealed.classify is_encrypted=yes type=RGH3 v2 jtag_mark=no
+smc.synthetic.glitch_d4_write_75.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=RGH3 v2
+smc.synthetic.glitch_d4_write_75.roundtrip yes
+smc.synthetic.glitch_d4_write_74.plain.input size=0x3000 sha1=b097f675b6b16e99fbaa9f1c189c0db67f4b6d89
+smc.synthetic.glitch_d4_write_74.plain.classify is_encrypted=no type=RGH3 v2 jtag_mark=no
+smc.synthetic.glitch_d4_write_74.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=RGH3 v2
+smc.synthetic.glitch_d4_write_74.sealed.input size=0x3000 sha1=f71aa6e87f34497a5375eb12b9ab860972b6a140
+smc.synthetic.glitch_d4_write_74.sealed.classify is_encrypted=yes type=RGH3 v2 jtag_mark=no
+smc.synthetic.glitch_d4_write_74.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=RGH3 v2
+smc.synthetic.glitch_d4_write_74.roundtrip yes
+smc.synthetic.glitch_high_code.plain.input size=0x3000 sha1=63eea4ff7cf7099998124e934dcc2dfea56ce80e
+smc.synthetic.glitch_high_code.plain.classify is_encrypted=no type=RGH3 v2 jtag_mark=no
+smc.synthetic.glitch_high_code.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=RGH3 v2
+smc.synthetic.glitch_high_code.sealed.input size=0x3000 sha1=a9dafb60bd5ee5824b922496501dd53f4d226843
+smc.synthetic.glitch_high_code.sealed.classify is_encrypted=yes type=RGH3 v2 jtag_mark=no
+smc.synthetic.glitch_high_code.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=RGH3 v2
+smc.synthetic.glitch_high_code.roundtrip yes
+smc.synthetic.glitch_jtag.plain.input size=0x3000 sha1=f77028fbab78154a2c9cd7c1f02e0fe2c122aa0b
+smc.synthetic.glitch_jtag.plain.classify is_encrypted=no type=R-JTAG jtag_mark=yes
+smc.synthetic.glitch_jtag.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=R-JTAG
+smc.synthetic.glitch_jtag.sealed.input size=0x3000 sha1=6d937f0ea71b3121864c0cfec0c0f68a916d70cf
+smc.synthetic.glitch_jtag.sealed.classify is_encrypted=yes type=R-JTAG jtag_mark=yes
+smc.synthetic.glitch_jtag.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=R-JTAG
+smc.synthetic.glitch_jtag.roundtrip yes
+smc.synthetic.glitch_cygnos.plain.input size=0x3000 sha1=db6f0d3e483e7cb1517a67624c480a2fd6946a44
+smc.synthetic.glitch_cygnos.plain.classify is_encrypted=no type=R-JTAG+Cygnos jtag_mark=yes
+smc.synthetic.glitch_cygnos.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=R-JTAG+Cygnos
+smc.synthetic.glitch_cygnos.sealed.input size=0x3000 sha1=4e32a007d90b3d48ca4b38d30fad843f0b3384df
+smc.synthetic.glitch_cygnos.sealed.classify is_encrypted=yes type=R-JTAG+Cygnos jtag_mark=yes
+smc.synthetic.glitch_cygnos.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=R-JTAG+Cygnos
+smc.synthetic.glitch_cygnos.roundtrip yes
+smc.synthetic.glitch_high_code_jtag.plain.input size=0x3000 sha1=a931156c774b647fc2769730cb58d01de8abab1b
+smc.synthetic.glitch_high_code_jtag.plain.classify is_encrypted=no type=R-JTAG jtag_mark=yes
+smc.synthetic.glitch_high_code_jtag.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=R-JTAG
+smc.synthetic.glitch_high_code_jtag.sealed.input size=0x3000 sha1=29a654e4020eff81888d39bc5419a831dbe73694
+smc.synthetic.glitch_high_code_jtag.sealed.classify is_encrypted=yes type=R-JTAG jtag_mark=yes
+smc.synthetic.glitch_high_code_jtag.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=R-JTAG
+smc.synthetic.glitch_high_code_jtag.roundtrip yes
+smc.synthetic.jtag_d0_00_00_1b.plain.input size=0x3000 sha1=5657f99953769359f932bf64f832fed540e5add4
+smc.synthetic.jtag_d0_00_00_1b.plain.classify is_encrypted=no type=JTAG jtag_mark=yes
+smc.synthetic.jtag_d0_00_00_1b.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=JTAG
+smc.synthetic.jtag_d0_00_00_1b.sealed.input size=0x3000 sha1=20d0ee7a11c10bb2f46268f6e039ec3f6d5818dc
+smc.synthetic.jtag_d0_00_00_1b.sealed.classify is_encrypted=yes type=JTAG jtag_mark=yes
+smc.synthetic.jtag_d0_00_00_1b.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=JTAG
+smc.synthetic.jtag_d0_00_00_1b.roundtrip yes
+smc.synthetic.cygnos_78_ba_b6.plain.input size=0x3000 sha1=8bd7edbff76bd75bf0cad865bf1bfead1644c350
+smc.synthetic.cygnos_78_ba_b6.plain.classify is_encrypted=no type=Cygnos jtag_mark=yes
+smc.synthetic.cygnos_78_ba_b6.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=Cygnos
+smc.synthetic.cygnos_78_ba_b6.sealed.input size=0x3000 sha1=fb02c6f49eb781917ffa02776a3f1ecf0ee537ac
+smc.synthetic.cygnos_78_ba_b6.sealed.classify is_encrypted=yes type=Cygnos jtag_mark=yes
+smc.synthetic.cygnos_78_ba_b6.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=Cygnos
+smc.synthetic.cygnos_78_ba_b6.roundtrip yes
+smc.synthetic.retail_jtag.plain.input size=0x3000 sha1=b12fc3be7c793335286e028cb8eefbd2b8a067e2
+smc.synthetic.retail_jtag.plain.classify is_encrypted=no type=JTAG jtag_mark=yes
+smc.synthetic.retail_jtag.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=JTAG
+smc.synthetic.retail_jtag.sealed.input size=0x3000 sha1=669b62ed15a4ae4d5309acca3e5eb1dea4ac751e
+smc.synthetic.retail_jtag.sealed.classify is_encrypted=yes type=JTAG jtag_mark=yes
+smc.synthetic.retail_jtag.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=JTAG
+smc.synthetic.retail_jtag.roundtrip yes
+smc.synthetic.retail_then_glitch.plain.input size=0x3000 sha1=cb68adde9bc3679baa988464e422599a1afae891
+smc.synthetic.retail_then_glitch.plain.classify is_encrypted=no type=Retail jtag_mark=no
+smc.synthetic.retail_then_glitch.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=Retail
+smc.synthetic.retail_then_glitch.sealed.input size=0x3000 sha1=02387a5737a1f491acaf5d16a71e5fa8e3896640
+smc.synthetic.retail_then_glitch.sealed.classify is_encrypted=yes type=Retail jtag_mark=no
+smc.synthetic.retail_then_glitch.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=Retail
+smc.synthetic.retail_then_glitch.roundtrip yes
+smc.synthetic.glitch_then_retail.plain.input size=0x3000 sha1=2f0b2ea5ac9f0831d7db82691a2a229f3abef131
+smc.synthetic.glitch_then_retail.plain.classify is_encrypted=no type=Retail jtag_mark=no
+smc.synthetic.glitch_then_retail.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=Retail
+smc.synthetic.glitch_then_retail.sealed.input size=0x3000 sha1=e7e2e104f70de99b2a10a6cbdae49e1ccae90440
+smc.synthetic.glitch_then_retail.sealed.classify is_encrypted=yes type=Retail jtag_mark=no
+smc.synthetic.glitch_then_retail.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=Retail
+smc.synthetic.glitch_then_retail.roundtrip yes
+smc.synthetic.rgh3v1_signature.plain.input size=0x3000 sha1=dbb076220472e4cd7154e78ae777a14970339d43
+smc.synthetic.rgh3v1_signature.plain.classify is_encrypted=no type=RGH3 v1 jtag_mark=no
+smc.synthetic.rgh3v1_signature.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=RGH3 v1
+smc.synthetic.rgh3v1_signature.sealed.input size=0x3000 sha1=e9574b6e3ad71c8bb536296e56bd7a9f15691151
+smc.synthetic.rgh3v1_signature.sealed.classify is_encrypted=yes type=RGH3 v1 jtag_mark=no
+smc.synthetic.rgh3v1_signature.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=RGH3 v1
+smc.synthetic.rgh3v1_signature.roundtrip yes
+smc.synthetic.rgh3v1_reset_head.plain.input size=0x3000 sha1=6216e47448603a5a3386a8642d88f0c2774dfc23
+smc.synthetic.rgh3v1_reset_head.plain.classify is_encrypted=no type=RGH3 v1 jtag_mark=no
+smc.synthetic.rgh3v1_reset_head.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=RGH3 v1
+smc.synthetic.rgh3v1_reset_head.sealed.input size=0x3000 sha1=bcce8fdf3284ecb116b870213958eb79abd0adbd
+smc.synthetic.rgh3v1_reset_head.sealed.classify is_encrypted=yes type=RGH3 v1 jtag_mark=no
+smc.synthetic.rgh3v1_reset_head.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=RGH3 v1
+smc.synthetic.rgh3v1_reset_head.roundtrip yes
+smc.synthetic.cr4.plain.input size=0x3000 sha1=f6c6cb074c816e71f80f2ad579adb2d573852a09
+smc.synthetic.cr4.plain.classify is_encrypted=no type=CR4 jtag_mark=no
+smc.synthetic.cr4.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=CR4
+smc.synthetic.cr4.sealed.input size=0x3000 sha1=f5c81b35bb9af03db2e8213b5f2f97d05fe3a692
+smc.synthetic.cr4.sealed.classify is_encrypted=yes type=CR4 jtag_mark=no
+smc.synthetic.cr4.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=CR4
+smc.synthetic.cr4.roundtrip yes
+smc.synthetic.cr4_smcplus_0x1276_8a.plain.input size=0x3000 sha1=913860825475d7f3132ce7c4195e241ea0312240
+smc.synthetic.cr4_smcplus_0x1276_8a.plain.classify is_encrypted=no type=SMC+ jtag_mark=no
+smc.synthetic.cr4_smcplus_0x1276_8a.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=SMC+
+smc.synthetic.cr4_smcplus_0x1276_8a.sealed.input size=0x3000 sha1=6b697de1ad36f6f2e79485c7e6782396657f4013
+smc.synthetic.cr4_smcplus_0x1276_8a.sealed.classify is_encrypted=yes type=SMC+ jtag_mark=no
+smc.synthetic.cr4_smcplus_0x1276_8a.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=SMC+
+smc.synthetic.cr4_smcplus_0x1276_8a.roundtrip yes
+smc.synthetic.cr4_smcplus_0x127b_50.plain.input size=0x3000 sha1=2c2b554d8c69de349f319bef06714904c54fb5fe
+smc.synthetic.cr4_smcplus_0x127b_50.plain.classify is_encrypted=no type=SMC+ jtag_mark=no
+smc.synthetic.cr4_smcplus_0x127b_50.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=SMC+
+smc.synthetic.cr4_smcplus_0x127b_50.sealed.input size=0x3000 sha1=adf187fe0f687acc3e160dbfa05b1fe53c55bb6a
+smc.synthetic.cr4_smcplus_0x127b_50.sealed.classify is_encrypted=yes type=SMC+ jtag_mark=no
+smc.synthetic.cr4_smcplus_0x127b_50.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=SMC+
+smc.synthetic.cr4_smcplus_0x127b_50.roundtrip yes
+smc.synthetic.cr4_smcplus_0x1396_41.plain.input size=0x3000 sha1=973aa65b4101d0679659931d5a1f5a14afce5744
+smc.synthetic.cr4_smcplus_0x1396_41.plain.classify is_encrypted=no type=SMC+ jtag_mark=no
+smc.synthetic.cr4_smcplus_0x1396_41.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=SMC+
+smc.synthetic.cr4_smcplus_0x1396_41.sealed.input size=0x3000 sha1=9fd8e4212f245c4494312f7b6e193da540163fe0
+smc.synthetic.cr4_smcplus_0x1396_41.sealed.classify is_encrypted=yes type=SMC+ jtag_mark=no
+smc.synthetic.cr4_smcplus_0x1396_41.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=SMC+
+smc.synthetic.cr4_smcplus_0x1396_41.roundtrip yes
+smc.synthetic.cr4_smcplus_scan_75_3c_41.plain.input size=0x3000 sha1=226d65dd2771e7700931d86899aa8ce231816ef6
+smc.synthetic.cr4_smcplus_scan_75_3c_41.plain.classify is_encrypted=no type=SMC+ jtag_mark=no
+smc.synthetic.cr4_smcplus_scan_75_3c_41.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=SMC+
+smc.synthetic.cr4_smcplus_scan_75_3c_41.sealed.input size=0x3000 sha1=9f43db643bb10bc6ad56ae8f864e24fbbbee4f24
+smc.synthetic.cr4_smcplus_scan_75_3c_41.sealed.classify is_encrypted=yes type=SMC+ jtag_mark=no
+smc.synthetic.cr4_smcplus_scan_75_3c_41.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=SMC+
+smc.synthetic.cr4_smcplus_scan_75_3c_41.roundtrip yes
+smc.synthetic.cr4_and_rgh3v1.plain.input size=0x3000 sha1=6cf3e97a87b6a5a4d7b06d1307699f96e0043330
+smc.synthetic.cr4_and_rgh3v1.plain.classify is_encrypted=no type=RGH3 v1 jtag_mark=no
+smc.synthetic.cr4_and_rgh3v1.plain.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=RGH3 v1
+smc.synthetic.cr4_and_rgh3v1.sealed.input size=0x3000 sha1=e73a99370178bbf082779159b5c4e9ca3703456a
+smc.synthetic.cr4_and_rgh3v1.sealed.classify is_encrypted=yes type=RGH3 v1 jtag_mark=no
+smc.synthetic.cr4_and_rgh3v1.sealed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=RGH3 v1
+smc.synthetic.cr4_and_rgh3v1.roundtrip yes
+smc.size.5_bytes.input size=0x5 sha1=4e91cf2658a6bf89d57ada1950e84b34aac59497
+smc.size.5_bytes.classify is_encrypted=no type=Unknown jtag_mark=yes
+smc.size.5_bytes.parse err=truncated
+smc.size.6_bytes.input size=0x6 sha1=1b438adafb7eeedf34f3471532d9992a7116cdee
+smc.size.6_bytes.classify is_encrypted=no type=Unknown jtag_mark=yes
+smc.size.6_bytes.parse err=truncated
+smc.size.0x100.input size=0x100 sha1=c744cac6af7621524fc3a2b0a9a135a32b33c81b
+smc.size.0x100.classify is_encrypted=no type=Unknown jtag_mark=no
+smc.size.0x100.parse err=truncated
+smc.size.0x107.input size=0x107 sha1=8057de5126c36bf4391cdefbad23ad51ddef031a
+smc.size.0x107.classify is_encrypted=no type=Unknown jtag_mark=no
+smc.size.0x107.parse err=truncated
+smc.size.0x108.input size=0x108 sha1=80b408e6493b0b66a012982f9e11d97b488f2140
+smc.size.0x108.classify is_encrypted=no type=Unknown jtag_mark=no
+smc.size.0x108.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=Unknown
+smc.size.0x4000.input size=0x4000 sha1=389f245cd5eeaf2884bf2e105fcc712cd09e664b
+smc.size.0x4000.classify is_encrypted=no type=Unknown jtag_mark=no
+smc.size.0x4000.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=Unknown
+smc.size.0x4001.input size=0x4001 sha1=ceb0de2d2aa5439f36a232d78956c44d236aaa3d
+smc.size.0x4001.classify is_encrypted=no type=Unknown jtag_mark=no
+smc.size.0x4001.parse err=out of range
+smc.no_zero_tail.plain_board.input size=0x3000 sha1=685536989a6b4556bf203b4adce05a2b17d619c0
+smc.no_zero_tail.plain_board.classify is_encrypted=no type=Unknown jtag_mark=no
+smc.no_zero_tail.plain_board.parse ok encrypted=no motherboard=Jasper version=4.1.2 variant=Unknown
+smc.no_zero_tail.no_board.input size=0x3000 sha1=8e8bea107f94e11f9d7668fda9bf71bd09ac3d2c
+smc.no_zero_tail.no_board.classify is_encrypted=no type=Unknown jtag_mark=no
+smc.no_zero_tail.no_board.parse ok encrypted=no motherboard=Unknown version=9.1.2 variant=Unknown
+smc.no_zero_tail.zero_board.input size=0x3000 sha1=8fcac6ce7627d95901384b1c0a162005799a7fbf
+smc.no_zero_tail.zero_board.classify is_encrypted=no type=Unknown jtag_mark=no
+smc.no_zero_tail.zero_board.parse ok encrypted=no motherboard=Unknown version=0.0.2 variant=Unknown

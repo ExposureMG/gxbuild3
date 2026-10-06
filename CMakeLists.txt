@@ -173,6 +173,12 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_wire_corpus_tests tests/WireCorpusTests.cpp)
     target_compile_definitions(gxbuild3_wire_corpus_tests PRIVATE
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
+    # Snapshot of the NAND-object codecs over tracked fixtures (tests/golden/objects_corpus.txt):
+    # every patches_*.bin x build type with and without add-ons, XeLL, the mydata secured files,
+    # xboxupd.bin from su20076000, CoronaConfig, freeBOOT, XConfig and the SMC classifier.
+    add_gxbuild3_test(gxbuild3_objects_corpus_tests tests/ObjectsCorpusTests.cpp)
+    target_compile_definitions(gxbuild3_objects_corpus_tests PRIVATE
+        GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
 
     add_executable(gxbuild3_keyvault_crypto_tests tests/KeyvaultCryptoTests.cpp)
     target_link_libraries(gxbuild3_keyvault_crypto_tests PRIVATE gxbuild3_internal)
