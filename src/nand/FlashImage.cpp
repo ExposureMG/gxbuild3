@@ -183,18 +183,39 @@ namespace gxbuild3::nand {
                        : slot_base;
         }
 
+        // A donor header leaves an offset it does not state as 0 or as erased flash.
+        bool header_states(uint32_t value) {
+            return value != 0 && value != 0xFFFFFFFF;
+        }
+
+        // The update-slot stride a donor header states (fs_addr carries dwSysUpdateSlotSize),
+        // else the small-block 0x10000.
+        uint32_t header_slot_stride(const nand_header& header) {
+            const uint32_t stated = header.fs_addr.get();
+            return header_states(stated) ? stated : 0x10000;
+        }
+
+        // Where a donor header puts its first update slot (cf_offset), else the retail slot
+        // offset of the shape.
+        uint32_t donor_update_base(const nand_header& header, Driver::DriverMode mode) {
+            const uint32_t stated = header.cf_offset.get();
+            return header_states(stated) ? stated : retail_slot_offset(mode);
+        }
+
         uint32_t slot_size(const FlashImage& image) {
             if (image.preserve_layout)
-                return image.header.fs_addr && image.header.fs_addr != 0xFFFFFFFF
-                           ? image.header.fs_addr.get()
-                           : 0x10000;
+                return header_slot_stride(image.header);
             if (is_jtag_image(image)) {
                 return 0x10000;
             }
             return image.flash_driver.driver_mode() == Driver::Big ? 0x20000 : 0x10000;
         }
-        // Where the serialized boot chain ends, counted from kEntryOffset.
-        size_t boot_chain_end(const FlashImage& image) {
+        // Where the laid boot chain ends, counted from kEntryOffset, unchecked. CB/A and CD
+        // count when they hold data; this presence rule differs on purpose from
+        // checked_boot_chain_end's parsed-header rule and is the one write_to_driver lays the
+        // chain by. Do not unify them: a devkit update_base follows this end, and an image
+        // whose header was never parsed would move it.
+        size_t laid_boot_chain_end(const FlashImage& image) {
             size_t end = kEntryOffset;
             const auto add = [&end](const auto& bootloader) {
                 end += align_16(static_cast<uint32_t>(bootloader.serialize().size()));
@@ -215,13 +236,12 @@ namespace gxbuild3::nand {
         }
 
         uint32_t update_base(const FlashImage& image, bool jtag, bool glitch) {
-            if (image.preserve_layout && image.header.cf_offset &&
-                image.header.cf_offset != 0xFFFFFFFF)
-                return image.header.cf_offset;
+            if (image.preserve_layout && header_states(image.header.cf_offset.get()))
+                return image.header.cf_offset.get();
             // A devkit image's first slot follows its chain at the next erase block: 0xD4000
             // behind the 17489 chain on small block, 0xE0000 on big block (xeBuild 1.21).
             if (image.build_type == BuildType::Devkit) {
-                return round_up(static_cast<uint32_t>(boot_chain_end(image)),
+                return round_up(static_cast<uint32_t>(laid_boot_chain_end(image)),
                                 static_cast<uint32_t>(image.flash_driver.block_size_clean()));
             }
             const auto mode = image.flash_driver.driver_mode();
@@ -350,6 +370,52 @@ namespace gxbuild3::nand {
             return (bootloader.header.header.magic == expected_magic ||
                     bootloader.header.header.magic == devkit_magic(expected_magic)) &&
                    bootloader.header.header.size >= minimum_size;
+        }
+
+        // Where the serialized boot chain ends, counted from kEntryOffset, with CB/A and CD
+        // present when their parsed header says so (see laid_boot_chain_end for the other
+        // rule). Fails OutOfRange with overflow_message when an aligned size or the running
+        // end overflows size_t.
+        Result<size_t> checked_boot_chain_end(const FlashImage& image,
+                                              std::string_view overflow_message) {
+            size_t end = kEntryOffset;
+            bool size_is_valid = true;
+            const auto account_for = [&end, &size_is_valid](const auto& bootloader) {
+                if (!size_is_valid) {
+                    return;
+                }
+                size_t aligned_size = 0;
+                if (!checked_align_16(bootloader.serialize().size(), aligned_size) ||
+                    !checked_add(end, aligned_size, end)) {
+                    size_is_valid = false;
+                }
+            };
+            const auto& cb_section = image.cb_section;
+            const auto& kernel_section = image.kernel_section;
+            if (has_parsed_bootloader_header(cb_section.cb_or_A, NANDBootloaderMagic::CB,
+                                             sizeof(generic_header))) {
+                account_for(cb_section.cb_or_A);
+            }
+            if (cb_section.cb_x) {
+                account_for(*cb_section.cb_x);
+            }
+            if (cb_section.cb_B) {
+                account_for(*cb_section.cb_B);
+            }
+            if (cb_section.sc) {
+                account_for(*cb_section.sc);
+            }
+            if (has_parsed_bootloader_header(kernel_section.cd, NANDBootloaderMagic::CD,
+                                             sizeof(cd_header))) {
+                account_for(kernel_section.cd);
+            }
+            if (kernel_section.ce) {
+                account_for(*kernel_section.ce);
+            }
+            if (!size_is_valid) {
+                return fail(ErrorCode::OutOfRange, "{}", overflow_message);
+            }
+            return end;
         }
 
         struct PayloadRange {
@@ -616,11 +682,8 @@ namespace gxbuild3::nand {
         }
 
         const auto slot_mode = flash_driver.driver_mode();
-        const uint32_t slot_stride =
-            header.fs_addr && header.fs_addr != 0xFFFFFFFF ? header.fs_addr.get() : 0x10000;
-        const uint32_t patchslot_base = header.cf_offset != 0 && header.cf_offset != 0xFFFFFFFF
-                                            ? header.cf_offset
-                                            : retail_slot_offset(slot_mode);
+        const uint32_t slot_stride = header_slot_stride(header);
+        const uint32_t patchslot_base = donor_update_base(header, slot_mode);
 
         auto parse_patchslot = [&](uint32_t base_offset, SystemUpdate& slot) -> Result<void> {
             slot = SystemUpdate{};
@@ -1645,41 +1708,12 @@ namespace gxbuild3::nand {
             return fail(ErrorCode::InvalidArgument, "the NAND image has no blocks");
         }
 
-        size_t boot_chain_end = kEntryOffset;
-        bool size_is_valid = true;
-        const auto account_for = [&boot_chain_end, &size_is_valid](const auto& bootloader) {
-            size_t aligned_size = 0;
-            if (!checked_align_16(bootloader.serialize().size(), aligned_size) ||
-                !checked_add(boot_chain_end, aligned_size, boot_chain_end)) {
-                size_is_valid = false;
-            }
-        };
-        if (has_parsed_bootloader_header(cb_section.cb_or_A, NANDBootloaderMagic::CB,
-                                         sizeof(generic_header))) {
-            account_for(cb_section.cb_or_A);
+        const auto boot_chain_end = checked_boot_chain_end(
+            *this, "the donor boot chain exceeds the addressable payload layout");
+        if (!boot_chain_end) {
+            return std::unexpected(boot_chain_end.error());
         }
-        if (cb_section.cb_x) {
-            account_for(*cb_section.cb_x);
-        }
-        if (cb_section.cb_B) {
-            account_for(*cb_section.cb_B);
-        }
-        if (cb_section.sc) {
-            account_for(*cb_section.sc);
-        }
-        if (has_parsed_bootloader_header(kernel_section.cd, NANDBootloaderMagic::CD,
-                                         sizeof(cd_header))) {
-            account_for(kernel_section.cd);
-        }
-        if (kernel_section.ce) {
-            account_for(*kernel_section.ce);
-        }
-
-        if (!size_is_valid) {
-            return fail(ErrorCode::OutOfRange,
-                        "the donor boot chain exceeds the addressable payload layout");
-        }
-        const std::vector<uint8_t> cleared_chain(boot_chain_end - kEntryOffset, 0);
+        const std::vector<uint8_t> cleared_chain(*boot_chain_end - kEntryOffset, 0);
         if (auto cleared =
                 write_or_fail(flash_driver, kEntryOffset, cleared_chain, "cleared boot chain");
             !cleared) {
@@ -1688,9 +1722,7 @@ namespace gxbuild3::nand {
 
         const auto slot_mode = flash_driver.driver_mode();
         const uint32_t slot_stride = slot_size(*this);
-        const uint32_t donor_patchslot_base =
-            header.cf_offset != 0 && header.cf_offset != 0xFFFFFFFF ? header.cf_offset
-                                                                    : retail_slot_offset(slot_mode);
+        const uint32_t donor_patchslot_base = donor_update_base(header, slot_mode);
         const auto clear_patchslot = [&](uint32_t base_offset,
                                          const SystemUpdate& slot) -> Result<void> {
             if (!slot.cf) {
@@ -1835,43 +1867,20 @@ namespace gxbuild3::nand {
             }
         }
 
-        size_t boot_chain_end = kEntryOffset;
-        const auto account_for_bootloader = [&boot_chain_end,
-                                             &arithmetic_error](const auto& bootloader) {
-            if (arithmetic_error) {
-                return;
-            }
-            size_t aligned_size = 0;
-            if (!checked_align_16(bootloader.serialize().size(), aligned_size) ||
-                !checked_add(boot_chain_end, aligned_size, boot_chain_end)) {
-                arithmetic_error = "Serialized boot chain exceeds the addressable payload layout";
-            }
-        };
-        if (has_cb) {
-            account_for_bootloader(cb_section.cb_or_A);
-        }
-        if (cb_section.cb_x) {
-            account_for_bootloader(*cb_section.cb_x);
-        }
-        if (cb_section.cb_B) {
-            account_for_bootloader(*cb_section.cb_B);
-        }
-        if (cb_section.sc) {
-            account_for_bootloader(*cb_section.sc);
-        }
-        if (has_cd) {
-            account_for_bootloader(kernel_section.cd);
-        }
-        if (kernel_section.ce) {
-            account_for_bootloader(*kernel_section.ce);
-        }
         // Every arithmetic failure in the layout is an address that would overflow.
         const auto overflow = [&arithmetic_error] {
             return fail(ErrorCode::OutOfRange, "{}", *arithmetic_error);
         };
+        // A payload range that already overflowed takes precedence over the boot chain.
         if (arithmetic_error) {
             return overflow();
         }
+        const auto checked_chain_end = checked_boot_chain_end(
+            *this, "Serialized boot chain exceeds the addressable payload layout");
+        if (!checked_chain_end) {
+            return std::unexpected(checked_chain_end.error());
+        }
+        const size_t boot_chain_end = *checked_chain_end;
         add_range("serialized boot chain", kEntryOffset, boot_chain_end - kEntryOffset);
         if (arithmetic_error) {
             return overflow();
