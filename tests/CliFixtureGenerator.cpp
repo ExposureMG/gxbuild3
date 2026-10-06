@@ -1,4 +1,5 @@
 #include "BuildRunner.hpp"
+#include "TestResult.hpp"
 #include "nand/FlashDriver.hpp"
 #include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
@@ -64,7 +65,7 @@ namespace {
         sc.header.header.size = static_cast<uint32_t>(sizeof(sc_header) + 0x20);
         sc.data.assign(0x20, 0x53);
         sc.decrypted = true;
-        sc.encrypt_or_throw(BootloaderSc::kZeroSecret);
+        test::must(sc.encrypt(BootloaderSc::kZeroSecret));
 
         BootloaderCd cd{};
         cd.header.header.magic = NANDBootloaderMagic::CD;

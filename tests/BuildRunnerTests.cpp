@@ -4,6 +4,7 @@
 #include "GoldenSnapshot.hpp"
 #include "Library.hpp"
 #include "ScopedTimeZone.hpp"
+#include "TestResult.hpp"
 #include "XeRsaTestKey.hpp"
 #include "excrypt.h"
 #include "nand/FlashDriver.hpp"
@@ -1290,7 +1291,7 @@ namespace {
             std::abort();
         }
         donor.cb_section.cb_or_A = BootloaderCb::parse_or_throw(source.bootloaders.cb_or_a);
-        donor.cb_section.sc = BootloaderSc::parse_or_throw(*source.bootloaders.sc);
+        donor.cb_section.sc = test::must(BootloaderSc::parse(*source.bootloaders.sc));
         donor.kernel_section.cd = BootloaderCd::parse_or_throw(source.bootloaders.cd);
         if (!donor.encrypt_all(source.metadata.cpu_key)) {
             std::abort();
@@ -1803,10 +1804,10 @@ namespace {
     // An SC is sealed under HMAC(16 zero bytes, nonce), whatever its parent.
     bool test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() {
         auto encrypted_source = fresh_input(ImageType::SmallBlock);
-        auto encrypted_sc = BootloaderSc::parse_or_throw(*encrypted_source.bootloaders.sc);
+        auto encrypted_sc = test::must(BootloaderSc::parse(*encrypted_source.bootloaders.sc));
         const auto expected_encrypted_sc_data = encrypted_sc.data;
         encrypted_sc.decrypted = true;
-        encrypted_sc.encrypt_or_throw(BootloaderSc::kZeroSecret);
+        test::must(encrypted_sc.encrypt(BootloaderSc::kZeroSecret));
         encrypted_source.bootloaders.sc = encrypted_sc.serialize();
 
         const auto encrypted_build = run_build(encrypted_source);
@@ -3207,10 +3208,11 @@ namespace {
         sc.header.header.pairing = pairing;
         sc.header.header.size = sizeof(sc_header);
         const auto sc_wire = sc.serialize();
-        passed = require(has_big_endian_pairing(sc_wire) &&
-                             BootloaderSc::parse_or_throw(sc_wire).header.header.pairing == pairing,
-                         "SC generic pairing is big-endian on wire and host-order after parse") &&
-                 passed;
+        passed =
+            require(has_big_endian_pairing(sc_wire) &&
+                        test::must(BootloaderSc::parse(sc_wire)).header.header.pairing == pairing,
+                    "SC generic pairing is big-endian on wire and host-order after parse") &&
+            passed;
 
         BootloaderCd cd{};
         cd.header.header.magic = NANDBootloaderMagic::CD;

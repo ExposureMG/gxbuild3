@@ -145,6 +145,9 @@ if(BUILD_TESTING)
     # Compile-time sizeof/offsetof pins of every bootloader record in Common.hpp, taken from
     # the on-disk layout; the run prints how many records and fields the build pinned.
     add_gxbuild3_test(gxbuild3_bootloader_layout_tests tests/BootloaderLayoutTests.cpp)
+    # src/nand/bootloaders/Stage.hpp: the shared stage parse, padding, serialize and record crypt
+    # checked against a plain crypt_single_bl, plus the paths the bootloader corpus never reaches.
+    add_gxbuild3_test(gxbuild3_stage_tests tests/StageTests.cpp)
     add_gxbuild3_test(gxbuild3_golden_snapshot_tests tests/GoldenSnapshotTests.cpp)
     target_compile_definitions(gxbuild3_golden_snapshot_tests PRIVATE
         GXBUILD3_TEST_SCRATCH_DIR="${CMAKE_CURRENT_BINARY_DIR}/golden-snapshot-tests")

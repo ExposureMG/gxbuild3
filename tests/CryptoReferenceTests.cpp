@@ -2,6 +2,7 @@
 // (src/xebuild/chain/sealing.py `keys` + crypto/formats.py `encrypt_bootloader`),
 // run over the release files in tests/gxBuild-support-files/common.
 
+#include "TestResult.hpp"
 #include "excrypt.h"
 #include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
@@ -71,16 +72,16 @@ namespace {
             return false;
 
         const uint8_t zero_secret[16] = {};
-        auto sc = BootloaderSc::parse_or_throw(plain);
+        auto sc = gxbuild3::test::must(BootloaderSc::parse(plain));
         sc.decrypted = true;
-        sc.encrypt_or_throw(zero_secret);
+        gxbuild3::test::must(sc.encrypt(zero_secret));
         const Bytes sealed = sc.serialize();
         if (!require(sha1(sealed) == digest_from_hex(kSealedSc),
                      "SC sealed under the zero secret matches xerunner"))
             return false;
 
-        auto reopened = BootloaderSc::parse_or_throw(sealed);
-        reopened.decrypt_or_throw(zero_secret);
+        auto reopened = gxbuild3::test::must(BootloaderSc::parse(sealed));
+        gxbuild3::test::must(reopened.decrypt(zero_secret));
         return require(reopened.serialize() == plain, "sealed SC opens back to the release file");
     }
 
