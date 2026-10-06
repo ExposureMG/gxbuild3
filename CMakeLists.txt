@@ -140,6 +140,9 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_crypto_reference_tests tests/CryptoReferenceTests.cpp)
     add_gxbuild3_test(gxbuild3_stfs_tests tests/StfsTests.cpp)
     add_gxbuild3_test(gxbuild3_error_tests tests/ErrorTests.cpp)
+    # Compile-time sizeof/offsetof pins of every bootloader record in Common.hpp, taken from
+    # the on-disk layout; the run prints how many records and fields the build pinned.
+    add_gxbuild3_test(gxbuild3_bootloader_layout_tests tests/BootloaderLayoutTests.cpp)
     add_gxbuild3_test(gxbuild3_golden_snapshot_tests tests/GoldenSnapshotTests.cpp)
     target_compile_definitions(gxbuild3_golden_snapshot_tests PRIVATE
         GXBUILD3_TEST_SCRATCH_DIR="${CMAKE_CURRENT_BINARY_DIR}/golden-snapshot-tests")
