@@ -2556,7 +2556,9 @@ namespace {
         cb_a.perbox->pairing_data[0] = 0x12;
         cb_a.perbox->pairing_data[1] = 0x13;
         cb_a.perbox->pairing_data[2] = 0x14;
-        cb_a.serialize_perbox();
+        if (!cb_a.serialize_perbox()) {
+            std::abort();
+        }
         input.bootloaders.cb_or_a = cb_a.serialize();
 
         auto cb_b = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
@@ -2567,7 +2569,9 @@ namespace {
         cb_b.perbox->pairing_data[0] = 0x22;
         cb_b.perbox->pairing_data[1] = 0x23;
         cb_b.perbox->pairing_data[2] = 0x24;
-        cb_b.serialize_perbox();
+        if (!cb_b.serialize_perbox()) {
+            std::abort();
+        }
         input.bootloaders.cb_b = cb_b.serialize();
         input.bootloaders.cf0 = decrypted_cf(0x31, {0x32, 0x33, 0x34});
         const auto update0 = valid_system_update(0x51);
@@ -3000,7 +3004,9 @@ namespace {
         }
         const auto binding = [&input](const BootloaderCf& cf) {
             auto copy = cf;
-            copy.calc_mac(key_1bl, input.metadata.cpu_key.data());
+            if (!copy.calc_mac(key_1bl, input.metadata.cpu_key.data())) {
+                std::abort();
+            }
             return std::to_array(copy.perbox->per_box_digest);
         };
         const auto& first = *image->system_update_0.cf->perbox;

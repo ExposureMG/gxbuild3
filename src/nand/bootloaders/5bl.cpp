@@ -7,19 +7,22 @@
 
 #include <algorithm>
 #include <cstring>
-#include <stdexcept>
+#include <utility>
 
 namespace gxbuild3::nand {
 
-    BootloaderCe BootloaderCe::parse_or_throw(const std::vector<uint8_t>& bytes) {
+    Result<BootloaderCe> BootloaderCe::parse(std::span<const uint8_t> bytes) {
         BootloaderCe ce;
         if (bytes.size() < sizeof(ce_header))
-            throw std::runtime_error("CE/5BL data too short");
+            return fail(ErrorCode::Truncated, "CE/5BL data too short");
 
         std::memcpy(&ce.header, bytes.data(), sizeof(ce_header));
 
         byteswap_generic_header(ce.header.header);
         byteswap_ce_header_numeric_fields(ce.header);
+        if (auto size = aligned_stage_size(ce.header.header.size, sizeof(ce_header), "CE/5BL");
+            !size)
+            return std::unexpected(std::move(size.error()));
 
         ce.data = std::vector<uint8_t>(bytes.begin() + sizeof(ce_header), bytes.end());
         ce.decrypted = ce.is_decrypted();
@@ -28,19 +31,14 @@ namespace gxbuild3::nand {
         return ce;
     }
 
-    void BootloaderCe::decrypt_or_throw(const uint8_t cd_key[16]) {
-        if (decrypted)
-            return;
-        uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-        size_t required_data_size = size_aligned - sizeof(ce_header);
+    Result<size_t> BootloaderCe::required_data_size() const {
+        auto size_aligned = aligned_stage_size(header.header.size, sizeof(ce_header), "CE/5BL");
+        if (!size_aligned)
+            return std::unexpected(std::move(size_aligned.error()));
+        return *size_aligned - sizeof(ce_header);
+    }
 
-        if (data.size() + sizeof(ce_header) < header.header.size)
-            throw std::runtime_error("CE/5BL payload too short");
-
-        if (data.size() < required_data_size) {
-            data.resize(required_data_size, 0x00);
-        }
-
+    Result<void> BootloaderCe::crypt_stage(const uint8_t cd_key[16]) {
         uint8_t cur_key[16];
         std::memcpy(cur_key, cd_key, 16);
 
@@ -51,23 +49,46 @@ namespace gxbuild3::nand {
         std::memcpy(buffer.data(), &temp_hdr, sizeof(ce_header));
         std::memcpy(buffer.data() + sizeof(ce_header), data.data(), data.size());
 
-        crypt_single_bl(buffer, HmacType::Default, cur_key, nullptr, nullptr, 0x20);
+        if (auto crypted =
+                crypt_single_bl(buffer, HmacType::Default, cur_key, nullptr, nullptr, 0x20);
+            !crypted)
+            return with_context(std::move(crypted), "CE/5BL");
 
         std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
                     sizeof(ce_header) - 0x20);
         byteswap_ce_header_numeric_fields(header);
         std::memcpy(data.data(), buffer.data() + sizeof(ce_header), data.size());
-
-        decrypted = true;
+        return {};
     }
 
-    void BootloaderCe::encrypt_or_throw(const uint8_t cd_key[16]) {
+    Result<void> BootloaderCe::decrypt(const uint8_t cd_key[16]) {
+        if (decrypted)
+            return {};
+        auto required = required_data_size();
+        if (!required)
+            return std::unexpected(std::move(required.error()));
+
+        if (data.size() + sizeof(ce_header) < header.header.size)
+            return fail(ErrorCode::Truncated, "CE/5BL payload too short");
+
+        if (data.size() < *required) {
+            data.resize(*required, 0x00);
+        }
+
+        if (auto crypted = crypt_stage(cd_key); !crypted)
+            return crypted;
+        decrypted = true;
+        return {};
+    }
+
+    Result<void> BootloaderCe::encrypt(const uint8_t cd_key[16]) {
         if (!decrypted)
-            return;
-        uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-        size_t required_data_size = size_aligned - sizeof(ce_header);
-        if (data.size() < required_data_size) {
-            data.resize(required_data_size, 0x00);
+            return {};
+        auto required = required_data_size();
+        if (!required)
+            return std::unexpected(std::move(required.error()));
+        if (data.size() < *required) {
+            data.resize(*required, 0x00);
         }
 
         bool is_zero = true;
@@ -81,24 +102,10 @@ namespace gxbuild3::nand {
             ExCryptRandom(header.key, 16);
         }
 
-        uint8_t cur_key[16];
-        std::memcpy(cur_key, cd_key, 16);
-
-        std::vector<uint8_t> buffer(sizeof(ce_header) + data.size());
-        ce_header temp_hdr = header;
-        byteswap_generic_header(temp_hdr.header);
-        byteswap_ce_header_numeric_fields(temp_hdr);
-        std::memcpy(buffer.data(), &temp_hdr, sizeof(ce_header));
-        std::memcpy(buffer.data() + sizeof(ce_header), data.data(), data.size());
-
-        crypt_single_bl(buffer, HmacType::Default, cur_key, nullptr, nullptr, 0x20);
-
-        std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
-                    sizeof(ce_header) - 0x20);
-        byteswap_ce_header_numeric_fields(header);
-        std::memcpy(data.data(), buffer.data() + sizeof(ce_header), data.size());
-
+        if (auto crypted = crypt_stage(cd_key); !crypted)
+            return crypted;
         decrypted = false;
+        return {};
     }
 
     bool BootloaderCe::is_decrypted() const {

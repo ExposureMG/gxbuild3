@@ -9,19 +9,30 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
-#include <stdexcept>
+#include <utility>
 
 namespace gxbuild3::nand {
 
-    BootloaderCb BootloaderCb::parse_or_throw(const std::vector<uint8_t>& bytes) {
+    namespace {
+
+        // A header-only CB still parses, but the crypt needs the generic header and the 16-byte
+        // nonce. The rest of cb_header lives inside the encrypted payload.
+        constexpr size_t kCbCryptMinimumSize = sizeof(generic_header) + 0x10;
+
+    } // namespace
+
+    Result<BootloaderCb> BootloaderCb::parse(std::span<const uint8_t> bytes) {
         BootloaderCb cb{};
 
         if (bytes.size() < sizeof(generic_header))
-            throw std::runtime_error("CB data too short");
+            return fail(ErrorCode::Truncated, "CB data too short");
 
         std::memcpy(&cb.header, bytes.data(), sizeof(generic_header));
 
         byteswap_generic_header(cb.header.header);
+        if (auto size = aligned_stage_size(cb.header.header.size, sizeof(generic_header), "CB");
+            !size)
+            return std::unexpected(std::move(size.error()));
 
         cb.data = std::vector<uint8_t>(bytes.begin() + sizeof(generic_header), bytes.end());
         cb.decrypted = cb.verify_decrypted();
@@ -69,22 +80,23 @@ namespace gxbuild3::nand {
         ExCryptRc4(key, 16, data.data() + 0x10, static_cast<uint32_t>(payload_len - 0x10));
     }
 
-    // CB / CB_A
-    void BootloaderCb::decrypt_or_throw(const uint8_t onebl_key[16]) {
-        uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-        size_t payload_len = size_aligned - sizeof(generic_header);
-        uint8_t digest[20];
-        std::array<uint8_t, 16> key;
+    Result<size_t> BootloaderCb::prepare_payload() {
+        auto size_aligned = aligned_stage_size(header.header.size, kCbCryptMinimumSize, "CB");
+        if (!size_aligned)
+            return std::unexpected(std::move(size_aligned.error()));
+        const size_t payload_len = *size_aligned - sizeof(generic_header);
 
         if (data.size() < 0x10)
-            throw std::runtime_error("CB data too short");
+            return fail(ErrorCode::Truncated, "CB data too short");
         if (data.size() < payload_len)
             data.resize(payload_len, 0x00);
         if (decrypted)
             synchronize_header_numeric_fields_to_data();
+        return payload_len;
+    }
 
-        ExCryptHmacSha(onebl_key, 16, data.data(), 0x10, nullptr, 0, nullptr, 0, digest, 20);
-
+    void BootloaderCb::apply_derived_key(const uint8_t digest[20], size_t payload_len) {
+        std::array<uint8_t, 16> key;
         std::memcpy(key.data(), digest, 16);
         derived_key = key;
 
@@ -93,50 +105,41 @@ namespace gxbuild3::nand {
 
         if (decrypted)
             populate_metadata();
+    }
+
+    // CB / CB_A
+    Result<void> BootloaderCb::decrypt(const uint8_t onebl_key[16]) {
+        auto payload_len = prepare_payload();
+        if (!payload_len)
+            return std::unexpected(std::move(payload_len.error()));
+
+        uint8_t digest[20];
+        ExCryptHmacSha(onebl_key, 16, data.data(), 0x10, nullptr, 0, nullptr, 0, digest, 20);
+        apply_derived_key(digest, *payload_len);
+        return {};
     }
 
     // CB_B
-    void BootloaderCb::decrypt_v1_or_throw(const uint8_t cb_a_key[16], const uint8_t cpu_key[16]) {
-        uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-        size_t payload_len = size_aligned - sizeof(generic_header);
+    Result<void> BootloaderCb::decrypt_v1(const uint8_t cb_a_key[16], const uint8_t cpu_key[16]) {
+        auto payload_len = prepare_payload();
+        if (!payload_len)
+            return std::unexpected(std::move(payload_len.error()));
+
         uint8_t digest[20];
-        std::array<uint8_t, 16> key;
-
-        if (data.size() < 0x10)
-            throw std::runtime_error("CB data too short");
-        if (data.size() < payload_len)
-            data.resize(payload_len, 0x00);
-        if (decrypted)
-            synchronize_header_numeric_fields_to_data();
-
         ExCryptHmacSha(cb_a_key, 16, data.data(), 0x10, cpu_key, 16, nullptr, 0, digest, 20);
-
-        std::memcpy(key.data(), digest, 16);
-        derived_key = key;
-
-        do_rc4_decrypt(key.data(), payload_len);
-        decrypted = !decrypted;
-
-        if (decrypted)
-            populate_metadata();
+        apply_derived_key(digest, *payload_len);
+        return {};
     }
 
     // Other CB_B impl?
-    void BootloaderCb::decrypt_v2_or_throw(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
-                                           const uint8_t cpu_key[16]) {
+    Result<void> BootloaderCb::decrypt_v2(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
+                                          const uint8_t cpu_key[16]) {
         uint8_t digest[20];
         uint8_t cb_a_hdr_copy[16];
-        std::array<uint8_t, 16> key;
 
-        uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-        size_t payload_len = size_aligned - sizeof(generic_header);
-
-        if (data.size() < 0x10)
-            throw std::runtime_error("CB data too short");
-        if (data.size() < payload_len)
-            data.resize(payload_len, 0x00);
-        if (decrypted)
-            synchronize_header_numeric_fields_to_data();
+        auto payload_len = prepare_payload();
+        if (!payload_len)
+            return std::unexpected(std::move(payload_len.error()));
 
         generic_header be_hdr = cb_a_hdr.header;
         byteswap_generic_header(be_hdr);
@@ -152,25 +155,19 @@ namespace gxbuild3::nand {
         ExCryptHmacShaUpdate(&state, cb_a_hdr_copy, 16);
         ExCryptHmacShaFinal(&state, digest, 20);
 
-        std::memcpy(key.data(), digest, 16);
-        derived_key = key;
-
-        do_rc4_decrypt(key.data(), payload_len);
-        decrypted = !decrypted;
-
-        if (decrypted)
-            populate_metadata();
+        apply_derived_key(digest, *payload_len);
+        return {};
     }
 
-    void BootloaderCb::encrypt_retail_or_throw(const uint8_t parent_key[16],
-                                               std::span<const uint8_t> cpu_key,
-                                               std::span<const uint8_t> encrypted_smc,
-                                               const cb_header* cb_a_header) {
+    Result<void> BootloaderCb::encrypt_retail(const uint8_t parent_key[16],
+                                              std::span<const uint8_t> cpu_key,
+                                              std::span<const uint8_t> encrypted_smc,
+                                              const cb_header* cb_a_header) {
         if (!decrypted || cpu_key.size() != 16 || encrypted_smc.empty() ||
             encrypted_smc.size() % 4 != 0 || !parse_perbox()) {
-            throw std::runtime_error(
-                "Retail CB authentication requires plaintext per-box data, a CPU "
-                "key, and an aligned encrypted SMC");
+            return fail(ErrorCode::InvalidArgument,
+                        "Retail CB authentication requires plaintext per-box data, a CPU "
+                        "key, and an aligned encrypted SMC");
         }
 
         // A CB_B under a manufacturing CB_A, or bound to an all-zero CPU key, binds no SMC:
@@ -180,10 +177,10 @@ namespace gxbuild3::nand {
                                                               [](uint8_t b) { return b == 0; }));
         if (unbound_cb_b) {
             std::fill(std::begin(perbox->per_box_digest), std::end(perbox->per_box_digest), 0);
-            if (!serialize_perbox())
-                throw std::runtime_error("Could not serialize retail CB authentication digest");
-            encrypt_cb_b_or_throw(*cb_a_header, parent_key, cpu_key.data());
-            return;
+            if (auto stored = serialize_perbox(); !stored)
+                return with_context(std::move(stored),
+                                    "Could not serialize retail CB authentication digest");
+            return encrypt_cb_b(*cb_a_header, parent_key, cpu_key.data());
         }
 
         // Match the existing CB/CB_B encryption derivation, including the v2 CB_A header.
@@ -219,53 +216,41 @@ namespace gxbuild3::nand {
         }
         ExCryptHmacSha(cpu_key.data(), 16, rc4_key, 16, data.data() + 0x10, 16, checksum, 16,
                        perbox->per_box_digest, 16);
-        if (!serialize_perbox())
-            throw std::runtime_error("Could not serialize retail CB authentication digest");
+        if (auto stored = serialize_perbox(); !stored)
+            return with_context(std::move(stored),
+                                "Could not serialize retail CB authentication digest");
 
         if (!cb_a_header)
-            encrypt_or_throw(parent_key);
-        else
-            encrypt_cb_b_or_throw(*cb_a_header, parent_key, cpu_key.data());
+            return encrypt(parent_key);
+        return encrypt_cb_b(*cb_a_header, parent_key, cpu_key.data());
     }
 
-    void BootloaderCb::decrypt_cb_b_or_throw(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
-                                             const uint8_t cpu_key[16]) {
+    Result<void> BootloaderCb::decrypt_cb_b(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
+                                            const uint8_t cpu_key[16]) {
         static constexpr uint8_t zero_key[16] = {};
         if (manufacturing_chain(cb_a_hdr))
-            decrypt_v1_or_throw(cb_a_key, zero_key);
-        else if ((cb_a_hdr.header.flags & 0x1000) != 0)
-            decrypt_v2_or_throw(cb_a_hdr, cb_a_key, cpu_key);
-        else
-            decrypt_v1_or_throw(cb_a_key, cpu_key);
+            return decrypt_v1(cb_a_key, zero_key);
+        if ((cb_a_hdr.header.flags & 0x1000) != 0)
+            return decrypt_v2(cb_a_hdr, cb_a_key, cpu_key);
+        return decrypt_v1(cb_a_key, cpu_key);
     }
 
-    void BootloaderCb::decrypt_mfg_or_throw(const uint8_t cb_a_key[16]) {
-        uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-        size_t payload_len = size_aligned - sizeof(generic_header);
+    Result<void> BootloaderCb::decrypt_mfg(const uint8_t cb_a_key[16]) {
         uint8_t hmac_input[0x20];
         uint8_t zero_key[16] = {};
         uint8_t digest[20];
 
-        if (data.size() < 0x10)
-            throw std::runtime_error("CB data too short");
-        if (data.size() < payload_len)
-            data.resize(payload_len, 0x00);
-        if (decrypted)
-            synchronize_header_numeric_fields_to_data();
+        auto payload_len = prepare_payload();
+        if (!payload_len)
+            return std::unexpected(std::move(payload_len.error()));
 
         std::memcpy(hmac_input, data.data(), 0x10);
         std::memcpy(hmac_input + 0x10, cb_a_key, 0x10);
 
         ExCryptHmacSha(zero_key, 16, hmac_input, 0x20, nullptr, 0, nullptr, 0, digest, 20);
 
-        std::array<uint8_t, 16> key;
-        std::memcpy(key.data(), digest, 16);
-        derived_key = key;
-
-        do_rc4_decrypt(key.data(), payload_len);
-        decrypted = !decrypted;
-        if (decrypted)
-            populate_metadata();
+        apply_derived_key(digest, *payload_len);
+        return {};
     }
 
     bool BootloaderCb::patch_rgh3_v1_cb_x() {
@@ -308,25 +293,36 @@ namespace gxbuild3::nand {
         std::memcpy(reinterpret_cast<uint8_t*>(&header) + sizeof(generic_header), data.data(),
                     sizeof(cb_header) - sizeof(generic_header));
         byteswap_cb_header_numeric_fields(header);
-        parse_perbox();
+        // The size check above covers the per-box block, so this only degrades on an
+        // inconsistent stage; `perbox` then keeps its previous value.
+        if (auto parsed = parse_perbox(); !parsed)
+            Log::Debug("CB per-box data not parsed: {}", parsed.error().describe());
     }
 
-    bool BootloaderCb::parse_perbox() {
-        if (!is_decrypted() || data.size() < 0x30)
-            return false;
+    Result<void> BootloaderCb::parse_perbox() {
+        if (!is_decrypted())
+            return fail(ErrorCode::InvalidArgument, "CB per-box data needs a decrypted CB");
+        if (data.size() < 0x10 + sizeof(cb_perbox))
+            return fail(ErrorCode::Truncated,
+                        "CB payload (0x{:X} bytes) is too short for per-box data", data.size());
 
         cb_perbox pb{};
         std::memcpy(&pb, data.data() + 0x10, sizeof(cb_perbox));
         perbox = pb;
-        return true;
+        return {};
     }
 
-    bool BootloaderCb::serialize_perbox() {
-        if (!is_decrypted() || !perbox.has_value() || data.size() < 0x30)
-            return false;
+    Result<void> BootloaderCb::serialize_perbox() {
+        if (!is_decrypted())
+            return fail(ErrorCode::InvalidArgument, "CB per-box data needs a decrypted CB");
+        if (!perbox.has_value())
+            return fail(ErrorCode::InvalidArgument, "CB has no per-box data to serialize");
+        if (data.size() < 0x10 + sizeof(cb_perbox))
+            return fail(ErrorCode::Truncated,
+                        "CB payload (0x{:X} bytes) is too short for per-box data", data.size());
 
         std::memcpy(data.data() + 0x10, &(*perbox), sizeof(cb_perbox));
-        return true;
+        return {};
     }
 
     void BootloaderCb::synchronize_header_numeric_fields_to_data() {

@@ -5,6 +5,10 @@
 #include "excrypt.h"
 #include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
+#include "nand/bootloaders/4bl.hpp"
+#include "nand/bootloaders/5bl.hpp"
+#include "nand/bootloaders/6bl.hpp"
+#include "nand/bootloaders/7bl.hpp"
 #include "nand/bootloaders/BootloaderPacker.hpp"
 #include "nand/objects/SMC.hpp"
 
@@ -17,6 +21,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -92,7 +97,7 @@ namespace {
             block.size = static_cast<uint32_t>(block.data.size());
             chain.push_back(std::move(block));
         }
-        if (!require(crypt_bootloaders(chain, {}), "packer seals chain"))
+        if (!require(crypt_bootloaders(chain, {}).has_value(), "packer seals chain"))
             return false;
         bool ok = require(sha1(chain[0].data) == digest_from_hex(kSealedSb),
                           "packer SB matches xerunner");
@@ -298,13 +303,191 @@ namespace {
             cbb.perbox->pairing_data[0] = 0x12;
             cbb.perbox->pairing_data[1] = 0x34;
             cbb.perbox->pairing_data[2] = 0x56;
-            cbb.serialize_perbox();
+            if (!require(cbb.serialize_perbox().has_value(), "CB_B per-box serializes"))
+                return false;
             cbb.encrypt_retail_or_throw(cba.derived_key->data(), cpu, smc, &header);
             ok = require(sha1(cbb.serialize()) == digest_from_hex(expected),
                          "bound CB_B under CB_A flags " + std::to_string(flags) +
                              " matches xerunner") &&
                  ok;
         }
+        return ok;
+    }
+
+    // A stage image of `total` zero bytes whose generic header carries `magic` and the
+    // declared size `declared` (big-endian at +0xC).
+    Bytes stage_bytes(uint16_t magic, size_t total, uint32_t declared) {
+        Bytes bytes(total, 0);
+        bytes[0] = static_cast<uint8_t>(magic >> 8);
+        bytes[1] = static_cast<uint8_t>(magic);
+        for (size_t i = 0; i < 4; ++i)
+            bytes[0xC + i] = static_cast<uint8_t>(declared >> (24 - 8 * i));
+        return bytes;
+    }
+
+    template <class R> bool fails_with(const R& result, gxbuild3::ErrorCode code) {
+        return !result.has_value() && result.error().code == code;
+    }
+
+    // Behaviour change (E8a): parse refuses a declared size that cannot hold the stage's own
+    // header, where decrypt and encrypt used to underflow the payload length.
+    bool test_parse_refuses_undersized_declared_size() {
+        using gxbuild3::ErrorCode;
+        bool ok = require(fails_with(BootloaderCb::parse(Bytes(8, 0)), ErrorCode::Truncated),
+                          "CB shorter than its generic header is truncated");
+        ok =
+            require(fails_with(BootloaderCb::parse(stage_bytes(CB, 0x40, 0)), ErrorCode::Malformed),
+                    "CB declaring less than its generic header is refused") &&
+            ok;
+        ok = require(BootloaderCb::parse(stage_bytes(CB, 0x40, 0x40)).has_value(),
+                     "CB declaring its own length parses") &&
+             ok;
+        ok =
+            require(fails_with(BootloaderSc::parse(stage_bytes(SC, sizeof(sc_header) + 0x20, 0x20)),
+                               ErrorCode::Malformed),
+                    "SC declaring less than its header is refused") &&
+            ok;
+        ok =
+            require(fails_with(BootloaderCd::parse(stage_bytes(CD, sizeof(cd_header) + 0x20, 0x20)),
+                               ErrorCode::Malformed),
+                    "CD declaring less than its header is refused") &&
+            ok;
+        ok = require(fails_with(
+                         BootloaderCd::parse(stage_bytes(CD, sizeof(cd_header) + 0x20, 0xFFFFFFF8)),
+                         ErrorCode::Malformed),
+                     "CD declaring a size that overflows when aligned is refused") &&
+             ok;
+        ok =
+            require(fails_with(BootloaderCe::parse(stage_bytes(CE, sizeof(ce_header) + 0x20, 0x10)),
+                               ErrorCode::Malformed),
+                    "CE declaring less than its header is refused") &&
+            ok;
+        ok = require(fails_with(BootloaderCf::parse(stage_bytes(CF, 0x430, 0x10)),
+                                ErrorCode::Malformed),
+                     "CF declaring less than its header is refused") &&
+             ok;
+        ok =
+            require(fails_with(BootloaderCg::parse(stage_bytes(CG, sizeof(cg_header) + 0x20, 0x10)),
+                               ErrorCode::Malformed),
+                    "CG declaring less than its header is refused") &&
+            ok;
+        try {
+            (void) BootloaderCd::parse_or_throw(stage_bytes(CD, sizeof(cd_header) + 0x20, 0x20));
+            ok = require(false, "CD parse_or_throw throws on an undersized declared size") && ok;
+        } catch (const std::runtime_error&) {
+        }
+        return ok;
+    }
+
+    // Behaviour change (E8a): a crypt that cannot run leaves the stage as it was instead of
+    // flipping `decrypted` over an untouched or underflowing payload.
+    bool test_crypt_failure_leaves_stage_unchanged() {
+        using gxbuild3::ErrorCode;
+        const uint8_t key[16] = {};
+
+        auto cd = BootloaderCd::parse_or_throw(
+            stage_bytes(CD, sizeof(cd_header) + 0x20, sizeof(cd_header) + 0x20));
+        cd.header.header.size = 0x10;
+        const Bytes cd_data = cd.data;
+        const bool cd_was_decrypted = cd.decrypted;
+        bool ok = require(
+            fails_with(cd_was_decrypted ? cd.encrypt(key) : cd.decrypt(key), ErrorCode::Malformed),
+            "CD crypt with an undersized declared size fails");
+        ok = require(cd.decrypted == cd_was_decrypted && cd.data == cd_data &&
+                         !cd.derived_key.has_value(),
+                     "failed CD crypt leaves the stage unchanged") &&
+             ok;
+
+        auto cb = BootloaderCb::parse_or_throw(stage_bytes(CB, 0x40, 0x40));
+        cb.header.header.size = 0x10;
+        const Bytes cb_data = cb.data;
+        ok = require(fails_with(cb.decrypt(key), ErrorCode::Malformed) && !cb.decrypted &&
+                         cb.data == cb_data && !cb.derived_key.has_value(),
+                     "CB decrypt of a header-only CB fails and leaves the stage") &&
+             ok;
+
+        auto cg = BootloaderCg::parse_or_throw(
+            stage_bytes(CG, sizeof(cg_header) + 0x20, sizeof(cg_header) + 0x20));
+        cg.decrypted = false;
+        cg.header.header.size = 0x10;
+        const Bytes cg_data = cg.data;
+        ok = require(fails_with(cg.decrypt(key), ErrorCode::Malformed) && !cg.decrypted &&
+                         cg.data == cg_data,
+                     "CG decrypt with an undersized declared size fails and leaves the stage") &&
+             ok;
+        return ok;
+    }
+
+    // Behaviour change (E8a): crypt_single_bl reports short data instead of returning a bool
+    // every stage ignored, and it touches neither the data nor the key when it fails.
+    bool test_crypt_single_bl_refuses_short_data() {
+        using gxbuild3::ErrorCode;
+        Bytes data(0x1F, 0xA5);
+        const Bytes original = data;
+        uint8_t key[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+        uint8_t original_key[16];
+        std::memcpy(original_key, key, sizeof(key));
+
+        bool ok =
+            require(fails_with(crypt_single_bl(data, HmacType::Default, key), ErrorCode::Truncated),
+                    "crypt_single_bl refuses data shorter than its crypt start");
+        ok = require(data == original && std::memcmp(key, original_key, sizeof(key)) == 0,
+                     "refused crypt_single_bl leaves data and key untouched") &&
+             ok;
+
+        Bytes cf_sized(0x2F, 0);
+        ok = require(fails_with(
+                         crypt_single_bl(cf_sized, HmacType::Default, key, nullptr, nullptr, 0x30),
+                         ErrorCode::Truncated),
+                     "crypt_single_bl refuses data shorter than a 0x30 crypt start") &&
+             ok;
+
+        Bytes full(0x40, 0);
+        ok = require(fails_with(crypt_single_bl(full, HmacType::Hmac1920, key),
+                                ErrorCode::InvalidArgument),
+                     "crypt_single_bl refuses a CPU-keyed HMAC without a CPU key") &&
+             ok;
+        ok = require(crypt_single_bl(full, HmacType::Default, key).has_value(),
+                     "crypt_single_bl crypts data that holds its crypt start") &&
+             ok;
+
+        std::vector<BootloaderBlock> chain(1);
+        chain[0].magic = 0x4342;
+        chain[0].data.assign(0x10, 0);
+        ok = require(fails_with(crypt_bootloaders(chain, {}), ErrorCode::Truncated),
+                     "crypt_bootloaders reports a block too short to crypt") &&
+             ok;
+        return ok;
+    }
+
+    // Behaviour change (E8a): calc_mac reports what stops it instead of silently skipping.
+    bool test_cf_calc_mac_reports_failure() {
+        using gxbuild3::ErrorCode;
+        const uint8_t onebl[16] = {};
+        const uint8_t cpu[16] = {1};
+
+        BootloaderCf cf{};
+        cf.header.header.magic = CF;
+        cf.data.assign(0x1F0, 0);
+        cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
+        cf.decrypted = true;
+        const Bytes original = cf.data;
+        bool ok = require(fails_with(cf.calc_mac(onebl, cpu), ErrorCode::Truncated) &&
+                              cf.data == original,
+                          "calc_mac refuses a CF too short for its per-box block");
+        ok = require(fails_with(cf.calc_mac(onebl, nullptr), ErrorCode::InvalidArgument),
+                     "calc_mac refuses a missing CPU key") &&
+             ok;
+
+        cf.data.assign(0x340, 0);
+        cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
+        ok = require(cf.parse_perbox().has_value() && cf.calc_mac(onebl, cpu).has_value(),
+                     "calc_mac binds a CF that holds its per-box block") &&
+             ok;
+        ok = require(std::equal(std::begin(cf.perbox->per_box_digest),
+                                std::end(cf.perbox->per_box_digest), cf.data.begin() + 0x1F0),
+                     "calc_mac writes the digest to both the payload and the per-box copy") &&
+             ok;
         return ok;
     }
 } // namespace
@@ -316,5 +499,9 @@ int main() {
     ok = test_cb_b_regime_matches_xerunner() && ok;
     ok = test_unbound_cb_b_has_zero_digest() && ok;
     ok = test_cb_b_binding_matches_xerunner() && ok;
+    ok = test_parse_refuses_undersized_declared_size() && ok;
+    ok = test_crypt_failure_leaves_stage_unchanged() && ok;
+    ok = test_crypt_single_bl_refuses_short_data() && ok;
+    ok = test_cf_calc_mac_reports_failure() && ok;
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

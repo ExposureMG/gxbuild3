@@ -2204,17 +2204,28 @@ namespace gxbuild3::nand {
                 !prepare_update(system_update_1, "sysupdate.xexp2"))
                 return false;
 
+            // Writes a plaintext CF's per-box data back and, when its slot binds the console,
+            // re-MACs it over what it now states.
+            const auto bind_cf = [&](BootloaderCf& cf, size_t slot_index) -> Result<void> {
+                if (cf.perbox.has_value()) {
+                    if (auto stored = cf.serialize_perbox(); !stored)
+                        return stored;
+                }
+                if (!cpu_key.empty() && update_slot_binds_console(build_type, slot_index))
+                    return cf.calc_mac(key_1bl, cpu_key.data());
+                return {};
+            };
             if (system_update_0.cf.has_value() && system_update_0.cf->is_decrypted()) {
-                system_update_0.cf->serialize_perbox();
-                if (!cpu_key.empty() && update_slot_binds_console(build_type, 0)) {
-                    system_update_0.cf->calc_mac(key_1bl, cpu_key.data());
+                if (auto bound = bind_cf(*system_update_0.cf, 0); !bound) {
+                    Log::Error("Failed to bind CF0: {}", bound.error().describe());
+                    return false;
                 }
                 system_update_0.cf->encrypt_or_throw(key_1bl);
             }
             if (system_update_1.cf.has_value() && system_update_1.cf->is_decrypted()) {
-                system_update_1.cf->serialize_perbox();
-                if (!cpu_key.empty() && update_slot_binds_console(build_type, 1)) {
-                    system_update_1.cf->calc_mac(key_1bl, cpu_key.data());
+                if (auto bound = bind_cf(*system_update_1.cf, 1); !bound) {
+                    Log::Error("Failed to bind CF1: {}", bound.error().describe());
+                    return false;
                 }
                 system_update_1.cf->encrypt_or_throw(key_1bl);
             }

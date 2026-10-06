@@ -1,13 +1,19 @@
 #pragma once
 
 #include "Endian.hpp"
+#include "Error.hpp"
 #include "excrypt.h"
 #include "exkeys.h"
 
 #include <array>
+#include <cstddef>
+#include <limits>
 #include <optional>
 #include <stdbool.h>
+#include <stdexcept>
 #include <stdint.h>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace gxbuild3::nand {
@@ -198,5 +204,43 @@ namespace gxbuild3::nand {
     }
 
 #pragma pack(pop)
+
+    // A stage's declared size rounded up to the 16-byte crypt granularity. It fails when the
+    // declared size cannot hold `min_size` bytes (the stage's own header), which keeps the
+    // payload arithmetic of every parse, decrypt and encrypt from underflowing.
+    [[nodiscard]] inline Result<size_t> aligned_stage_size(uint32_t declared_size, size_t min_size,
+                                                           std::string_view stage) {
+        const uint64_t aligned = (uint64_t{declared_size} + 0xF) & ~uint64_t{0xF};
+        if (aligned > std::numeric_limits<uint32_t>::max()) {
+            return fail(ErrorCode::Malformed, "{} declared size 0x{:X} overflows when aligned",
+                        stage, declared_size);
+        }
+        if (aligned < min_size) {
+            return fail(ErrorCode::Malformed,
+                        "{} declared size 0x{:X} is smaller than its 0x{:X}-byte header", stage,
+                        declared_size, min_size);
+        }
+        return static_cast<size_t>(aligned);
+    }
+
+    namespace detail {
+
+        // TODO(E9/E10): the *_or_throw bootloader shims unwrap the Result API through these
+        // until FlashImage and BuildRunner consume it directly; tests keep them until the
+        // test rewrite deletes them.
+        template <class T> [[nodiscard]] T value_or_throw(Result<T>&& result) {
+            if (!result) {
+                throw std::runtime_error(result.error().describe());
+            }
+            return std::move(*result);
+        }
+
+        inline void value_or_throw(Result<void>&& result) {
+            if (!result) {
+                throw std::runtime_error(result.error().describe());
+            }
+        }
+
+    } // namespace detail
 
 } // namespace gxbuild3::nand

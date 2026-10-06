@@ -6,42 +6,60 @@
 #include "utils/Utils.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
-#include <stdexcept>
+#include <utility>
 
 namespace gxbuild3::nand {
 
-    BootloaderCf BootloaderCf::parse_or_throw(const std::vector<uint8_t>& bytes) {
+    namespace {
+
+        constexpr size_t kCfPerboxOffset = 0x1C0;
+        // The per-box block sits after the 0x1C0-byte spill table of the payload.
+        constexpr size_t kCfPerboxEnd = kCfPerboxOffset + sizeof(cf_perbox);
+
+    } // namespace
+
+    Result<BootloaderCf> BootloaderCf::parse(std::span<const uint8_t> bytes) {
         BootloaderCf cf;
         if (bytes.size() < sizeof(cf_header))
-            throw std::runtime_error("CF/6BL data too short");
+            return fail(ErrorCode::Truncated, "CF/6BL data too short");
 
         std::memcpy(&cf.header, bytes.data(), sizeof(cf_header));
 
         byteswap_generic_header(cf.header.header);
         byteswap_cf_header_numeric_fields(cf.header);
+        if (auto size = aligned_stage_size(cf.header.header.size, sizeof(cf_header), "CF/6BL");
+            !size)
+            return std::unexpected(std::move(size.error()));
 
         cf.data = std::vector<uint8_t>(bytes.begin() + sizeof(cf_header), bytes.end());
         cf.decrypted = cf.is_decrypted();
-        if (cf.decrypted)
-            cf.parse_perbox();
+        // A plaintext CF too short for the per-box block still parses, without `perbox`.
+        if (cf.decrypted) {
+            if (auto parsed = cf.parse_perbox(); !parsed)
+                Log::Debug("CF per-box data not parsed: {}", parsed.error().describe());
+        }
         Log::Debug("Parsed 6BL/CF: version={}, size=0x{:X}, entrypoint=0x{:08X}",
                    cf.header.header.version, cf.header.header.size, cf.header.header.entrypoint);
         return cf;
     }
 
-    void BootloaderCf::decrypt_or_throw(const uint8_t onebl_key[16]) {
+    Result<void> BootloaderCf::decrypt(const uint8_t onebl_key[16]) {
         if (decrypted)
-            return;
+            return {};
 
         uint8_t cur_key[16];
         std::memcpy(cur_key, onebl_key, 16);
 
         std::vector<uint8_t> buffer = serialize();
         if (buffer.size() < 0x230)
-            throw std::runtime_error("CF/6BL payload too short");
+            return fail(ErrorCode::Truncated, "CF/6BL payload too short");
 
-        crypt_single_bl(buffer, HmacType::Default, cur_key, nullptr, nullptr, 0x30);
+        if (auto crypted =
+                crypt_single_bl(buffer, HmacType::Default, cur_key, nullptr, nullptr, 0x30);
+            !crypted)
+            return with_context(std::move(crypted), "CF/6BL");
 
         std::memcpy(&header, buffer.data(), sizeof(cf_header));
         byteswap_generic_header(header.header);
@@ -50,15 +68,26 @@ namespace gxbuild3::nand {
         data = std::vector<uint8_t>(buffer.begin() + sizeof(cf_header), buffer.end());
 
         decrypted = true;
-        parse_perbox();
+        // The 0x230-byte check above covers the per-box block, so this cannot fail; `perbox`
+        // would otherwise keep its previous value.
+        if (auto parsed = parse_perbox(); !parsed)
+            Log::Debug("CF per-box data not parsed: {}", parsed.error().describe());
+        return {};
     }
 
-    void BootloaderCf::encrypt_or_throw(const uint8_t onebl_key[16]) {
+    Result<void> BootloaderCf::encrypt(const uint8_t onebl_key[16]) {
         if (!decrypted)
-            return;
-        serialize_perbox();
-        uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-        size_t payload_len = size_aligned - sizeof(generic_header);
+            return {};
+        auto size_aligned = aligned_stage_size(header.header.size, sizeof(cf_header), "CF/6BL");
+        if (!size_aligned)
+            return std::unexpected(std::move(size_aligned.error()));
+        // A CF without parsed per-box data has nothing to write back; one whose payload no
+        // longer holds it is an error.
+        if (perbox.has_value()) {
+            if (auto stored = serialize_perbox(); !stored)
+                return with_context(std::move(stored), "CF/6BL");
+        }
+        const size_t payload_len = *size_aligned - sizeof(generic_header);
 
         if (data.size() + sizeof(cf_header) - sizeof(generic_header) < payload_len) {
             size_t req = payload_len - (sizeof(cf_header) - sizeof(generic_header));
@@ -75,7 +104,10 @@ namespace gxbuild3::nand {
         std::memcpy(buffer.data(), &temp_hdr, sizeof(cf_header));
         std::memcpy(buffer.data() + sizeof(cf_header), data.data(), data.size());
 
-        crypt_single_bl(buffer, HmacType::Default, cur_key, nullptr, nullptr, 0x30);
+        if (auto crypted =
+                crypt_single_bl(buffer, HmacType::Default, cur_key, nullptr, nullptr, 0x30);
+            !crypted)
+            return with_context(std::move(crypted), "CF/6BL");
 
         std::memcpy(&header, buffer.data(), sizeof(cf_header));
         byteswap_generic_header(header.header);
@@ -83,16 +115,18 @@ namespace gxbuild3::nand {
         std::memcpy(data.data(), buffer.data() + sizeof(cf_header), data.size());
 
         decrypted = false;
+        return {};
     }
 
-    void BootloaderCf::calc_mac(const uint8_t onebl_key[16], const uint8_t cpu_key[16]) {
+    Result<void> BootloaderCf::calc_mac(const uint8_t onebl_key[16], const uint8_t cpu_key[16]) {
         if (!onebl_key || !cpu_key)
-            return;
+            return fail(ErrorCode::InvalidArgument, "CF MAC needs the 1BL key and the CPU key");
+        // Implies the 0x220 serialized bytes the MAC covers.
+        if (data.size() < kCfPerboxEnd)
+            return fail(ErrorCode::Truncated,
+                        "CF payload (0x{:X} bytes) is too short for its per-box MAC", data.size());
 
         auto serialized_hdr = serialize();
-        if (serialized_hdr.size() < 0x220)
-            return;
-
         std::vector<uint8_t> cf_copy(serialized_hdr.begin(), serialized_hdr.begin() + 0x220);
 
         uint8_t rc4_key[20] = {0};
@@ -104,11 +138,11 @@ namespace gxbuild3::nand {
         uint8_t hmac_digest[20] = {0};
         ExCryptHmacSha(cpu_key, 16, cf_copy.data(), 0x220, nullptr, 0, nullptr, 0, hmac_digest, 20);
 
-        if (data.size() >= 0x1C0 + sizeof(cf_perbox)) {
-            std::memcpy(data.data() + 0x1C0 + 0x30, hmac_digest, 16);
-            if (perbox.has_value())
-                std::memcpy(perbox->per_box_digest, hmac_digest, 16);
-        }
+        std::memcpy(data.data() + kCfPerboxOffset + offsetof(cf_perbox, per_box_digest),
+                    hmac_digest, 16);
+        if (perbox.has_value())
+            std::memcpy(perbox->per_box_digest, hmac_digest, 16);
+        return {};
     }
 
     bool BootloaderCf::is_decrypted() const {
@@ -126,22 +160,30 @@ namespace gxbuild3::nand {
         return key;
     }
 
-    bool BootloaderCf::parse_perbox() {
-        if (!is_decrypted() || data.size() < 0x1C0 + sizeof(cf_perbox))
-            return false;
+    Result<void> BootloaderCf::parse_perbox() {
+        if (!is_decrypted())
+            return fail(ErrorCode::InvalidArgument, "CF per-box data needs a decrypted CF");
+        if (data.size() < kCfPerboxEnd)
+            return fail(ErrorCode::Truncated,
+                        "CF payload (0x{:X} bytes) is too short for per-box data", data.size());
 
         cf_perbox pb{};
-        std::memcpy(&pb, data.data() + 0x1C0, sizeof(cf_perbox));
+        std::memcpy(&pb, data.data() + kCfPerboxOffset, sizeof(cf_perbox));
         perbox = pb;
-        return true;
+        return {};
     }
 
-    bool BootloaderCf::serialize_perbox() {
-        if (!is_decrypted() || !perbox.has_value() || data.size() < 0x1C0 + sizeof(cf_perbox))
-            return false;
+    Result<void> BootloaderCf::serialize_perbox() {
+        if (!is_decrypted())
+            return fail(ErrorCode::InvalidArgument, "CF per-box data needs a decrypted CF");
+        if (!perbox.has_value())
+            return fail(ErrorCode::InvalidArgument, "CF has no per-box data to serialize");
+        if (data.size() < kCfPerboxEnd)
+            return fail(ErrorCode::Truncated,
+                        "CF payload (0x{:X} bytes) is too short for per-box data", data.size());
 
-        std::memcpy(data.data() + 0x1C0, &(*perbox), sizeof(cf_perbox));
-        return true;
+        std::memcpy(data.data() + kCfPerboxOffset, &(*perbox), sizeof(cf_perbox));
+        return {};
     }
 
     std::vector<uint8_t> BootloaderCf::serialize() const {

@@ -7,7 +7,9 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <format>
 #include <map>
+#include <utility>
 
 namespace gxbuild3::nand {
 
@@ -26,13 +28,23 @@ namespace gxbuild3::nand {
 
     } // namespace
 
-    bool crypt_single_bl(std::span<uint8_t> data, HmacType hmac_type, uint8_t cur_key[16],
-                         const uint8_t cpu_key[16], uint8_t cba_hdr[16], size_t crypt_start) {
-        if (data.size() < crypt_start) {
-            return false;
-        }
-
+    Result<void> crypt_single_bl(std::span<uint8_t> data, HmacType hmac_type, uint8_t cur_key[16],
+                                 const uint8_t cpu_key[16], uint8_t cba_hdr[16],
+                                 size_t crypt_start) {
         const size_t nonce_offset = (crypt_start >= 0x20) ? (crypt_start - 0x10) : 0x10;
+        const size_t required = std::max(crypt_start, nonce_offset + 16);
+        if (data.size() < required) {
+            return fail(ErrorCode::Truncated,
+                        "bootloader data (0x{:X} bytes) is shorter than its 0x{:X}-byte nonce and "
+                        "crypt start",
+                        data.size(), required);
+        }
+        if (hmac_type != HmacType::Default && cpu_key == nullptr) {
+            return fail(ErrorCode::InvalidArgument, "bootloader HMAC type needs a CPU key");
+        }
+        if (hmac_type == HmacType::Split15574 && cba_hdr == nullptr) {
+            return fail(ErrorCode::InvalidArgument, "bootloader HMAC type needs a CB_A header");
+        }
 
         switch (hmac_type) {
             case HmacType::Default:
@@ -62,10 +74,11 @@ namespace gxbuild3::nand {
 
         ExCryptRc4(cur_key, 16, data.data() + crypt_start,
                    static_cast<uint32_t>(data.size() - crypt_start));
-        return true;
+        return {};
     }
 
-    bool crypt_bootloaders(std::vector<BootloaderBlock>& bls, std::span<const uint8_t> cpu_key) {
+    Result<void> crypt_bootloaders(std::vector<BootloaderBlock>& bls,
+                                   std::span<const uint8_t> cpu_key) {
         Log::Debug("Crypting {} bootloader blocks", bls.size());
         std::map<uint16_t, int> bl_count;
         for (const auto& bl : bls) {
@@ -84,6 +97,20 @@ namespace gxbuild3::nand {
 
         bool plaintext = false;
 
+        // Renames a CB/SB block in place; the magic lives in its first two bytes.
+        const auto rename = [](BootloaderBlock& bl, uint16_t magic) -> Result<void> {
+            if (bl.data.size() < 2) {
+                return fail(ErrorCode::Truncated,
+                            "bootloader block (magic=0x{:04X}, 0x{:X} bytes) is too short to "
+                            "rename",
+                            bl.magic, bl.data.size());
+            }
+            bl.magic = magic;
+            bl.data[0] = static_cast<uint8_t>(magic >> 8);
+            bl.data[1] = static_cast<uint8_t>(magic);
+            return {};
+        };
+
         for (auto& bl : bls) {
             // Every stage here, SC included, keeps its nonce at 0x10 and seals from 0x20.
             const size_t crypt_start = 0x20;
@@ -94,11 +121,11 @@ namespace gxbuild3::nand {
                 }
                 plaintext = false;
             } else {
-                if (!crypt_single_bl(bl.data, hmac_type, cur_key, use_cpu_key, cba_hdr,
-                                     crypt_start)) {
-                    Log::Error("Failed to crypt bootloader block (magic=0x{:04X}, size=0x{:X})",
-                               bl.magic, bl.data.size());
-                    return false;
+                if (auto crypted = crypt_single_bl(bl.data, hmac_type, cur_key, use_cpu_key,
+                                                   cba_hdr, crypt_start);
+                    !crypted) {
+                    return with_context(std::move(crypted),
+                                        std::format("bootloader block magic=0x{:04X}", bl.magic));
                 }
             }
 
@@ -122,9 +149,9 @@ namespace gxbuild3::nand {
                     } else {
                         if (bl_count[0x4342] > 1) {
                             if (bl_count[0x5343] > 0 && bl_count[0x5344] > 0) {
-                                bl.magic = 0x5342;
-                                bl.data[0] = 'S';
-                                bl.data[1] = 'B';
+                                if (auto renamed = rename(bl, 0x5342); !renamed) {
+                                    return renamed;
+                                }
                                 hmac_type = HmacType::Default;
                                 std::memcpy(cur_key, kSbKey, 16);
                                 continue;
@@ -150,9 +177,9 @@ namespace gxbuild3::nand {
                     hmac_type = HmacType::Default;
                     std::memcpy(cur_key, kSbKey, 16);
                     if (bl_count[0x4342] > 0 && bl_count[0x5343] > 0 && bl_count[0x5344] > 0) {
-                        bl.magic = 0x4342;
-                        bl.data[0] = 'C';
-                        bl.data[1] = 'B';
+                        if (auto renamed = rename(bl, 0x4342); !renamed) {
+                            return renamed;
+                        }
                     }
                     break;
 
@@ -161,7 +188,7 @@ namespace gxbuild3::nand {
             }
         }
 
-        return true;
+        return {};
     }
 
 } // namespace gxbuild3::nand

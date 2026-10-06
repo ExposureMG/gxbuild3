@@ -624,7 +624,7 @@ namespace {
 
         auto sealed_cf = BootloaderCf::parse_or_throw(image->system_update_0.cf->serialize());
         sealed_cf.decrypt_or_throw(onebl.data());
-        if (!require(sealed_cf.parse_perbox(), name + " CF per-box parses"))
+        if (!require(sealed_cf.parse_perbox().has_value(), name + " CF per-box parses"))
             return false;
         const auto& cf_perbox = *sealed_cf.perbox;
         const std::array<uint8_t, 3> expected_pairing =
@@ -635,7 +635,9 @@ namespace {
              ok;
         ok = require(cf_perbox.lockdown_value == 9, name + " CF keeps the console's LDV") && ok;
         auto remac = sealed_cf;
-        remac.calc_mac(onebl.data(), input.metadata.cpu_key.data());
+        if (!require(remac.calc_mac(onebl.data(), input.metadata.cpu_key.data()).has_value(),
+                     name + " CF MAC recomputes"))
+            return false;
         return require(remac.data == sealed_cf.data, name + " CF MAC covers what it states") && ok;
     }
 

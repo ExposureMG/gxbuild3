@@ -7,18 +7,21 @@
 
 #include <algorithm>
 #include <cstring>
-#include <stdexcept>
+#include <utility>
 
 namespace gxbuild3::nand {
 
-    BootloaderSc BootloaderSc::parse_or_throw(const std::vector<uint8_t>& bytes) {
+    Result<BootloaderSc> BootloaderSc::parse(std::span<const uint8_t> bytes) {
         BootloaderSc sc;
         if (bytes.size() < sizeof(sc_header))
-            throw std::runtime_error("SC/3BL data too short");
+            return fail(ErrorCode::Truncated, "SC/3BL data too short");
 
         std::memcpy(&sc.header, bytes.data(), sizeof(sc_header));
 
         byteswap_generic_header(sc.header.header);
+        if (auto size = aligned_stage_size(sc.header.header.size, sizeof(sc_header), "SC/3BL");
+            !size)
+            return std::unexpected(std::move(size.error()));
 
         sc.data = std::vector<uint8_t>(bytes.begin() + sizeof(sc_header), bytes.end());
         sc.decrypted = sc.is_decrypted();
@@ -27,15 +30,18 @@ namespace gxbuild3::nand {
         return sc;
     }
 
-    void BootloaderSc::decrypt_or_throw(const uint8_t secret[16]) {
-        if (decrypted)
-            return;
-        uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-        size_t encrypted_len = size_aligned - sizeof(sc_header);
+    Result<void> BootloaderSc::prepare_payload() {
+        auto size_aligned = aligned_stage_size(header.header.size, sizeof(sc_header), "SC/3BL");
+        if (!size_aligned)
+            return std::unexpected(std::move(size_aligned.error()));
+        const size_t encrypted_len = *size_aligned - sizeof(sc_header);
 
         if (data.size() < encrypted_len)
             data.resize(encrypted_len, 0x00);
+        return {};
+    }
 
+    Result<void> BootloaderSc::crypt_stage(const uint8_t secret[16]) {
         uint8_t cur_key[16];
         std::memcpy(cur_key, secret, 16);
 
@@ -46,25 +52,36 @@ namespace gxbuild3::nand {
         std::memcpy(buffer.data() + sizeof(sc_header), data.data(), data.size());
 
         // Same layout as CB/CD/CE: nonce at 0x10, cipher from 0x20 over signature and body.
-        crypt_single_bl(buffer, HmacType::Default, cur_key, nullptr, nullptr, 0x20);
+        if (auto crypted =
+                crypt_single_bl(buffer, HmacType::Default, cur_key, nullptr, nullptr, 0x20);
+            !crypted)
+            return with_context(std::move(crypted), "SC/3BL");
         derived_key.emplace();
         std::copy_n(cur_key, derived_key->size(), derived_key->begin());
 
         std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
                     sizeof(sc_header) - 0x20);
         std::memcpy(data.data(), buffer.data() + sizeof(sc_header), data.size());
-        decrypted = true;
+        return {};
     }
 
-    void BootloaderSc::encrypt_or_throw(const uint8_t secret[16]) {
-        if (!decrypted)
-            return;
-        uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-        size_t encrypted_len = size_aligned - sizeof(sc_header);
+    Result<void> BootloaderSc::decrypt(const uint8_t secret[16]) {
+        if (decrypted)
+            return {};
+        if (auto prepared = prepare_payload(); !prepared)
+            return prepared;
 
-        if (data.size() < encrypted_len) {
-            data.resize(encrypted_len, 0x00);
-        }
+        if (auto crypted = crypt_stage(secret); !crypted)
+            return crypted;
+        decrypted = true;
+        return {};
+    }
+
+    Result<void> BootloaderSc::encrypt(const uint8_t secret[16]) {
+        if (!decrypted)
+            return {};
+        if (auto prepared = prepare_payload(); !prepared)
+            return prepared;
 
         bool is_zero = true;
         for (size_t i = 0; i < 16; ++i) {
@@ -77,24 +94,10 @@ namespace gxbuild3::nand {
             ExCryptRandom(header.key, 16);
         }
 
-        uint8_t cur_key[16];
-        std::memcpy(cur_key, secret, 16);
-
-        std::vector<uint8_t> buffer(sizeof(sc_header) + data.size());
-        sc_header temp_hdr = header;
-        byteswap_generic_header(temp_hdr.header);
-        std::memcpy(buffer.data(), &temp_hdr, sizeof(sc_header));
-        std::memcpy(buffer.data() + sizeof(sc_header), data.data(), data.size());
-
-        // Same layout as CB/CD/CE: nonce at 0x10, cipher from 0x20 over signature and body.
-        crypt_single_bl(buffer, HmacType::Default, cur_key, nullptr, nullptr, 0x20);
-        derived_key.emplace();
-        std::copy_n(cur_key, derived_key->size(), derived_key->begin());
-
-        std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
-                    sizeof(sc_header) - 0x20);
-        std::memcpy(data.data(), buffer.data() + sizeof(sc_header), data.size());
+        if (auto crypted = crypt_stage(secret); !crypted)
+            return crypted;
         decrypted = false;
+        return {};
     }
 
     bool BootloaderSc::is_decrypted() const {
