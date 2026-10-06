@@ -1,0 +1,484 @@
+mydata.image.extract_some_info header magic=0xff4f version=0x760 flags=0x0 size=0x70000
+mydata.image.extract_some_info copyright="\xa9 2004-2009 Microsoft Corporation. All rights reserved."
+mydata.image.extract_some_info block_type=NewSmallBlock
+mydata.image.extract_some_info bl.cb_a name="CB_A" present=1 decrypted=0 version=0x1a62 size=0x2000 flags=0x1800 entrypoint=0x3e0 ldv=none pairing=none
+mydata.image.extract_some_info bl.cb_b name="CB_B" present=1 decrypted=0 version=0x1a62 size=0x96c0 flags=0x0 entrypoint=0x3e0 ldv=none pairing=none
+mydata.image.extract_some_info bl.cb_x none
+mydata.image.extract_some_info bl.sc none
+mydata.image.extract_some_info bl.cd name="CD" present=1 decrypted=0 version=0x1a62 size=0x5080 flags=0x0 entrypoint=0x310 ldv=none pairing=none
+mydata.image.extract_some_info bl.ce name="CE" present=1 decrypted=0 version=0x760 size=0x5606a flags=0x0 entrypoint=0x0 ldv=none pairing=none
+mydata.image.extract_some_info bl.cf_0 name="CF_0" present=1 decrypted=0 version=0x4497 size=0x4560 flags=0x4000 entrypoint=0x360 ldv=none pairing=none
+mydata.image.extract_some_info bl.cg_0 name="CG_0" present=1 decrypted=0 version=0x4497 size=0x77a76 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+mydata.image.extract_some_info bl.cf_1 none
+mydata.image.extract_some_info bl.cg_1 none
+mydata.image.extract_some_info chain cb_ldv=0 cb_pairing=000000 cf0_ldv=none cf0_pairing=none cf1_ldv=none cf1_pairing=none
+mydata.image.extract_some_info smc present=1 decrypted=0 size=0x3000 version="4.1.2" motherboard="Jasper" type="Retail"
+mydata.image.extract_some_info flashfs present=0 files=0
+mydata.image.extract_some_info keyvault present=0 decrypted=0 kv_type=0 fcrt_required=0 region_raw=0x0 region_name=""
+mydata.image.extract_some_info keyvault.identity serial=empty console_id_raw=empty console_id_friendly=empty osig=empty mfr_date=empty dvd_key=empty
+mydata.image.extract_some_info cpu_key none
+mydata.image.extract_some_info raw_keyvault none
+mydata.image.extract_metadata cpu_key size=0x10 sha1=574bc75e22334a2f0f7a6259c55850b89f9e26fe
+mydata.image.extract_metadata nand_image size=0x1080000 sha1=26babaf2d747069ae8440004ae74a2d766c447d5
+mydata.image.extract_metadata keyvault size=0x4000 sha1=7b4e01d5977dbf8deafdb6e1544b8bced42e2f42
+mydata.image.extract_metadata smc none
+mydata.image.extract_metadata cb_ldv=0 pairing=343169 cf_ldv=26 cf_pairing=343169
+mydata.image.extract_metadata console_type=0x1 console_sequence=0xc console_sequence_allow=0xad0
+mydata.image.extract_metadata donor_nonces.stage0=bcebf93dfeb4e09ee4dcb94c25a0e486
+mydata.image.extract_metadata donor_nonces.stage1=78bc24d828eb3346aad08f1353cfb591
+mydata.image.extract_metadata donor_nonces.stage2=15ff88e74f3876bf3c0e8739d8b637ad
+mydata.image.extract_metadata donor_nonces.stage3=d52bc53ce881483b54c111b4e614f62d
+mydata.image.extract_metadata donor_nonces.cf=d2003f1ff97f72e92a8fab5827de3b3a
+mydata.image.extract_metadata donor_nonces.cg=28ce5dd5900a80e596fb2220be505168
+mydata.image.extract_metadata smc_config size=0x400 sha1=dabee46a9273e1496be769425d5f1722524e3831
+mydata.image.extract_metadata statistics size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+mydata.image.extract_metadata manufacturing size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+mydata.image.extract_metadata console_secured_files=0
+mydata.image.extract_all_info header magic=0xff4f version=0x760 flags=0x0 size=0x70000
+mydata.image.extract_all_info copyright="\xa9 2004-2009 Microsoft Corporation. All rights reserved."
+mydata.image.extract_all_info block_type=NewSmallBlock
+mydata.image.extract_all_info bl.cb_a name="CB_A" present=1 decrypted=1 version=0x1a62 size=0x2000 flags=0x1800 entrypoint=0x3e0 ldv=0 pairing=000000
+mydata.image.extract_all_info bl.cb_b name="CB_B" present=1 decrypted=1 version=0x1a62 size=0x96c0 flags=0x0 entrypoint=0x3e0 ldv=12 pairing=343169
+mydata.image.extract_all_info bl.cb_x none
+mydata.image.extract_all_info bl.sc none
+mydata.image.extract_all_info bl.cd name="CD" present=1 decrypted=1 version=0x1a62 size=0x5080 flags=0x0 entrypoint=0x310 ldv=none pairing=none
+mydata.image.extract_all_info bl.ce name="CE" present=1 decrypted=1 version=0x760 size=0x5606a flags=0x0 entrypoint=0x0 ldv=none pairing=none
+mydata.image.extract_all_info bl.cf_0 name="CF_0" present=1 decrypted=1 version=0x4497 size=0x4560 flags=0x4000 entrypoint=0x360 ldv=26 pairing=343169
+mydata.image.extract_all_info bl.cg_0 name="CG_0" present=1 decrypted=1 version=0x4497 size=0x77a76 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+mydata.image.extract_all_info bl.cf_1 none
+mydata.image.extract_all_info bl.cg_1 none
+mydata.image.extract_all_info chain cb_ldv=12 cb_pairing=343169 cf0_ldv=26 cf0_pairing=343169 cf1_ldv=none cf1_pairing=none
+mydata.image.extract_all_info smc present=1 decrypted=1 size=0x3000 version="4.1.2" motherboard="Jasper" type="Retail"
+mydata.image.extract_all_info flashfs present=1 files=30
+mydata.image.extract_all_info flashfs.file "sysupdate.xexp1" block=0x24 length=0x6bfe0 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "aac.xexp1" block=0x3f length=0x14000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "bootanim.xex" block=0x44 length=0x61000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "createprofile.xex" block=0x5d length=0xc000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "dash.xex" block=0x60 length=0x5b2000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "deviceselector.xex" block=0x1cd length=0xa000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "gamerprofile.xex" block=0x1d0 length=0x1b000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "hud.xex" block=0x1d7 length=0x1d000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "huduiskin.xex" block=0x1df length=0x14000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "mfgbootlauncher.xex" block=0x1e4 length=0x8000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "minimediaplayer.xex" block=0x1e6 length=0xc000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "nomni.xexp1" block=0x1e9 length=0xf000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "nomnifwk.xexp1" block=0x1ed length=0x2000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "nomnifwm.xexp1" block=0x1ee length=0x5000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "SegoeXbox-Light.xtt" block=0x1f0 length=0x6000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "signin.xex" block=0x1f2 length=0x1a000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "updater.xex" block=0x1f9 length=0x7000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "vk.xex" block=0x1fb length=0xb000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "xam.xex" block=0x1fe length=0x250000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "xenonclatin.xtt" block=0x292 length=0x11b000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "xenonclatin.xttp1" block=0x2d9 length=0x18000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "xenonjklatin.xtt" block=0x2df length=0x1a8000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "xenonjklatin.xttp1" block=0x349 length=0x7000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "ximecore.xex" block=0x34b length=0x17000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "ximedic.xex" block=0x351 length=0x90000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "ximedic.xexp1" block=0x375 length=0x2800 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "crl.bin" block=0x376 length=0xa00 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "dae.bin" block=0x377 length=0x7090 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "extended.bin" block=0x379 length=0x4000 timestamp=0x5d3a7405
+mydata.image.extract_all_info flashfs.file "secdata.bin" block=0x37a length=0x400 timestamp=0x5d3a7405
+mydata.image.extract_all_info keyvault present=1 decrypted=1 kv_type=2 fcrt_required=0 region_raw=0xff region_name="NTSC/US"
+mydata.image.extract_all_info keyvault.identity serial=len=12,sha1=726da040fadb3726af052810dbc844b8880ec999 console_id_raw=len=10,sha1=206449835d5dbba8a24cc653ee1ec3d0b1e2a464 console_id_friendly=len=12,sha1=88849aef19f3272aa3a1e2ee04a64dcb018280ef osig=len=28,sha1=2eac0913fbe4524e5919ac0bc937e1db430f3ca8 mfr_date=len=8,sha1=f29154ca2e0a77b7db65d5c76cdda219c6a7eba9 dvd_key=len=32,sha1=46018c81440e43ca84cd2cf1e3b073db6bebed32
+mydata.image.extract_all_info cpu_key size=0x10 sha1=574bc75e22334a2f0f7a6259c55850b89f9e26fe
+mydata.image.extract_all_info raw_keyvault size=0x4000 sha1=7b4e01d5977dbf8deafdb6e1544b8bced42e2f42
+mydata.image.extract_all build_type=retail image_type=NewSmallBlock console=none
+mydata.image.extract_all options cbldv=unset pairing_data=unset cfldv=unset xellbutton=unset xellbutton2=unset cygnos=unset demon=unset olddvd=unset nodvd=unset dualboot=unset
+mydata.image.extract_all options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
+mydata.image.extract_all options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
+mydata.image.extract_all.metadata cpu_key size=0x10 sha1=574bc75e22334a2f0f7a6259c55850b89f9e26fe
+mydata.image.extract_all.metadata nand_image size=0x1080000 sha1=26babaf2d747069ae8440004ae74a2d766c447d5
+mydata.image.extract_all.metadata keyvault size=0x4000 sha1=7b4e01d5977dbf8deafdb6e1544b8bced42e2f42
+mydata.image.extract_all.metadata smc size=0x3000 sha1=872468a38c42c4d340755e00389c089f06cf2143
+mydata.image.extract_all.metadata cb_ldv=0 pairing=343169 cf_ldv=26 cf_pairing=343169
+mydata.image.extract_all.metadata console_type=0x1 console_sequence=0xc console_sequence_allow=0xad0
+mydata.image.extract_all.metadata donor_nonces.stage0=bcebf93dfeb4e09ee4dcb94c25a0e486
+mydata.image.extract_all.metadata donor_nonces.stage1=78bc24d828eb3346aad08f1353cfb591
+mydata.image.extract_all.metadata donor_nonces.stage2=15ff88e74f3876bf3c0e8739d8b637ad
+mydata.image.extract_all.metadata donor_nonces.stage3=d52bc53ce881483b54c111b4e614f62d
+mydata.image.extract_all.metadata donor_nonces.cf=d2003f1ff97f72e92a8fab5827de3b3a
+mydata.image.extract_all.metadata donor_nonces.cg=28ce5dd5900a80e596fb2220be505168
+mydata.image.extract_all.metadata smc_config size=0x400 sha1=dabee46a9273e1496be769425d5f1722524e3831
+mydata.image.extract_all.metadata statistics size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+mydata.image.extract_all.metadata manufacturing size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+mydata.image.extract_all.metadata console_secured_files=3
+mydata.image.extract_all.metadata console_secured_file "crl.bin" size=0xa00 sha1=591b877c261a6b592485b47a03eb2c0f0cb5bd49
+mydata.image.extract_all.metadata console_secured_file "dae.bin" size=0x7090 sha1=a467136aa42cc68d539891e9da66cd74147d9281
+mydata.image.extract_all.metadata console_secured_file "secdata.bin" size=0x400 sha1=1008c16310a64b3b7294709c45c4f3fc4a629bb3
+mydata.image.extract_all.bootloaders cb_or_a size=0x2000 sha1=bd505aaf85feb0832219bb1d44faf33d2dd09f48
+mydata.image.extract_all.bootloaders cb_x none
+mydata.image.extract_all.bootloaders cb_b size=0x96c0 sha1=3f1632e65b232ee0e827cb39e504b137395e29f9
+mydata.image.extract_all.bootloaders sc none
+mydata.image.extract_all.bootloaders cd size=0x5080 sha1=2de954d9bdfe8ed98a2b191abd1ed734fdadf6f7
+mydata.image.extract_all.bootloaders ce size=0x56070 sha1=748a97900900d3667b5bd9dbba36f54cc3816fb5
+mydata.image.extract_all.bootloaders cf0 size=0x4560 sha1=2e0f8e93c288131cbc73f661859ead5931c898d2
+mydata.image.extract_all.bootloaders cg0 size=0x77a80 sha1=289cb8de0f3b1742a915e749bd7a5aa9e1d432fd
+mydata.image.extract_all.bootloaders cf1 none
+mydata.image.extract_all.bootloaders cg1 none
+mydata.image.extract_all.bootloaders extra_cb none
+mydata.image.extract_all.bootloaders extra_cd none
+mydata.image.extract_all.mobiles 0x31 none
+mydata.image.extract_all.mobiles 0x32 none
+mydata.image.extract_all.mobiles 0x33 none
+mydata.image.extract_all.mobiles 0x34 none
+mydata.image.extract_all.mobiles 0x35 none
+mydata.image.extract_all.mobiles 0x36 none
+mydata.image.extract_all.mobiles 0x37 none
+mydata.image.extract_all.mobiles 0x38 none
+mydata.image.extract_all.mobiles 0x39 none
+mydata.image.extract_all.patches none
+mydata.image.extract_all.payloads none
+mydata.image.extract_all.flashfs_sec files=30
+mydata.image.extract_all.flashfs_sec "sysupdate.xexp1" size=0x6bfe0 sha1=5d4d4bf1af018eea1e3078cfe2c582ae36c5b060
+mydata.image.extract_all.flashfs_sec "aac.xexp1" size=0x14000 sha1=600b902eede2e7a66c82600ad95305ac37eb5f35
+mydata.image.extract_all.flashfs_sec "bootanim.xex" size=0x61000 sha1=3c1bf1edc06a385455e74876c3aa28280e8f363c
+mydata.image.extract_all.flashfs_sec "createprofile.xex" size=0xc000 sha1=3583aaa574eb64007d0d3967eff0785d22a85633
+mydata.image.extract_all.flashfs_sec "dash.xex" size=0x5b2000 sha1=3d44ef57781c20669705cd687e3b62b1c2f1ff6b
+mydata.image.extract_all.flashfs_sec "deviceselector.xex" size=0xa000 sha1=87581dce29bbbe9232a24ec5ef965f947a3ef186
+mydata.image.extract_all.flashfs_sec "gamerprofile.xex" size=0x1b000 sha1=d2eaaa5c3b5b85ba98252d93b80c0521047d71e6
+mydata.image.extract_all.flashfs_sec "hud.xex" size=0x1d000 sha1=b0ab65e560b674739821e54c3c8b6be9d6579c4a
+mydata.image.extract_all.flashfs_sec "huduiskin.xex" size=0x14000 sha1=45203d5b26b952436ed86a3c791610c9f61a7b04
+mydata.image.extract_all.flashfs_sec "mfgbootlauncher.xex" size=0x8000 sha1=d8056c3eefd6e74c92f3ab90d872f88da05ec1b1
+mydata.image.extract_all.flashfs_sec "minimediaplayer.xex" size=0xc000 sha1=903c1213b962660fe9837de14ba2a4a8fbdf63bf
+mydata.image.extract_all.flashfs_sec "nomni.xexp1" size=0xf000 sha1=9946ae6c431bcd1966e4808191d7578cce66c732
+mydata.image.extract_all.flashfs_sec "nomnifwk.xexp1" size=0x2000 sha1=eda45c26077b067b541359e6e62f70b0668e5b12
+mydata.image.extract_all.flashfs_sec "nomnifwm.xexp1" size=0x5000 sha1=ca76a96835f8709d588dbc47f5fe83749f455356
+mydata.image.extract_all.flashfs_sec "SegoeXbox-Light.xtt" size=0x6000 sha1=1553e1172c83db7edc563f3c318e9fc607ce4769
+mydata.image.extract_all.flashfs_sec "signin.xex" size=0x1a000 sha1=b135aad09174165b2e129700a8649d6f0aab3b8b
+mydata.image.extract_all.flashfs_sec "updater.xex" size=0x7000 sha1=48c409fda2321e8c01c024b1319c5172be9d9174
+mydata.image.extract_all.flashfs_sec "vk.xex" size=0xb000 sha1=a5ec3c4a93f15298cc178d0bcf36d69e5aea0e52
+mydata.image.extract_all.flashfs_sec "xam.xex" size=0x250000 sha1=32eedaacc2c67efbe48c31ff9e63e634c026181e
+mydata.image.extract_all.flashfs_sec "xenonclatin.xtt" size=0x11b000 sha1=4b639a429853e4e85357b1c7bc93ca48b5e4e221
+mydata.image.extract_all.flashfs_sec "xenonclatin.xttp1" size=0x18000 sha1=4232347a84dd0e69d650ddfacd4896ed9d5795cf
+mydata.image.extract_all.flashfs_sec "xenonjklatin.xtt" size=0x1a8000 sha1=56a0817000e498752d60671f890417ce8a23633d
+mydata.image.extract_all.flashfs_sec "xenonjklatin.xttp1" size=0x7000 sha1=4030d06c26f1ba03f5dfb23e600f5fa9d1d03014
+mydata.image.extract_all.flashfs_sec "ximecore.xex" size=0x17000 sha1=0728d06309f3197d107ceab5827c7ccf53f386d0
+mydata.image.extract_all.flashfs_sec "ximedic.xex" size=0x90000 sha1=95f3d68c0269c06a7d9ac5337af7b26e434b7c30
+mydata.image.extract_all.flashfs_sec "ximedic.xexp1" size=0x2800 sha1=53e58bc7432e0c265964b9d1b25c9bdbfac70b17
+mydata.image.extract_all.flashfs_sec "crl.bin" size=0xa00 sha1=591b877c261a6b592485b47a03eb2c0f0cb5bd49
+mydata.image.extract_all.flashfs_sec "dae.bin" size=0x7090 sha1=a467136aa42cc68d539891e9da66cd74147d9281
+mydata.image.extract_all.flashfs_sec "extended.bin" size=0x4000 sha1=049590d974a461f0bc3dfe7ce87087d10d24cea8
+mydata.image.extract_all.flashfs_sec "secdata.bin" size=0x400 sha1=1008c16310a64b3b7294709c45c4f3fc4a629bb3
+mydata.image.extract_all.raw_patches=0
+mydata.image.extract_all.sb_private_key none
+mydata.image.zero-key.extract_some_info header magic=0xff4f version=0x760 flags=0x0 size=0x70000
+mydata.image.zero-key.extract_some_info copyright="\xa9 2004-2009 Microsoft Corporation. All rights reserved."
+mydata.image.zero-key.extract_some_info block_type=NewSmallBlock
+mydata.image.zero-key.extract_some_info bl.cb_a name="CB_A" present=1 decrypted=0 version=0x1a62 size=0x2000 flags=0x1800 entrypoint=0x3e0 ldv=none pairing=none
+mydata.image.zero-key.extract_some_info bl.cb_b name="CB_B" present=1 decrypted=0 version=0x1a62 size=0x96c0 flags=0x0 entrypoint=0x3e0 ldv=none pairing=none
+mydata.image.zero-key.extract_some_info bl.cb_x none
+mydata.image.zero-key.extract_some_info bl.sc none
+mydata.image.zero-key.extract_some_info bl.cd name="CD" present=1 decrypted=0 version=0x1a62 size=0x5080 flags=0x0 entrypoint=0x310 ldv=none pairing=none
+mydata.image.zero-key.extract_some_info bl.ce name="CE" present=1 decrypted=0 version=0x760 size=0x5606a flags=0x0 entrypoint=0x0 ldv=none pairing=none
+mydata.image.zero-key.extract_some_info bl.cf_0 name="CF_0" present=1 decrypted=0 version=0x4497 size=0x4560 flags=0x4000 entrypoint=0x360 ldv=none pairing=none
+mydata.image.zero-key.extract_some_info bl.cg_0 name="CG_0" present=1 decrypted=0 version=0x4497 size=0x77a76 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+mydata.image.zero-key.extract_some_info bl.cf_1 none
+mydata.image.zero-key.extract_some_info bl.cg_1 none
+mydata.image.zero-key.extract_some_info chain cb_ldv=0 cb_pairing=000000 cf0_ldv=none cf0_pairing=none cf1_ldv=none cf1_pairing=none
+mydata.image.zero-key.extract_some_info smc present=1 decrypted=0 size=0x3000 version="4.1.2" motherboard="Jasper" type="Retail"
+mydata.image.zero-key.extract_some_info flashfs present=0 files=0
+mydata.image.zero-key.extract_some_info keyvault present=0 decrypted=0 kv_type=0 fcrt_required=0 region_raw=0x0 region_name=""
+mydata.image.zero-key.extract_some_info keyvault.identity serial=empty console_id_raw=empty console_id_friendly=empty osig=empty mfr_date=empty dvd_key=empty
+mydata.image.zero-key.extract_some_info cpu_key none
+mydata.image.zero-key.extract_some_info raw_keyvault none
+mydata.image.zero-key.extract_metadata error the keyvault does not open under the CPU key
+mydata.image.zero-key.extract_all_info header magic=0xff4f version=0x760 flags=0x0 size=0x70000
+mydata.image.zero-key.extract_all_info copyright="\xa9 2004-2009 Microsoft Corporation. All rights reserved."
+mydata.image.zero-key.extract_all_info block_type=NewSmallBlock
+mydata.image.zero-key.extract_all_info bl.cb_a name="CB_A" present=1 decrypted=1 version=0x1a62 size=0x2000 flags=0x1800 entrypoint=0x3e0 ldv=0 pairing=000000
+mydata.image.zero-key.extract_all_info bl.cb_b name="CB_B" present=1 decrypted=1 version=0x1a62 size=0x96c0 flags=0x0 entrypoint=0x3e0 ldv=16 pairing=84623b
+mydata.image.zero-key.extract_all_info bl.cb_x none
+mydata.image.zero-key.extract_all_info bl.sc none
+mydata.image.zero-key.extract_all_info bl.cd name="CD" present=1 decrypted=1 version=0x1a62 size=0x5080 flags=0x0 entrypoint=0x310 ldv=none pairing=none
+mydata.image.zero-key.extract_all_info bl.ce name="CE" present=1 decrypted=1 version=0x760 size=0x5606a flags=0x0 entrypoint=0x0 ldv=none pairing=none
+mydata.image.zero-key.extract_all_info bl.cf_0 name="CF_0" present=1 decrypted=1 version=0x4497 size=0x4560 flags=0x4000 entrypoint=0x360 ldv=26 pairing=343169
+mydata.image.zero-key.extract_all_info bl.cg_0 name="CG_0" present=1 decrypted=1 version=0x4497 size=0x77a76 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+mydata.image.zero-key.extract_all_info bl.cf_1 none
+mydata.image.zero-key.extract_all_info bl.cg_1 none
+mydata.image.zero-key.extract_all_info chain cb_ldv=16 cb_pairing=84623b cf0_ldv=26 cf0_pairing=343169 cf1_ldv=none cf1_pairing=none
+mydata.image.zero-key.extract_all_info smc present=1 decrypted=1 size=0x3000 version="4.1.2" motherboard="Jasper" type="Retail"
+mydata.image.zero-key.extract_all_info flashfs present=1 files=30
+mydata.image.zero-key.extract_all_info flashfs.file "sysupdate.xexp1" block=0x24 length=0x6bfe0 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "aac.xexp1" block=0x3f length=0x14000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "bootanim.xex" block=0x44 length=0x61000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "createprofile.xex" block=0x5d length=0xc000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "dash.xex" block=0x60 length=0x5b2000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "deviceselector.xex" block=0x1cd length=0xa000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "gamerprofile.xex" block=0x1d0 length=0x1b000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "hud.xex" block=0x1d7 length=0x1d000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "huduiskin.xex" block=0x1df length=0x14000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "mfgbootlauncher.xex" block=0x1e4 length=0x8000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "minimediaplayer.xex" block=0x1e6 length=0xc000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "nomni.xexp1" block=0x1e9 length=0xf000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "nomnifwk.xexp1" block=0x1ed length=0x2000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "nomnifwm.xexp1" block=0x1ee length=0x5000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "SegoeXbox-Light.xtt" block=0x1f0 length=0x6000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "signin.xex" block=0x1f2 length=0x1a000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "updater.xex" block=0x1f9 length=0x7000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "vk.xex" block=0x1fb length=0xb000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "xam.xex" block=0x1fe length=0x250000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "xenonclatin.xtt" block=0x292 length=0x11b000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "xenonclatin.xttp1" block=0x2d9 length=0x18000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "xenonjklatin.xtt" block=0x2df length=0x1a8000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "xenonjklatin.xttp1" block=0x349 length=0x7000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "ximecore.xex" block=0x34b length=0x17000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "ximedic.xex" block=0x351 length=0x90000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "ximedic.xexp1" block=0x375 length=0x2800 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "crl.bin" block=0x376 length=0xa00 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "dae.bin" block=0x377 length=0x7090 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "extended.bin" block=0x379 length=0x4000 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info flashfs.file "secdata.bin" block=0x37a length=0x400 timestamp=0x5d3a7405
+mydata.image.zero-key.extract_all_info keyvault present=1 decrypted=0 kv_type=2 fcrt_required=1 region_raw=0x3aaa region_name="Unknown"
+mydata.image.zero-key.extract_all_info keyvault.identity serial=len=12,sha1=4617486bc7aabdec9be710a01c302434b6c632ed console_id_raw=len=10,sha1=e2a618c34bce980711b60d23f033a5a10b717c37 console_id_friendly=len=12,sha1=e557dacb0978b3160d8a088a9da54e4acf079741 osig=len=28,sha1=86d22894257fd8af0c44646ac5807c5b4087deca mfr_date=len=8,sha1=4eede83679bfe242acba01b686077abedc175e7b dvd_key=len=32,sha1=eff8b6633e76bce6e340546e566ec7e6213cc9de
+mydata.image.zero-key.extract_all_info cpu_key size=0x10 sha1=e129f27c5103bc5cc44bcdf0a15e160d445066ff
+mydata.image.zero-key.extract_all_info raw_keyvault size=0x4000 sha1=b299d702082356a93c87d555a994378ff0b6c60b
+mydata.image.zero-key.extract_all build_type=retail image_type=NewSmallBlock console=none
+mydata.image.zero-key.extract_all options cbldv=unset pairing_data=unset cfldv=unset xellbutton=unset xellbutton2=unset cygnos=unset demon=unset olddvd=unset nodvd=unset dualboot=unset
+mydata.image.zero-key.extract_all options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
+mydata.image.zero-key.extract_all options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
+mydata.image.zero-key.extract_all.metadata cpu_key size=0x10 sha1=e129f27c5103bc5cc44bcdf0a15e160d445066ff
+mydata.image.zero-key.extract_all.metadata nand_image size=0x1080000 sha1=26babaf2d747069ae8440004ae74a2d766c447d5
+mydata.image.zero-key.extract_all.metadata keyvault none
+mydata.image.zero-key.extract_all.metadata smc size=0x3000 sha1=872468a38c42c4d340755e00389c089f06cf2143
+mydata.image.zero-key.extract_all.metadata cb_ldv=162 pairing=84623b cf_ldv=26 cf_pairing=343169
+mydata.image.zero-key.extract_all.metadata console_type=0x1 console_sequence=0xc console_sequence_allow=0xad0
+mydata.image.zero-key.extract_all.metadata donor_nonces.stage0=bcebf93dfeb4e09ee4dcb94c25a0e486
+mydata.image.zero-key.extract_all.metadata donor_nonces.stage1=78bc24d828eb3346aad08f1353cfb591
+mydata.image.zero-key.extract_all.metadata donor_nonces.stage2=15ff88e74f3876bf3c0e8739d8b637ad
+mydata.image.zero-key.extract_all.metadata donor_nonces.stage3=d52bc53ce881483b54c111b4e614f62d
+mydata.image.zero-key.extract_all.metadata donor_nonces.cf=d2003f1ff97f72e92a8fab5827de3b3a
+mydata.image.zero-key.extract_all.metadata donor_nonces.cg=28ce5dd5900a80e596fb2220be505168
+mydata.image.zero-key.extract_all.metadata smc_config size=0x400 sha1=dabee46a9273e1496be769425d5f1722524e3831
+mydata.image.zero-key.extract_all.metadata statistics size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+mydata.image.zero-key.extract_all.metadata manufacturing size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+mydata.image.zero-key.extract_all.metadata console_secured_files=3
+mydata.image.zero-key.extract_all.metadata console_secured_file "crl.bin" size=0xa00 sha1=591b877c261a6b592485b47a03eb2c0f0cb5bd49
+mydata.image.zero-key.extract_all.metadata console_secured_file "dae.bin" size=0x7090 sha1=a467136aa42cc68d539891e9da66cd74147d9281
+mydata.image.zero-key.extract_all.metadata console_secured_file "secdata.bin" size=0x400 sha1=cca1813f8024f85dd5aba6c2055bcc1a0625f686
+mydata.image.zero-key.extract_all.bootloaders cb_or_a size=0x2000 sha1=bd505aaf85feb0832219bb1d44faf33d2dd09f48
+mydata.image.zero-key.extract_all.bootloaders cb_x none
+mydata.image.zero-key.extract_all.bootloaders cb_b size=0x96c0 sha1=18fa00b48f057f7b21dfd9a437cfd3b7fda53779
+mydata.image.zero-key.extract_all.bootloaders sc none
+mydata.image.zero-key.extract_all.bootloaders cd size=0x5080 sha1=4807dc31a89a013fbee2c727bc6fe854a25da7e4
+mydata.image.zero-key.extract_all.bootloaders ce size=0x56070 sha1=4f40b56250138a0c44e8a00f5d7216f37e50c8af
+mydata.image.zero-key.extract_all.bootloaders cf0 size=0x4560 sha1=2e0f8e93c288131cbc73f661859ead5931c898d2
+mydata.image.zero-key.extract_all.bootloaders cg0 size=0x77a80 sha1=289cb8de0f3b1742a915e749bd7a5aa9e1d432fd
+mydata.image.zero-key.extract_all.bootloaders cf1 none
+mydata.image.zero-key.extract_all.bootloaders cg1 none
+mydata.image.zero-key.extract_all.bootloaders extra_cb none
+mydata.image.zero-key.extract_all.bootloaders extra_cd none
+mydata.image.zero-key.extract_all.mobiles 0x31 none
+mydata.image.zero-key.extract_all.mobiles 0x32 none
+mydata.image.zero-key.extract_all.mobiles 0x33 none
+mydata.image.zero-key.extract_all.mobiles 0x34 none
+mydata.image.zero-key.extract_all.mobiles 0x35 none
+mydata.image.zero-key.extract_all.mobiles 0x36 none
+mydata.image.zero-key.extract_all.mobiles 0x37 none
+mydata.image.zero-key.extract_all.mobiles 0x38 none
+mydata.image.zero-key.extract_all.mobiles 0x39 none
+mydata.image.zero-key.extract_all.patches none
+mydata.image.zero-key.extract_all.payloads none
+mydata.image.zero-key.extract_all.flashfs_sec files=30
+mydata.image.zero-key.extract_all.flashfs_sec "sysupdate.xexp1" size=0x6bfe0 sha1=5d4d4bf1af018eea1e3078cfe2c582ae36c5b060
+mydata.image.zero-key.extract_all.flashfs_sec "aac.xexp1" size=0x14000 sha1=600b902eede2e7a66c82600ad95305ac37eb5f35
+mydata.image.zero-key.extract_all.flashfs_sec "bootanim.xex" size=0x61000 sha1=3c1bf1edc06a385455e74876c3aa28280e8f363c
+mydata.image.zero-key.extract_all.flashfs_sec "createprofile.xex" size=0xc000 sha1=3583aaa574eb64007d0d3967eff0785d22a85633
+mydata.image.zero-key.extract_all.flashfs_sec "dash.xex" size=0x5b2000 sha1=3d44ef57781c20669705cd687e3b62b1c2f1ff6b
+mydata.image.zero-key.extract_all.flashfs_sec "deviceselector.xex" size=0xa000 sha1=87581dce29bbbe9232a24ec5ef965f947a3ef186
+mydata.image.zero-key.extract_all.flashfs_sec "gamerprofile.xex" size=0x1b000 sha1=d2eaaa5c3b5b85ba98252d93b80c0521047d71e6
+mydata.image.zero-key.extract_all.flashfs_sec "hud.xex" size=0x1d000 sha1=b0ab65e560b674739821e54c3c8b6be9d6579c4a
+mydata.image.zero-key.extract_all.flashfs_sec "huduiskin.xex" size=0x14000 sha1=45203d5b26b952436ed86a3c791610c9f61a7b04
+mydata.image.zero-key.extract_all.flashfs_sec "mfgbootlauncher.xex" size=0x8000 sha1=d8056c3eefd6e74c92f3ab90d872f88da05ec1b1
+mydata.image.zero-key.extract_all.flashfs_sec "minimediaplayer.xex" size=0xc000 sha1=903c1213b962660fe9837de14ba2a4a8fbdf63bf
+mydata.image.zero-key.extract_all.flashfs_sec "nomni.xexp1" size=0xf000 sha1=9946ae6c431bcd1966e4808191d7578cce66c732
+mydata.image.zero-key.extract_all.flashfs_sec "nomnifwk.xexp1" size=0x2000 sha1=eda45c26077b067b541359e6e62f70b0668e5b12
+mydata.image.zero-key.extract_all.flashfs_sec "nomnifwm.xexp1" size=0x5000 sha1=ca76a96835f8709d588dbc47f5fe83749f455356
+mydata.image.zero-key.extract_all.flashfs_sec "SegoeXbox-Light.xtt" size=0x6000 sha1=1553e1172c83db7edc563f3c318e9fc607ce4769
+mydata.image.zero-key.extract_all.flashfs_sec "signin.xex" size=0x1a000 sha1=b135aad09174165b2e129700a8649d6f0aab3b8b
+mydata.image.zero-key.extract_all.flashfs_sec "updater.xex" size=0x7000 sha1=48c409fda2321e8c01c024b1319c5172be9d9174
+mydata.image.zero-key.extract_all.flashfs_sec "vk.xex" size=0xb000 sha1=a5ec3c4a93f15298cc178d0bcf36d69e5aea0e52
+mydata.image.zero-key.extract_all.flashfs_sec "xam.xex" size=0x250000 sha1=32eedaacc2c67efbe48c31ff9e63e634c026181e
+mydata.image.zero-key.extract_all.flashfs_sec "xenonclatin.xtt" size=0x11b000 sha1=4b639a429853e4e85357b1c7bc93ca48b5e4e221
+mydata.image.zero-key.extract_all.flashfs_sec "xenonclatin.xttp1" size=0x18000 sha1=4232347a84dd0e69d650ddfacd4896ed9d5795cf
+mydata.image.zero-key.extract_all.flashfs_sec "xenonjklatin.xtt" size=0x1a8000 sha1=56a0817000e498752d60671f890417ce8a23633d
+mydata.image.zero-key.extract_all.flashfs_sec "xenonjklatin.xttp1" size=0x7000 sha1=4030d06c26f1ba03f5dfb23e600f5fa9d1d03014
+mydata.image.zero-key.extract_all.flashfs_sec "ximecore.xex" size=0x17000 sha1=0728d06309f3197d107ceab5827c7ccf53f386d0
+mydata.image.zero-key.extract_all.flashfs_sec "ximedic.xex" size=0x90000 sha1=95f3d68c0269c06a7d9ac5337af7b26e434b7c30
+mydata.image.zero-key.extract_all.flashfs_sec "ximedic.xexp1" size=0x2800 sha1=53e58bc7432e0c265964b9d1b25c9bdbfac70b17
+mydata.image.zero-key.extract_all.flashfs_sec "crl.bin" size=0xa00 sha1=591b877c261a6b592485b47a03eb2c0f0cb5bd49
+mydata.image.zero-key.extract_all.flashfs_sec "dae.bin" size=0x7090 sha1=a467136aa42cc68d539891e9da66cd74147d9281
+mydata.image.zero-key.extract_all.flashfs_sec "extended.bin" size=0x4000 sha1=57771fc063a2eb6e2ec168378a1c530cb45620d5
+mydata.image.zero-key.extract_all.flashfs_sec "secdata.bin" size=0x400 sha1=cca1813f8024f85dd5aba6c2055bcc1a0625f686
+mydata.image.zero-key.extract_all.raw_patches=0
+mydata.image.zero-key.extract_all.sb_private_key none
+mydata.glitch2.extract_some_info header magic=0xff4f version=0x760 flags=0x0 size=0xb0000
+mydata.glitch2.extract_some_info copyright="\xa9 2004-2009 Microsoft Corporation. All rights reserved."
+mydata.glitch2.extract_some_info block_type=NewSmallBlock
+mydata.glitch2.extract_some_info bl.cb_a name="CB_A" present=1 decrypted=0 version=0x1a62 size=0x2000 flags=0x1800 entrypoint=0x3e0 ldv=none pairing=none
+mydata.glitch2.extract_some_info bl.cb_b name="CB_B" present=1 decrypted=0 version=0x1a62 size=0x96c0 flags=0x0 entrypoint=0x3e0 ldv=none pairing=none
+mydata.glitch2.extract_some_info bl.cb_x none
+mydata.glitch2.extract_some_info bl.sc none
+mydata.glitch2.extract_some_info bl.cd name="CD" present=1 decrypted=0 version=0x1a62 size=0x5290 flags=0x0 entrypoint=0x310 ldv=none pairing=none
+mydata.glitch2.extract_some_info bl.ce name="CE" present=1 decrypted=0 version=0x760 size=0x5606a flags=0x0 entrypoint=0x0 ldv=none pairing=none
+mydata.glitch2.extract_some_info bl.cf_0 name="CF_0" present=1 decrypted=0 version=0x4497 size=0x4560 flags=0x4000 entrypoint=0x360 ldv=none pairing=none
+mydata.glitch2.extract_some_info bl.cg_0 name="CG_0" present=1 decrypted=0 version=0x4497 size=0x77a76 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+mydata.glitch2.extract_some_info bl.cf_1 none
+mydata.glitch2.extract_some_info bl.cg_1 none
+mydata.glitch2.extract_some_info chain cb_ldv=0 cb_pairing=000000 cf0_ldv=none cf0_pairing=none cf1_ldv=none cf1_pairing=none
+mydata.glitch2.extract_some_info smc present=1 decrypted=0 size=0x3000 version="4.1.2" motherboard="Jasper" type="RGH3 v2"
+mydata.glitch2.extract_some_info flashfs present=0 files=0
+mydata.glitch2.extract_some_info keyvault present=0 decrypted=0 kv_type=0 fcrt_required=0 region_raw=0x0 region_name=""
+mydata.glitch2.extract_some_info keyvault.identity serial=empty console_id_raw=empty console_id_friendly=empty osig=empty mfr_date=empty dvd_key=empty
+mydata.glitch2.extract_some_info cpu_key none
+mydata.glitch2.extract_some_info raw_keyvault none
+mydata.glitch2.extract_metadata cpu_key size=0x10 sha1=574bc75e22334a2f0f7a6259c55850b89f9e26fe
+mydata.glitch2.extract_metadata nand_image size=0x1080000 sha1=933605868668579a0fcc1355115fec84d51618bf
+mydata.glitch2.extract_metadata keyvault size=0x4000 sha1=7b4e01d5977dbf8deafdb6e1544b8bced42e2f42
+mydata.glitch2.extract_metadata smc none
+mydata.glitch2.extract_metadata cb_ldv=0 pairing=343169 cf_ldv=26 cf_pairing=343169
+mydata.glitch2.extract_metadata console_type=0x1 console_sequence=0xc console_sequence_allow=0xad0
+mydata.glitch2.extract_metadata donor_nonces.stage0=bcebf93dfeb4e09ee4dcb94c25a0e486
+mydata.glitch2.extract_metadata donor_nonces.stage1=78bc24d828eb3346aad08f1353cfb591
+mydata.glitch2.extract_metadata donor_nonces.stage2=15ff88e74f3876bf3c0e8739d8b637ad
+mydata.glitch2.extract_metadata donor_nonces.stage3=d52bc53ce881483b54c111b4e614f62d
+mydata.glitch2.extract_metadata donor_nonces.cf=d2003f1ff97f72e92a8fab5827de3b3a
+mydata.glitch2.extract_metadata donor_nonces.cg=28ce5dd5900a80e596fb2220be505168
+mydata.glitch2.extract_metadata smc_config size=0x400 sha1=dabee46a9273e1496be769425d5f1722524e3831
+mydata.glitch2.extract_metadata statistics size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+mydata.glitch2.extract_metadata manufacturing size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+mydata.glitch2.extract_metadata console_secured_files=0
+mydata.glitch2.extract_all_info header magic=0xff4f version=0x760 flags=0x0 size=0xb0000
+mydata.glitch2.extract_all_info copyright="\xa9 2004-2009 Microsoft Corporation. All rights reserved."
+mydata.glitch2.extract_all_info block_type=NewSmallBlock
+mydata.glitch2.extract_all_info bl.cb_a name="CB_A" present=1 decrypted=1 version=0x1a62 size=0x2000 flags=0x1800 entrypoint=0x3e0 ldv=0 pairing=000000
+mydata.glitch2.extract_all_info bl.cb_b name="CB_B" present=1 decrypted=1 version=0x1a62 size=0x96c0 flags=0x0 entrypoint=0x3e0 ldv=12 pairing=343169
+mydata.glitch2.extract_all_info bl.cb_x none
+mydata.glitch2.extract_all_info bl.sc none
+mydata.glitch2.extract_all_info bl.cd name="CD" present=1 decrypted=1 version=0x1a62 size=0x5290 flags=0x0 entrypoint=0x310 ldv=none pairing=none
+mydata.glitch2.extract_all_info bl.ce name="CE" present=1 decrypted=1 version=0x760 size=0x5606a flags=0x0 entrypoint=0x0 ldv=none pairing=none
+mydata.glitch2.extract_all_info bl.cf_0 name="CF_0" present=1 decrypted=1 version=0x4497 size=0x4560 flags=0x4000 entrypoint=0x360 ldv=26 pairing=343169
+mydata.glitch2.extract_all_info bl.cg_0 name="CG_0" present=1 decrypted=1 version=0x4497 size=0x77a76 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+mydata.glitch2.extract_all_info bl.cf_1 none
+mydata.glitch2.extract_all_info bl.cg_1 none
+mydata.glitch2.extract_all_info chain cb_ldv=12 cb_pairing=343169 cf0_ldv=26 cf0_pairing=343169 cf1_ldv=none cf1_pairing=none
+mydata.glitch2.extract_all_info smc present=1 decrypted=1 size=0x3000 version="4.1.2" motherboard="Jasper" type="RGH3 v2"
+mydata.glitch2.extract_all_info flashfs present=1 files=30
+mydata.glitch2.extract_all_info flashfs.file "sysupdate.xexp1" block=0x34 length=0x6bfe0 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "aac.xexp1" block=0x4f length=0x14000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "bootanim.xex" block=0x54 length=0x61000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "createprofile.xex" block=0x6d length=0xc000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "dash.xex" block=0x70 length=0x5b2000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "deviceselector.xex" block=0x1dd length=0xa000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "gamerprofile.xex" block=0x1e0 length=0x1b000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "hud.xex" block=0x1e7 length=0x1d000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "huduiskin.xex" block=0x1ef length=0x14000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "mfgbootlauncher.xex" block=0x1f4 length=0x8000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "minimediaplayer.xex" block=0x1f6 length=0xc000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "nomni.xexp1" block=0x1f9 length=0xf000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "nomnifwk.xexp1" block=0x1fd length=0x2000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "nomnifwm.xexp1" block=0x1fe length=0x5000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "SegoeXbox-Light.xtt" block=0x200 length=0x6000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "signin.xex" block=0x202 length=0x1a000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "updater.xex" block=0x209 length=0x7000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "vk.xex" block=0x20b length=0xb000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "xam.xex" block=0x20e length=0x250000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "xenonclatin.xtt" block=0x2a2 length=0x11b000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "xenonclatin.xttp1" block=0x2e9 length=0x18000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "xenonjklatin.xtt" block=0x2ef length=0x1a8000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "xenonjklatin.xttp1" block=0x359 length=0x7000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "ximecore.xex" block=0x35b length=0x17000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "ximedic.xex" block=0x361 length=0x90000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "ximedic.xexp1" block=0x385 length=0x2800 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "crl.bin" block=0x386 length=0xa00 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "dae.bin" block=0x387 length=0x7090 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "extended.bin" block=0x389 length=0x4000 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info flashfs.file "secdata.bin" block=0x38a length=0x400 timestamp=0x5d444ac3
+mydata.glitch2.extract_all_info keyvault present=1 decrypted=1 kv_type=2 fcrt_required=0 region_raw=0xff region_name="NTSC/US"
+mydata.glitch2.extract_all_info keyvault.identity serial=len=12,sha1=726da040fadb3726af052810dbc844b8880ec999 console_id_raw=len=10,sha1=206449835d5dbba8a24cc653ee1ec3d0b1e2a464 console_id_friendly=len=12,sha1=88849aef19f3272aa3a1e2ee04a64dcb018280ef osig=len=28,sha1=2eac0913fbe4524e5919ac0bc937e1db430f3ca8 mfr_date=len=8,sha1=f29154ca2e0a77b7db65d5c76cdda219c6a7eba9 dvd_key=len=32,sha1=46018c81440e43ca84cd2cf1e3b073db6bebed32
+mydata.glitch2.extract_all_info cpu_key size=0x10 sha1=574bc75e22334a2f0f7a6259c55850b89f9e26fe
+mydata.glitch2.extract_all_info raw_keyvault size=0x4000 sha1=7b4e01d5977dbf8deafdb6e1544b8bced42e2f42
+mydata.glitch2.extract_all build_type=glitch2 image_type=NewSmallBlock console=none
+mydata.glitch2.extract_all options cbldv=unset pairing_data=unset cfldv=unset xellbutton=unset xellbutton2=unset cygnos=unset demon=unset olddvd=unset nodvd=unset dualboot=unset
+mydata.glitch2.extract_all options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
+mydata.glitch2.extract_all options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
+mydata.glitch2.extract_all.metadata cpu_key size=0x10 sha1=574bc75e22334a2f0f7a6259c55850b89f9e26fe
+mydata.glitch2.extract_all.metadata nand_image size=0x1080000 sha1=933605868668579a0fcc1355115fec84d51618bf
+mydata.glitch2.extract_all.metadata keyvault size=0x4000 sha1=7b4e01d5977dbf8deafdb6e1544b8bced42e2f42
+mydata.glitch2.extract_all.metadata smc size=0x3000 sha1=6daba5cf344317ea8aeb2bf6f9204270e3cf5129
+mydata.glitch2.extract_all.metadata cb_ldv=0 pairing=343169 cf_ldv=26 cf_pairing=343169
+mydata.glitch2.extract_all.metadata console_type=0x1 console_sequence=0xc console_sequence_allow=0xad0
+mydata.glitch2.extract_all.metadata donor_nonces.stage0=bcebf93dfeb4e09ee4dcb94c25a0e486
+mydata.glitch2.extract_all.metadata donor_nonces.stage1=78bc24d828eb3346aad08f1353cfb591
+mydata.glitch2.extract_all.metadata donor_nonces.stage2=15ff88e74f3876bf3c0e8739d8b637ad
+mydata.glitch2.extract_all.metadata donor_nonces.stage3=d52bc53ce881483b54c111b4e614f62d
+mydata.glitch2.extract_all.metadata donor_nonces.cf=d2003f1ff97f72e92a8fab5827de3b3a
+mydata.glitch2.extract_all.metadata donor_nonces.cg=28ce5dd5900a80e596fb2220be505168
+mydata.glitch2.extract_all.metadata smc_config size=0x400 sha1=dabee46a9273e1496be769425d5f1722524e3831
+mydata.glitch2.extract_all.metadata statistics size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+mydata.glitch2.extract_all.metadata manufacturing size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+mydata.glitch2.extract_all.metadata console_secured_files=3
+mydata.glitch2.extract_all.metadata console_secured_file "crl.bin" size=0xa00 sha1=bb85822bc07fe8b9a001d51a342cf9d4af9eeb08
+mydata.glitch2.extract_all.metadata console_secured_file "dae.bin" size=0x7090 sha1=402140ba1c74fa2ecabcb17cf225407235ad3241
+mydata.glitch2.extract_all.metadata console_secured_file "secdata.bin" size=0x400 sha1=0a218843ba2945b295b3d7ab31d05e5a195f406d
+mydata.glitch2.extract_all.bootloaders cb_or_a size=0x2000 sha1=bd505aaf85feb0832219bb1d44faf33d2dd09f48
+mydata.glitch2.extract_all.bootloaders cb_x none
+mydata.glitch2.extract_all.bootloaders cb_b size=0x96c0 sha1=0bcaf43287803ff45f9aaaf9ad0101e0a499b9b7
+mydata.glitch2.extract_all.bootloaders sc none
+mydata.glitch2.extract_all.bootloaders cd size=0x5290 sha1=6d44613f9329944a0944df851072d9e1aaff1c9a
+mydata.glitch2.extract_all.bootloaders ce size=0x56070 sha1=748a97900900d3667b5bd9dbba36f54cc3816fb5
+mydata.glitch2.extract_all.bootloaders cf0 size=0x4560 sha1=807718eed2b57fba4452694994daa738a1abe62b
+mydata.glitch2.extract_all.bootloaders cg0 size=0x77a80 sha1=3d76b5bc7e36bfde8be6afb489ca60f390384083
+mydata.glitch2.extract_all.bootloaders cf1 none
+mydata.glitch2.extract_all.bootloaders cg1 none
+mydata.glitch2.extract_all.bootloaders extra_cb none
+mydata.glitch2.extract_all.bootloaders extra_cd none
+mydata.glitch2.extract_all.mobiles 0x31 none
+mydata.glitch2.extract_all.mobiles 0x32 none
+mydata.glitch2.extract_all.mobiles 0x33 none
+mydata.glitch2.extract_all.mobiles 0x34 none
+mydata.glitch2.extract_all.mobiles 0x35 none
+mydata.glitch2.extract_all.mobiles 0x36 none
+mydata.glitch2.extract_all.mobiles 0x37 none
+mydata.glitch2.extract_all.mobiles 0x38 none
+mydata.glitch2.extract_all.mobiles 0x39 none
+mydata.glitch2.extract_all.patches automatic "extracted" size=0x554 sha1=1e46e7d5225fbd66b2bd1b92d2e4d74db01031df addons=0
+mydata.glitch2.extract_all.payloads xell size=0x40000 sha1=bd0f28b77bf594ac24f634f6ce96cffbdcf4d2bd
+mydata.glitch2.extract_all.payloads rebooter none
+mydata.glitch2.extract_all.payloads fuses none
+mydata.glitch2.extract_all.payloads patches none
+mydata.glitch2.extract_all.payloads payload none
+mydata.glitch2.extract_all.flashfs_sec files=30
+mydata.glitch2.extract_all.flashfs_sec "sysupdate.xexp1" size=0x6bfe0 sha1=3d813523f235d366e5bf078745e93a10e0cb8257
+mydata.glitch2.extract_all.flashfs_sec "aac.xexp1" size=0x14000 sha1=600b902eede2e7a66c82600ad95305ac37eb5f35
+mydata.glitch2.extract_all.flashfs_sec "bootanim.xex" size=0x61000 sha1=3c1bf1edc06a385455e74876c3aa28280e8f363c
+mydata.glitch2.extract_all.flashfs_sec "createprofile.xex" size=0xc000 sha1=3583aaa574eb64007d0d3967eff0785d22a85633
+mydata.glitch2.extract_all.flashfs_sec "dash.xex" size=0x5b2000 sha1=3d44ef57781c20669705cd687e3b62b1c2f1ff6b
+mydata.glitch2.extract_all.flashfs_sec "deviceselector.xex" size=0xa000 sha1=87581dce29bbbe9232a24ec5ef965f947a3ef186
+mydata.glitch2.extract_all.flashfs_sec "gamerprofile.xex" size=0x1b000 sha1=d2eaaa5c3b5b85ba98252d93b80c0521047d71e6
+mydata.glitch2.extract_all.flashfs_sec "hud.xex" size=0x1d000 sha1=b0ab65e560b674739821e54c3c8b6be9d6579c4a
+mydata.glitch2.extract_all.flashfs_sec "huduiskin.xex" size=0x14000 sha1=45203d5b26b952436ed86a3c791610c9f61a7b04
+mydata.glitch2.extract_all.flashfs_sec "mfgbootlauncher.xex" size=0x8000 sha1=d8056c3eefd6e74c92f3ab90d872f88da05ec1b1
+mydata.glitch2.extract_all.flashfs_sec "minimediaplayer.xex" size=0xc000 sha1=903c1213b962660fe9837de14ba2a4a8fbdf63bf
+mydata.glitch2.extract_all.flashfs_sec "nomni.xexp1" size=0xf000 sha1=9946ae6c431bcd1966e4808191d7578cce66c732
+mydata.glitch2.extract_all.flashfs_sec "nomnifwk.xexp1" size=0x2000 sha1=eda45c26077b067b541359e6e62f70b0668e5b12
+mydata.glitch2.extract_all.flashfs_sec "nomnifwm.xexp1" size=0x5000 sha1=ca76a96835f8709d588dbc47f5fe83749f455356
+mydata.glitch2.extract_all.flashfs_sec "SegoeXbox-Light.xtt" size=0x6000 sha1=1553e1172c83db7edc563f3c318e9fc607ce4769
+mydata.glitch2.extract_all.flashfs_sec "signin.xex" size=0x1a000 sha1=b135aad09174165b2e129700a8649d6f0aab3b8b
+mydata.glitch2.extract_all.flashfs_sec "updater.xex" size=0x7000 sha1=48c409fda2321e8c01c024b1319c5172be9d9174
+mydata.glitch2.extract_all.flashfs_sec "vk.xex" size=0xb000 sha1=a5ec3c4a93f15298cc178d0bcf36d69e5aea0e52
+mydata.glitch2.extract_all.flashfs_sec "xam.xex" size=0x250000 sha1=32eedaacc2c67efbe48c31ff9e63e634c026181e
+mydata.glitch2.extract_all.flashfs_sec "xenonclatin.xtt" size=0x11b000 sha1=4b639a429853e4e85357b1c7bc93ca48b5e4e221
+mydata.glitch2.extract_all.flashfs_sec "xenonclatin.xttp1" size=0x18000 sha1=4232347a84dd0e69d650ddfacd4896ed9d5795cf
+mydata.glitch2.extract_all.flashfs_sec "xenonjklatin.xtt" size=0x1a8000 sha1=56a0817000e498752d60671f890417ce8a23633d
+mydata.glitch2.extract_all.flashfs_sec "xenonjklatin.xttp1" size=0x7000 sha1=4030d06c26f1ba03f5dfb23e600f5fa9d1d03014
+mydata.glitch2.extract_all.flashfs_sec "ximecore.xex" size=0x17000 sha1=0728d06309f3197d107ceab5827c7ccf53f386d0
+mydata.glitch2.extract_all.flashfs_sec "ximedic.xex" size=0x90000 sha1=95f3d68c0269c06a7d9ac5337af7b26e434b7c30
+mydata.glitch2.extract_all.flashfs_sec "ximedic.xexp1" size=0x2800 sha1=53e58bc7432e0c265964b9d1b25c9bdbfac70b17
+mydata.glitch2.extract_all.flashfs_sec "crl.bin" size=0xa00 sha1=bb85822bc07fe8b9a001d51a342cf9d4af9eeb08
+mydata.glitch2.extract_all.flashfs_sec "dae.bin" size=0x7090 sha1=402140ba1c74fa2ecabcb17cf225407235ad3241
+mydata.glitch2.extract_all.flashfs_sec "extended.bin" size=0x4000 sha1=049590d974a461f0bc3dfe7ce87087d10d24cea8
+mydata.glitch2.extract_all.flashfs_sec "secdata.bin" size=0x400 sha1=0a218843ba2945b295b3d7ab31d05e5a195f406d
+mydata.glitch2.extract_all.raw_patches=0
+mydata.glitch2.extract_all.sb_private_key none

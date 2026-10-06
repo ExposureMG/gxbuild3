@@ -14,10 +14,14 @@
 // is drawn. Each build runs twice; both outputs must be identical, and the size and SHA-1 of the
 // output are compared with tests/golden/orchestration_mydata_builds.txt.
 //
-// --update rewrites the golden (CTest never passes it). GXBUILD3_ORCHESTRATION_GOLDEN_SUPPORT
+// It then snapshots every public extract_* projection of image.bin (under its CPU key and under
+// the all-zero key) and of the glitch2 rebuild in tests/golden/extract_projections_mydata.txt.
+//
+// --update rewrites the goldens (CTest never passes it). GXBUILD3_ORCHESTRATION_GOLDEN_SUPPORT
 // overrides the support directory, for mutation checks against scratch copies only.
 
 #include "BuildRunner.hpp"
+#include "ExtractProjection.hpp"
 #include "GoldenSnapshot.hpp"
 #include "ScopedTimeZone.hpp"
 #include "excrypt.h"
@@ -133,6 +137,59 @@ namespace {
         bool smcnocheck;
     };
 
+    // Every public extract_* projection (tests/ExtractProjection.hpp) of
+    //   mydata.image           image.bin under its CPU key;
+    //   mydata.image.zero-key  image.bin under the all-zero CPU key, under which the console's
+    //                          keyvault stays sealed (extract_all leaves it out);
+    //   mydata.glitch2         the glitch2 rebuild above, read back under the CPU key;
+    // each extracted twice with identical text, against tests/golden/extract_projections_mydata.
+    // The snapshot pins the CB_B display LDV that extract_all_info reads at +0x3B1 beside the
+    // per-box LDV extract_metadata reads, SC decrypted=1 in extract_all_info, and the keyvault
+    // summary decode. Console identity strings appear only as SHA-1.
+    void test_extract_projection_snapshots(const test::GoldenOptions& options, const Bytes& image,
+                                           const std::optional<Bytes>& glitch2_output) {
+        const std::array<uint8_t, 16> zero_key{};
+        struct Case {
+            std::string label;
+            const Bytes* image;
+            std::span<const uint8_t> cpu_key;
+        };
+        std::vector<Case> cases{
+            {"mydata.image", &image, kCpuKey},
+            {"mydata.image.zero-key", &image, zero_key},
+        };
+        if (check(glitch2_output.has_value(), "the glitch2 rebuild exists for its projection")) {
+            cases.push_back({"mydata.glitch2", &*glitch2_output, kCpuKey});
+        }
+
+        std::string rendered;
+        size_t stable = 0;
+        size_t comparisons = 0;
+        size_t agreements = 0;
+        for (const auto& c : cases) {
+            const auto first =
+                test::projection::render_extract_projections(c.label, *c.image, c.cpu_key);
+            const auto second =
+                test::projection::render_extract_projections(c.label, *c.image, c.cpu_key);
+            comparisons += first.comparisons;
+            agreements += first.agreements;
+            for (const auto& what : first.disagreements) {
+                check(false, what + " renders the same as the core's span overload");
+            }
+            if (check(first.text == second.text, c.label + " projects identically twice")) {
+                ++stable;
+            }
+            rendered += first.text;
+        }
+        const bool matched =
+            check(test::check_golden(options, "extract_projections_mydata", rendered),
+                  "mydata extract projections match the golden");
+        std::cout << "extract projections: inputs stable " << stable << '/' << cases.size()
+                  << ", overloads and shims agreed " << agreements << '/' << comparisons
+                  << ", compared " << (matched ? stable : 0) << '/' << cases.size()
+                  << " with tests/golden/extract_projections_mydata.txt\n";
+    }
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -161,6 +218,7 @@ int main(int argc, char** argv) {
 
     std::string rendered;
     size_t identical = 0;
+    std::optional<Bytes> glitch2_output;
     for (const auto& variant : variants) {
         const std::string label = "mydata." + std::string{variant.name};
         Input input = *extracted;
@@ -196,6 +254,9 @@ int main(int argc, char** argv) {
             continue;
         }
         ++identical;
+        if (variant.build_type == BuildType::Glitch2) {
+            glitch2_output = *first;
+        }
         char size[32];
         std::snprintf(size, sizeof(size), "0x%zx", first->size());
         rendered += label + " size=" + size + " sha1=" + sha1_hex(*first) + '\n';
@@ -207,6 +268,8 @@ int main(int argc, char** argv) {
     std::cout << "orchestration digests: built twice and identical " << identical << '/'
               << variants.size() << ", compared " << (matched ? identical : 0) << '/'
               << variants.size() << " with tests/golden/orchestration_mydata_builds.txt\n";
+
+    test_extract_projection_snapshots(*options, *image, glitch2_output);
     std::cout << g_checks << " checks, " << g_failures << " failures\n";
     return g_failures == 0 ? 0 : 1;
 }

@@ -181,7 +181,9 @@ if(BUILD_TESTING)
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
     # run_build digests over the tracked mydata/image.bin (tests/golden/
     # orchestration_mydata_builds.txt): extract_all, then retail, jtag and glitch2 rebuilds with
-    # the tracked patch files and XeLLs, each built twice under a pinned time and donor nonces.
+    # the tracked patch files and XeLLs, each built twice under a pinned time and donor nonces;
+    # then every public extract_* projection of image.bin and of the glitch2 rebuild
+    # (tests/golden/extract_projections_mydata.txt, via tests/ExtractProjection.hpp).
     add_gxbuild3_test(gxbuild3_orchestration_golden_tests tests/OrchestrationGoldenTests.cpp)
     target_compile_definitions(gxbuild3_orchestration_golden_tests PRIVATE
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
