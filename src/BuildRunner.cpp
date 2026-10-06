@@ -807,12 +807,14 @@ namespace gxbuild3 {
         // A devgl image's SD is patched, so it is signed again with the SB private key.
         std::optional<gxbuild3::utils::XeRsaPrivateKey> sd_signing_key;
         if (input.build_type == BuildType::Devgl) {
-            sd_signing_key = gxbuild3::utils::XeRsaPrivateKey::parse(*input.sb_private_key);
-            if (!sd_signing_key) {
+            auto parsed_key = gxbuild3::utils::XeRsaPrivateKey::parse(*input.sb_private_key);
+            if (!parsed_key) {
                 return build_error(BuildErrorCode::InvalidInput,
                                    "The SB private key is not a well-formed XeCrypt RSA-2048 "
-                                   "private key");
+                                   "private key: " +
+                                       parsed_key.error().describe());
             }
+            sd_signing_key = std::move(*parsed_key);
         }
 
         FlashImage flash_image{};
@@ -1219,10 +1221,15 @@ namespace gxbuild3 {
                 Log::Info(
                     "SD {} failed its signature check; signing it again with the SB private key",
                     sd.header.header.version);
-                if (!gxbuild3::utils::sign_sd(sd_bytes, *sd_signing_key) ||
-                    !gxbuild3::utils::verify_sd_signature(sd_bytes, sd_signing_key->public_key())) {
+                auto signed_sd = gxbuild3::utils::sign_sd(sd_bytes, *sd_signing_key);
+                if (signed_sd) {
+                    signed_sd = gxbuild3::utils::verify_sd_signature(sd_bytes,
+                                                                     sd_signing_key->public_key());
+                }
+                if (!signed_sd) {
                     return build_error(BuildErrorCode::PatchFailure,
-                                       "Could not sign the SD with the SB private key");
+                                       "Could not sign the SD with the SB private key: " +
+                                           signed_sd.error().describe());
                 }
                 try {
                     sd = BootloaderCd::parse_or_throw(sd_bytes);

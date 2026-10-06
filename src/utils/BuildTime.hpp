@@ -1,7 +1,8 @@
 #pragma once
 
+#include "Error.hpp"
+
 #include <cstdint>
-#include <optional>
 #include <string_view>
 
 namespace gxbuild3::utils {
@@ -11,8 +12,8 @@ namespace gxbuild3::utils {
     [[nodiscard]] int64_t build_epoch();
 
     // SOURCE_DATE_EPOCH's value read as a build time: a non-negative decimal number of
-    // seconds, or nothing for anything else.
-    [[nodiscard]] std::optional<int64_t> parse_source_date_epoch(std::string_view value);
+    // seconds. Anything else, including an empty value, is Malformed.
+    [[nodiscard]] Result<int64_t> parse_source_date_epoch(std::string_view value);
 
     // A moment (seconds since the Unix epoch) as a FlashFS directory entry keeps it: the local
     // wall-clock time, in the zone the C library states (TZ when it is set, the system's zone

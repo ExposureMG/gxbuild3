@@ -1,11 +1,11 @@
 #include "utils/FusesetGenerator.hpp"
 
 #include "Endian.hpp"
-#include "utils/Log.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <utility>
 
 namespace gxbuild3::utils {
     namespace {
@@ -30,19 +30,18 @@ namespace gxbuild3::utils {
 
     } // namespace
 
-    std::optional<uint32_t> read_cb_word(std::span<const uint8_t> cb) {
+    Result<uint32_t> read_cb_word(std::span<const uint8_t> cb) {
         if (cb.size() < kCbWordOffset + sizeof(uint32_t)) {
-            Log::Error("CB of 0x{:X} bytes is too short to carry its console word at 0x{:X}",
-                       cb.size(), kCbWordOffset);
-            return std::nullopt;
+            return fail(ErrorCode::Truncated,
+                        "CB of 0x{:X} bytes is too short to carry its console word at 0x{:X}",
+                        cb.size(), kCbWordOffset);
         }
         uint32_t wire_value = 0;
         std::memcpy(&wire_value, cb.data() + kCbWordOffset, sizeof(wire_value));
         return bswap32(wire_value);
     }
 
-    std::optional<std::array<uint8_t, kFuseLineSize>>
-    encode_console_type_line(uint8_t console_type) {
+    Result<std::array<uint8_t, kFuseLineSize>> encode_console_type_line(uint8_t console_type) {
         // Six 0x0F bytes, then two naming the type: devkit, retail, testkit, retail slim.
         constexpr std::array<std::array<uint8_t, 2>, 4> kTypeSuffixes = {{
             {0x0F, 0x0F},
@@ -51,8 +50,8 @@ namespace gxbuild3::utils {
             {0xF0, 0xF0},
         }};
         if (console_type >= kTypeSuffixes.size()) {
-            Log::Error("CB console type 0x{:02X} has no fuse encoding", console_type);
-            return std::nullopt;
+            return fail(ErrorCode::Unsupported, "CB console type 0x{:02X} has no fuse encoding",
+                        console_type);
         }
 
         std::array<uint8_t, kFuseLineSize> line = {0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F};
@@ -72,14 +71,13 @@ namespace gxbuild3::utils {
         return line;
     }
 
-    std::optional<std::array<uint8_t, kDashboardFuseRegionSize>>
+    Result<std::array<uint8_t, kDashboardFuseRegionSize>>
     encode_dashboard_ldv_region(uint8_t cf_ldv) {
         constexpr size_t kDashboardNibbleCount = kDashboardFuseRegionSize * 2;
 
         if (cf_ldv > kDashboardNibbleCount) {
-            Log::Error("CF LDV {} exceeds supported nibble capacity {}", cf_ldv,
-                       kDashboardNibbleCount);
-            return std::nullopt;
+            return fail(ErrorCode::OutOfRange, "CF LDV {} exceeds supported nibble capacity {}",
+                        cf_ldv, kDashboardNibbleCount);
         }
 
         std::array<uint8_t, kDashboardFuseRegionSize> region = {};
@@ -93,11 +91,11 @@ namespace gxbuild3::utils {
         return region;
     }
 
-    std::optional<std::vector<uint8_t>> generate_fuseset(const FusesetGenerationRequest& request) {
+    Result<std::vector<uint8_t>> generate_fuseset(const FusesetGenerationRequest& request) {
         const auto type_line =
             encode_console_type_line(static_cast<uint8_t>(request.cb_word >> 24));
         if (!type_line) {
-            return std::nullopt;
+            return std::unexpected(std::move(type_line.error()));
         }
         const auto cb_line = request.cb_fuseline.value_or(
             encode_sequence_allow_line(static_cast<uint16_t>(request.cb_word & 0xFFFF)));
@@ -123,7 +121,7 @@ namespace gxbuild3::utils {
         } else if (request.cf_ldv) {
             auto dashboard_region = encode_dashboard_ldv_region(*request.cf_ldv);
             if (!dashboard_region) {
-                return std::nullopt;
+                return std::unexpected(std::move(dashboard_region.error()));
             }
             set_dashboard_region(fuse_data, *dashboard_region);
         }
@@ -131,11 +129,11 @@ namespace gxbuild3::utils {
         return fuse_data;
     }
 
-    std::optional<std::vector<uint8_t>>
+    Result<std::vector<uint8_t>>
     generate_fuseset(uint32_t cb_word, std::span<const uint8_t> cpu_key, uint8_t cf_ldv) {
         if (cpu_key.size() != 16) {
-            Log::Error("CPU key must be exactly 16 bytes, got {}", cpu_key.size());
-            return std::nullopt;
+            return fail(ErrorCode::InvalidArgument, "CPU key must be exactly 16 bytes, got {}",
+                        cpu_key.size());
         }
 
         FusesetGenerationRequest req{};

@@ -1093,9 +1093,10 @@ namespace gxbuild3::cli {
                 auto fuses = gxbuild3::utils::generate_fuseset(
                     kRetailConsoleWord, foundations->cpu_key, input.metadata.cf_ldv.value_or(0));
                 if (!fuses) {
-                    return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                                 "Could not generate the virtual fuseset", {},
-                                                 "fuses"));
+                    return std::unexpected(
+                        error(ResolutionErrorCode::InvalidInput,
+                              "Could not generate the virtual fuseset: " + fuses.error().describe(),
+                              {}, "fuses"));
                 }
                 InputPayloads payloads{};
                 payloads.fuses = std::move(*fuses);
@@ -1152,15 +1153,17 @@ namespace gxbuild3::cli {
                     if (!cb_word) {
                         return std::unexpected(error(ResolutionErrorCode::InvalidInput,
                                                      "Could not read the console word of the CB "
-                                                     "the virtual fuses are built from",
+                                                     "the virtual fuses are built from: " +
+                                                         cb_word.error().describe(),
                                                      {}, "fuses"));
                     }
                     auto fuses = gxbuild3::utils::generate_fuseset(
                         *cb_word, foundations->cpu_key, input.metadata.cf_ldv.value_or(0));
                     if (!fuses) {
                         return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                                     "Could not generate the virtual fuseset", {},
-                                                     "fuses"));
+                                                     "Could not generate the virtual fuseset: " +
+                                                         fuses.error().describe(),
+                                                     {}, "fuses"));
                     }
                     payloads.fuses = std::move(*fuses);
                 }
