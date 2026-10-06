@@ -1613,6 +1613,213 @@ namespace gxbuild3::nand {
             return {};
         }
 
+        // xeBuild programs the bytes after each JTAG window item zero, up to the next item or the
+        // end of the 16 KiB block that holds the item's end.
+        [[nodiscard]] Result<void> zero_fill(Driver& driver, size_t from, size_t to) {
+            if (from >= to) {
+                return {};
+            }
+            return write_or_fail(driver, from, std::vector<uint8_t>(to - from, 0), "zero fill");
+        }
+
+        [[nodiscard]] Result<void> zero_to_block_end(Driver& driver, size_t end) {
+            return zero_fill(driver, end,
+                             (end + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize);
+        }
+
+        // Lays the patch set: the JTAG patch buffer in the window or the KHV payload in the
+        // patch slot, after its capacity and its XeLL, rebooter and fuse overlap checks, then
+        // the JTAG buffer's zero and erased tail or the glitch slot's zero fill.
+        [[nodiscard]] Result<void> lay_patch_payload(WriteContext& ctx, const Payloads& payloads) {
+            auto& driver = ctx.driver;
+            const auto& plan = ctx.plan;
+            const size_t glitch_patch_offset =
+                plan.update_base + plan.slot_stride + plan.khv_prefix;
+            std::vector<uint8_t> patch_bytes;
+            size_t patch_offset = 0;
+            size_t patch_capacity = 0;
+            if (payloads.patchset->kind == PatchSetKind::Jtag) {
+                patch_bytes = serialize_patch_set(*payloads.patchset);
+                patch_offset = plan.window_base + 0x1000;
+                patch_capacity = kJTAGPatchesSize;
+            } else {
+                const auto* khv = find_patch_section(*payloads.patchset, PatchSectionTarget::Khv);
+                if (!khv) {
+                    return fail(ErrorCode::InvalidArgument,
+                                "the glitch patch set has no KHV section");
+                }
+                patch_bytes = serialize_khv_payload(*khv);
+                patch_offset = glitch_patch_offset;
+                patch_capacity = plan.slot_stride - plan.khv_prefix;
+            }
+            if (patch_bytes.size() > patch_capacity) {
+                return fail(ErrorCode::OutOfRange,
+                            "Patch payload (0x{:X} bytes) exceeds its 0x{:X}-byte region",
+                            patch_bytes.size(), patch_capacity);
+            }
+            if (payloads.xell && ranges_overlap(patch_offset, patch_bytes.size(), plan.xell_offset,
+                                                payloads.xell->data.size())) {
+                return fail(ErrorCode::InvalidArgument,
+                            "Patch payload overlaps the reserved XeLL region");
+            }
+            if (payloads.rebooter && ranges_overlap(patch_offset, patch_bytes.size(),
+                                                    plan.window_base, payloads.rebooter->size())) {
+                return fail(ErrorCode::InvalidArgument,
+                            "Patch payload overlaps the reserved rebooter region");
+            }
+            if (payloads.fuses && ranges_overlap(patch_offset, patch_bytes.size(), plan.fuse_offset,
+                                                 payloads.fuses->size())) {
+                return fail(ErrorCode::InvalidArgument,
+                            "Patch payload overlaps the reserved virtual-fuse region");
+            }
+            if (auto laid = write_or_fail(driver, patch_offset, patch_bytes, "patch payload");
+                !laid) {
+                return laid;
+            }
+            if (payloads.patchset->kind == PatchSetKind::Jtag) {
+                const size_t patch_end = patch_offset + patch_bytes.size();
+                const size_t block_end =
+                    (patch_end + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize;
+                const size_t region_end = patch_offset + patch_capacity;
+                // The patch buffer is programmed whole: zero to the end of its block, then
+                // erased bytes, written as pages, up to its fixed length.
+                if (auto filled = zero_fill(driver, patch_end, block_end); !filled) {
+                    return filled;
+                }
+                if (block_end < region_end) {
+                    if (auto laid = write_or_fail(
+                            driver, block_end, std::vector<uint8_t>(region_end - block_end, 0xFF),
+                            "erased patch buffer tail");
+                        !laid) {
+                        return laid;
+                    }
+                }
+            }
+            // xeBuild programs the rest of the patch slot's first 0x4000 bytes zero after the
+            // KHV terminator; the slot past them stays erased.
+            const size_t khv_end = patch_offset + patch_bytes.size();
+            const size_t zero_end = size_t(plan.update_base) + plan.slot_stride + kLayBlockSize;
+            if (payloads.patchset->kind != PatchSetKind::Jtag && khv_end < zero_end) {
+                if (auto filled = zero_fill(driver, khv_end, zero_end); !filled) {
+                    return filled;
+                }
+            }
+            return {};
+        }
+
+        // Lays the payloads after the filesystem, in this order: the erased glitch patch slot
+        // (which drops a donor's CF/CG header and stale bytes from the owned overlay), the SMC
+        // payload, the rebooter with its JTAG zero fill, the virtual fuses, XeLL and the patch
+        // set. Later writes land over the erased overlay and the zero fills.
+        [[nodiscard]] Result<void> lay_payloads(WriteContext& ctx, const Payloads& payloads) {
+            auto& driver = ctx.driver;
+            const auto& plan = ctx.plan;
+            // Direct parsed images retain a recovered patchset, so it is rewritten below.
+            if (plan.glitch && payloads.patchset) {
+                const std::vector<uint8_t> erased_overlay(plan.slot_stride, 0xFF);
+                if (auto laid = write_or_fail(driver, plan.update_base + plan.slot_stride,
+                                              erased_overlay, "erased patch slot");
+                    !laid) {
+                    return laid;
+                }
+            }
+            if (payloads.payload) {
+                if (auto laid = write_or_fail(driver, 0x200, *payloads.payload, "SMC payload");
+                    !laid) {
+                    return laid;
+                }
+            }
+            if (payloads.rebooter) {
+                if (auto laid =
+                        write_or_fail(driver, plan.window_base, *payloads.rebooter, "rebooter");
+                    !laid) {
+                    return laid;
+                }
+                if (plan.jtag) {
+                    if (auto filled =
+                            zero_fill(driver, plan.window_base + payloads.rebooter->size(),
+                                      plan.window_base + 0x1000);
+                        !filled) {
+                        return filled;
+                    }
+                }
+            }
+            if (payloads.fuses) {
+                if (auto laid =
+                        write_or_fail(driver, plan.fuse_offset, *payloads.fuses, "virtual fuses");
+                    !laid) {
+                    return laid;
+                }
+            }
+            if (payloads.xell) {
+                const auto& xell_bytes = payloads.xell->data;
+                if (auto laid = write_or_fail(driver, plan.xell_offset, xell_bytes, "XeLL");
+                    !laid) {
+                    return laid;
+                }
+            }
+            if (payloads.patchset) {
+                if (auto laid = lay_patch_payload(ctx, payloads); !laid) {
+                    return laid;
+                }
+            }
+            return {};
+        }
+
+        // The JTAG second CB/CD live in the window tail, directly past the fixed-size XeLL; the
+        // bytes after the chain are zero to the end of its 16 KiB block. Each stage is
+        // serialized once, for its write and for the chain end.
+        [[nodiscard]] Result<void> lay_jtag_extra_chain(WriteContext& ctx,
+                                                        const Payloads& payloads) {
+            auto& driver = ctx.driver;
+            const auto extra = jtag_extra_offsets(ctx.plan.window_base, payloads);
+            std::optional<std::vector<uint8_t>> cb_bytes;
+            std::optional<std::vector<uint8_t>> cd_bytes;
+            if (payloads.extra_cb) {
+                cb_bytes = payloads.extra_cb->serialize();
+                if (auto laid = write_or_fail(driver, extra.cb, *cb_bytes, "JTAG second CB");
+                    !laid) {
+                    return laid;
+                }
+            }
+            if (payloads.extra_cd) {
+                cd_bytes = payloads.extra_cd->serialize();
+                if (auto laid = write_or_fail(driver, extra.cd, *cd_bytes, "JTAG second CD");
+                    !laid) {
+                    return laid;
+                }
+            }
+            const size_t second_chain_end = cd_bytes   ? extra.cd + cd_bytes->size()
+                                            : cb_bytes ? extra.cb + cb_bytes->size()
+                                                       : 0;
+            if (second_chain_end != 0) {
+                if (auto filled = zero_to_block_end(driver, second_chain_end); !filled) {
+                    return filled;
+                }
+            }
+            return {};
+        }
+
+        // Writes each [rawpatch] as it is at its clean offset, in order, after a check that it
+        // stays inside the `clean_size`-byte image.
+        [[nodiscard]] Result<void> apply_raw_patches(Driver& driver,
+                                                     const std::vector<InputRawPatch>& raw_patches,
+                                                     size_t clean_size) {
+            for (const auto& patch : raw_patches) {
+                if (patch.offset > clean_size || patch.data.size() > clean_size - patch.offset) {
+                    return fail(ErrorCode::OutOfRange,
+                                "[rawpatch] '{}' (0x{:X} bytes at 0x{:X}) runs past the image",
+                                patch.name, patch.data.size(), patch.offset);
+                }
+                if (auto laid = write_or_fail(driver, patch.offset, patch.data,
+                                              std::format("[rawpatch] '{}'", patch.name));
+                    !laid) {
+                    return laid;
+                }
+            }
+            return {};
+        }
+
         // A FlashFS keeps a pointer to the driver it reads and writes; after a copy or a move it
         // must name the new object's driver, not the one it was copied or moved from.
         void rebind_filesystem(ImageState& state) {
@@ -1833,171 +2040,21 @@ namespace gxbuild3::nand {
             return recorded;
         }
 
-        // Remove any donor CF/CG header and stale bytes from the owned overlay.
-        // Direct parsed images retain a recovered patchset, so it is rewritten below.
-        if (plan.glitch && payloads.patchset) {
-            const std::vector<uint8_t> erased_overlay(plan.slot_stride, 0xFF);
-            if (auto laid = write_or_fail(driver, plan.update_base + plan.slot_stride,
-                                          erased_overlay, "erased patch slot");
-                !laid) {
-                return laid;
-            }
-        }
-        if (payloads.payload) {
-            if (auto laid = write_or_fail(driver, 0x200, *payloads.payload, "SMC payload"); !laid) {
-                return laid;
-            }
-        }
-        // xeBuild programs the bytes after each JTAG window item zero, up to the next item or the
-        // end of the 16 KiB block that holds the item's end.
-        const auto zero_fill = [&driver](size_t from, size_t to) -> Result<void> {
-            if (from >= to) {
-                return {};
-            }
-            return write_or_fail(driver, from, std::vector<uint8_t>(to - from, 0), "zero fill");
-        };
-        const auto zero_to_block_end = [&zero_fill](size_t end) {
-            return zero_fill(end, (end + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize);
-        };
-        if (payloads.rebooter) {
-            if (auto laid = write_or_fail(driver, plan.window_base, *payloads.rebooter, "rebooter");
-                !laid) {
-                return laid;
-            }
-            if (plan.jtag) {
-                if (auto filled = zero_fill(plan.window_base + payloads.rebooter->size(),
-                                            plan.window_base + 0x1000);
-                    !filled) {
-                    return filled;
-                }
-            }
-        }
-        if (payloads.fuses) {
-            if (auto laid =
-                    write_or_fail(driver, plan.fuse_offset, *payloads.fuses, "virtual fuses");
-                !laid) {
-                return laid;
-            }
-        }
-        if (payloads.xell) {
-            const auto& xell_bytes = payloads.xell->data;
-            if (auto laid = write_or_fail(driver, plan.xell_offset, xell_bytes, "XeLL"); !laid) {
-                return laid;
-            }
-        }
-        const size_t glitch_patch_offset = plan.update_base + plan.slot_stride + plan.khv_prefix;
-        if (payloads.patchset) {
-            std::vector<uint8_t> patch_bytes;
-            size_t patch_offset = 0;
-            size_t patch_capacity = 0;
-            if (payloads.patchset->kind == PatchSetKind::Jtag) {
-                patch_bytes = serialize_patch_set(*payloads.patchset);
-                patch_offset = plan.window_base + 0x1000;
-                patch_capacity = kJTAGPatchesSize;
-            } else {
-                const auto* khv = find_patch_section(*payloads.patchset, PatchSectionTarget::Khv);
-                if (!khv) {
-                    return fail(ErrorCode::InvalidArgument,
-                                "the glitch patch set has no KHV section");
-                }
-                patch_bytes = serialize_khv_payload(*khv);
-                patch_offset = glitch_patch_offset;
-                patch_capacity = plan.slot_stride - plan.khv_prefix;
-            }
-            if (patch_bytes.size() > patch_capacity) {
-                return fail(ErrorCode::OutOfRange,
-                            "Patch payload (0x{:X} bytes) exceeds its 0x{:X}-byte region",
-                            patch_bytes.size(), patch_capacity);
-            }
-            if (payloads.xell && ranges_overlap(patch_offset, patch_bytes.size(), plan.xell_offset,
-                                                payloads.xell->data.size())) {
-                return fail(ErrorCode::InvalidArgument,
-                            "Patch payload overlaps the reserved XeLL region");
-            }
-            if (payloads.rebooter && ranges_overlap(patch_offset, patch_bytes.size(),
-                                                    plan.window_base, payloads.rebooter->size())) {
-                return fail(ErrorCode::InvalidArgument,
-                            "Patch payload overlaps the reserved rebooter region");
-            }
-            if (payloads.fuses && ranges_overlap(patch_offset, patch_bytes.size(), plan.fuse_offset,
-                                                 payloads.fuses->size())) {
-                return fail(ErrorCode::InvalidArgument,
-                            "Patch payload overlaps the reserved virtual-fuse region");
-            }
-            if (auto laid = write_or_fail(driver, patch_offset, patch_bytes, "patch payload");
-                !laid) {
-                return laid;
-            }
-            if (payloads.patchset->kind == PatchSetKind::Jtag) {
-                const size_t patch_end = patch_offset + patch_bytes.size();
-                const size_t block_end =
-                    (patch_end + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize;
-                const size_t region_end = patch_offset + patch_capacity;
-                // The patch buffer is programmed whole: zero to the end of its block, then
-                // erased bytes, written as pages, up to its fixed length.
-                if (auto filled = zero_fill(patch_end, block_end); !filled) {
-                    return filled;
-                }
-                if (block_end < region_end) {
-                    if (auto laid = write_or_fail(
-                            driver, block_end, std::vector<uint8_t>(region_end - block_end, 0xFF),
-                            "erased patch buffer tail");
-                        !laid) {
-                        return laid;
-                    }
-                }
-            }
-            // xeBuild programs the rest of the patch slot's first 0x4000 bytes zero after the
-            // KHV terminator; the slot past them stays erased.
-            const size_t khv_end = patch_offset + patch_bytes.size();
-            const size_t zero_end = size_t(plan.update_base) + plan.slot_stride + kLayBlockSize;
-            if (payloads.patchset->kind != PatchSetKind::Jtag && khv_end < zero_end) {
-                if (auto filled = zero_fill(khv_end, zero_end); !filled) {
-                    return filled;
-                }
-            }
+        // Remove any donor CF/CG header and stale bytes from the owned overlay, then lay the
+        // payloads, the JTAG second chain and, last, the raw patches.
+        if (auto laid = lay_payloads(ctx, payloads); !laid) {
+            return laid;
         }
 
-        // The JTAG second CB/CD live in the window tail, directly past the fixed-size XeLL.
         if (plan.jtag) {
-            const auto extra = jtag_extra_offsets(plan.window_base, payloads);
-            if (payloads.extra_cb) {
-                if (auto laid = write_or_fail(driver, extra.cb, payloads.extra_cb->serialize(),
-                                              "JTAG second CB");
-                    !laid) {
-                    return laid;
-                }
-            }
-            if (payloads.extra_cd) {
-                if (auto laid = write_or_fail(driver, extra.cd, payloads.extra_cd->serialize(),
-                                              "JTAG second CD");
-                    !laid) {
-                    return laid;
-                }
-            }
-            const size_t second_chain_end =
-                payloads.extra_cd   ? extra.cd + payloads.extra_cd->serialize().size()
-                : payloads.extra_cb ? extra.cb + payloads.extra_cb->serialize().size()
-                                    : 0;
-            if (second_chain_end != 0) {
-                if (auto filled = zero_to_block_end(second_chain_end); !filled) {
-                    return filled;
-                }
+            if (auto laid = lay_jtag_extra_chain(ctx, payloads); !laid) {
+                return laid;
             }
         }
 
-        const size_t clean_size = total_blocks * block_size;
-        for (const auto& patch : raw_patches) {
-            if (patch.offset > clean_size || patch.data.size() > clean_size - patch.offset) {
-                return fail(ErrorCode::OutOfRange,
-                            "[rawpatch] '{}' (0x{:X} bytes at 0x{:X}) runs past the image",
-                            patch.name, patch.data.size(), patch.offset);
-            }
-            if (auto laid = write_or_fail(driver, patch.offset, patch.data,
-                                          std::format("[rawpatch] '{}'", patch.name));
-                !laid) {
-                return laid;
-            }
+        if (auto patched = apply_raw_patches(driver, raw_patches, total_blocks * block_size);
+            !patched) {
+            return patched;
         }
 
         return {};
