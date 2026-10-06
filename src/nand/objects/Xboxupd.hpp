@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Error.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -12,7 +14,7 @@ namespace gxbuild3::nand {
         std::vector<uint8_t> cg_raw;
     };
 
-    [[nodiscard]] XboxupdParts split_xboxupd_raw(std::span<const uint8_t> xboxupd_bytes);
-    [[nodiscard]] XboxupdParts split_xboxupd_raw(std::span<const std::byte> xboxupd_bytes);
+    [[nodiscard]] Result<XboxupdParts> split_xboxupd_raw(std::span<const uint8_t> xboxupd_bytes);
+    [[nodiscard]] Result<XboxupdParts> split_xboxupd_raw(std::span<const std::byte> xboxupd_bytes);
 
 } // namespace gxbuild3::nand

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Error.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -28,19 +30,25 @@ namespace gxbuild3::utils {
         std::optional<uint8_t> cf_ldv;
     };
 
-    std::optional<uint32_t> read_cb_word(std::span<const uint8_t> cb);
+    // The console word at 0x3B0 of a plaintext CB; Truncated when the CB is too short.
+    [[nodiscard]] Result<uint32_t> read_cb_word(std::span<const uint8_t> cb);
 
-    std::optional<std::array<uint8_t, kFuseLineSize>>
+    // Fuse line 1 for a console type; Unsupported for a type with no fuse encoding.
+    [[nodiscard]] Result<std::array<uint8_t, kFuseLineSize>>
     encode_console_type_line(uint8_t console_type);
 
-    std::array<uint8_t, kFuseLineSize> encode_sequence_allow_line(uint16_t sequence_allow);
+    [[nodiscard]] std::array<uint8_t, kFuseLineSize>
+    encode_sequence_allow_line(uint16_t sequence_allow);
 
-    std::optional<std::array<uint8_t, kDashboardFuseRegionSize>>
+    // Fuse lines 7-11 for a CF LDV; OutOfRange when the LDV exceeds their nibble capacity.
+    [[nodiscard]] Result<std::array<uint8_t, kDashboardFuseRegionSize>>
     encode_dashboard_ldv_region(uint8_t cf_ldv);
 
-    std::optional<std::vector<uint8_t>> generate_fuseset(const FusesetGenerationRequest& request);
+    [[nodiscard]] Result<std::vector<uint8_t>>
+    generate_fuseset(const FusesetGenerationRequest& request);
 
-    std::optional<std::vector<uint8_t>>
+    // InvalidArgument when the CPU key is not 16 bytes.
+    [[nodiscard]] Result<std::vector<uint8_t>>
     generate_fuseset(uint32_t cb_word, std::span<const uint8_t> cpu_key, uint8_t cf_ldv);
 
 } // namespace gxbuild3::utils

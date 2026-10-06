@@ -85,11 +85,10 @@ int main(int argc, char** argv) {
         // The expected bytes come exclusively from the independent reference file,
         // never from keyvault_encrypt: matching bugs must not cancel each other out.
         bool passed = true;
-        try {
-            passed =
-                compare(keyvault_decrypt(cpu_key.key, encrypted), expected, "keyvault_decrypt");
-        } catch (const std::exception& error) {
-            std::cerr << "FAIL: keyvault_decrypt: " << error.what() << '\n';
+        if (const auto decrypted = keyvault_decrypt(cpu_key.key, encrypted)) {
+            passed = compare(*decrypted, expected, "keyvault_decrypt");
+        } else {
+            std::cerr << "FAIL: keyvault_decrypt: " << decrypted.error().describe() << '\n';
             passed = false;
         }
 

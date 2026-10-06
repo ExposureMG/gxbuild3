@@ -25,9 +25,11 @@ namespace gxbuild3::nand {
 
     } // namespace
 
-    std::optional<SmcConfig> SmcConfig::parse(std::span<const uint8_t> bytes, size_t base_offset) {
-        if (bytes.data() == nullptr || bytes.size() < base_offset + kMinRegionSize) {
-            return std::nullopt;
+    Result<SmcConfig> SmcConfig::parse(std::span<const uint8_t> bytes, size_t base_offset) {
+        if (base_offset > bytes.size() || bytes.size() - base_offset < kMinRegionSize) {
+            return fail(ErrorCode::Truncated,
+                        "XConfig region at 0x{:X} needs 0x{:X} bytes, buffer is 0x{:X}",
+                        base_offset, kMinRegionSize, bytes.size());
         }
 
         const uint8_t* base = bytes.data() + base_offset;
@@ -54,8 +56,7 @@ namespace gxbuild3::nand {
         return out;
     }
 
-    std::optional<SmcConfig> SmcConfig::parse(const std::vector<uint8_t>& bytes,
-                                              size_t base_offset) {
+    Result<SmcConfig> SmcConfig::parse(const std::vector<uint8_t>& bytes, size_t base_offset) {
         return parse(std::span<const uint8_t>(bytes.data(), bytes.size()), base_offset);
     }
 
@@ -86,32 +87,12 @@ namespace gxbuild3::nand {
 
     namespace xconfig {
 
-        std::string_view parse_error_string(ParseError e) noexcept {
-            switch (e) {
-                case ParseError::NullBuffer:
-                    return "null buffer";
-                case ParseError::BufferTooSmall:
-                    return "buffer too small for XConfig region";
-            }
-            return "unknown";
-        }
-
-        std::expected<SmcConfig, ParseError> parse(std::span<const uint8_t> buf,
-                                                   size_t base_offset) noexcept {
-            if (buf.data() == nullptr)
-                return std::unexpected(ParseError::NullBuffer);
-            if (buf.size_bytes() < base_offset + kMinRegionSize)
-                return std::unexpected(ParseError::BufferTooSmall);
-
-            auto res = SmcConfig::parse(buf, base_offset);
-            if (!res) {
-                return std::unexpected(ParseError::BufferTooSmall);
-            }
-            return *res;
+        Result<SmcConfig> parse(std::span<const uint8_t> buf, size_t base_offset) {
+            return SmcConfig::parse(buf, base_offset);
         }
 
         std::vector<uint8_t> serialize(const SmcConfig& cfg, size_t total_size,
-                                       size_t base_offset) noexcept {
+                                       size_t base_offset) {
             return cfg.serialize(total_size, base_offset);
         }
 

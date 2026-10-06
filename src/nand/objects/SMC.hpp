@@ -1,7 +1,8 @@
 #pragma once
 
+#include "Error.hpp"
+
 #include <cstdint>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -45,8 +46,10 @@ namespace gxbuild3::nand {
         bool encrypted{true};
         std::vector<uint8_t> data;
 
-        static std::optional<Smc> parse(std::span<const uint8_t> bytes);
-        static std::optional<Smc> parse(const std::vector<uint8_t>& bytes);
+        // Refuses an image shorter than 0x108 bytes (Truncated) or larger than 0x4000
+        // (OutOfRange).
+        [[nodiscard]] static Result<Smc> parse(std::span<const uint8_t> bytes);
+        [[nodiscard]] static Result<Smc> parse(const std::vector<uint8_t>& bytes);
 
         void decrypt();
         void encrypt();

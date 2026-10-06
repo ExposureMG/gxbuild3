@@ -103,11 +103,12 @@ namespace {
     }
 
     Bytes canonical_keyvault(std::span<const uint8_t> key, uint8_t marker) {
-        return keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, marker)));
+        return keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, marker)).value())
+            .value();
     }
 
     Bytes encrypted_keyvault(std::span<const uint8_t> key, uint8_t marker) {
-        return keyvault_encrypt(key, canonical_keyvault(key, marker));
+        return keyvault_encrypt(key, canonical_keyvault(key, marker)).value();
     }
 
     Bytes valid_glitch_patchset(uint8_t marker = 0xA0) {
@@ -166,7 +167,8 @@ namespace {
         input.metadata.cpu_key.assign(key.begin(), key.end());
         input.metadata.smc = make_smc(0x61);
         input.metadata.keyvault =
-            keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)));
+            keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)).value())
+                .value();
         input.bootloaders = valid_bootloaders();
         const auto built = run_build(input);
         if (!built) {
@@ -181,10 +183,11 @@ namespace {
         input.metadata.cpu_key.assign(key.begin(), key.end());
         input.metadata.smc = make_smc(0x61);
         input.metadata.keyvault =
-            keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)));
+            keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)).value())
+                .value();
         input.bootloaders = valid_bootloaders();
 
-        auto cb = BootloaderCb::parse(input.bootloaders.cb_or_a);
+        auto cb = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
         cb.data.resize(sizeof(cb_header) - sizeof(generic_header), 0);
         cb.header.header.size = static_cast<uint32_t>(sizeof(generic_header) + cb.data.size());
         if (!cb.parse_perbox()) {
@@ -194,7 +197,9 @@ namespace {
         cb.perbox->pairing_data[0] = 0xA1;
         cb.perbox->pairing_data[1] = 0xB2;
         cb.perbox->pairing_data[2] = 0xC3;
-        cb.serialize_perbox();
+        if (!cb.serialize_perbox()) {
+            std::abort();
+        }
         input.bootloaders.cb_or_a = cb.serialize();
 
         BootloaderCf cf{};
@@ -203,9 +208,13 @@ namespace {
         cf.data.assign(0x340, 0);
         cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
         cf.decrypted = true;
-        cf.parse_perbox();
+        if (!cf.parse_perbox()) {
+            std::abort();
+        }
         cf.perbox->lockdown_value = 8;
-        cf.serialize_perbox();
+        if (!cf.serialize_perbox()) {
+            std::abort();
+        }
         input.bootloaders.cf0 = cf.serialize();
         BootloaderCg cg{};
         cg.header.header.magic = NANDBootloaderMagic::CG;
@@ -1069,7 +1078,7 @@ namespace {
                     for (const bool nofcrt : {false, true}) {
                         ResolverFixture fixture;
                         auto args = fixture.complete_loose_args();
-                        fixture.write_binary("first/kv.bin", keyvault_encrypt(key, plain));
+                        fixture.write_binary("first/kv.bin", keyvault_encrypt(key, plain).value());
                         fixture.write_text(
                             "working/build.ini",
                             std::string("[falconbl]\ncb_1.bin\ncd.bin\n[security]\n") +

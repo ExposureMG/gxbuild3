@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <limits>
+#include <optional>
 #include <string>
 
 namespace gxbuild3::utils {
@@ -98,25 +99,29 @@ namespace gxbuild3::utils {
 
     } // namespace
 
-    std::optional<int64_t> parse_source_date_epoch(std::string_view value) {
+    Result<int64_t> parse_source_date_epoch(std::string_view value) {
         if (value.empty()) {
-            return std::nullopt;
+            return fail(ErrorCode::Malformed, "SOURCE_DATE_EPOCH is empty");
         }
         int64_t seconds = 0;
         const auto [end, status] =
             std::from_chars(value.data(), value.data() + value.size(), seconds);
         if (status != std::errc{} || end != value.data() + value.size() || seconds < 0) {
-            return std::nullopt;
+            return fail(ErrorCode::Malformed,
+                        "SOURCE_DATE_EPOCH '{}' is not a non-negative decimal number of seconds",
+                        value);
         }
         return seconds;
     }
 
     int64_t build_epoch() {
         if (const auto value = environment_value("SOURCE_DATE_EPOCH")) {
-            if (const auto seconds = parse_source_date_epoch(*value)) {
+            const auto seconds = parse_source_date_epoch(*value);
+            if (seconds) {
                 return *seconds;
             }
-            Log::Warn("SOURCE_DATE_EPOCH is not a number of seconds; the clock is used");
+            // Degrade and continue: a bad SOURCE_DATE_EPOCH only costs reproducibility.
+            Log::Warn("{}; the clock is used", seconds.error().describe());
         }
         return std::chrono::duration_cast<std::chrono::seconds>(
                    std::chrono::system_clock::now().time_since_epoch())

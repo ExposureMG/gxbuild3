@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Error.hpp"
 #include "nand/FlashDriver.hpp"
 
 #include <cstddef>
@@ -85,32 +86,40 @@ namespace gxbuild3::nand {
 
         // Attach the driver before formatting. These allocation boundaries and root
         // locations are physical NAND blocks; directory entries/blockmap use 16 KiB clusters.
-        bool format(size_t total_blocks, uint16_t root_block = 0x3E0, uint32_t version = 1,
-                    uint32_t reserved_boundary = 0x50);
-        bool load(Driver& driver, uint16_t root_block = 0x3E0, size_t cluster_in_block = 0);
-        bool save();
-        bool set_root_block(uint16_t root_block);
-        bool reserve_blocks(size_t start_block, size_t block_count);
+        [[nodiscard]] Result<void> format(size_t total_blocks, uint16_t root_block = 0x3E0,
+                                          uint32_t version = 1, uint32_t reserved_boundary = 0x50);
+        // Reads the root at `root_block` (and `cluster_in_block` within it) and every file it
+        // lists. Transactional: on failure the filesystem, its driver included, is unchanged.
+        [[nodiscard]] Result<void> load(Driver& driver, uint16_t root_block = 0x3E0,
+                                        size_t cluster_in_block = 0);
+        [[nodiscard]] Result<void> save();
+        [[nodiscard]] Result<void> set_root_block(uint16_t root_block);
+        [[nodiscard]] Result<void> reserve_blocks(size_t start_block, size_t block_count);
         // Keeps free clusters from allocation while the table states them as `stated`: Free
         // for the settings blobs, which xeBuild leaves free in the table, or Unnamed.
-        bool withhold_clusters(size_t first_cluster, size_t cluster_count, uint16_t stated);
-        bool withhold_blocks(size_t start_block, size_t block_count, uint16_t stated);
+        [[nodiscard]] Result<void> withhold_clusters(size_t first_cluster, size_t cluster_count,
+                                                     uint16_t stated);
+        [[nodiscard]] Result<void> withhold_blocks(size_t start_block, size_t block_count,
+                                                   uint16_t stated);
         [[nodiscard]] bool is_block_free(size_t physical_block) const;
 
-        bool add_file(std::string_view filename, std::span<const uint8_t> data,
-                      std::optional<uint32_t> timestamp = std::nullopt);
+        [[nodiscard]] Result<void> add_file(std::string_view filename,
+                                            std::span<const uint8_t> data,
+                                            std::optional<uint32_t> timestamp = std::nullopt);
         // Lists the file at `position` in the directory: it and every file after it are laid
         // again in directory order, from the first free block, so a filesystem whose files sit
         // back to back stays that way. A file of the same name is replaced.
-        bool insert_file(size_t position, std::string_view filename, std::span<const uint8_t> data,
-                         std::optional<uint32_t> timestamp = std::nullopt);
+        [[nodiscard]] Result<void> insert_file(size_t position, std::string_view filename,
+                                               std::span<const uint8_t> data,
+                                               std::optional<uint32_t> timestamp = std::nullopt);
         [[nodiscard]] std::optional<std::vector<uint8_t>> get_file(std::string_view filename) const;
-        bool delete_file(std::string_view filename);
+        // Fails with NotFound when no file has that name.
+        [[nodiscard]] Result<void> delete_file(std::string_view filename);
         [[nodiscard]] bool exists(std::string_view filename) const;
         [[nodiscard]] std::vector<std::string> list_files() const;
         [[nodiscard]] std::optional<FlashFileSystemEntry> stat(std::string_view filename) const;
 
-        [[nodiscard]] std::vector<uint8_t> serialize_root_block() const;
+        [[nodiscard]] Result<std::vector<uint8_t>> serialize_root_block() const;
         [[nodiscard]] const std::vector<uint16_t>& blockmap() const;
         [[nodiscard]] const std::vector<FlashFileSystemEntry>& entries() const;
         [[nodiscard]] uint32_t version() const;
@@ -119,7 +128,8 @@ namespace gxbuild3::nand {
 
         [[nodiscard]] std::vector<uint16_t> get_chain(uint16_t start_block) const;
         [[nodiscard]] std::vector<uint16_t> get_all_file_blocks() const;
-        std::optional<uint16_t> allocate_chain(size_t bytes_needed);
+        // Empty when the free clusters cannot hold `bytes_needed`; nothing is allocated then.
+        [[nodiscard]] std::optional<uint16_t> allocate_chain(size_t bytes_needed);
         void free_chain(uint16_t start_block);
 
       private:
@@ -145,6 +155,9 @@ namespace gxbuild3::nand {
         [[nodiscard]] size_t base_cluster() const;
         void place_root(uint16_t root_block);
         void release_root();
+        // load() into a freshly staged filesystem; load() commits it only on success.
+        [[nodiscard]] Result<void> read_root(Driver& driver, uint16_t root_block,
+                                             size_t cluster_in_block);
 
         [[nodiscard]] static std::optional<size_t> checked_block_count(size_t bytes_needed,
                                                                        size_t clean_block_size);

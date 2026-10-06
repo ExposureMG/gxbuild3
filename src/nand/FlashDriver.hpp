@@ -96,7 +96,11 @@ namespace gxbuild3::nand {
         std::span<uint8_t> read_page_spare(size_t page);
         void write_page_spare(size_t page, std::span<const uint8_t> spare);
 
-        bool write_block(size_t block_idx, std::span<const uint8_t> data);
+        // The block and offset accessors report a range error by a sentinel, not an Error: a
+        // write returns false and writes nothing when it would run past the image, and a read
+        // returns an empty span or vector. Callers turn a false write into an Error with their own
+        // context.
+        [[nodiscard]] bool write_block(size_t block_idx, std::span<const uint8_t> data);
 
         std::span<const uint8_t> read_block_raw(size_t block_idx) const;
         std::span<uint8_t> read_block_raw(size_t block_idx);
@@ -116,7 +120,7 @@ namespace gxbuild3::nand {
 
         std::span<const uint8_t> read_offset(size_t offset, size_t length = 1) const;
         std::vector<uint8_t> read_clean(size_t offset, size_t length) const;
-        bool write_offset(size_t offset, std::span<const uint8_t> data);
+        [[nodiscard]] bool write_offset(size_t offset, std::span<const uint8_t> data);
 
         std::vector<uint8_t>& serialize();
         const std::vector<uint8_t>& serialize() const;

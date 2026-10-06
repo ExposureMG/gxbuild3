@@ -61,7 +61,7 @@ namespace {
         input.metadata.cpu_key.assign(cpu.begin(), cpu.end());
         input.metadata.smc = Bytes(0x300, 0);
         input.metadata.keyvault =
-            keyvault_decrypt(cpu, keyvault_encrypt(cpu, Bytes(Keyvault::kSize, 0)));
+            keyvault_decrypt(cpu, keyvault_encrypt(cpu, Bytes(Keyvault::kSize, 0)).value()).value();
         const bool split = type != BuildType::Glitch;
         input.bootloaders.cb_or_a = cb(split ? 9188 : 6750, split ? flags : 0, 0x11);
         if (split)
@@ -155,12 +155,13 @@ namespace {
             smc[i] = i;
         bool ok = true;
         for (size_t variant = 0; variant < 3; ++variant) {
-            auto cba = BootloaderCb::parse(cb(9188, variant == 2 ? 0x1800 : 0x800, 0x11));
-            auto target = BootloaderCb::parse(cb(6750, 0, variant == 0 ? 0x11 : 0x33));
+            auto cba = BootloaderCb::parse_or_throw(cb(9188, variant == 2 ? 0x1800 : 0x800, 0x11));
+            auto target = BootloaderCb::parse_or_throw(cb(6750, 0, variant == 0 ? 0x11 : 0x33));
             for (size_t i = 0; i < 16; ++i)
                 target.data[0x10 + i] = 0x10 + i;
             const auto parent = variant == 0 ? onebl : hmac(onebl, Bytes(16, 0x11));
-            target.encrypt_retail(parent.data(), cpu, smc, variant == 0 ? nullptr : &cba.header);
+            target.encrypt_retail_or_throw(parent.data(), cpu, smc,
+                                           variant == 0 ? nullptr : &cba.header);
             auto wire = target.serialize();
             ExCryptRc4(target.derived_key->data(), 16, wire.data() + 0x20, wire.size() - 0x20);
             ok = require(std::equal(expected[variant].begin(), expected[variant].end(),
@@ -189,9 +190,11 @@ namespace {
             input.metadata.cpu_key[0] ^= 1;
             input.metadata.cpu_key[8] ^= 1;
             XeCryptUidEccEncode(input.metadata.cpu_key.data());
-            input.metadata.keyvault = keyvault_decrypt(
-                input.metadata.cpu_key,
-                keyvault_encrypt(input.metadata.cpu_key, Bytes(Keyvault::kSize, 0)));
+            input.metadata.keyvault =
+                keyvault_decrypt(
+                    input.metadata.cpu_key,
+                    keyvault_encrypt(input.metadata.cpu_key, Bytes(Keyvault::kSize, 0)).value())
+                    .value();
         }
         if (change == 4)
             (*input.metadata.smc)[7] = 0xAB;
@@ -475,7 +478,7 @@ namespace {
         put_word(expected, 0x370, 0x64690006);
         put_word(expected, 0x37C, 0xF8491010);
 
-        auto loader = BootloaderCb::parse(v1);
+        auto loader = BootloaderCb::parse_or_throw(v1);
         loader.decrypted = true;
         bool ok = require(loader.patch_rgh3_v1_cb_x(), "a v1 CB_X is patched") &&
                   require(loader.serialize() == expected, "the v1 fix rewrites exactly four words");
@@ -485,19 +488,19 @@ namespace {
 
         auto v2 = cb(15432, 0x800, 0);
         put_word(v2, 0x368, 0x7D8C502A);
-        auto v2_loader = BootloaderCb::parse(v2);
+        auto v2_loader = BootloaderCb::parse_or_throw(v2);
         v2_loader.decrypted = true;
         ok = require(!v2_loader.patch_rgh3_v1_cb_x() && v2_loader.serialize() == v2,
                      "a v2 CB_X (zero at +0x354) is left unchanged") &&
              ok;
 
-        auto sealed = BootloaderCb::parse(v1);
+        auto sealed = BootloaderCb::parse_or_throw(v1);
         sealed.decrypted = false;
         ok = require(!sealed.patch_rgh3_v1_cb_x() && sealed.serialize() == v1,
                      "a sealed CB_X is never patched") &&
              ok;
 
-        auto short_loader = BootloaderCb::parse(Bytes(v1.begin(), v1.begin() + 0x37C));
+        auto short_loader = BootloaderCb::parse_or_throw(Bytes(v1.begin(), v1.begin() + 0x37C));
         short_loader.decrypted = true;
         return require(!short_loader.patch_rgh3_v1_cb_x(),
                        "a CB_X too short for the fix is left unchanged") &&
@@ -621,9 +624,9 @@ namespace {
                      name + " CE opens under CD's key") &&
              ok;
 
-        auto sealed_cf = BootloaderCf::parse(image->system_update_0.cf->serialize());
-        sealed_cf.decrypt(onebl.data());
-        if (!require(sealed_cf.parse_perbox(), name + " CF per-box parses"))
+        auto sealed_cf = BootloaderCf::parse_or_throw(image->system_update_0.cf->serialize());
+        sealed_cf.decrypt_or_throw(onebl.data());
+        if (!require(sealed_cf.parse_perbox().has_value(), name + " CF per-box parses"))
             return false;
         const auto& cf_perbox = *sealed_cf.perbox;
         const std::array<uint8_t, 3> expected_pairing =
@@ -634,7 +637,9 @@ namespace {
              ok;
         ok = require(cf_perbox.lockdown_value == 9, name + " CF keeps the console's LDV") && ok;
         auto remac = sealed_cf;
-        remac.calc_mac(onebl.data(), input.metadata.cpu_key.data());
+        if (!require(remac.calc_mac(onebl.data(), input.metadata.cpu_key.data()).has_value(),
+                     name + " CF MAC recomputes"))
+            return false;
         return require(remac.data == sealed_cf.data, name + " CF MAC covers what it states") && ok;
     }
 

@@ -1,10 +1,12 @@
+#include "stfs/HeaderParser.hpp"
+
 #include "Endian.hpp"
 #include "stfs/Commons.hpp"
 
 #include <array>
 #include <cstring>
 #include <fstream>
-#include <stdexcept>
+#include <vector>
 
 namespace gxbuild3::stfs {
 
@@ -14,7 +16,7 @@ namespace gxbuild3::stfs {
         // well (0x004 + 0x100 + 0x128). Every header variant needs this many bytes.
         constexpr std::size_t kHeaderSize = 0x22C;
 
-        Magic parse_magic(std::span<const std::byte> data) {
+        [[nodiscard]] Result<Magic> parse_magic(std::span<const std::byte> data) {
             std::array<char, 4> magic_bytes;
             std::memcpy(magic_bytes.data(), data.data(), 4);
 
@@ -29,7 +31,7 @@ namespace gxbuild3::stfs {
                 return Magic::LIVE;
             }
 
-            throw std::runtime_error("Invalid magic bytes");
+            return fail(ErrorCode::Malformed, "invalid STFS magic bytes");
         }
 
         ConSignature parse_con_signature(std::span<const std::byte> data) {
@@ -65,13 +67,19 @@ namespace gxbuild3::stfs {
 
     } // namespace
 
-    Header parse_header(std::span<const std::byte> data) {
+    Result<Header> parse_header(std::span<const std::byte> data) {
         if (data.size() < kHeaderSize) {
-            throw std::runtime_error("Insufficient data for header parsing");
+            return fail(ErrorCode::Truncated, "STFS header needs 0x{:X} bytes, got 0x{:X}",
+                        kHeaderSize, data.size());
+        }
+
+        auto magic = parse_magic(data);
+        if (!magic) {
+            return std::unexpected(std::move(magic.error()));
         }
 
         Header header;
-        header.magic = parse_magic(data);
+        header.magic = *magic;
 
         switch (header.magic) {
             case Magic::CON:
@@ -86,17 +94,17 @@ namespace gxbuild3::stfs {
         return header;
     }
 
-    Header read_header_from_file(const std::filesystem::path& path) {
+    Result<Header> read_header_from_file(const std::filesystem::path& path) {
         std::ifstream file(path, std::ios::binary);
         if (!file) {
-            throw std::runtime_error("Cannot open file: " + path.string());
+            return fail(ErrorCode::IoError, "cannot open {}", path.string());
         }
 
         std::vector<std::byte> buffer(kHeaderSize);
         file.read(reinterpret_cast<char*>(buffer.data()),
                   static_cast<std::streamsize>(buffer.size()));
         if (file.gcount() != static_cast<std::streamsize>(buffer.size())) {
-            throw std::runtime_error("File too small for header");
+            return fail(ErrorCode::Truncated, "{} is too small for an STFS header", path.string());
         }
 
         return parse_header(buffer);

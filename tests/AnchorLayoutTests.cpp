@@ -14,6 +14,11 @@ static bool check(bool ok, const char* message) {
         std::cerr << "FAIL: " << message << '\n';
     return ok;
 }
+static bool check(const Result<>& result, const char* message) {
+    if (!result)
+        std::cerr << "FAIL: " << message << ": " << result.error().describe() << '\n';
+    return result.has_value();
+}
 static Bytes raw_xell() {
     Bytes b(0x40000, 0);
     const Bytes entry{0x48, 0, 0, 0x20, 0x48, 0, 0, 0xEC, 0x48, 0, 0, 0, 0x48, 0, 0, 0};
@@ -32,9 +37,9 @@ static FlashImage fixture(Driver::DriverMode mode, BuildType type) {
     if (type == BuildType::Jtag) {
         p.insert(p.begin() + 8, {255, 255, 255, 255});
     }
-    ParsedPatchSet ps;
-    parse_patch_set(p, type, ps);
-    f.payloads.patchset = ps;
+    if (auto ps = parse_patch_set(p, type)) {
+        f.payloads.patchset = std::move(*ps);
+    }
     return f;
 }
 static uint32_t be32(std::span<const uint8_t> b, size_t o) {
@@ -73,7 +78,7 @@ static bool anchors() {
                            "MFG fuse reader finds fuses at second-slot base") &&
                      ok;
             }
-            auto parsed = FlashImage::read(f.write());
+            auto parsed = FlashImage::read(f.write().value_or(Bytes{}));
             ok = check(parsed && parsed->parse() && parsed->payloads.xell &&
                            parsed->payloads.xell->data == x.data,
                        "extract raw XeLL from runtime anchor") &&
@@ -111,7 +116,9 @@ static bool spill(BuildType type) {
         f.system_update_1 = {cf, cg};
     f.filesystem = FlashFileSystem{};
     f.filesystem->set_driver(&f.flash_driver);
-    f.filesystem->format(f.flash_driver.block_count(), 0x1D0);
+    if (!check(f.filesystem->format(f.flash_driver.block_count(), 0x1D0).has_value(),
+               "the filesystem formats"))
+        return false;
     const auto expected = cg.serialize();
     if (!check(f.encrypt_all({}, type) && f.write_to_driver(),
                "oversized CG prepares and writes within its slot"))
@@ -129,10 +136,10 @@ static bool spill(BuildType type) {
                 return false;
     }
     auto c = *f.system_update_0.cf;
-    c.decrypt(key_1bl);
+    c.decrypt_or_throw(key_1bl);
     if (!check(c.data[0] != 0 || c.data[1] != 0, "CF has a CG continuation block list"))
         return false;
-    auto parsed = FlashImage::read(f.write());
+    auto parsed = FlashImage::read(f.write().value_or(Bytes{}));
     if (!check(parsed && parsed->parse() && parsed->system_update_0.cg &&
                    parsed->system_update_0.cg->serialize() == expected,
                "CF block list reconstructs the complete CG ciphertext"))
@@ -144,18 +151,20 @@ static bool spill(BuildType type) {
         return false;
     if (!check(parsed->parse(), "split image can be parsed twice"))
         return false;
-    auto roundtrip = FlashImage::read(parsed->write());
+    auto roundtrip = FlashImage::read(parsed->write().value_or(Bytes{}));
     if (!check(roundtrip && roundtrip->parse() && roundtrip->system_update_0.cg &&
                    roundtrip->system_update_0.cg->serialize() == expected,
                "parsed split CG survives direct write/reparse"))
         return false;
     // A duplicate continuation cluster must not silently replace part of the CG.
     auto corrupt = *f.system_update_0.cf;
-    corrupt.decrypt(key_1bl);
+    corrupt.decrypt_or_throw(key_1bl);
     corrupt.data[4] = corrupt.data[2];
     corrupt.data[5] = corrupt.data[3];
-    corrupt.encrypt(key_1bl);
-    parsed->flash_driver.write_offset(parsed->header.cf_offset, corrupt.serialize());
+    corrupt.encrypt_or_throw(key_1bl);
+    if (!check(parsed->flash_driver.write_offset(parsed->header.cf_offset, corrupt.serialize()),
+               "the corrupt CF is laid"))
+        return false;
     auto damaged = FlashImage::read(parsed->flash_driver.serialize());
     if (!check(damaged && !damaged->parse(), "duplicate CG continuation clusters are rejected"))
         return false;
@@ -164,7 +173,7 @@ static bool spill(BuildType type) {
     if (!check(f.encrypt_all({}, type), "shrunk CG prepares"))
         return false;
     auto shrunk = *f.system_update_0.cf;
-    shrunk.decrypt(key_1bl);
+    shrunk.decrypt_or_throw(key_1bl);
     return check(shrunk.data[0] == 0 && shrunk.data[1] == 0 &&
                      !f.filesystem->exists("sysupdate.xexp1"),
                  "shrinking CG clears its block table and obsolete continuation file");
@@ -174,10 +183,10 @@ static bool custom_header_roundtrip() {
     f.preserve_layout = true;
     f.header.cf_offset = 0x100000;
     f.header.fs_addr = 0x30000;
-    auto parsed = FlashImage::read(f.write());
+    auto parsed = FlashImage::read(f.write().value_or(Bytes{}));
     if (!check(parsed && parsed->parse(), "custom header layout parses"))
         return false;
-    auto again = FlashImage::read(parsed->write());
+    auto again = FlashImage::read(parsed->write().value_or(Bytes{}));
     if (!check(again && again->parse(), "custom header layout rewrites"))
         return false;
     auto bytes = std::as_const(again->flash_driver).read_offset(0x130010, 16);
@@ -294,7 +303,7 @@ static bool jtag_window(Driver::DriverMode mode) {
     ok = check(d.read_clean(cd_at, extra_cd.size()) == extra_cd,
                "extra CD follows the 16-byte-aligned extra CB") &&
          ok;
-    auto parsed = FlashImage::read(f.write());
+    auto parsed = FlashImage::read(f.write().value_or(Bytes{}));
     ok = check(parsed && parsed->parse() && parsed->build_type == BuildType::Jtag,
                "anchored window is recognized as JTAG on read-back") &&
          ok;

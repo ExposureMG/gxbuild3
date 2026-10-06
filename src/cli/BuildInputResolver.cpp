@@ -80,7 +80,13 @@ namespace gxbuild3::cli {
             if (!exists) {
                 return OptionsArgs{};
             }
-            if (!std::filesystem::is_regular_file(options_path, status_error)) {
+            const bool regular = std::filesystem::is_regular_file(options_path, status_error);
+            if (status_error) {
+                return std::unexpected(error(
+                    ResolutionErrorCode::OptionsReadFailed,
+                    "Could not inspect options.ini: " + status_error.message(), options_path));
+            }
+            if (!regular) {
                 return std::unexpected(error(ResolutionErrorCode::OptionsReadFailed,
                                              "Could not read options.ini", options_path));
             }
@@ -203,7 +209,7 @@ namespace gxbuild3::cli {
             auto found = utils::find_file_data_detailed(name, roots, options, kind);
             if (!found) {
                 return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
-                                             found.error().message, found.error().source_path,
+                                             found.error().describe(), found.error().source_path,
                                              std::string(name)));
             }
             return std::move(*found);
@@ -442,8 +448,9 @@ namespace gxbuild3::cli {
                 }
                 auto data = utils::read_file(candidate);
                 if (!data) {
-                    return std::unexpected(error(failure_code, "Could not read resolved asset",
-                                                 candidate, std::string(filename)));
+                    return std::unexpected(error(
+                        failure_code, "Could not read resolved asset: " + data.error().describe(),
+                        candidate, std::string(filename)));
                 }
                 return std::optional<DirectFile>{DirectFile{candidate, std::move(*data)}};
             }
@@ -472,10 +479,19 @@ namespace gxbuild3::cli {
                     if (!std::filesystem::is_directory(directory, status_error)) {
                         continue;
                     }
+                    // A directory that cannot be listed is reported rather than skipped, so a
+                    // key in it is never passed over for one in a later root.
                     std::vector<std::filesystem::path> entries;
-                    for (const auto& entry :
-                         std::filesystem::directory_iterator(directory, status_error)) {
-                        entries.push_back(entry.path());
+                    std::filesystem::directory_iterator entry(directory, status_error);
+                    for (; !status_error && entry != std::filesystem::directory_iterator();
+                         entry.increment(status_error)) {
+                        entries.push_back(entry->path());
+                    }
+                    if (status_error) {
+                        return std::unexpected(error(ResolutionErrorCode::SigningKeyNotFound,
+                                                     "Could not list '" + directory.string() +
+                                                         "': " + status_error.message(),
+                                                     directory, "SB_priv.bin"));
                     }
                     std::sort(entries.begin(), entries.end());
                     for (const auto name : kNames) {
@@ -652,7 +668,7 @@ namespace gxbuild3::cli {
             auto discovered = utils::find_file_data_detailed("cpukey.txt", roots);
             if (!discovered) {
                 return std::unexpected(error(ResolutionErrorCode::CpuKeyReadFailed,
-                                             discovered.error().message,
+                                             discovered.error().describe(),
                                              discovered.error().source_path, "cpukey.txt"));
             }
             if (*discovered) {
@@ -668,16 +684,18 @@ namespace gxbuild3::cli {
         std::optional<std::vector<uint8_t>> nand_data;
         if (args.input_path) {
             nand_path = anchored(working_directory_, *args.input_path);
-            nand_data = utils::read_file(*nand_path);
-            if (!nand_data) {
-                return std::unexpected(error(ResolutionErrorCode::InputReadFailed,
-                                             "Could not read explicit donor NAND", *nand_path));
+            auto read = utils::read_file(*nand_path);
+            if (!read) {
+                return std::unexpected(error(
+                    ResolutionErrorCode::InputReadFailed,
+                    "Could not read explicit donor NAND: " + read.error().describe(), *nand_path));
             }
+            nand_data = std::move(*read);
         } else {
             auto discovered = utils::find_file_data_detailed("nanddump.bin", roots);
             if (!discovered) {
                 return std::unexpected(error(ResolutionErrorCode::InputReadFailed,
-                                             discovered.error().message,
+                                             discovered.error().describe(),
                                              discovered.error().source_path, "nanddump.bin"));
             }
             if (*discovered) {
@@ -689,21 +707,15 @@ namespace gxbuild3::cli {
         std::optional<Input> donor;
         ImageType image_type{};
         if (nand_data) {
-            try {
-                donor = extract_all(*nand_data, *cpu_key);
-            } catch (const std::exception& exception) {
-                return std::unexpected(error(
-                    ResolutionErrorCode::InvalidDonor,
-                    "Could not parse donor NAND: " + std::string(exception.what()), *nand_path));
-            } catch (...) {
-                return std::unexpected(error(ResolutionErrorCode::InvalidDonor,
-                                             "Could not parse donor NAND", *nand_path));
-            }
-            if (!donor) {
+            auto extracted = extract_all(*nand_data, *cpu_key);
+            if (!extracted) {
                 return std::unexpected(
                     error(ResolutionErrorCode::InvalidDonor,
-                          "Could not extract donor NAND with the resolved CPU key", *nand_path));
+                          "Could not extract donor NAND with the resolved CPU key: " +
+                              extracted.error().describe(),
+                          *nand_path));
             }
+            donor = std::move(*extracted);
 
             const ImageType detected_type = donor->image_type;
             image_type = args.image_type.value_or(detected_type);
@@ -761,11 +773,9 @@ namespace gxbuild3::cli {
 
             const auto ini_document = ini::parse_file(ini_path);
             if (!ini_document) {
-                return std::unexpected(
-                    error(ResolutionErrorCode::BuildIniReadFailed,
-                          "Could not read build INI: " +
-                              std::string(ini::parse_error_string(ini_document.error())),
-                          ini_path));
+                return std::unexpected(error(
+                    ResolutionErrorCode::BuildIniReadFailed,
+                    "Could not read build INI: " + ini_document.error().describe(), ini_path));
             }
             if (args.section.empty()) {
                 return std::unexpected(error(ResolutionErrorCode::SectionNotFound,
@@ -852,7 +862,7 @@ namespace gxbuild3::cli {
                                                          scan_options, args.build_type);
             if (!ini_files) {
                 return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
-                                             "Could not resolve build INI assets", ini_path,
+                                             ini_files.error().describe(), ini_path,
                                              target_section));
             }
 
@@ -913,10 +923,9 @@ namespace gxbuild3::cli {
                 auto opened =
                     gxbuild3::nand::open_loose_keyvault(foundations->cpu_key, (**keyvault).data);
                 if (!opened) {
-                    return std::unexpected(
-                        error(ResolutionErrorCode::InvalidInput,
-                              "kv.bin is not 0x4000 bytes, nor 0x3FF0 without its nonce",
-                              (**keyvault).source_path, "kv.bin"));
+                    return std::unexpected(error(ResolutionErrorCode::InvalidInput,
+                                                 opened.error().describe(),
+                                                 (**keyvault).source_path, "kv.bin"));
                 }
                 using Form = gxbuild3::nand::LooseKeyvault::Form;
                 if (opened->form == Form::StaleNonce) {
@@ -991,7 +1000,8 @@ namespace gxbuild3::cli {
                     if (!opened) {
                         return std::unexpected(
                             error(ResolutionErrorCode::InvalidInput,
-                                  "Could not decrypt secure INI file at the Input boundary",
+                                  "Could not decrypt secure INI file at the Input boundary: " +
+                                      opened.error().describe(),
                                   ini_path, file.first));
                     }
                     file.second = std::move(*opened);
@@ -1092,9 +1102,10 @@ namespace gxbuild3::cli {
                 auto fuses = gxbuild3::utils::generate_fuseset(
                     kRetailConsoleWord, foundations->cpu_key, input.metadata.cf_ldv.value_or(0));
                 if (!fuses) {
-                    return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                                 "Could not generate the virtual fuseset", {},
-                                                 "fuses"));
+                    return std::unexpected(
+                        error(ResolutionErrorCode::InvalidInput,
+                              "Could not generate the virtual fuseset: " + fuses.error().describe(),
+                              {}, "fuses"));
                 }
                 InputPayloads payloads{};
                 payloads.fuses = std::move(*fuses);
@@ -1151,21 +1162,24 @@ namespace gxbuild3::cli {
                     if (!cb_word) {
                         return std::unexpected(error(ResolutionErrorCode::InvalidInput,
                                                      "Could not read the console word of the CB "
-                                                     "the virtual fuses are built from",
+                                                     "the virtual fuses are built from: " +
+                                                         cb_word.error().describe(),
                                                      {}, "fuses"));
                     }
                     auto fuses = gxbuild3::utils::generate_fuseset(
                         *cb_word, foundations->cpu_key, input.metadata.cf_ldv.value_or(0));
                     if (!fuses) {
                         return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                                     "Could not generate the virtual fuseset", {},
-                                                     "fuses"));
+                                                     "Could not generate the virtual fuseset: " +
+                                                         fuses.error().describe(),
+                                                     {}, "fuses"));
                     }
                     payloads.fuses = std::move(*fuses);
                 }
                 input.payloads = std::move(payloads);
             }
 
+            // Every InputErrorCode maps to InvalidInput; its message names the exact problem.
             if (const auto validation = validate_input(input); !validation) {
                 return std::unexpected(
                     error(ResolutionErrorCode::InvalidInput, validation.error().message));
@@ -1173,12 +1187,11 @@ namespace gxbuild3::cli {
             return BuildRequest{.input = std::move(input),
                                 .output_path = anchored(working_directory_, args.output_path)};
         } catch (const std::exception& exception) {
+            // The documented boundary: only std::bad_alloc and logic_error-family precondition
+            // violations can still escape the library, and they end up here.
             return std::unexpected(
                 error(ResolutionErrorCode::InvalidInput,
                       "Input resolution failed: " + std::string(exception.what())));
-        } catch (...) {
-            return std::unexpected(
-                error(ResolutionErrorCode::InvalidInput, "Input resolution failed"));
         }
     }
 

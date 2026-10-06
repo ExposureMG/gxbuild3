@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BuildRunner.hpp"
+#include "Error.hpp"
 #include "cli/BuildArgs.hpp"
 #include "cli/BuildInputResolver.hpp"
 
@@ -15,7 +16,9 @@ namespace gxbuild3::cli {
     struct BuildCommandServices {
         std::function<std::expected<BuildRequest, ResolutionError>(const BuildArgs&)> resolve;
         std::function<BuildResult(const Input&)> build;
-        std::function<bool(const std::filesystem::path&, const std::vector<uint8_t>&)> write;
+        // Writes the image, creating missing parent directories; a failure carries its reason.
+        std::function<Result<void>(const std::filesystem::path&, const std::vector<uint8_t>&)>
+            write;
     };
 
     struct CommandResult {

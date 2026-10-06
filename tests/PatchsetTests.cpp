@@ -64,15 +64,14 @@ namespace {
 
     bool test_byte_parser_uses_supplied_data() {
         const auto bytes = glitch_patchset(Bytes{0xA0, 0xA1});
-        ParsedPatchSet parsed;
-        if (!require(parse_patch_set(bytes, BuildType::Glitch2, parsed),
-                     "in-memory glitch patchset parses")) {
+        const auto parsed = parse_patch_set(bytes, BuildType::Glitch2);
+        if (!require(parsed.has_value(), "in-memory glitch patchset parses")) {
             return false;
         }
 
-        const auto* cbb = find_section(parsed, PatchSectionTarget::Cbb);
-        const auto* cd = find_section(parsed, PatchSectionTarget::Cd);
-        const auto* khv = find_section(parsed, PatchSectionTarget::Khv);
+        const auto* cbb = find_section(*parsed, PatchSectionTarget::Cbb);
+        const auto* cd = find_section(*parsed, PatchSectionTarget::Cd);
+        const auto* khv = find_section(*parsed, PatchSectionTarget::Khv);
         return require(cbb && cbb->entries.size() == 1 && cbb->entries[0].address == 0x20,
                        "Glitch2 section one targets CBB") &&
                require(cd && cd->entries.size() == 1 && cd->entries[0].words[0] == 0x55667788,
@@ -138,11 +137,8 @@ namespace {
         malformed.emplace_back("partial second section", partial_second_section);
 
         for (const auto& [name, bytes] : malformed) {
-            ParsedPatchSet parsed;
-            parsed.sections.push_back(
-                ParsedPatchSection{PatchSectionTarget::Khv, "sentinel", {0xAA}, {}});
-            if (!require(!parse_patch_set(bytes, BuildType::Glitch, parsed), name) ||
-                !require(parsed.sections.empty(), "failed parse leaves no partial sections")) {
+            const auto parsed = parse_patch_set(bytes, BuildType::Glitch);
+            if (!require(!parsed, name)) {
                 return false;
             }
 
@@ -164,20 +160,13 @@ namespace {
         append_be32(three_sections, 0xFFFFFFFF);
         three_sections.insert(three_sections.end(), 4, 0x12);
 
-        ParsedPatchSet parsed;
-        parsed.sections.push_back(
-            ParsedPatchSection{PatchSectionTarget::Khv, "sentinel", {0xAA}, {}});
-        if (!require(!parse_patch_set(three_sections, BuildType::Jtag, parsed),
-                     "JTAG patchset with wrong delimiter count fails") ||
-            !require(parsed.sections.empty(), "JTAG failure leaves no partial sections")) {
+        if (!require(!parse_patch_set(three_sections, BuildType::Jtag),
+                     "JTAG patchset with wrong delimiter count fails")) {
             return false;
         }
 
-        parsed.sections.push_back(
-            ParsedPatchSection{PatchSectionTarget::Khv, "sentinel", {0xAA}, {}});
-        return require(!parse_patch_set(glitch_patchset(Bytes{0x10}), BuildType::Retail, parsed),
-                       "unsupported build type fails") &&
-               require(parsed.sections.empty(), "unsupported type leaves no partial sections");
+        return require(!parse_patch_set(glitch_patchset(Bytes{0x10}), BuildType::Retail),
+                       "unsupported build type fails");
     }
 
 } // namespace

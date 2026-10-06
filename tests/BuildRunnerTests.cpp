@@ -1,4 +1,5 @@
 #include "BuildRunner.hpp"
+#include "Library.hpp"
 #include "ScopedTimeZone.hpp"
 #include "XeRsaTestKey.hpp"
 #include "excrypt.h"
@@ -37,9 +38,21 @@ namespace {
 
     using Bytes = std::vector<uint8_t>;
 
+    // The failed extraction a test takes when the image it extracts from did not build.
+    const std::unexpected<gxbuild3::Error>
+        not_built(std::in_place, gxbuild3::ErrorCode::InvalidArgument, "the image did not build");
+
     bool require(bool condition, std::string_view message) {
         if (!condition) {
             std::cerr << "FAIL: " << message << '\n';
+            return false;
+        }
+        return true;
+    }
+
+    bool require(const gxbuild3::Result<>& result, std::string_view message) {
+        if (!result) {
+            std::cerr << "FAIL: " << message << ": " << result.error().describe() << '\n';
             return false;
         }
         return true;
@@ -93,7 +106,7 @@ namespace {
     }
 
     Bytes canonical_keyvault(std::span<const uint8_t> cpu_key, Bytes plaintext) {
-        return keyvault_decrypt(cpu_key, keyvault_encrypt(cpu_key, plaintext));
+        return keyvault_decrypt(cpu_key, keyvault_encrypt(cpu_key, plaintext).value()).value();
     }
 
     InputBootloaders valid_bootloaders() {
@@ -169,17 +182,17 @@ namespace {
     // run_build opens a supplied sealed CG and seals it again under a new nonce, so a CG is
     // compared by what it carries: its plaintext, with the nonce at +0x10 cleared.
     std::optional<Bytes> opened_cg(const Bytes& cf_bytes, const Bytes& cg_bytes) {
-        auto cf = BootloaderCf::parse(cf_bytes);
+        auto cf = BootloaderCf::parse_or_throw(cf_bytes);
         if (!cf.is_decrypted()) {
-            cf.decrypt(key_1bl);
+            cf.decrypt_or_throw(key_1bl);
         }
         const auto key = cf.cg_key();
         if (!key || cg_bytes.size() < sizeof(cg_header)) {
             return std::nullopt;
         }
-        auto cg = BootloaderCg::parse(cg_bytes);
+        auto cg = BootloaderCg::parse_or_throw(cg_bytes);
         if (!cg.decrypted) {
-            cg.decrypt(key->data());
+            cg.decrypt_or_throw(key->data());
         }
         auto opened = cg.serialize();
         std::fill(opened.begin() + 0x10, opened.begin() + 0x20, 0);
@@ -307,7 +320,7 @@ namespace {
         input.patches = std::move(patches);
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         if (!require(extracted.has_value(), "patched glitch image builds and extracts")) {
             return false;
         }
@@ -345,7 +358,7 @@ namespace {
         input.patches = std::move(patches);
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         if (!require(extracted.has_value(), "patched glitch2m image builds and extracts")) {
             return false;
         }
@@ -372,7 +385,7 @@ namespace {
         input.patches = std::move(patches);
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         if (!require(extracted.has_value() && extracted->bootloaders.cb_b.has_value(),
                      "Glitch2 CBB image builds and extracts")) {
             return false;
@@ -447,7 +460,7 @@ namespace {
         input.patches = std::move(patches);
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         const auto khv = built ? read_logical(*built, 0x80010, 3) : std::nullopt;
         return require(extracted.has_value() &&
                            extracted->bootloaders.cb_or_a.size() == original_cb_size,
@@ -489,8 +502,7 @@ namespace {
             input.patches = std::move(patches);
 
             const auto built = run_build(input);
-            const auto extracted =
-                built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+            const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
             const auto khv = built ? read_logical(*built, 0x80010, 3) : std::nullopt;
             if (!require(extracted.has_value(),
                          std::string(test_case.options) + " image builds and extracts") ||
@@ -756,7 +768,7 @@ namespace {
         }
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         if (!require(extracted.has_value(), "glitch image with mobile data extracts")) {
             return false;
         }
@@ -1031,7 +1043,7 @@ namespace {
         input.payloads = std::move(payloads);
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         return require(
                    extracted.has_value() && extracted->payloads && extracted->payloads->xell &&
                        *extracted->payloads->xell == *input.payloads->xell,
@@ -1067,7 +1079,7 @@ namespace {
                                   image->flash_driver.write_offset(0x95060, false_jtag_elf);
             const auto extracted =
                 modified ? extract_all(image->flash_driver.serialize(), input.metadata.cpu_key)
-                         : std::nullopt;
+                         : not_built;
 
             if (!require(modified, "shifted patch-base XeLL fixture is modified successfully") ||
                 !require(extracted.has_value() &&
@@ -1096,8 +1108,10 @@ namespace {
             auto image = built ? FlashImage::read(*built) : std::nullopt;
             if (!require(image && image->parse(), "glitch donor with runtime KHV parses"))
                 return false;
-            image->flash_driver.write_offset(0x70000, Bytes{0, 0, 0, 0});
-            image->flash_driver.write_offset(0x95060, valid_xell());
+            if (!require(image->flash_driver.write_offset(0x70000, Bytes{0, 0, 0, 0}) &&
+                             image->flash_driver.write_offset(0x95060, valid_xell()),
+                         "the stale JTAG anchors are laid"))
+                return false;
             auto extracted = extract_all(image->flash_driver.serialize(), input.metadata.cpu_key);
             if (!require(extracted && (!extracted->payloads || !extracted->payloads->xell),
                          "known glitch image cannot infer JTAG XeLL inside its damaged payload"))
@@ -1178,7 +1192,7 @@ namespace {
         input.payloads = std::move(payloads);
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         return require(extracted.has_value() && extracted->payloads &&
                            extracted->payloads->xell == input.payloads->xell &&
                            extracted->payloads->rebooter == input.payloads->rebooter &&
@@ -1265,15 +1279,15 @@ namespace {
                      std::initializer_list<std::pair<uint8_t, Bytes>> mobiles) {
         FlashImage donor{};
         donor.flash_driver = Driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
-        donor.smc = Smc::parse(*source.metadata.smc);
-        donor.keyvault = Keyvault::parse(*source.metadata.keyvault);
+        donor.smc = Smc::parse(*source.metadata.smc).value();
+        donor.keyvault = Keyvault::parse(*source.metadata.keyvault).value();
         donor.keyvault->encrypted = false;
         if (!donor.keyvault->encrypt(source.metadata.cpu_key)) {
             std::abort();
         }
-        donor.cb_section.cb_or_A = BootloaderCb::parse(source.bootloaders.cb_or_a);
-        donor.cb_section.sc = BootloaderSc::parse(*source.bootloaders.sc);
-        donor.kernel_section.cd = BootloaderCd::parse(source.bootloaders.cd);
+        donor.cb_section.cb_or_A = BootloaderCb::parse_or_throw(source.bootloaders.cb_or_a);
+        donor.cb_section.sc = BootloaderSc::parse_or_throw(*source.bootloaders.sc);
+        donor.kernel_section.cd = BootloaderCd::parse_or_throw(source.bootloaders.cd);
         if (!donor.encrypt_all(source.metadata.cpu_key)) {
             std::abort();
         }
@@ -1281,7 +1295,7 @@ namespace {
         for (const auto& [block_type, bytes] : mobiles) {
             *donor.mobile_data->get_slot(block_type) = bytes;
         }
-        return donor.write();
+        return donor.write().value_or(Bytes{});
     }
 
     std::optional<FlashImage> parse_image(std::span<const uint8_t> bytes) {
@@ -1427,7 +1441,10 @@ namespace {
         const auto built = run_build(input);
         return require(!built.has_value(), "a mobile overlay longer than a block is refused") &&
                require(built.error().code == BuildErrorCode::SerializationFailure,
-                       "an over-long mobile reports SerializationFailure");
+                       "an over-long mobile reports SerializationFailure") &&
+               require(built.error().message.find("Mobile data type 0x32 is 0x4001 bytes") !=
+                           std::string::npos,
+                       "the writer's reason reaches the BuildError message");
     }
 
     bool test_extracted_plaintext_keyvault_reencrypts_for_a_fresh_layout() {
@@ -1522,7 +1539,7 @@ namespace {
         input.bootloaders.cg0 = cg0;
 
         const auto built = run_build(input);
-        const auto info = built ? extract_some_info(*built) : std::nullopt;
+        const auto info = built ? extract_some_info(*built) : not_built;
         return require(info.has_value(), "public NAND metadata extracts without a CPU key") &&
                require(info->block_type == ImageType::BigBlock,
                        "public NAND metadata reports the detected block type") &&
@@ -1547,7 +1564,7 @@ namespace {
     bool test_extract_all_info_reports_the_detected_block_type() {
         const auto input = fresh_input(ImageType::NewSmallBlock);
         const auto built = run_build(input);
-        const auto info = built ? extract_all_info(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto info = built ? extract_all_info(*built, input.metadata.cpu_key) : not_built;
         return require(info.has_value(), "full NAND metadata extracts") &&
                require(info->block_type == ImageType::NewSmallBlock,
                        "full NAND metadata reports the detected block type");
@@ -1616,6 +1633,37 @@ namespace {
         return passed;
     }
 
+    // The extraction cores return their reason and log nothing; the public GxBuild::Extract*
+    // shims log that reason once and return std::nullopt.
+    bool test_extraction_cores_return_their_reason_and_the_shims_return_nullopt() {
+        const auto input = fresh_input(ImageType::SmallBlock);
+        const auto built = run_build(input);
+        if (!require(built.has_value(), "the image to extract builds")) {
+            return false;
+        }
+        const auto& cpu_key = input.metadata.cpu_key;
+        const Bytes short_key(cpu_key.begin(), cpu_key.begin() + 15);
+        const auto short_key_all = extract_all(*built, short_key);
+        const auto empty_info = extract_some_info(Bytes{});
+        const auto malformed = with_short_cd_record(*built);
+        const auto malformed_all = extract_all(malformed, cpu_key);
+        return require(!short_key_all && short_key_all.error().code == ErrorCode::InvalidArgument &&
+                           short_key_all.error().describe().find("16 bytes") != std::string::npos,
+                       "extract_all names a CPU key of the wrong length") &&
+               require(!empty_info && empty_info.error().code == ErrorCode::InvalidArgument &&
+                           empty_info.error().describe().find("empty") != std::string::npos,
+                       "extract_some_info names an empty image") &&
+               require(!malformed_all &&
+                           malformed_all.error().describe().find(
+                               "Failed to parse the NAND image structure") != std::string::npos,
+                       "extract_all puts the parse context on a malformed record") &&
+               require(!GxBuild::ExtractAll(*built, short_key).has_value() &&
+                           !GxBuild::ExtractSomeInfo(Bytes{}).has_value() &&
+                           !GxBuild::ExtractAll(malformed, cpu_key).has_value() &&
+                           GxBuild::ExtractAll(*built, cpu_key).has_value(),
+                       "the public Extract* shims return nullopt exactly when the core fails");
+    }
+
     // The keyvault's fcrt.bin flag is read as xeBuild 1.21 reads it: bits 0x0320 of the big-endian
     // OddFeatures word at 0x1C.
     bool test_extract_all_info_reads_the_fcrt_flag_big_endian() {
@@ -1630,8 +1678,7 @@ namespace {
             plain[0x1D] = static_cast<uint8_t>(features);
             input.metadata.keyvault = canonical_keyvault(input.metadata.cpu_key, plain);
             const auto built = run_build(input);
-            const auto info =
-                built ? extract_all_info(*built, input.metadata.cpu_key) : std::nullopt;
+            const auto info = built ? extract_all_info(*built, input.metadata.cpu_key) : not_built;
             passed = require(info.has_value() && info->keyvault.present &&
                                  info->keyvault.fcrt_required == required,
                              "full NAND metadata reports the keyvault's fcrt.bin flag") &&
@@ -1659,10 +1706,10 @@ namespace {
     // An SC is sealed under HMAC(16 zero bytes, nonce), whatever its parent.
     bool test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() {
         auto encrypted_source = fresh_input(ImageType::SmallBlock);
-        auto encrypted_sc = BootloaderSc::parse(*encrypted_source.bootloaders.sc);
+        auto encrypted_sc = BootloaderSc::parse_or_throw(*encrypted_source.bootloaders.sc);
         const auto expected_encrypted_sc_data = encrypted_sc.data;
         encrypted_sc.decrypted = true;
-        encrypted_sc.encrypt(BootloaderSc::kZeroSecret);
+        encrypted_sc.encrypt_or_throw(BootloaderSc::kZeroSecret);
         encrypted_source.bootloaders.sc = encrypted_sc.serialize();
 
         const auto encrypted_build = run_build(encrypted_source);
@@ -1676,7 +1723,7 @@ namespace {
         const auto plaintext_build = run_build(plaintext_source);
         const auto plaintext_extracted =
             plaintext_build ? extract_all(*plaintext_build, plaintext_source.metadata.cpu_key)
-                            : std::nullopt;
+                            : not_built;
 
         return require(encrypted_decrypted && encrypted_image->cb_section.sc.has_value() &&
                            encrypted_image->cb_section.sc->is_decrypted(),
@@ -1728,7 +1775,7 @@ namespace {
             if (!require(parsed.has_value(), "header 0x74 fixture parses"))
                 return false;
             parsed->header.smc_config_offset = 0xF7C000;
-            if (!require(zero_at_0x74(parsed->write()),
+            if (!require(zero_at_0x74(parsed->write().value_or(Bytes{})),
                          "rewrite does not carry a donor's header 0x74"))
                 return false;
         }
@@ -1909,7 +1956,7 @@ namespace {
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
             {"crl.bin", clear_crl}, {"extended.bin", extended}, {"fcrt.bin", fcrt}};
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, cpu_key) : not_built;
         if (!require(extracted.has_value() && extracted->flashfs_sec.has_value(),
                      "a build with secured files extracts")) {
             return false;
@@ -1987,7 +2034,7 @@ namespace {
 
         const auto image_fcrt = [&](const Input& build) -> std::optional<Bytes> {
             const auto built = run_build(build);
-            const auto extracted = built ? extract_all(*built, cpu_key) : std::nullopt;
+            const auto extracted = built ? extract_all(*built, cpu_key) : not_built;
             if (!extracted || !extracted->flashfs_sec) {
                 return std::nullopt;
             }
@@ -2104,7 +2151,7 @@ namespace {
         image.mobile_data = MobileData{};
         image.mobile_data->x31 = Bytes(0x800, 0x31);
 
-        if (!require(image.write().empty(), "mobile allocation cannot enter the SMC tail")) {
+        if (!require(!image.write(), "mobile allocation cannot enter the SMC tail")) {
             return false;
         }
         for (size_t block = limit; block < image.flash_driver.block_count(); ++block) {
@@ -2469,8 +2516,9 @@ namespace {
         auto source = fresh_input(ImageType::SmallBlock);
         const auto bootloader_donor = make_donor(source, {});
         auto bootloaders = extract_all(bootloader_donor, source.metadata.cpu_key);
-        const auto extracted_cd =
-            bootloaders ? BootloaderCd::parse(bootloaders->bootloaders.cd) : BootloaderCd{};
+        const auto extracted_cd = bootloaders
+                                      ? BootloaderCd::parse_or_throw(bootloaders->bootloaders.cd)
+                                      : BootloaderCd{};
         if (!require(bootloaders.has_value(), "serialized bootloader donor extracts") ||
             !require(bootloaders->bootloaders.cb_or_a == source.bootloaders.cb_or_a,
                      "extraction preserves exact CB/A bytes") ||
@@ -2487,10 +2535,11 @@ namespace {
         const auto bootloader_rebuilt = run_build(*bootloaders);
         const auto bootloader_roundtrip =
             bootloader_rebuilt ? extract_all(*bootloader_rebuilt, bootloaders->metadata.cpu_key)
-                               : std::nullopt;
-        const auto roundtrip_cd = bootloader_roundtrip
-                                      ? BootloaderCd::parse(bootloader_roundtrip->bootloaders.cd)
-                                      : BootloaderCd{};
+                               : not_built;
+        const auto roundtrip_cd =
+            bootloader_roundtrip
+                ? BootloaderCd::parse_or_throw(bootloader_roundtrip->bootloaders.cd)
+                : BootloaderCd{};
         // The donor chain stops before CE, so the rebuild seals CB/A under a fresh nonce.
         const auto same_outside_nonce = [](const Bytes& left, const Bytes& right) {
             return left.size() == right.size() && left.size() >= 0x20 &&
@@ -2517,7 +2566,7 @@ namespace {
         source.payloads = std::move(payloads);
         const auto donor_bytes = run_build(source);
         auto payload_extracted =
-            donor_bytes ? extract_all(*donor_bytes, source.metadata.cpu_key) : std::nullopt;
+            donor_bytes ? extract_all(*donor_bytes, source.metadata.cpu_key) : not_built;
         if (!require(payload_extracted.has_value(), "serialized payload donor extracts") ||
             !require(payload_extracted->payloads.has_value() &&
                          payload_extracted->payloads->rebooter == source.payloads->rebooter,
@@ -2534,7 +2583,7 @@ namespace {
         payload_extracted->metadata.nand_image.reset();
         const auto rebuilt = run_build(*payload_extracted);
         const auto roundtrip =
-            rebuilt ? extract_all(*rebuilt, payload_extracted->metadata.cpu_key) : std::nullopt;
+            rebuilt ? extract_all(*rebuilt, payload_extracted->metadata.cpu_key) : not_built;
         return require(roundtrip.has_value() && roundtrip->payloads.has_value() &&
                            roundtrip->payloads->rebooter == source.payloads->rebooter,
                        "rebuilt rebooter remains serialized-identical") &&
@@ -2546,7 +2595,7 @@ namespace {
     bool test_metadata_overrides_reach_final_patched_cb_b_and_cf0() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.build_type = BuildType::Glitch2;
-        auto cb_a = BootloaderCb::parse(input.bootloaders.cb_or_a);
+        auto cb_a = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
         if (!cb_a.parse_perbox()) {
             std::abort();
         }
@@ -2554,10 +2603,12 @@ namespace {
         cb_a.perbox->pairing_data[0] = 0x12;
         cb_a.perbox->pairing_data[1] = 0x13;
         cb_a.perbox->pairing_data[2] = 0x14;
-        cb_a.serialize_perbox();
+        if (!cb_a.serialize_perbox()) {
+            std::abort();
+        }
         input.bootloaders.cb_or_a = cb_a.serialize();
 
-        auto cb_b = BootloaderCb::parse(input.bootloaders.cb_or_a);
+        auto cb_b = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
         if (!cb_b.parse_perbox()) {
             std::abort();
         }
@@ -2565,7 +2616,9 @@ namespace {
         cb_b.perbox->pairing_data[0] = 0x22;
         cb_b.perbox->pairing_data[1] = 0x23;
         cb_b.perbox->pairing_data[2] = 0x24;
-        cb_b.serialize_perbox();
+        if (!cb_b.serialize_perbox()) {
+            std::abort();
+        }
         input.bootloaders.cb_b = cb_b.serialize();
         input.bootloaders.cf0 = decrypted_cf(0x31, {0x32, 0x33, 0x34});
         const auto update0 = valid_system_update(0x51);
@@ -2643,7 +2696,7 @@ namespace {
                                  image->cb_section.cb_B->parse_perbox();
         const auto* perbox = cb_b_perbox ? &*image->cb_section.cb_B->perbox : nullptr;
         const auto* perbox_bytes = reinterpret_cast<const uint8_t*>(perbox);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         const Bytes* secdata = nullptr;
         if (extracted && extracted->flashfs_sec) {
             for (const auto& [name, data] : *extracted->flashfs_sec) {
@@ -2712,7 +2765,7 @@ namespace {
 
     bool test_present_unwritable_cb_b_remains_metadata_authoritative() {
         auto input = fresh_input(ImageType::SmallBlock);
-        auto cb_a = BootloaderCb::parse(input.bootloaders.cb_or_a);
+        auto cb_a = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
         cb_a.data[0x260] = 0x01;
         cb_a.decrypted = false;
         input.bootloaders.cb_or_a = cb_a.serialize();
@@ -2731,7 +2784,7 @@ namespace {
 
     bool test_donor_bootloader_chain_is_replaced_by_input_presence() {
         auto donor_input = fresh_input(ImageType::SmallBlock);
-        auto donor_cb = BootloaderCb::parse(donor_input.bootloaders.cb_or_a);
+        auto donor_cb = BootloaderCb::parse_or_throw(donor_input.bootloaders.cb_or_a);
         donor_cb.data[0x260] = 0x01;
         donor_cb.decrypted = false;
         donor_input.bootloaders.cb_or_a = donor_cb.serialize();
@@ -2998,7 +3051,9 @@ namespace {
         }
         const auto binding = [&input](const BootloaderCf& cf) {
             auto copy = cf;
-            copy.calc_mac(key_1bl, input.metadata.cpu_key.data());
+            if (!copy.calc_mac(key_1bl, input.metadata.cpu_key.data())) {
+                std::abort();
+            }
             return std::to_array(copy.perbox->per_box_digest);
         };
         const auto& first = *image->system_update_0.cf->perbox;
@@ -3046,7 +3101,7 @@ namespace {
         cb.header.header.size = sizeof(generic_header);
         const auto cb_wire = cb.serialize();
         passed = require(has_big_endian_pairing(cb_wire) &&
-                             BootloaderCb::parse(cb_wire).header.header.pairing == pairing,
+                             BootloaderCb::parse_or_throw(cb_wire).header.header.pairing == pairing,
                          "CB generic pairing is big-endian on wire and host-order after parse") &&
                  passed;
 
@@ -3056,7 +3111,7 @@ namespace {
         sc.header.header.size = sizeof(sc_header);
         const auto sc_wire = sc.serialize();
         passed = require(has_big_endian_pairing(sc_wire) &&
-                             BootloaderSc::parse(sc_wire).header.header.pairing == pairing,
+                             BootloaderSc::parse_or_throw(sc_wire).header.header.pairing == pairing,
                          "SC generic pairing is big-endian on wire and host-order after parse") &&
                  passed;
 
@@ -3066,7 +3121,7 @@ namespace {
         cd.header.header.size = sizeof(cd_header);
         const auto cd_wire = cd.serialize();
         passed = require(has_big_endian_pairing(cd_wire) &&
-                             BootloaderCd::parse(cd_wire).header.header.pairing == pairing,
+                             BootloaderCd::parse_or_throw(cd_wire).header.header.pairing == pairing,
                          "CD generic pairing is big-endian on wire and host-order after parse") &&
                  passed;
 
@@ -3076,7 +3131,7 @@ namespace {
         ce.header.header.size = sizeof(ce_header);
         const auto ce_wire = ce.serialize();
         passed = require(has_big_endian_pairing(ce_wire) &&
-                             BootloaderCe::parse(ce_wire).header.header.pairing == pairing,
+                             BootloaderCe::parse_or_throw(ce_wire).header.header.pairing == pairing,
                          "CE generic pairing is big-endian on wire and host-order after parse") &&
                  passed;
 
@@ -3088,7 +3143,7 @@ namespace {
         cf.decrypted = true;
         const auto cf_wire = cf.serialize();
         passed = require(has_big_endian_pairing(cf_wire) &&
-                             BootloaderCf::parse(cf_wire).header.header.pairing == pairing,
+                             BootloaderCf::parse_or_throw(cf_wire).header.header.pairing == pairing,
                          "CF generic pairing is big-endian on wire and host-order after parse") &&
                  passed;
 
@@ -3098,14 +3153,14 @@ namespace {
         cg.header.header.size = sizeof(cg_header);
         const auto cg_wire = cg.serialize();
         passed = require(has_big_endian_pairing(cg_wire) &&
-                             BootloaderCg::parse(cg_wire).header.header.pairing == pairing,
+                             BootloaderCg::parse_or_throw(cg_wire).header.header.pairing == pairing,
                          "CG generic pairing is big-endian on wire and host-order after parse") &&
                  passed;
 
-        cf.encrypt(key_1bl);
+        cf.encrypt_or_throw(key_1bl);
         const auto encrypted_cf_wire = cf.serialize();
-        auto decrypted_cf = BootloaderCf::parse(encrypted_cf_wire);
-        decrypted_cf.decrypt(key_1bl);
+        auto decrypted_cf = BootloaderCf::parse_or_throw(encrypted_cf_wire);
+        decrypted_cf.decrypt_or_throw(key_1bl);
         passed = require(has_big_endian_pairing(encrypted_cf_wire) &&
                              decrypted_cf.header.header.pairing == pairing,
                          "CF encrypt/decrypt preserves the generic pairing endian invariant") &&
@@ -3125,7 +3180,7 @@ namespace {
             offsetof(ConsoleTypeSeqAllow, console_sequence_allow) - sizeof(generic_header);
         cb.data[console_allow_offset] = 0x12;
         cb.data[console_allow_offset + 1] = 0x34;
-        const auto parsed_cb = BootloaderCb::parse(cb.serialize());
+        const auto parsed_cb = BootloaderCb::parse_or_throw(cb.serialize());
         passed = require(parsed_cb.header.console_seq_allow.console_sequence_allow == 0x1234,
                          "CB console sequence allowance is normalized after parse") &&
                  passed;
@@ -3136,7 +3191,7 @@ namespace {
         cd.header.padding = 0x1234;
         const auto cd_wire = cd.serialize();
         passed = require(read_be16(cd_wire, offsetof(cd_header, padding)) == 0x1234 &&
-                             BootloaderCd::parse(cd_wire).header.padding == 0x1234,
+                             BootloaderCd::parse_or_throw(cd_wire).header.padding == 0x1234,
                          "CD padding is host-order after parse and big-endian on wire") &&
                  passed;
 
@@ -3147,7 +3202,7 @@ namespace {
         ce.header.size = 0x11223344;
         ce.header.padding = 0x55667788;
         const auto ce_wire = ce.serialize();
-        const auto parsed_ce = BootloaderCe::parse(ce_wire);
+        const auto parsed_ce = BootloaderCe::parse_or_throw(ce_wire);
         passed =
             require(read_be64(ce_wire, offsetof(ce_header, address)) == 0x0102030405060708ULL &&
                         read_be32(ce_wire, offsetof(ce_header, size)) == 0x11223344 &&
@@ -3165,7 +3220,7 @@ namespace {
         cg.header.target_size = 0x50607080;
         cg.data.assign(0x40, 0x33);
         const auto cg_wire = cg.serialize();
-        auto parsed_cg = BootloaderCg::parse(cg_wire);
+        auto parsed_cg = BootloaderCg::parse_or_throw(cg_wire);
         passed =
             require(
                 read_be32(cg_wire, offsetof(cg_header, source_size)) == 0x10203040 &&
@@ -3176,9 +3231,9 @@ namespace {
             passed;
 
         parsed_cg.decrypted = true;
-        parsed_cg.encrypt(key_1bl);
-        auto crypt_roundtrip_cg = BootloaderCg::parse(parsed_cg.serialize());
-        crypt_roundtrip_cg.decrypt(key_1bl);
+        parsed_cg.encrypt_or_throw(key_1bl);
+        auto crypt_roundtrip_cg = BootloaderCg::parse_or_throw(parsed_cg.serialize());
+        crypt_roundtrip_cg.decrypt_or_throw(key_1bl);
         return require(passed && crypt_roundtrip_cg.header.source_size == 0x10203040 &&
                            crypt_roundtrip_cg.header.target_size == 0x50607080,
                        "CG encrypt/decrypt preserves normalized source and target sizes");
@@ -3206,7 +3261,7 @@ namespace {
         constexpr size_t console_allow_wire_offset =
             offsetof(cb_header, console_seq_allow) +
             offsetof(ConsoleTypeSeqAllow, console_sequence_allow);
-        auto cb = BootloaderCb::parse(asymmetric_decrypted_cb(0x1357).serialize());
+        auto cb = BootloaderCb::parse_or_throw(asymmetric_decrypted_cb(0x1357).serialize());
         const Bytes original_perbox(cb.data.begin() + 0x10,
                                     cb.data.begin() + 0x10 + sizeof(cb_perbox));
         cb.header.console_seq_allow.console_sequence_allow = 0xBEEF;
@@ -3223,13 +3278,13 @@ namespace {
     }
 
     bool test_cb_console_allow_host_value_encrypts_and_roundtrips_asymmetrically() {
-        auto cb = BootloaderCb::parse(asymmetric_decrypted_cb(0x1357).serialize());
+        auto cb = BootloaderCb::parse_or_throw(asymmetric_decrypted_cb(0x1357).serialize());
         const Bytes original_perbox(cb.data.begin() + 0x10,
                                     cb.data.begin() + 0x10 + sizeof(cb_perbox));
         cb.header.console_seq_allow.console_sequence_allow = 0xBEEF;
-        cb.encrypt(key_1bl);
-        auto parsed_encrypted = BootloaderCb::parse(cb.serialize());
-        parsed_encrypted.decrypt(key_1bl);
+        cb.encrypt_or_throw(key_1bl);
+        auto parsed_encrypted = BootloaderCb::parse_or_throw(cb.serialize());
+        parsed_encrypted.decrypt_or_throw(key_1bl);
         return require(
                    parsed_encrypted.header.console_seq_allow.console_sequence_allow == 0xBEEF,
                    "encrypted CB roundtrip retains the host-order asymmetric console allowance") &&
@@ -3246,15 +3301,15 @@ namespace {
 
         FlashImage header_only_cd{};
         const auto bootloaders = valid_bootloaders();
-        header_only_cd.cb_section.cb_or_A = BootloaderCb::parse(bootloaders.cb_or_a);
+        header_only_cd.cb_section.cb_or_A = BootloaderCb::parse_or_throw(bootloaders.cb_or_a);
         header_only_cd.kernel_section.cd.header.header.magic = NANDBootloaderMagic::CD;
         header_only_cd.kernel_section.cd.header.header.size = sizeof(cd_header);
 
-        const auto cb_error = header_only_cb.payload_layout_error();
-        const auto cd_error = header_only_cd.payload_layout_error();
-        return require(cb_error.has_value() && cb_error->find("CB/A") != std::string::npos,
+        const auto cb_layout = header_only_cb.payload_layout();
+        const auto cd_layout = header_only_cd.payload_layout();
+        return require(!cb_layout && cb_layout.error().message.find("CB/A") != std::string::npos,
                        "direct layout validation rejects a header-only required CB/A") &&
-               require(cd_error.has_value() && cd_error->find("CD") != std::string::npos,
+               require(!cd_layout && cd_layout.error().message.find("CD") != std::string::npos,
                        "direct layout validation rejects a header-only required CD");
     }
 
@@ -3309,14 +3364,13 @@ namespace {
         input.metadata.cf_ldv = 9;
         constexpr int64_t kSeconds = 1791105722;
         const auto stamp = gxbuild3::nand::secured_file_stamp(kSeconds);
-        const auto build_and_open = [&](const Input& build) -> std::optional<Input> {
+        const auto build_and_open = [&](const Input& build) -> Result<Input> {
             set_source_date_epoch("1791105722");
             const auto image = run_build(build);
             set_source_date_epoch(nullptr);
-            return image ? extract_all(*image, cpu_key) : std::nullopt;
+            return image ? extract_all(*image, cpu_key) : not_built;
         };
-        const auto file = [](const std::optional<Input>& from,
-                             std::string_view name) -> const Bytes* {
+        const auto file = [](const Result<Input>& from, std::string_view name) -> const Bytes* {
             if (!from || !from->flashfs_sec) {
                 return nullptr;
             }
@@ -3572,7 +3626,7 @@ namespace {
             distinct = distinct && first_nonces[index] != second_nonces[index];
             non_zero = non_zero && first_nonces[index] != Bytes(0x10, 0);
         }
-        const bool decrypted = one->decrypt_all(input.metadata.cpu_key);
+        const bool decrypted = one->decrypt_all(input.metadata.cpu_key).has_value();
         return require(non_zero, "fresh CB, CD and CE take non-zero nonces") &&
                require(first_nonces[2] != Bytes(0x10, 0x55),
                        "a fresh CE does not keep its template's nonce") &&
@@ -3607,7 +3661,7 @@ namespace {
         const auto is = [](std::span<const uint8_t> bytes, uint8_t value) {
             return nonce_bytes(bytes) == Bytes(0x10, value);
         };
-        const bool decrypted = image->decrypt_all(input.metadata.cpu_key);
+        const bool decrypted = image->decrypt_all(input.metadata.cpu_key).has_value();
         return require(is(image->cb_section.cb_or_A.data, 0xA1) &&
                            is(image->kernel_section.cd.header.key, 0xA3) &&
                            is(image->kernel_section.ce->header.key, 0xA4),
@@ -3646,7 +3700,7 @@ namespace {
                      "max-LDV donor fixture re-encrypts")) {
             return false;
         }
-        const auto donor = staged->write();
+        const auto donor = staged->write().value_or(Bytes{});
         auto donor_image = parse_image(donor);
         const auto extracted = extract_all(donor, source.metadata.cpu_key);
         const auto metadata = extract_metadata(donor, source.metadata.cpu_key);
@@ -3737,7 +3791,7 @@ namespace {
         }
         const auto donor_copyright = copyright("2006");
         std::copy(donor_copyright.begin(), donor_copyright.end(), custom->header.copyright);
-        const auto donor = custom->write();
+        const auto donor = custom->write().value_or(Bytes{});
 
         auto same_board = input;
         same_board.metadata.nand_image = donor;
@@ -3762,7 +3816,7 @@ namespace {
             return false;
         }
         std::copy(donor_copyright.begin(), donor_copyright.end(), jasper_donor->header.copyright);
-        jasper.metadata.nand_image = jasper_donor->write();
+        jasper.metadata.nand_image = jasper_donor->write().value_or(Bytes{});
         const auto kept_jasper = run_build(jasper);
         auto jtag = jasper;
         jtag.build_type = BuildType::Jtag;
@@ -3959,7 +4013,10 @@ namespace {
             BlockMetadata stale{};
             stale.logical_block_id = static_cast<uint16_t>(block);
             stale.block_type = 0x28;
-            donor->flash_driver.write_block(block, Bytes(0x4000, 0x5A));
+            if (!require(donor->flash_driver.write_block(block, Bytes(0x4000, 0x5A)),
+                         "the donor's old data is laid")) {
+                return false;
+            }
             donor->flash_driver.write_block_metadata(block, stale);
         }
         donor->flash_driver.mark_bad_block(kBadBlock);
@@ -4210,7 +4267,7 @@ namespace {
     bool test_devkit_image_reads_back_and_rebuilds_its_chain() {
         const auto input = devkit_input(ImageType::NewSmallBlock);
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         if (!require(extracted.has_value(), "a devkit image parses and opens") ||
             !require(extracted->build_type == BuildType::Devkit &&
                          extracted->image_type == ImageType::NewSmallBlock,
@@ -4503,6 +4560,7 @@ int main() {
     passed = test_extract_some_info_reads_public_nand_metadata_without_cpu_key() && passed;
     passed = test_extract_all_info_reports_the_detected_block_type() && passed;
     passed = test_extraction_reports_a_cd_record_shorter_than_its_header() && passed;
+    passed = test_extraction_cores_return_their_reason_and_the_shims_return_nullopt() && passed;
     passed = test_extract_all_info_reads_the_fcrt_flag_big_endian() && passed;
     passed = test_sc_survives_extraction_and_backing_cleared_layout_override() && passed;
     passed = test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() && passed;

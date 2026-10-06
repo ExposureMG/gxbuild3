@@ -13,6 +13,12 @@ namespace gxbuild3::utils {
     // An unsigned integer of any size, for the RSA arithmetic of XeCrypt signatures. Plain
     // schoolbook arithmetic: not constant-time, which a build tool signing its own images
     // on its own machine does not need.
+    //
+    // BigUint is the one utils type that throws instead of returning Result: every throw is a
+    // precondition violation (std::invalid_argument for a digit run that is not whole 64-bit
+    // words, std::domain_error for division by zero, a zero modulus or an underflowing
+    // subtraction), a caller bug rather than an expected failure. Callers check their
+    // operands first, as XeRsaPrivateKey::parse does.
     class BigUint {
       public:
         BigUint() = default;

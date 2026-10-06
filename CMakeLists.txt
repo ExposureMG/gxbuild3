@@ -127,6 +127,7 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_commandline_tests tests/CommandLineTests.cpp)
     add_gxbuild3_test(gxbuild3_buildrunner_tests tests/BuildRunnerTests.cpp)
     add_gxbuild3_test(gxbuild3_patchset_tests tests/PatchsetTests.cpp)
+    add_gxbuild3_test(gxbuild3_patcher_tests tests/PatcherTests.cpp)
     add_gxbuild3_test(gxbuild3_glitch_crypto_tests tests/GlitchCryptoTests.cpp)
     add_gxbuild3_test(gxbuild3_resolver_tests tests/BuildInputResolverTests.cpp)
     add_gxbuild3_test(gxbuild3_fuseset_tests tests/FusesetGeneratorTests.cpp)
@@ -135,6 +136,7 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_xe_rsa_tests tests/XeRsaTests.cpp)
     add_gxbuild3_test(gxbuild3_crypto_reference_tests tests/CryptoReferenceTests.cpp)
     add_gxbuild3_test(gxbuild3_stfs_tests tests/StfsTests.cpp)
+    add_gxbuild3_test(gxbuild3_error_tests tests/ErrorTests.cpp)
     foreach(cli_test gxbuild3_commandline_tests gxbuild3_resolver_tests
             gxbuild3_buildcommand_tests)
         target_link_libraries(${cli_test} PRIVATE gxbuild3_cli)
@@ -176,6 +178,11 @@ if(BUILD_TESTING)
             -DGXBUILD3_OUTPUT_VERIFIER=$<TARGET_FILE:gxbuild3_cli_output_verifier>
             -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/cli-integration-tests
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/CliIntegrationTests.cmake)
+
+    add_test(NAME gxbuild3_error_convention_guard
+        COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/ErrorConventionGuard.cmake)
 
     find_program(GXBUILD3_BASH_EXECUTABLE NAMES bash)
     if(UNIX)

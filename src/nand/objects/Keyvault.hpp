@@ -1,8 +1,9 @@
 #pragma once
 
+#include "Error.hpp"
+
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -182,7 +183,11 @@ namespace gxbuild3::nand {
     CpuKeyResult validate_cpu_key_hex(std::string_view hex);
 
     bool cpukey_valid(std::span<const uint8_t> cpu_key);
-    bool crypt_secfile(std::span<const uint8_t> cpu_key, std::span<uint8_t> data);
+
+    // A keyvault-style secured file, either way: RC4 over everything past the 16-byte nonce under
+    // HMAC-SHA(CPU key, nonce). InvalidArgument for a CPU key that is not 16 bytes or a file
+    // shorter than its nonce.
+    [[nodiscard]] Result<> crypt_secfile(std::span<const uint8_t> cpu_key, std::span<uint8_t> data);
 
     struct Keyvault {
         static constexpr size_t kSize = 0x4000;
@@ -191,26 +196,30 @@ namespace gxbuild3::nand {
         bool encrypted{true};
         std::vector<uint8_t> raw_data;
 
-        static std::optional<Keyvault> parse(std::span<const uint8_t> bytes);
-        static std::optional<Keyvault> parse(const std::vector<uint8_t>& bytes);
+        // Truncated or Malformed for anything but kSize bytes.
+        [[nodiscard]] static Result<Keyvault> parse(std::span<const uint8_t> bytes);
+        [[nodiscard]] static Result<Keyvault> parse(const std::vector<uint8_t>& bytes);
 
-        bool decrypt(std::span<const uint8_t> cpu_key);
-        bool encrypt(std::span<const uint8_t> cpu_key);
+        // No-ops when already in the requested state. On failure the keyvault is unchanged.
+        [[nodiscard]] Result<> decrypt(std::span<const uint8_t> cpu_key);
+        [[nodiscard]] Result<> encrypt(std::span<const uint8_t> cpu_key);
         [[nodiscard]] std::vector<uint8_t> serialize() const;
     };
 
-    std::vector<uint8_t> keyvault_decrypt(std::span<const uint8_t> cpu_key,
-                                          std::span<const uint8_t> data,
-                                          uint16_t kv_version = 0x0712);
-    std::vector<uint8_t> keyvault_encrypt(std::span<const uint8_t> cpu_key,
-                                          std::span<const uint8_t> data,
-                                          uint16_t kv_version = 0x0712);
+    // InvalidArgument for an unusable CPU key or data shorter than the nonce; keyvault_decrypt
+    // fails with AuthFailed when the nonce is not the HMAC of the opened body.
+    [[nodiscard]] Result<std::vector<uint8_t>> keyvault_decrypt(std::span<const uint8_t> cpu_key,
+                                                                std::span<const uint8_t> data,
+                                                                uint16_t kv_version = 0x0712);
+    [[nodiscard]] Result<std::vector<uint8_t>> keyvault_encrypt(std::span<const uint8_t> cpu_key,
+                                                                std::span<const uint8_t> data,
+                                                                uint16_t kv_version = 0x0712);
 
     // A kv.bin supplied beside a build, in the clear: 0x4000 bytes with its nonce. A copy sealed
     // under the CPU key (its nonce is HMAC(CPU key, body + 07 12)) is opened; any other copy is
     // taken as already in the clear, its first 0x10 bytes a stale nonce, as xeBuild 1.21 takes it.
-    // A copy of 0x3FF0 bytes lacks the nonce and gets sixteen zero bytes in front. Nothing for any
-    // other length or an unusable CPU key.
+    // A copy of 0x3FF0 bytes lacks the nonce and gets sixteen zero bytes in front. Malformed for
+    // any other length, InvalidArgument for an unusable CPU key.
     struct LooseKeyvault {
         // How the copy was taken, by xeBuild's own tests (its 0x41D0E0).
         enum class Form {
@@ -229,7 +238,7 @@ namespace gxbuild3::nand {
         std::vector<uint8_t> plain;
         Form form{Form::Clear};
     };
-    std::optional<LooseKeyvault> open_loose_keyvault(std::span<const uint8_t> cpu_key,
-                                                     std::span<const uint8_t> data);
+    [[nodiscard]] Result<LooseKeyvault> open_loose_keyvault(std::span<const uint8_t> cpu_key,
+                                                            std::span<const uint8_t> data);
 
 } // namespace gxbuild3::nand

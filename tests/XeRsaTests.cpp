@@ -91,7 +91,7 @@ namespace {
         auto sd = synthetic_sd();
         if (!require(!gxbuild3::utils::verify_sd_signature(sd, key->public_key()),
                      "an unsigned SD fails its check") ||
-            !require(gxbuild3::utils::sign_sd(sd, *key), "the SD is signed")) {
+            !require(gxbuild3::utils::sign_sd(sd, *key).has_value(), "the SD is signed")) {
             return false;
         }
         const uint32_t stated = (uint32_t{sd[0x0C]} << 24) | (uint32_t{sd[0x0D]} << 16) |
@@ -101,15 +101,28 @@ namespace {
         auto tampered = sd;
         tampered[0x200] ^= 1;
         auto signed_again = synthetic_sd();
-        gxbuild3::utils::sign_sd(signed_again, *key);
-        return require(sd.size() == 0x300 && stated == 0x300,
+        const auto resigned = gxbuild3::utils::sign_sd(signed_again, *key);
+        const auto tampered_check =
+            gxbuild3::utils::verify_sd_signature(tampered, key->public_key());
+        const auto short_check =
+            gxbuild3::utils::verify_sd_signature(Bytes(0x100, 0x00), key->public_key());
+        auto short_sd = Bytes(0x100, 0x00);
+        const auto short_sign = gxbuild3::utils::sign_sd(short_sd, *key);
+        return require(resigned.has_value(), "the SD is signed again") &&
+               require(sd.size() == 0x300 && stated == 0x300,
                        "signing pads the stage to 16 bytes and states that length") &&
-               require(gxbuild3::utils::verify_sd_signature(sd, key->public_key()),
+               require(gxbuild3::utils::verify_sd_signature(sd, key->public_key()).has_value(),
                        "XeCrypt's own verification accepts the signature") &&
-               require(gxbuild3::utils::verify_sd_signature(renonced, key->public_key()),
-                       "the nonce at 0x10 is not covered") &&
-               require(!gxbuild3::utils::verify_sd_signature(tampered, key->public_key()),
-                       "a changed body byte fails the check") &&
+               require(
+                   gxbuild3::utils::verify_sd_signature(renonced, key->public_key()).has_value(),
+                   "the nonce at 0x10 is not covered") &&
+               require(!tampered_check &&
+                           tampered_check.error().code == gxbuild3::ErrorCode::SignatureMismatch,
+                       "a changed body byte fails the check as a signature mismatch") &&
+               require(!short_check && short_check.error().code == gxbuild3::ErrorCode::Truncated,
+                       "an SD too short for a signature is refused, not called a mismatch") &&
+               require(!short_sign && short_sign.error().code == gxbuild3::ErrorCode::Truncated,
+                       "an SD too short for a signature is not signed") &&
                require(signed_again == sd, "the signature is a deterministic function");
     }
 
@@ -120,18 +133,29 @@ namespace {
         const std::string_view salt = "XBOX_ROM_4";
         const auto salt_bytes =
             std::span(reinterpret_cast<const uint8_t*>(salt.data()), salt.size());
-        const auto signature = key ? key->sign(hash, salt_bytes) : std::nullopt;
+        if (!require(key.has_value(), "a generated RSA-2048 key parses")) {
+            return false;
+        }
+        const auto signature = key->sign(hash, salt_bytes);
         if (!require(signature.has_value(), "a hash is signed")) {
             return false;
         }
         auto other_hash = hash;
         other_hash[0] ^= 1;
+        const auto other_check =
+            gxbuild3::utils::xe_rsa_verify(*signature, other_hash, salt_bytes, key->public_key());
+        const auto short_salt_check = gxbuild3::utils::xe_rsa_verify(
+            *signature, hash, salt_bytes.first(4), key->public_key());
         return require(
-                   gxbuild3::utils::xe_rsa_verify(*signature, hash, salt_bytes, key->public_key()),
+                   gxbuild3::utils::xe_rsa_verify(*signature, hash, salt_bytes, key->public_key())
+                       .has_value(),
                    "ExCryptBnQwBeSigVerify accepts the signature") &&
-               require(!gxbuild3::utils::xe_rsa_verify(*signature, other_hash, salt_bytes,
-                                                       key->public_key()),
-                       "another hash is refused") &&
+               require(!other_check &&
+                           other_check.error().code == gxbuild3::ErrorCode::SignatureMismatch,
+                       "another hash is refused as a signature mismatch") &&
+               require(!short_salt_check &&
+                           short_salt_check.error().code == gxbuild3::ErrorCode::InvalidArgument,
+                       "a salt that is not ten bytes cannot be checked") &&
                require(!key->sign(hash, salt_bytes.first(4)),
                        "a salt that is not ten bytes is refused");
     }

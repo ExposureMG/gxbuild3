@@ -1,8 +1,8 @@
 #pragma once
 #include "Args.hpp"
+#include "Error.hpp"
 
 #include <cstdint>
-#include <expected>
 #include <span>
 #include <string>
 #include <vector>
@@ -50,13 +50,9 @@ namespace gxbuild3::nand {
         std::vector<ParsedPatchSection> sections;
     };
 
-    struct PatchError {
-        std::string message;
-    };
-
-    bool parse_patch_set(std::span<const uint8_t> data, GxBuild::BuildType buildType,
-                         ParsedPatchSet& outPatchSet);
-    std::expected<ParsedPatchSet, PatchError>
+    [[nodiscard]] Result<ParsedPatchSet> parse_patch_set(std::span<const uint8_t> data,
+                                                         GxBuild::BuildType buildType);
+    [[nodiscard]] Result<ParsedPatchSet>
     parse_and_merge_patch_set(const GxBuild::InputPatches& patches, GxBuild::BuildType buildType);
     std::vector<uint8_t> serialize_patch_set(const ParsedPatchSet& patchSet);
     std::vector<uint8_t> serialize_khv_payload(const ParsedPatchSection& section);

@@ -6,7 +6,7 @@
 #include <cctype>
 #include <fstream>
 #include <sstream>
-#include <stdexcept>
+#include <system_error>
 #include <unordered_map>
 
 namespace gxbuild3::ini {
@@ -40,7 +40,7 @@ namespace gxbuild3::ini {
         return it != sections.end() ? &it->second : nullptr;
     }
 
-    std::expected<Document, ParseError> parse(std::string_view content) {
+    Result<Document> parse(std::string_view content) {
         Document doc;
         std::string current_section;
 
@@ -122,23 +122,24 @@ namespace gxbuild3::ini {
         return doc;
     }
 
-    std::expected<Document, ParseError> parse_file(const std::filesystem::path& path) {
-        if (!std::filesystem::exists(path)) {
-            Log::Error("INI file not found: '{}'", path.string());
-            return std::unexpected(ParseError::FileNotFound);
+    Result<Document> parse_file(const std::filesystem::path& path) {
+        std::error_code status_error;
+        if (!std::filesystem::exists(path, status_error)) {
+            if (status_error) {
+                return from_error_code(status_error, path);
+            }
+            return fail(ErrorCode::NotFound, "INI file not found: '{}'", path.string());
         }
 
         std::ifstream file(path, std::ios::binary);
         if (!file) {
-            Log::Error("Failed to open INI file: '{}'", path.string());
-            return std::unexpected(ParseError::ReadError);
+            return fail(ErrorCode::IoError, "failed to open INI file: '{}'", path.string());
         }
 
         std::ostringstream ss;
         ss << file.rdbuf();
-        if (file.fail() && !file.eof()) {
-            Log::Error("Failed to read INI file: '{}'", path.string());
-            return std::unexpected(ParseError::ReadError);
+        if (file.bad() || (file.fail() && !file.eof())) {
+            return fail(ErrorCode::IoError, "failed to read INI file: '{}'", path.string());
         }
 
         auto res = parse(ss.str());

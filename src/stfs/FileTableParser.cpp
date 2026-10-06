@@ -4,20 +4,20 @@
 #include "stfs/Commons.hpp"
 
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace gxbuild3::stfs {
 
-    std::vector<FileEntry> parse_file_listing(std::span<const std::byte> data) {
+    Result<std::vector<FileEntry>> parse_file_listing(std::span<const std::byte> data) {
         std::vector<FileEntry> entries;
         constexpr std::size_t entry_size = 0x40;
         constexpr std::size_t name_field_size = 0x28;
 
         if (data.size() % entry_size != 0) {
-            throw std::runtime_error("File listing size not aligned to entry size");
+            return fail(ErrorCode::Malformed,
+                        "file listing size 0x{:X} is not aligned to entry size", data.size());
         }
 
         std::size_t entry_count = data.size() / entry_size;
@@ -36,20 +36,19 @@ namespace gxbuild3::stfs {
                 break;
             }
             if (name_length > name_field_size) {
-                throw std::runtime_error("File table entry " + std::to_string(i) +
-                                         " has a name longer than its 40-byte field");
+                return fail(ErrorCode::Malformed,
+                            "file table entry {} has a name longer than its 40-byte field", i);
             }
 
             // Names are not NUL-terminated, but tolerate NUL padding inside the stated length.
             std::string_view name(reinterpret_cast<const char*>(ptr), name_length);
             name = name.substr(0, name.find('\0'));
             if (name.empty()) {
-                throw std::runtime_error("File table entry " + std::to_string(i) +
-                                         " has an empty name");
+                return fail(ErrorCode::Malformed, "file table entry {} has an empty name", i);
             }
             if (name.find_first_of("/\\") != std::string_view::npos) {
-                throw std::runtime_error("File table entry " + std::to_string(i) +
-                                         " has a path separator in its name");
+                return fail(ErrorCode::Malformed,
+                            "file table entry {} has a path separator in its name", i);
             }
 
             FileEntry entry;

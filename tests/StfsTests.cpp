@@ -1,6 +1,8 @@
+#include "Error.hpp"
 #include "excrypt.h"
 #include "stfs/BlockParser.hpp"
 #include "stfs/FileExtractor.hpp"
+#include "stfs/HashVerifier.hpp"
 #include "stfs/HeaderParser.hpp"
 #include "stfs/Package.hpp"
 #include "stfs/PackageCommon.hpp"
@@ -36,6 +38,10 @@ namespace {
             return e.what();
         }
         throw std::runtime_error("expected an exception");
+    }
+
+    template <typename R> bool fails_with(const R& result, gxbuild3::ErrorCode code) {
+        return !result && result.error().code == code;
     }
 
     template <typename F> void require_throws(F&& action, std::string_view message) {
@@ -219,12 +225,12 @@ namespace {
         Bytes data(0x1B0, std::byte{0});
         for (std::size_t i = 0; i < 4; ++i)
             data[i] = static_cast<std::byte>("PIRS"[i]);
-        require_throws([&] { (void) stfs::parse_header(data); },
-                       "a 0x1B0-byte PIRS header must be rejected, not over-read");
+        require(fails_with(stfs::parse_header(data), gxbuild3::ErrorCode::Truncated),
+                "a 0x1B0-byte PIRS header must be rejected, not over-read");
 
         data.resize(0x22C);
         const auto header = stfs::parse_header(data);
-        require(header.magic == stfs::Magic::PIRS, "a full 0x22C-byte header parses");
+        require(header && header->magic == stfs::Magic::PIRS, "a full 0x22C-byte header parses");
     }
 
     void test_read_header_from_file_requires_full_header() {
@@ -233,12 +239,14 @@ namespace {
         for (std::size_t i = 0; i < 4; ++i)
             data[i] = static_cast<std::byte>("PIRS"[i]);
         write_bytes(dir.root / "short", data);
-        require_throws([&] { (void) stfs::read_header_from_file(dir.root / "short"); },
-                       "a short header file must be rejected");
+        require(fails_with(stfs::read_header_from_file(dir.root / "short"),
+                           gxbuild3::ErrorCode::Truncated),
+                "a short header file must be rejected");
 
         write_bytes(dir.root / "full", make_package({{"a.bin", pattern(10, 1)}}));
         const auto header = stfs::read_header_from_file(dir.root / "full");
-        require(header.magic == stfs::Magic::PIRS, "a full package header reads from file");
+        require(header && header->magic == stfs::Magic::PIRS,
+                "a full package header reads from file");
     }
 
     // --- Extraction paths ------------------------------------------------------------------
@@ -291,26 +299,27 @@ namespace {
         TempDir dir;
         const auto bytes =
             make_package({{"..", {}, true, -1, true}, {"escaped", pattern(10, 2), true, 0}});
-        const stfs::StfsContainer container{bytes};
-        require_throws([&] { container.extract_all(dir.root / "out"); },
-                       "StfsContainer rejects a .. entry path");
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container && !container->extract_all(dir.root / "out"),
+                "StfsContainer rejects a .. entry path");
         require(!fs::exists(dir.root / "escaped"), "container writes nothing outside");
     }
 
     void test_safe_join() {
         const fs::path out = "out";
         require(stfs::detail::safe_join(out, "a/./b") == out / "a/b", "safe paths are kept");
-        require_throws([&] { (void) stfs::detail::safe_join(out, "/abs"); },
-                       "absolute paths are rejected");
-        require_throws([&] { (void) stfs::detail::safe_join(out, "a/../../b"); },
-                       "escaping paths are rejected");
-        require_throws([&] { (void) stfs::detail::safe_join(out, "a/.."); },
-                       "paths that collapse to the target itself are rejected");
+        constexpr auto rejected = gxbuild3::ErrorCode::InvalidArgument;
+        require(fails_with(stfs::detail::safe_join(out, "/abs"), rejected),
+                "absolute paths are rejected");
+        require(fails_with(stfs::detail::safe_join(out, "a/../../b"), rejected),
+                "escaping paths are rejected");
+        require(fails_with(stfs::detail::safe_join(out, "a/.."), rejected),
+                "paths that collapse to the target itself are rejected");
 #ifdef _WIN32
-        require_throws([&] { (void) stfs::detail::safe_join(out, "C:foo"); },
-                       "drive-relative paths are rejected");
-        require_throws([&] { (void) stfs::detail::safe_join(out, "\\\\server\\share"); },
-                       "UNC paths are rejected");
+        require(fails_with(stfs::detail::safe_join(out, "C:foo"), rejected),
+                "drive-relative paths are rejected");
+        require(fails_with(stfs::detail::safe_join(out, "\\\\server\\share"), rejected),
+                "UNC paths are rejected");
 #endif
     }
 
@@ -329,9 +338,9 @@ namespace {
                        "a parent cycle through a later entry is rejected");
 
         const auto bytes = make_package({{"a", {}, true, 1, true}, {"b", {}, true, 0, true}});
-        const stfs::StfsContainer container{bytes};
-        require_throws([&] { container.extract_all(dir.root / "out"); },
-                       "StfsContainer rejects a forward parent reference");
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container && !container->extract_all(dir.root / "out"),
+                "StfsContainer rejects a forward parent reference");
     }
 
     void test_nested_extraction() {
@@ -384,8 +393,9 @@ namespace {
         require(stfs::block_to_offset(2, 0x1F000) == 0x21000, "header sizes above 0xFFFF are kept");
         require(stfs::block_to_offset(0xFFFFFF, 0xAD0E) == 0xB000 + 0xFFFFFF000ull,
                 "the largest block number does not wrap");
-        require_throws([] { (void) stfs::block_to_offset(0x1000000, 0xAD0E); },
-                       "block numbers above 24 bits are rejected");
+        require(
+            fails_with(stfs::block_to_offset(0x1000000, 0xAD0E), gxbuild3::ErrorCode::OutOfRange),
+            "block numbers above 24 bits are rejected");
     }
 
     void test_header_size_out_of_range_rejected() {
@@ -474,8 +484,8 @@ namespace {
         require(package.extract_file(package.files().back(), true) == data,
                 "an entry from the second table block extracts");
 
-        const stfs::StfsContainer container{bytes};
-        require(container.extract_file_by_name("second.bin") == data,
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container && container->extract_file_by_name("second.bin") == data,
                 "StfsContainer reads the same file table");
     }
 
@@ -503,8 +513,8 @@ namespace {
         bytes[kVolumeDescriptor + 0x02] = std::byte{0x00}; // block_separation bit 0 clear
         require_throws([&] { (void) stfs::Package::from_data(bytes); },
                        "Package rejects block_separation bit 0 clear");
-        require_throws([&] { const stfs::StfsContainer container{bytes}; },
-                       "StfsContainer rejects block_separation bit 0 clear");
+        require(!stfs::StfsContainer::open(bytes),
+                "StfsContainer rejects block_separation bit 0 clear");
 
         bytes[kVolumeDescriptor + 0x02] = std::byte{0x03};
         require(stfs::Package::from_data(bytes).files().size() == 1,
@@ -578,9 +588,9 @@ namespace {
         TempDir dir;
         fs::create_directories(dir.root / "out");
         fs::create_symlink(full, dir.root / "out" / "a.bin");
-        const stfs::StfsContainer container{bytes};
-        require_throws([&] { container.extract_all(dir.root / "out"); },
-                       "StfsContainer::extract_all reports a failed write");
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container && !container->extract_all(dir.root / "out"),
+                "StfsContainer::extract_all reports a failed write");
 
         require_throws(
             [&] { package.extract_file_to_disk(package.files().at(0), dir.root / "no/dir/x"); },
@@ -609,19 +619,16 @@ namespace {
             std::get_if<stfs::StfsVolumeDescriptor>(&package.metadata().volume_descriptor);
         require(vd != nullptr, "synthetic package has an STFS descriptor");
 
-        require_throws(
-            [&] {
-                (void) stfs::extract_file(bytes, entry, stfs::Magic::PIRS, 0xA000, true,
-                                          &vd->top_hash_table_hash, 0);
-            },
-            "extract_file with verify and total_blocks 0 throws");
+        require(fails_with(stfs::extract_file(bytes, entry, stfs::Magic::PIRS, 0xA000, true,
+                                              &vd->top_hash_table_hash, 0),
+                           gxbuild3::ErrorCode::InvalidArgument),
+                "extract_file with verify and total_blocks 0 fails");
         TempDir dir;
-        require_throws(
-            [&] {
-                stfs::extract_file_to_disk(bytes, entry, stfs::Magic::PIRS, 0xA000, dir.root / "a",
-                                           true, &vd->top_hash_table_hash, 0);
-            },
-            "extract_file_to_disk with verify and total_blocks 0 throws");
+        require(fails_with(stfs::extract_file_to_disk(bytes, entry, stfs::Magic::PIRS, 0xA000,
+                                                      dir.root / "a", true,
+                                                      &vd->top_hash_table_hash, 0),
+                           gxbuild3::ErrorCode::InvalidArgument),
+                "extract_file_to_disk with verify and total_blocks 0 fails");
 
         require(stfs::extract_file(bytes, entry, stfs::Magic::PIRS, 0xA000, true,
                                    &vd->top_hash_table_hash, 2) == pattern(10, 1),
@@ -636,6 +643,17 @@ namespace {
                 "unverified extraction ignores the hash");
         require_throws([&] { (void) package.extract_file(package.files().at(0), true); },
                        "a corrupted data block fails verification");
+        const auto* vd =
+            std::get_if<stfs::StfsVolumeDescriptor>(&package.metadata().volume_descriptor);
+        require(vd != nullptr, "synthetic package has an STFS descriptor");
+        require(
+            fails_with(stfs::verify_data_block(data_corrupt, 1, 0xA000, vd->top_hash_table_hash, 2),
+                       gxbuild3::ErrorCode::HashMismatch),
+            "a corrupted data block is a hash mismatch");
+        require(fails_with(stfs::verify_data_block(data_corrupt, 0x100, 0xA000,
+                                                   vd->top_hash_table_hash, 2),
+                           gxbuild3::ErrorCode::OutOfRange),
+                "a block outside the package is out of range, not a hash mismatch");
 
         auto table_corrupt = make_package({{"a.bin", pattern(10, 1)}});
         table_corrupt[hash_offset(5) + 0x3] ^= std::byte{0x01}; // unused hash slot
@@ -661,8 +679,10 @@ namespace {
         require(std::string(display_name.begin(), display_name.end()) == "System Update",
                 "fixture display_name decodes from UTF-16BE");
 
-        const stfs::StfsContainer container{bytes};
-        const auto in_memory = container.extract_to_memory();
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value(), "StfsContainer opens the fixture");
+        const auto in_memory = container->extract_to_memory();
+        require(in_memory.has_value(), "StfsContainer extracts the fixture to memory");
         for (const auto& entry : package.files()) {
             const auto verified = package.extract_file(entry, true);
             std::string key = entry.name;
@@ -670,7 +690,7 @@ namespace {
                 key.erase(0, 7);
             std::transform(key.begin(), key.end(), key.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            require(in_memory.at(key) == verified,
+            require(in_memory->at(key) == verified,
                     "Package (verified) and StfsContainer extract identical bytes");
         }
 

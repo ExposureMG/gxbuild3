@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Args.hpp"
+#include "Error.hpp"
 #include "nand/FlashDriver.hpp"
 #include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
@@ -83,22 +84,31 @@ namespace gxbuild3::nand {
 
         Driver flash_driver;
 
+        // Empty input is absent, not a failure.
         static std::optional<FlashImage> read(std::vector<uint8_t> raw_image);
-        bool parse();
+        // Reads the header, the boot chain, the update slots and the console's blocks out of the
+        // driver. A malformed bootloader record or CG continuation fails the parse; the object is
+        // left partly filled.
+        [[nodiscard]] Result<void> parse();
 
         // A devkit chain: SB, SC, SD and SE, held in the CB, SC, CD and CE positions. SB is keyed
         // from the 1BL key like a single CB, SC from sixteen zero bytes, SD from SC and SE from SD.
         [[nodiscard]] bool devkit_chain() const;
 
-        bool decrypt_all(std::span<const uint8_t> cpu_key);
-        // Hacked chains may deliberately leave stages plaintext for their patched parent.
-        bool encrypt_all(std::span<const uint8_t> cpu_key,
-                         BuildType build_type = BuildType::Retail);
+        // Opens every sealed stage, the SMC and, under a usable CPU key, the keyvault. Stages
+        // opened before a failure stay open.
+        [[nodiscard]] Result<void> decrypt_all(std::span<const uint8_t> cpu_key);
+        // Seals every stage for `build_type`, binding the SMC and laying CG tails in the
+        // filesystem. Hacked chains may deliberately leave stages plaintext for their patched
+        // parent. After a failure the object is unspecified: stages sealed before the failing one
+        // stay sealed and nothing is rolled back, so the image must not be written.
+        [[nodiscard]] Result<void> encrypt_all(std::span<const uint8_t> cpu_key,
+                                               BuildType build_type = BuildType::Retail);
 
         // Remove serialized bootloader records inherited from a donor before replacing the chain:
         // the chain is zeroed and the CF/CG records in the update slots are erased (0xFF). This
         // deliberately leaves the donor's non-bootloader payloads intact.
-        bool clear_bootloader_chain();
+        [[nodiscard]] Result<void> clear_bootloader_chain();
 
         [[nodiscard]] std::vector<BlockRange> active_payload_block_ranges() const;
 
@@ -109,13 +119,15 @@ namespace gxbuild3::nand {
         // KHV patches.
         [[nodiscard]] uint32_t patch_slot_offset() const;
 
-        // Describes a collision between payload writers, if the resolved layout is unsafe.
-        [[nodiscard]] std::optional<std::string> payload_layout_error() const;
+        // Fails, describing the collision, when the resolved layout is unsafe: a required record
+        // with no payload, a slot overrun or two payload writers that overlap.
+        [[nodiscard]] Result<void> payload_layout() const;
 
         // Lays the image into the driver. Unless preserve_layout is set (a parsed dump written
         // back), every good block is erased first, so what the writer does not lay stays erased.
-        bool write_to_driver() const;
-        [[nodiscard]] std::vector<uint8_t> write() const;
+        [[nodiscard]] Result<void> write_to_driver() const;
+        // Lays the image and returns the driver's raw bytes.
+        [[nodiscard]] Result<std::vector<uint8_t>> write() const;
     };
 
     // Whether update slot `slot` carries the console: its slot number at 0x21B, pairing, LDV and

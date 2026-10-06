@@ -1,10 +1,10 @@
 #pragma once
 
+#include "Error.hpp"
+
+#include <cstddef>
 #include <cstdint>
-#include <expected>
-#include <optional>
 #include <span>
-#include <string_view>
 #include <vector>
 
 namespace gxbuild3::nand {
@@ -336,31 +336,26 @@ namespace gxbuild3::nand {
         xconfig_iptv_settings_t Iptv{};
         xconfig_system_settings_t System{};
 
-        static std::optional<SmcConfig> parse(std::span<const uint8_t> bytes,
-                                              size_t base_offset = 0);
-        static std::optional<SmcConfig> parse(const std::vector<uint8_t>& bytes,
-                                              size_t base_offset = 0);
+        // Refuses a buffer too short to hold every settings region past base_offset
+        // (Truncated).
+        [[nodiscard]] static Result<SmcConfig> parse(std::span<const uint8_t> bytes,
+                                                     size_t base_offset = 0);
+        [[nodiscard]] static Result<SmcConfig> parse(const std::vector<uint8_t>& bytes,
+                                                     size_t base_offset = 0);
         [[nodiscard]] std::vector<uint8_t> serialize(size_t total_size = 0x10000,
                                                      size_t base_offset = 0) const;
     };
 
     using xconfig_master_t = SmcConfig;
 
+    // The same model at the offset an XConfig region sits at inside a 64 KiB config blob.
     namespace xconfig {
 
-        enum class ParseError {
-            NullBuffer,
-            BufferTooSmall,
-        };
+        [[nodiscard]] Result<SmcConfig> parse(std::span<const uint8_t> buf,
+                                              size_t base_offset = 0xC000);
 
-        [[nodiscard]] std::string_view parse_error_string(ParseError e) noexcept;
-
-        [[nodiscard]] std::expected<SmcConfig, ParseError>
-        parse(std::span<const uint8_t> buf, size_t base_offset = 0xC000) noexcept;
-
-        [[nodiscard]] std::vector<uint8_t> serialize(const SmcConfig& cfg,
-                                                     size_t total_size = 0x10000,
-                                                     size_t base_offset = 0xC000) noexcept;
+        [[nodiscard]] std::vector<uint8_t>
+        serialize(const SmcConfig& cfg, size_t total_size = 0x10000, size_t base_offset = 0xC000);
 
     } // namespace xconfig
 
