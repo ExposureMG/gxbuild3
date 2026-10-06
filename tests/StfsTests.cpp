@@ -238,6 +238,41 @@ namespace {
         require(header && header->magic == stfs::Magic::PIRS, "a full 0x22C-byte header parses");
     }
 
+    // A synthetic CON header whose bytes are all distinct-ish: every ConSignature field must
+    // come from its spec offset (0x004 + the con_signature_disk offset) in on-disk order.
+    void test_con_signature_fields_decode() {
+        Bytes data(0x22C);
+        for (std::size_t i = 0; i < data.size(); ++i)
+            data[i] = static_cast<std::byte>((i * 7 + 3) & 0xFF);
+        for (std::size_t i = 0; i < 4; ++i)
+            data[i] = static_cast<std::byte>("CON "[i]);
+
+        const auto header = stfs::parse_header(data);
+        require(header && header->magic == stfs::Magic::CON, "a CON header parses");
+        const auto* con = std::get_if<stfs::ConSignature>(&header->signature);
+        require(con != nullptr, "a CON header carries a ConSignature");
+
+        const auto matches = [&data](const auto& field, std::size_t offset) {
+            const auto* bytes = reinterpret_cast<const std::byte*>(field.data());
+            return std::equal(bytes, bytes + field.size(), data.begin() + offset);
+        };
+        const auto byte_at = [&data](std::size_t offset) {
+            return std::to_integer<std::uint32_t>(data[offset]);
+        };
+
+        require(con->public_key_certificate_size == ((byte_at(0x004) << 8) | byte_at(0x005)),
+                "public_key_certificate_size is big-endian at 0x004");
+        require(matches(con->certificate_owner_console_id, 0x006), "console id at 0x006");
+        require(matches(con->certificate_owner_console_part_number, 0x00B),
+                "console part number at 0x00B");
+        require(con->certificate_owner_console_type == byte_at(0x01F), "console type at 0x01F");
+        require(matches(con->certificate_date_of_generation, 0x020), "date at 0x020");
+        require(matches(con->public_exponent, 0x028), "public exponent at 0x028");
+        require(matches(con->public_modulus, 0x02C), "public modulus at 0x02C");
+        require(matches(con->certificate_signature, 0x0AC), "certificate signature at 0x0AC");
+        require(matches(con->signature, 0x1AC), "signature at 0x1AC");
+    }
+
     void test_read_header_from_file_requires_full_header() {
         TempDir dir;
         Bytes data(0x1B0, std::byte{0});
@@ -1376,6 +1411,7 @@ int main(int argc, char** argv) {
 
     const std::vector<std::pair<std::string_view, void (*)()>> tests = {
         {"parse_header rejects short buffer", test_parse_header_rejects_short_buffer},
+        {"CON signature fields decode", test_con_signature_fields_decode},
         {"read_header_from_file requires full header",
          test_read_header_from_file_requires_full_header},
         {"container rejects relative escape", test_container_rejects_relative_escape},

@@ -27,6 +27,45 @@ namespace gxbuild3::stfs {
     // (0x004 + 0x100 + 0x128). Every header variant needs this many bytes.
     inline constexpr std::size_t kHeaderRegionSize = 0x22C;
 
+    // Offset of the signature block that follows the 4-byte magic.
+    inline constexpr std::size_t kSignatureOffset = 0x004;
+
+    // The CON (console-signed) signature block at kSignatureOffset: the console certificate
+    // followed by the package signature. Offsets below are relative to kSignatureOffset.
+    struct con_signature_disk {
+        wire::be16 public_key_certificate_size;
+        std::uint8_t console_id[5];
+        char part_number[0x14];
+        std::uint8_t console_type;
+        char date[8];
+        std::uint8_t exponent[4];
+        std::uint8_t modulus[0x80];
+        std::uint8_t certificate_signature[0x100];
+        std::uint8_t signature[0x80];
+    };
+    static_assert(wire::WireLayout<con_signature_disk>);
+    static_assert(sizeof(con_signature_disk) == 0x228);
+    static_assert(offsetof(con_signature_disk, console_id) == 0x02);
+    static_assert(offsetof(con_signature_disk, part_number) == 0x07);
+    static_assert(offsetof(con_signature_disk, console_type) == 0x1B);
+    static_assert(offsetof(con_signature_disk, date) == 0x1C);
+    static_assert(offsetof(con_signature_disk, exponent) == 0x24);
+    static_assert(offsetof(con_signature_disk, modulus) == 0x28);
+    static_assert(offsetof(con_signature_disk, certificate_signature) == 0xA8);
+    static_assert(offsetof(con_signature_disk, signature) == 0x1A8);
+
+    // The LIVE/PIRS (Microsoft-signed) signature block at kSignatureOffset.
+    struct live_signature_disk {
+        std::uint8_t package_signature[0x100];
+        std::uint8_t padding[0x128];
+    };
+    static_assert(wire::WireLayout<live_signature_disk>);
+    static_assert(sizeof(live_signature_disk) == 0x228);
+    static_assert(offsetof(live_signature_disk, padding) == 0x100);
+
+    static_assert(kSignatureOffset + sizeof(con_signature_disk) == kHeaderRegionSize);
+    static_assert(kSignatureOffset + sizeof(live_signature_disk) == kHeaderRegionSize);
+
     // Bytes of the v1 metadata parsed by parse_metadata; every header holds at least this much.
     inline constexpr std::uint32_t kMinMetadataSize = 0x971A;
 
