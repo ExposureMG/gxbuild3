@@ -104,8 +104,7 @@ namespace {
         if (type != BuildType::Retail) {
             // Empty CB and CD patch sections followed by a KHV payload. This isolates
             // the crypto policy while still exercising the normal hacked-image build.
-            Bytes patch(8, 0xFF);
-            patch.push_back(0xA5);
+            const Bytes patch{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xA5};
             input.patches = InputPatches{.automatic = InputPatchFile{"automatic", patch}};
         }
         return input;
