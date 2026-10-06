@@ -557,25 +557,36 @@ namespace gxbuild3::nand {
                                                             "CG continuation table",
                                                             base_offset));
                                         }
-                                        const auto& table = decoded_cf.data;
-                                        const size_t count =
-                                            table.size() >= 2 ? (size_t(table[0]) << 8) | table[1]
-                                                              : 0;
-                                        const size_t needed = (cg_size - prefix + 0x3FFF) / 0x4000;
-                                        if (count > 0 && count <= 223 && count != needed) {
+                                        const auto& payload = decoded_cf.data;
+                                        // A payload shorter than the table reads zero-padded:
+                                        // under 2 bytes the count is 0, and the size guard
+                                        // below keeps every cluster read inside the payload.
+                                        std::array<uint8_t, kCfTableSize> table_bytes{};
+                                        std::copy_n(payload.begin(),
+                                                    std::min(payload.size(), table_bytes.size()),
+                                                    table_bytes.begin());
+                                        const auto table = wire::read<cf_continuation_table>(
+                                            table_bytes, 0, "CF continuation table");
+                                        if (!table) {
+                                            return std::unexpected(table.error());
+                                        }
+                                        const size_t count = table->count.get();
+                                        const size_t needed =
+                                            (cg_size - prefix + kCgClusterSize - 1) /
+                                            kCgClusterSize;
+                                        if (count > 0 && count <= kMaxCgClusters &&
+                                            count != needed) {
                                             return fail(ErrorCode::Malformed,
                                                         "the CF at 0x{:X} names {} CG continuation "
                                                         "clusters; the CG needs {}",
                                                         base_offset, count, needed);
                                         }
-                                        if (count == needed && count <= 223 &&
-                                            table.size() >= 2 + count * 2) {
+                                        if (count == needed && count <= kMaxCgClusters &&
+                                            payload.size() >= 2 + count * 2) {
                                             cg_data = flash_driver.read_clean(cg_offset, prefix);
                                             for (size_t i = 0; i < count; ++i) {
-                                                const uint16_t block =
-                                                    (uint16_t(table[2 + i * 2]) << 8) |
-                                                    table[3 + i * 2];
-                                                if (size_t(block) * 0x4000 >=
+                                                const uint16_t block = table->clusters[i].get();
+                                                if (size_t(block) * kCgClusterSize >=
                                                         flash_driver.data_block_limit() *
                                                             flash_driver.block_size_clean() ||
                                                     std::find(slot.cg_spill_blocks.begin(),
@@ -589,9 +600,9 @@ namespace gxbuild3::nand {
                                                         base_offset, block);
                                                 }
                                                 const size_t length = std::min<size_t>(
-                                                    0x4000, cg_size - cg_data.size());
+                                                    kCgClusterSize, cg_size - cg_data.size());
                                                 auto part = flash_driver.read_clean(
-                                                    size_t(block) * 0x4000, length);
+                                                    size_t(block) * kCgClusterSize, length);
                                                 if (part.size() != length) {
                                                     return fail(ErrorCode::Truncated,
                                                                 "CG continuation cluster 0x{:X} "
@@ -1075,8 +1086,9 @@ namespace gxbuild3::nand {
                     }
                     size_t consumed = prefix;
                     for (uint16_t block : slot.cg_spill_blocks) {
-                        const size_t count = std::min<size_t>(0x4000, cg_bytes.size() - consumed);
-                        if (auto laid = write_or_fail(driver, size_t(block) * 0x4000,
+                        const size_t count =
+                            std::min<size_t>(kCgClusterSize, cg_bytes.size() - consumed);
+                        if (auto laid = write_or_fail(driver, size_t(block) * kCgClusterSize,
                                                       std::span(cg_bytes).subspan(consumed, count),
                                                       "CG continuation cluster");
                             !laid) {
@@ -2312,8 +2324,9 @@ namespace gxbuild3::nand {
                     return with_context(std::move(opened),
                                         "opening the CF to clear its continuation table");
                 }
-                if (slot.cf->data.size() >= 0x1C0)
-                    std::fill_n(slot.cf->data.begin(), 0x1C0, 0);
+                if (slot.cf->data.size() >= kCfTableSize) {
+                    std::fill_n(slot.cf->data.begin(), kCfTableSize, 0);
+                }
                 slot.cg_spill_blocks.clear();
                 if (filesystem) {
                     filesystem->set_driver(&flash_driver);
@@ -2370,28 +2383,31 @@ namespace gxbuild3::nand {
                             filename);
             }
             auto chain = filesystem->get_chain(entry->block_number);
-            const size_t needed = (cg.size() - prefix + 0x3FFF) / 0x4000;
-            if (chain.size() > 223 || chain.size() != needed) {
+            const size_t needed = (cg.size() - prefix + kCgClusterSize - 1) / kCgClusterSize;
+            if (chain.size() > kMaxCgClusters || chain.size() != needed) {
                 return fail(ErrorCode::OutOfRange,
                             "the CG tail {} spans {} clusters; it needs {} and a CF names at most "
-                            "223",
-                            filename, chain.size(), needed);
+                            "{}",
+                            filename, chain.size(), needed, kMaxCgClusters);
             }
             if (auto opened = slot.cf->decrypt(key_1bl); !opened) {
                 return with_context(std::move(opened),
                                     "opening the CF to write its continuation table");
             }
-            if (slot.cf->data.size() < 0x1C0) {
+            if (slot.cf->data.size() < kCfTableSize) {
                 return fail(ErrorCode::Malformed,
                             "the CF payload (0x{:X} bytes) is too short for a continuation table",
                             slot.cf->data.size());
             }
-            std::fill_n(slot.cf->data.begin(), 0x1C0, 0);
-            slot.cf->data[0] = uint8_t(chain.size() >> 8);
-            slot.cf->data[1] = uint8_t(chain.size());
+            cf_continuation_table table{};
+            table.count = static_cast<uint16_t>(chain.size());
             for (size_t i = 0; i < chain.size(); ++i) {
-                slot.cf->data[2 + i * 2] = uint8_t(chain[i] >> 8);
-                slot.cf->data[3 + i * 2] = uint8_t(chain[i]);
+                table.clusters[i] = chain[i];
+            }
+            if (auto written =
+                    wire::write(std::span(slot.cf->data), 0, table, "CF continuation table");
+                !written) {
+                return written;
             }
             slot.cg_spill_blocks = std::move(chain);
             return {};

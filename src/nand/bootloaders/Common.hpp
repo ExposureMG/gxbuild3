@@ -137,6 +137,22 @@ namespace gxbuild3::nand {
     // never the header fixpoint above. RGBuild/build360/nandtool/J-Runner agree on 0x330.
     inline constexpr size_t kCfCgNonceOffset = 0x330;
 
+    // A CG too long for its update slot spills its tail into logical 16 KiB FlashFS clusters.
+    // The decrypted CF payload opens (CF + 0x30) with the table naming them in order: a count
+    // and up to kMaxCgClusters cluster numbers, the rest zero. The record is a lossless codec;
+    // the cap and the needed-count checks stay with the callers.
+    inline constexpr size_t kMaxCgClusters = 223;
+    inline constexpr size_t kCgClusterSize = 0x4000;
+
+    struct cf_continuation_table {
+        wire::be16 count;
+        wire::be16 clusters[kMaxCgClusters];
+    };
+    static_assert(wire::WireLayout<cf_continuation_table>);
+
+    inline constexpr size_t kCfTableSize = sizeof(cf_continuation_table);
+    static_assert(kCfTableSize == 0x1C0);
+
     struct cg_header {
         generic_header header;
         uint8_t key[0x10];

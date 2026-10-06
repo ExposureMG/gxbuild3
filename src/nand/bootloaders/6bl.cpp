@@ -14,8 +14,8 @@ namespace gxbuild3::nand {
 
     namespace {
 
-        constexpr size_t kCfPerboxOffset = 0x1C0;
-        // The per-box block sits after the 0x1C0-byte spill table of the payload.
+        // The per-box block sits after the payload's CG continuation (spill) table.
+        constexpr size_t kCfPerboxOffset = kCfTableSize;
         constexpr size_t kCfPerboxEnd = kCfPerboxOffset + sizeof(cf_perbox);
 
     } // namespace
