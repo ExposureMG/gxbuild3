@@ -2058,7 +2058,7 @@ namespace gxbuild3 {
                           static_cast<unsigned long long>(cid_val), last_digit);
             info.keyvault.console_id_friendly = cid_buf;
 
-            if (kv.raw_data.size() >= 0xCAD) {
+            if (kv.raw_data.size() >= Keyvault::kOsigOffset + Keyvault::kOsigLength) {
                 const auto* osig =
                     reinterpret_cast<const char*>(kv.raw_data.data() + Keyvault::kOsigOffset);
                 info.keyvault.osig = std::string(osig, strnlen(osig, Keyvault::kOsigLength));
