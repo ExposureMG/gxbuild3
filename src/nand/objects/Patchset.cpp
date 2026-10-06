@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <span>
 
 namespace gxbuild3::nand {
@@ -14,14 +15,19 @@ namespace gxbuild3::nand {
 
         constexpr uint32_t kSectionDelimiter = 0xFFFFFFFFU;
 
-        bool try_read_be32(std::span<const uint8_t> data, size_t offset, uint32_t& outValue) {
-            if (offset + sizeof(uint32_t) > data.size()) {
-                return false;
-            }
+        // Every caller guards the range first, so this read never runs past the end.
+        uint32_t read_be32(std::span<const uint8_t> data, size_t offset) {
+            uint32_t value = 0;
+            std::memcpy(&value, data.data() + offset, sizeof(uint32_t));
+            return swap32(value);
+        }
 
-            std::memcpy(&outValue, data.data() + offset, sizeof(uint32_t));
-            outValue = swap32(outValue);
-            return true;
+        [[nodiscard]] Result<uint32_t> try_read_be32(std::span<const uint8_t> data, size_t offset) {
+            if (offset > data.size() || data.size() - offset < sizeof(uint32_t)) {
+                return fail(ErrorCode::Truncated, "no 32-bit word at offset 0x{:X} of 0x{:X} bytes",
+                            offset, data.size());
+            }
+            return read_be32(data, offset);
         }
 
         void append_be32(std::vector<uint8_t>& data, uint32_t value) {
@@ -30,66 +36,65 @@ namespace gxbuild3::nand {
             data.insert(data.end(), value_bytes, value_bytes + sizeof(uint32_t));
         }
 
-        bool parse_xe_patch_section_bytes(std::span<const uint8_t> data, size_t startOffset,
-                                          std::vector<XePatchEntry>& outEntries,
-                                          size_t& outConsumed) {
-            outEntries.clear();
-            outConsumed = 0;
+        struct XePatchSectionBytes {
+            std::vector<XePatchEntry> entries;
+            size_t consumed = 0;
+        };
+
+        [[nodiscard]] Result<XePatchSectionBytes>
+        parse_xe_patch_section_bytes(std::span<const uint8_t> data, size_t startOffset) {
+            XePatchSectionBytes parsed;
 
             size_t cursor = startOffset;
             while (true) {
-                uint32_t address = 0;
-                if (!try_read_be32(data, cursor, address)) {
-                    return false;
+                const auto address = try_read_be32(data, cursor);
+                if (!address) {
+                    return std::unexpected(address.error());
                 }
                 cursor += sizeof(uint32_t);
 
-                if (address == kSectionDelimiter) {
-                    outConsumed = cursor - startOffset;
-                    return true;
+                if (*address == kSectionDelimiter) {
+                    parsed.consumed = cursor - startOffset;
+                    return parsed;
                 }
 
-                uint32_t length = 0;
-                if (!try_read_be32(data, cursor, length)) {
-                    return false;
+                auto length = try_read_be32(data, cursor);
+                if (!length) {
+                    return std::unexpected(
+                        std::move(length.error())
+                            .add_context(std::format("entry at 0x{:X} has no length", *address)));
                 }
                 cursor += sizeof(uint32_t);
 
-                const uint64_t wordsByteCount = static_cast<uint64_t>(length) * sizeof(uint32_t);
+                const uint64_t wordsByteCount = static_cast<uint64_t>(*length) * sizeof(uint32_t);
                 if (cursor + wordsByteCount > data.size()) {
-                    return false;
+                    return fail(ErrorCode::Truncated,
+                                "entry at 0x{:X} needs {} words but only 0x{:X} bytes remain",
+                                *address, *length, data.size() - cursor);
                 }
 
                 XePatchEntry entry;
-                entry.address = address;
-                entry.length = length;
-                entry.words.resize(length);
+                entry.address = *address;
+                entry.length = *length;
+                entry.words.resize(*length);
 
-                for (uint32_t i = 0; i < length; ++i) {
-                    if (!try_read_be32(data, cursor, entry.words[i])) {
-                        return false;
-                    }
+                for (uint32_t i = 0; i < *length; ++i) {
+                    entry.words[i] = read_be32(data, cursor);
                     cursor += sizeof(uint32_t);
                 }
 
-                outEntries.push_back(std::move(entry));
+                parsed.entries.push_back(std::move(entry));
             }
         }
 
-        bool split_raw_sections(std::span<const uint8_t> data, size_t expectedSectionCount,
-                                std::vector<std::vector<uint8_t>>& outSections) {
-            outSections.clear();
+        std::vector<std::vector<uint8_t>> split_raw_sections(std::span<const uint8_t> data) {
+            std::vector<std::vector<uint8_t>> sections;
 
             size_t sectionStart = 0;
             size_t cursor = 0;
             while (cursor + sizeof(uint32_t) <= data.size()) {
-                uint32_t word = 0;
-                if (!try_read_be32(data, cursor, word)) {
-                    return false;
-                }
-
-                if (word == kSectionDelimiter) {
-                    outSections.emplace_back(data.begin() + sectionStart, data.begin() + cursor);
+                if (read_be32(data, cursor) == kSectionDelimiter) {
+                    sections.emplace_back(data.begin() + sectionStart, data.begin() + cursor);
                     cursor += sizeof(uint32_t);
                     sectionStart = cursor;
                     continue;
@@ -99,9 +104,9 @@ namespace gxbuild3::nand {
             }
 
             if (sectionStart < data.size()) {
-                outSections.emplace_back(data.begin() + sectionStart, data.end());
+                sections.emplace_back(data.begin() + sectionStart, data.end());
             }
-            return outSections.size() == expectedSectionCount;
+            return sections;
         }
 
         std::optional<PatchSetKind> resolve_patch_set_kind(BuildType buildType) {
@@ -126,15 +131,13 @@ namespace gxbuild3::nand {
 
     } // namespace
 
-    bool parse_patch_set(std::span<const uint8_t> fileData, BuildType buildType,
-                         ParsedPatchSet& outPatchSet) {
-        outPatchSet = ParsedPatchSet{};
+    Result<ParsedPatchSet> parse_patch_set(std::span<const uint8_t> fileData, BuildType buildType) {
         ParsedPatchSet parsed;
 
         const auto patchSetKind = resolve_patch_set_kind(buildType);
         if (!patchSetKind) {
-            Log::Error("Unsupported build type for patchset bytes");
-            return false;
+            return fail(ErrorCode::Unsupported, "build type {} takes no patchset",
+                        static_cast<int>(buildType));
         }
 
         parsed.kind = *patchSetKind;
@@ -143,10 +146,10 @@ namespace gxbuild3::nand {
         parsed.manufacturing = buildType == BuildType::Glitch2m || buildType == BuildType::Devgl;
 
         if (*patchSetKind == PatchSetKind::Jtag) {
-            std::vector<std::vector<uint8_t>> rawSections;
-            if (!split_raw_sections(fileData, 4, rawSections)) {
-                Log::Error("Failed to split JTAG patchset bytes into four sections");
-                return false;
+            auto rawSections = split_raw_sections(fileData);
+            if (rawSections.size() != 4) {
+                return fail(ErrorCode::Malformed, "JTAG patchset must have 4 sections, found {}",
+                            rawSections.size());
             }
 
             const PatchSectionTarget targets[4] = {
@@ -165,15 +168,14 @@ namespace gxbuild3::nand {
             }
 
             Log::Debug("Parsed JTAG patchset bytes (4 sections)");
-            outPatchSet = std::move(parsed);
-            return true;
+            return parsed;
         }
 
-        std::vector<std::vector<uint8_t>> glitchSections;
-        if (!split_raw_sections(fileData, 3, glitchSections)) {
-            Log::Error("Glitch patchset must have 3 sections [CB_B][CD][KHV], found {}",
-                       glitchSections.size());
-            return false;
+        const auto glitchSections = split_raw_sections(fileData);
+        if (glitchSections.size() != 3) {
+            return fail(ErrorCode::Malformed,
+                        "Glitch patchset must have 3 sections [CB_B][CD][KHV], found {}",
+                        glitchSections.size());
         }
 
         size_t cursor = 0;
@@ -184,12 +186,14 @@ namespace gxbuild3::nand {
             section.identifier =
                 i == 0 ? (section.target == PatchSectionTarget::Cb ? "cb" : "cbb") : "cd";
 
-            size_t consumed = 0;
-            if (!parse_xe_patch_section_bytes(fileData, cursor, section.entries, consumed)) {
-                Log::Error("Failed to parse section {} in Glitch patchset bytes", i);
-                return false;
+            auto sectionBytes = parse_xe_patch_section_bytes(fileData, cursor);
+            if (!sectionBytes) {
+                return std::unexpected(
+                    std::move(sectionBytes.error())
+                        .add_context(std::format("{} patch section", section.identifier)));
             }
-            cursor += consumed;
+            section.entries = std::move(sectionBytes->entries);
+            cursor += sectionBytes->consumed;
             parsed.sections.push_back(std::move(section));
         }
 
@@ -199,39 +203,39 @@ namespace gxbuild3::nand {
         khvSection.raw_data.assign(fileData.begin() + cursor, fileData.end());
         if (khvSection.raw_data.size() >= sizeof(uint32_t)) {
             const auto tail = khvSection.raw_data.size() - sizeof(uint32_t);
-            uint32_t lastWord = 0;
-            if (try_read_be32(khvSection.raw_data, tail, lastWord) &&
-                lastWord == kSectionDelimiter) {
+            if (read_be32(khvSection.raw_data, tail) == kSectionDelimiter) {
                 khvSection.raw_data.resize(tail);
             }
         }
         parsed.sections.push_back(std::move(khvSection));
 
         Log::Debug("Parsed Glitch patchset bytes ({} sections)", glitchSections.size());
-        outPatchSet = std::move(parsed);
-        return true;
+        return parsed;
     }
 
-    std::expected<ParsedPatchSet, PatchError> parse_and_merge_patch_set(const InputPatches& patches,
-                                                                        BuildType buildType) {
+    Result<ParsedPatchSet> parse_and_merge_patch_set(const InputPatches& patches,
+                                                     BuildType buildType) {
         if (!patches.automatic) {
-            return std::unexpected(PatchError{"An automatic patchset is required"});
+            return fail(ErrorCode::InvalidArgument, "An automatic patchset is required");
         }
 
-        ParsedPatchSet parsed;
-        if (!parse_patch_set(patches.automatic->data, buildType, parsed)) {
-            return std::unexpected(PatchError{"Failed to parse automatic patchset bytes"});
+        auto parsed = with_context(parse_patch_set(patches.automatic->data, buildType),
+                                   patches.automatic->name.empty()
+                                       ? std::string("automatic patchset")
+                                       : "automatic patchset " + patches.automatic->name);
+        if (!parsed) {
+            return parsed;
         }
 
-        const auto merge_target = parsed.kind == PatchSetKind::Glitch
+        const auto merge_target = parsed->kind == PatchSetKind::Glitch
                                       ? PatchSectionTarget::Khv
                                       : PatchSectionTarget::JtagSection4;
-        const auto target = std::find_if(parsed.sections.begin(), parsed.sections.end(),
+        const auto target = std::find_if(parsed->sections.begin(), parsed->sections.end(),
                                          [merge_target](const ParsedPatchSection& section) {
                                              return section.target == merge_target;
                                          });
-        if (target == parsed.sections.end()) {
-            return std::unexpected(PatchError{"Automatic patchset has no add-on target section"});
+        if (target == parsed->sections.end()) {
+            return fail(ErrorCode::Internal, "Automatic patchset has no add-on target section");
         }
 
         for (const auto& addon : patches.addons) {

@@ -804,9 +804,12 @@ namespace gxbuild3::nand {
             // sections and the recovered runtime stream, avoiding double application.
             std::vector<uint8_t> automatic(8, 0xFF);
             automatic.insert(automatic.end(), inferred_khv.begin(), inferred_khv.end());
-            ParsedPatchSet recovered;
-            if (parse_patch_set(automatic, *build_type, recovered))
-                payloads.patchset = std::move(recovered);
+            auto recovered = parse_patch_set(automatic, *build_type);
+            if (recovered) {
+                payloads.patchset = std::move(*recovered);
+            } else {
+                Log::Debug("Recovered patchset not kept: {}", recovered.error().describe());
+            }
         }
         const uint32_t window_base = kJtagWindowOffset;
         payloads.xell = devkit_chain() ? std::nullopt : parse_xell_at(kXellOffset);

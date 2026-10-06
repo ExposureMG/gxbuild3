@@ -33,6 +33,7 @@
 #include <cstring>
 #include <exception>
 #include <expected>
+#include <format>
 #include <limits>
 #include <span>
 #include <string>
@@ -310,27 +311,27 @@ namespace gxbuild3 {
             return (value + 0x0F) & ~size_t{0x0F};
         }
 
-        std::expected<size_t, PatchError> patched_bootloader_size(size_t current_size,
-                                                                  const ParsedPatchSection& section,
-                                                                  std::string_view stage_name) {
+        [[nodiscard]] Result<size_t> patched_bootloader_size(size_t current_size,
+                                                             const ParsedPatchSection& section,
+                                                             std::string_view stage_name) {
             uint64_t required_end = current_size;
             for (const auto& entry : section.entries) {
                 if (entry.words.size() < entry.length) {
-                    return std::unexpected(
-                        PatchError{std::string(stage_name) + " patch entry has too few words"});
+                    return fail(ErrorCode::Malformed, "{} patch entry has too few words",
+                                stage_name);
                 }
                 const uint64_t entry_end = static_cast<uint64_t>(entry.address) +
                                            static_cast<uint64_t>(entry.length) * sizeof(uint32_t);
                 required_end = std::max(required_end, entry_end);
             }
             if (required_end > std::numeric_limits<uint32_t>::max()) {
-                return std::unexpected(PatchError{std::string(stage_name) +
-                                                  " patch exceeds the 32-bit address space"});
+                return fail(ErrorCode::OutOfRange, "{} patch exceeds the 32-bit address space",
+                            stage_name);
             }
             return static_cast<size_t>(required_end);
         }
 
-        std::expected<std::vector<uint8_t>, PatchError>
+        [[nodiscard]] Result<std::vector<uint8_t>>
         apply_bootloader_patch(std::vector<uint8_t> bytes, const ParsedPatchSection& section,
                                size_t target_capacity, std::string_view stage_name) {
             const auto required_end = patched_bootloader_size(bytes.size(), section, stage_name);
@@ -338,8 +339,8 @@ namespace gxbuild3 {
                 return std::unexpected(required_end.error());
             }
             if (align_16(*required_end) > target_capacity) {
-                return std::unexpected(
-                    PatchError{std::string(stage_name) + " patch exceeds its boot-chain capacity"});
+                return fail(ErrorCode::OutOfRange, "{} patch exceeds its boot-chain capacity",
+                            stage_name);
             }
 
             // A patched stage is as long as its greatest patched end rounded up to 0x10, the
@@ -350,13 +351,14 @@ namespace gxbuild3 {
             const auto applied = gxbuild3::patchers::apply_patch_section(
                 bytes.data(), static_cast<uint32_t>(bytes.size()), xe_section);
             if (!applied) {
-                return std::unexpected(PatchError{"Failed to apply " + std::string(stage_name) +
-                                                  " patch section: " + applied.error().describe()});
+                return std::unexpected(
+                    Error(applied.error())
+                        .add_context(std::format("Failed to apply {} patch section", stage_name)));
             }
 
             if (bytes.size() < sizeof(generic_header)) {
-                return std::unexpected(
-                    PatchError{std::string(stage_name) + " patch target has no bootloader header"});
+                return fail(ErrorCode::Truncated, "{} patch target has no bootloader header",
+                            stage_name);
             }
             const uint32_t be_size = bswap32(static_cast<uint32_t>(bytes.size()));
             std::memcpy(bytes.data() + offsetof(generic_header, size), &be_size, sizeof(be_size));
@@ -1085,7 +1087,7 @@ namespace gxbuild3 {
         if (input.patches && input.patches->automatic) {
             auto parsed = parse_and_merge_patch_set(*input.patches, input.build_type);
             if (!parsed) {
-                return build_error(BuildErrorCode::PatchFailure, parsed.error().message);
+                return build_error(BuildErrorCode::PatchFailure, parsed.error().describe());
             }
             parsed_patchset = std::move(*parsed);
         }
@@ -1147,14 +1149,14 @@ namespace gxbuild3 {
                     patched_bootloader_size(stage_sizes[first_index], *first_section,
                                             first_target == PatchSectionTarget::Cb ? "CB" : "CBB");
                 if (!first_size) {
-                    return build_error(BuildErrorCode::PatchFailure, first_size.error().message);
+                    return build_error(BuildErrorCode::PatchFailure, first_size.error().describe());
                 }
                 stage_sizes[first_index] = *first_size;
             }
             if (cd_section) {
                 const auto cd_size = patched_bootloader_size(stage_sizes[Cd], *cd_section, "CD");
                 if (!cd_size) {
-                    return build_error(BuildErrorCode::PatchFailure, cd_size.error().message);
+                    return build_error(BuildErrorCode::PatchFailure, cd_size.error().describe());
                 }
                 stage_sizes[Cd] = *cd_size;
             }
@@ -1197,7 +1199,7 @@ namespace gxbuild3 {
                 auto patched =
                     apply_bootloader_patch(bootloader.serialize(), *section, capacity, stage_name);
                 if (!patched) {
-                    return BuildError{BuildErrorCode::PatchFailure, patched.error().message};
+                    return BuildError{BuildErrorCode::PatchFailure, patched.error().describe()};
                 }
                 try {
                     bootloader = std::decay_t<decltype(bootloader)>::parse_or_throw(*patched);

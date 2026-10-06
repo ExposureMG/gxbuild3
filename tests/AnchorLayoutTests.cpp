@@ -32,9 +32,9 @@ static FlashImage fixture(Driver::DriverMode mode, BuildType type) {
     if (type == BuildType::Jtag) {
         p.insert(p.begin() + 8, {255, 255, 255, 255});
     }
-    ParsedPatchSet ps;
-    parse_patch_set(p, type, ps);
-    f.payloads.patchset = ps;
+    if (auto ps = parse_patch_set(p, type)) {
+        f.payloads.patchset = std::move(*ps);
+    }
     return f;
 }
 static uint32_t be32(std::span<const uint8_t> b, size_t o) {
