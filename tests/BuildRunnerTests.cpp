@@ -1328,12 +1328,13 @@ namespace {
                      std::string(what) + ": eMMC build with mobile data succeeds")) {
             return false;
         }
+        const auto lays_anchor_mobiles =
+            std::string(what) + ": eMMC lays mobiles 0x31-0x34 and drops the rest";
         for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
             const auto* given = input.mobiles.slot(block_type);
             const auto* laid = parsed->mobile_data->get_slot(block_type);
             const bool expected = block_type <= 0x34 && given && *given;
-            if (!require(expected ? *laid == *given : !laid->has_value(),
-                         std::string(what) + ": eMMC lays mobiles 0x31-0x34 and drops the rest")) {
+            if (!require(expected ? *laid == *given : !laid->has_value(), lays_anchor_mobiles)) {
                 return false;
             }
         }
