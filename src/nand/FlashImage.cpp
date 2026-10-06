@@ -818,6 +818,291 @@ namespace gxbuild3::nand {
             return parse_section(slot.cg, cg_data, "CG", cg_offset);
         }
 
+        // What the second update slot says about the chain: the build type it names, if any,
+        // and the KHV stream found there.
+        struct KhvInference {
+            std::optional<BuildType> build_type;
+            std::optional<std::vector<uint8_t>> khv;
+        };
+
+        // A development chain names its type: devkit when the header states 0x8000 at 0x04,
+        // as a devkit image does, or the second slot holds no glitch2m fuses and KHV patches;
+        // devgl otherwise. Any other chain is glitch2 when a KHV stream opens the second slot
+        // after 0x10 bytes, glitch2m when one follows 0x60 bytes of fuses, and names no type
+        // otherwise. Each probe runs only when the ones before it found nothing.
+        KhvInference infer_khv_build_type(const Driver& driver, const nand_header& header,
+                                          bool devkit_chain, size_t overlay, uint32_t slot_stride) {
+            // The KHV stream after a prefix of the second slot, read up to the slot's end.
+            const auto khv_after = [&](size_t prefix) {
+                return find_khv_stream(driver, overlay + prefix,
+                                       slot_stride > prefix ? slot_stride - prefix : 0);
+            };
+            KhvInference inferred;
+            if (devkit_chain) {
+                if (header.pairing.get() != 0x8000) {
+                    inferred.khv = khv_after(0x60);
+                }
+                inferred.build_type = inferred.khv ? BuildType::Devgl : BuildType::Devkit;
+            } else if ((inferred.khv = khv_after(0x10))) {
+                inferred.build_type = BuildType::Glitch2;
+            } else if ((inferred.khv = khv_after(0x60))) {
+                inferred.build_type = BuildType::Glitch2m;
+            }
+            return inferred;
+        }
+
+        // Reads the settings block when its checksum holds, and the statistics and
+        // manufacturing blocks one and two erase blocks below it. A block that does not read
+        // leaves its member as it was.
+        void read_console_blocks(const Driver& driver, FlashImage& image) {
+            const auto cfg_offset = smc_config_offset(driver);
+            if (!cfg_offset) {
+                return;
+            }
+            const size_t block_size = driver.block_size_clean();
+            auto cfg_bytes = driver.read_offset(*cfg_offset, kSmcConfigLength);
+            if (cfg_bytes.size() == kSmcConfigLength && smc_config_sums(cfg_bytes)) {
+                image.smc_config = std::vector<uint8_t>(cfg_bytes.begin(), cfg_bytes.end());
+            }
+            if (*cfg_offset >= 2 * block_size) {
+                auto stats = driver.read_clean(*cfg_offset - block_size, kSettingsSpan);
+                if (stats.size() == kSettingsSpan) {
+                    image.statistics = std::move(stats);
+                }
+                auto manu = driver.read_clean(*cfg_offset - 2 * block_size, kSettingsSpan);
+                if (manu.size() == kSettingsSpan) {
+                    image.manufacturing = std::move(manu);
+                }
+            }
+        }
+
+        // An eMMC has no spare bytes to scan, so two anchor blocks at fixed offsets say where
+        // the settings blobs and the filesystem table went. A filesystem that does not load is
+        // warned about and left out.
+        void read_emmc_anchors(FlashImage& image) {
+            const Driver& readable = image.flash_driver;
+            const auto first = readable.read_offset(CoronaConfig::kOffsets[0], CoronaConfig::kSize);
+            const auto second =
+                readable.read_offset(CoronaConfig::kOffsets[1], CoronaConfig::kSize);
+            image.corona_config = CoronaConfig::choose(
+                {std::span<const uint8_t>(first), std::span<const uint8_t>(second)});
+            if (!image.corona_config) {
+                return;
+            }
+
+            MobileData mob{};
+            for (size_t slot = 0; slot < CoronaConfig::kBlobSlots; ++slot) {
+                const auto& blob = image.corona_config->blobs[slot];
+                if (blob.length == 0) {
+                    continue;
+                }
+                auto bytes =
+                    readable.read_offset(static_cast<size_t>(blob.block) * 0x4000, blob.length);
+                auto* target =
+                    mob.get_slot(static_cast<uint8_t>(CoronaConfig::kFirstBlobType + slot));
+                if (target && bytes.size() == blob.length) {
+                    *target = std::vector<uint8_t>(bytes.begin(), bytes.end());
+                }
+            }
+            if (!mob.empty()) {
+                image.mobile_data = std::move(mob);
+            }
+
+            if (image.corona_config->table != 0) {
+                FlashFileSystem fs{};
+                if (const auto loaded = fs.load(image.flash_driver, image.corona_config->table)) {
+                    image.filesystem = std::move(fs);
+                } else {
+                    Log::Warn("Flash File System not loaded: {}", loaded.error().describe());
+                }
+            }
+        }
+
+        // Each blob copy fills consecutive pages that share its type, version and free count,
+        // and only those pages carry its spare. A console appends a new copy after the last one
+        // in the same block, so the free count falls with each copy, and opens another block
+        // under a higher version when one fills. The live copy is therefore the one with the
+        // highest version and, within it, the lowest free count; a tie goes to the later copy.
+        // Nothing when no copy of any blob reads.
+        std::optional<MobileData> scan_mobile_copies(const Driver& driver) {
+            struct MobileCopy {
+                bool found = false;
+                uint32_t sequence = 0;
+                uint8_t free_count = 0;
+                size_t first_page = 0;
+                size_t page_count = 0;
+                uint16_t length = 0;
+            };
+            std::array<MobileCopy, 9> latest{};
+            const size_t total_blocks = driver.block_count();
+            const size_t pages_per_block = driver.pages_per_block();
+            for (size_t blk = 0; blk < total_blocks; ++blk) {
+                if (driver.is_bad_block(blk)) {
+                    continue;
+                }
+                for (size_t page = blk * pages_per_block; page < (blk + 1) * pages_per_block;
+                     ++page) {
+                    const auto meta = driver.interpret_page(page);
+                    if (!is_mobile_block_type(meta.block_type)) {
+                        continue;
+                    }
+                    auto& copy = latest[meta.block_type - 0x31];
+                    if (copy.found && copy.sequence == meta.sequence &&
+                        copy.free_count == meta.page_count &&
+                        copy.first_page + copy.page_count == page) {
+                        ++copy.page_count;
+                        continue;
+                    }
+                    if (!copy.found || meta.sequence > copy.sequence ||
+                        (meta.sequence == copy.sequence && meta.page_count <= copy.free_count)) {
+                        copy =
+                            MobileCopy{true, meta.sequence, meta.page_count, page, 1, meta.fs_size};
+                    }
+                }
+            }
+
+            MobileData mob{};
+            for (size_t type_idx = 0; type_idx < latest.size(); ++type_idx) {
+                const auto& copy = latest[type_idx];
+                if (!copy.found) {
+                    continue;
+                }
+                // The spare states the length in bytes; a copy cannot run past its block.
+                const size_t room = (pages_per_block - copy.first_page % pages_per_block) * 512;
+                const size_t length =
+                    std::min<size_t>(copy.length != 0 ? copy.length : copy.page_count * 512, room);
+                auto data = driver.read_clean(copy.first_page * 512, length);
+                auto* slot = mob.get_slot(static_cast<uint8_t>(type_idx + 0x31));
+                if (slot && data.size() == length) {
+                    *slot = std::move(data);
+                }
+            }
+            if (mob.empty()) {
+                return std::nullopt;
+            }
+            return mob;
+        }
+
+        // The 16 KiB cluster holding the live filesystem root: a good root cluster (small- or
+        // big-block type) with the highest non-zero sequence, the first one on a tie.
+        std::optional<size_t> find_fs_root(const Driver& driver) {
+            std::optional<size_t> best_root;
+            uint32_t best_seq = 0;
+            const size_t clusters_per_block = driver.block_size_clean() / 0x4000;
+            for (size_t blk = 0; blk < driver.block_count() * clusters_per_block; ++blk) {
+                auto meta = driver.interpret_cluster(blk);
+                const bool is_filesystem_root = meta.block_type == FlashFsMetadata::kRootTypeBig ||
+                                                meta.block_type == FlashFsMetadata::kRootTypeSmall;
+                if (is_filesystem_root && !meta.is_bad && meta.sequence != 0) {
+                    if (!best_root || meta.sequence > best_seq) {
+                        best_root = blk;
+                        best_seq = meta.sequence;
+                    }
+                }
+            }
+            return best_root;
+        }
+
+        // Loads the filesystem rooted at 16 KiB cluster `root_cluster`, sized as a devkit's when
+        // the build type inferred so far is devkit. A filesystem that does not load is warned
+        // about and left out.
+        void load_fs_root(FlashImage& image, size_t root_cluster) {
+            const size_t clusters_per_block = image.flash_driver.block_size_clean() / 0x4000;
+            FlashFileSystem fs{};
+            fs.set_larger_filesystem(image.build_type == BuildType::Devkit);
+            const auto loaded = fs.load(image.flash_driver,
+                                        static_cast<uint16_t>(root_cluster / clusters_per_block),
+                                        root_cluster % clusters_per_block);
+            if (loaded) {
+                image.filesystem = std::move(fs);
+            } else {
+                Log::Warn("Flash File System not loaded: {}", loaded.error().describe());
+            }
+        }
+
+        // The XeLL at `offset`, or nothing when it does not fit the image or does not parse.
+        std::optional<XeLL> parse_xell_at(const Driver& driver, size_t image_size, size_t offset) {
+            if (offset > image_size || XeLL::kSize > image_size - offset) {
+                return std::nullopt;
+            }
+            auto xell_span = driver.read_offset(offset, XeLL::kSize);
+            if (xell_span.size() != XeLL::kSize) {
+                return std::nullopt;
+            }
+            auto parsed = XeLL::parse(xell_span);
+            if (!parsed) {
+                Log::Debug("No XeLL at 0x{:X}: {}", offset, parsed.error().describe());
+                return std::nullopt;
+            }
+            return std::move(*parsed);
+        }
+
+        // Whether a payload holds anything other than zero and erased bytes.
+        bool has_payload_bytes(std::span<const uint8_t> bytes) {
+            return std::any_of(bytes.begin(), bytes.end(),
+                               [](uint8_t b) { return b != 0 && b != 0xFF; });
+        }
+
+        // Recovers the payloads a hacked image carries and settles its build type: the KHV
+        // stream found in the second slot (at `overlay`) as the patchset, the XeLL at 0x70000 or
+        // in the JTAG window, the glitch2m/devgl fuses at the head of the second slot, and the
+        // JTAG rebooter and fuses.
+        void infer_payloads(FlashImage& image, const std::optional<std::vector<uint8_t>>& khv,
+                            size_t overlay) {
+            const Driver& driver = image.flash_driver;
+            auto& build_type = image.build_type;
+            auto& payloads = image.payloads;
+            if (khv) {
+                if (build_type != BuildType::Glitch2m && build_type != BuildType::Devgl) {
+                    build_type = image.cb_section.cb_x   ? BuildType::Glitch3
+                                 : image.cb_section.cb_B ? BuildType::Glitch2
+                                                         : BuildType::Glitch;
+                }
+                // The NAND contains already-patched CB/CD. Rebuild with empty bootloader
+                // sections and the recovered runtime stream, avoiding double application.
+                std::vector<uint8_t> automatic(8, 0xFF);
+                automatic.insert(automatic.end(), khv->begin(), khv->end());
+                auto recovered = parse_patch_set(automatic, *build_type);
+                if (recovered) {
+                    payloads.patchset = std::move(*recovered);
+                } else {
+                    Log::Debug("Recovered patchset not kept: {}", recovered.error().describe());
+                }
+            }
+
+            const size_t image_size = driver.serialize().size();
+            const uint32_t window_base = kJtagWindowOffset;
+            payloads.xell = image.devkit_chain() ? std::nullopt
+                                                 : parse_xell_at(driver, image_size, kXellOffset);
+            if (payloads.xell) {
+                if (!build_type) {
+                    build_type = BuildType::Glitch2;
+                }
+            } else if (!build_type &&
+                       image.header.cf_offset.get() != glitch_slot_offset(driver.driver_mode())) {
+                payloads.xell = parse_xell_at(driver, image_size, window_base + 0x5060);
+                if (payloads.xell && !build_type) {
+                    build_type = BuildType::Jtag;
+                }
+            }
+
+            if (build_type == BuildType::Glitch2m || build_type == BuildType::Devgl) {
+                auto bytes = driver.read_clean(overlay, 0x60);
+                if (bytes.size() == 0x60) {
+                    payloads.fuses = std::move(bytes);
+                }
+            } else if (build_type == BuildType::Jtag) {
+                auto rebooter = driver.read_clean(window_base, 0x1000);
+                if (rebooter.size() == 0x1000 && has_payload_bytes(rebooter)) {
+                    payloads.rebooter = std::move(rebooter);
+                }
+                auto fuses = driver.read_clean(window_base + 0x5000, 0x60);
+                if (fuses.size() == 0x60 && has_payload_bytes(fuses)) {
+                    payloads.fuses = std::move(fuses);
+                }
+            }
+        }
+
     } // namespace
 
     std::optional<FlashImage> FlashImage::read(std::vector<uint8_t> raw_image) {
@@ -869,232 +1154,27 @@ namespace gxbuild3::nand {
         }
 
         const size_t overlay = size_t(patchslot_base) + slot_stride;
-        // The KHV stream after a prefix of the second slot, read up to the slot's end.
-        const auto khv_after = [&](size_t prefix) {
-            return find_khv_stream(flash_driver, overlay + prefix,
-                                   slot_stride > prefix ? slot_stride - prefix : 0);
-        };
-        // A development chain names its type: devkit when the header states 0x8000 at 0x04,
-        // as a devkit image does, or the second slot holds no glitch2m fuses and KHV patches;
-        // devgl otherwise. Each probe runs only when the ones before it found nothing.
-        std::optional<std::vector<uint8_t>> inferred_khv;
-        if (devkit_chain()) {
-            if (header.pairing != 0x8000) {
-                inferred_khv = khv_after(0x60);
-            }
-            build_type = inferred_khv ? BuildType::Devgl : BuildType::Devkit;
-        } else if ((inferred_khv = khv_after(0x10))) {
-            build_type = BuildType::Glitch2;
-        } else if ((inferred_khv = khv_after(0x60))) {
-            build_type = BuildType::Glitch2m;
+        auto inferred =
+            infer_khv_build_type(flash_driver, header, devkit_chain(), overlay, slot_stride);
+        if (inferred.build_type) {
+            build_type = inferred.build_type;
         }
 
-        const size_t total_blocks = flash_driver.block_count();
-        const size_t block_size = flash_driver.block_size_clean();
-
-        if (auto cfg_offset = smc_config_offset(flash_driver)) {
-            auto cfg_bytes = std::as_const(flash_driver).read_offset(*cfg_offset, kSmcConfigLength);
-            if (cfg_bytes.size() == kSmcConfigLength && smc_config_sums(cfg_bytes)) {
-                smc_config = std::vector<uint8_t>(cfg_bytes.begin(), cfg_bytes.end());
-            }
-            if (*cfg_offset >= 2 * block_size) {
-                auto stats = flash_driver.read_clean(*cfg_offset - block_size, kSettingsSpan);
-                if (stats.size() == kSettingsSpan) {
-                    statistics = std::move(stats);
-                }
-                auto manu = flash_driver.read_clean(*cfg_offset - 2 * block_size, kSettingsSpan);
-                if (manu.size() == kSettingsSpan) {
-                    manufacturing = std::move(manu);
-                }
-            }
-        }
+        read_console_blocks(flash_driver, *this);
 
         if (flash_driver.driver_mode() == Driver::DriverMode::Emmc) {
-            // An eMMC has no spare bytes to scan, so two anchor blocks at fixed offsets say
-            // where the settings blobs and the filesystem table went.
-            const auto& readable = std::as_const(flash_driver);
-            const auto first = readable.read_offset(CoronaConfig::kOffsets[0], CoronaConfig::kSize);
-            const auto second =
-                readable.read_offset(CoronaConfig::kOffsets[1], CoronaConfig::kSize);
-            corona_config = CoronaConfig::choose(
-                {std::span<const uint8_t>(first), std::span<const uint8_t>(second)});
-
-            if (corona_config) {
-                MobileData mob{};
-                for (size_t slot = 0; slot < CoronaConfig::kBlobSlots; ++slot) {
-                    const auto& blob = corona_config->blobs[slot];
-                    if (blob.length == 0) {
-                        continue;
-                    }
-                    auto bytes =
-                        readable.read_offset(static_cast<size_t>(blob.block) * 0x4000, blob.length);
-                    auto* target =
-                        mob.get_slot(static_cast<uint8_t>(CoronaConfig::kFirstBlobType + slot));
-                    if (target && bytes.size() == blob.length) {
-                        *target = std::vector<uint8_t>(bytes.begin(), bytes.end());
-                    }
-                }
-                if (!mob.empty()) {
-                    mobile_data = std::move(mob);
-                }
-
-                if (corona_config->table != 0) {
-                    FlashFileSystem fs{};
-                    if (const auto loaded = fs.load(flash_driver, corona_config->table)) {
-                        filesystem = std::move(fs);
-                    } else {
-                        Log::Warn("Flash File System not loaded: {}", loaded.error().describe());
-                    }
-                }
-            }
+            read_emmc_anchors(*this);
         } else {
-            // Each blob copy fills consecutive pages that share its type, version and free
-            // count, and only those pages carry its spare. A console appends a new copy
-            // after the last one in the same block, so the free count falls with each copy,
-            // and opens another block under a higher version when one fills. The live copy
-            // is therefore the one with the highest version and, within it, the lowest free
-            // count; a tie goes to the later copy.
-            struct MobileCopy {
-                bool found = false;
-                uint32_t sequence = 0;
-                uint8_t free_count = 0;
-                size_t first_page = 0;
-                size_t page_count = 0;
-                uint16_t length = 0;
-            };
-            std::array<MobileCopy, 9> latest{};
-            const size_t pages_per_block = flash_driver.pages_per_block();
-            for (size_t blk = 0; blk < total_blocks; ++blk) {
-                if (flash_driver.is_bad_block(blk)) {
-                    continue;
-                }
-                for (size_t page = blk * pages_per_block; page < (blk + 1) * pages_per_block;
-                     ++page) {
-                    const auto meta = flash_driver.interpret_page(page);
-                    if (!is_mobile_block_type(meta.block_type)) {
-                        continue;
-                    }
-                    auto& copy = latest[meta.block_type - 0x31];
-                    if (copy.found && copy.sequence == meta.sequence &&
-                        copy.free_count == meta.page_count &&
-                        copy.first_page + copy.page_count == page) {
-                        ++copy.page_count;
-                        continue;
-                    }
-                    if (!copy.found || meta.sequence > copy.sequence ||
-                        (meta.sequence == copy.sequence && meta.page_count <= copy.free_count)) {
-                        copy =
-                            MobileCopy{true, meta.sequence, meta.page_count, page, 1, meta.fs_size};
-                    }
-                }
+            if (auto mob = scan_mobile_copies(flash_driver)) {
+                mobile_data = std::move(*mob);
             }
-
-            MobileData mob{};
-            for (size_t type_idx = 0; type_idx < latest.size(); ++type_idx) {
-                const auto& copy = latest[type_idx];
-                if (!copy.found) {
-                    continue;
-                }
-                // The spare states the length in bytes; a copy cannot run past its block.
-                const size_t room = (pages_per_block - copy.first_page % pages_per_block) * 512;
-                const size_t length =
-                    std::min<size_t>(copy.length != 0 ? copy.length : copy.page_count * 512, room);
-                auto data = flash_driver.read_clean(copy.first_page * 512, length);
-                auto* slot = mob.get_slot(static_cast<uint8_t>(type_idx + 0x31));
-                if (slot && data.size() == length) {
-                    *slot = std::move(data);
-                }
-            }
-            if (!mob.empty()) {
-                mobile_data = std::move(mob);
-            }
-
-            std::optional<size_t> best_root;
-            uint32_t best_seq = 0;
-            const size_t clusters_per_block = flash_driver.block_size_clean() / 0x4000;
-            for (size_t blk = 0; blk < total_blocks * clusters_per_block; ++blk) {
-                auto meta = flash_driver.interpret_cluster(blk);
-                const bool is_filesystem_root = meta.block_type == 0x2C || meta.block_type == 0x30;
-                if (is_filesystem_root && !meta.is_bad && meta.sequence != 0) {
-                    if (!best_root || meta.sequence > best_seq) {
-                        best_root = blk;
-                        best_seq = meta.sequence;
-                    }
-                }
-            }
-
-            if (best_root) {
-                FlashFileSystem fs{};
-                fs.set_larger_filesystem(build_type == BuildType::Devkit);
-                const auto loaded =
-                    fs.load(flash_driver, static_cast<uint16_t>(*best_root / clusters_per_block),
-                            *best_root % clusters_per_block);
-                if (loaded) {
-                    filesystem = std::move(fs);
-                } else {
-                    Log::Warn("Flash File System not loaded: {}", loaded.error().describe());
-                }
+            // The filesystem is sized by the build type inferred above.
+            if (const auto root = find_fs_root(flash_driver)) {
+                load_fs_root(*this, *root);
             }
         }
 
-        const auto parse_xell_at = [&](size_t offset) -> std::optional<XeLL> {
-            if (offset > image_bytes.size() || XeLL::kSize > image_bytes.size() - offset) {
-                return std::nullopt;
-            }
-            auto xell_span = std::as_const(flash_driver).read_offset(offset, XeLL::kSize);
-            if (xell_span.size() != XeLL::kSize) {
-                return std::nullopt;
-            }
-            auto parsed = XeLL::parse(xell_span);
-            if (!parsed) {
-                Log::Debug("No XeLL at 0x{:X}: {}", offset, parsed.error().describe());
-                return std::nullopt;
-            }
-            return std::move(*parsed);
-        };
-
-        if (inferred_khv) {
-            if (build_type != BuildType::Glitch2m && build_type != BuildType::Devgl)
-                build_type = cb_section.cb_x   ? BuildType::Glitch3
-                             : cb_section.cb_B ? BuildType::Glitch2
-                                               : BuildType::Glitch;
-            // The NAND contains already-patched CB/CD. Rebuild with empty bootloader
-            // sections and the recovered runtime stream, avoiding double application.
-            std::vector<uint8_t> automatic(8, 0xFF);
-            automatic.insert(automatic.end(), inferred_khv->begin(), inferred_khv->end());
-            auto recovered = parse_patch_set(automatic, *build_type);
-            if (recovered) {
-                payloads.patchset = std::move(*recovered);
-            } else {
-                Log::Debug("Recovered patchset not kept: {}", recovered.error().describe());
-            }
-        }
-        const uint32_t window_base = kJtagWindowOffset;
-        payloads.xell = devkit_chain() ? std::nullopt : parse_xell_at(kXellOffset);
-        if (payloads.xell) {
-            if (!build_type)
-                build_type = BuildType::Glitch2;
-        } else if (!build_type && header.cf_offset != glitch_slot_offset(slot_mode)) {
-            payloads.xell = parse_xell_at(window_base + 0x5060);
-            if (payloads.xell && !build_type)
-                build_type = BuildType::Jtag;
-        }
-        const auto nonempty = [](const auto& bytes) {
-            return std::any_of(bytes.begin(), bytes.end(),
-                               [](uint8_t b) { return b != 0 && b != 0xFF; });
-        };
-        if (build_type == BuildType::Glitch2m || build_type == BuildType::Devgl) {
-            auto bytes = flash_driver.read_clean(overlay, 0x60);
-            if (bytes.size() == 0x60)
-                payloads.fuses = std::move(bytes);
-        } else if (build_type == BuildType::Jtag) {
-            auto rebooter = flash_driver.read_clean(window_base, 0x1000);
-            if (rebooter.size() == 0x1000 && nonempty(rebooter))
-                payloads.rebooter = std::move(rebooter);
-            auto fuses = flash_driver.read_clean(window_base + 0x5000, 0x60);
-            if (fuses.size() == 0x60 && nonempty(fuses))
-                payloads.fuses = std::move(fuses);
-        }
+        infer_payloads(*this, inferred.khv, overlay);
 
         return {};
     }
