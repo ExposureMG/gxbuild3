@@ -7,8 +7,11 @@
 #include "utils/Utils.hpp"
 
 #include <algorithm>
+#include <array>
 #include <bit>
+#include <cstddef>
 #include <cstring>
+#include <span>
 #include <utility>
 
 namespace gxbuild3::nand {
@@ -19,6 +22,26 @@ namespace gxbuild3::nand {
         // nonce. The rest of cb_header lives inside the encrypted payload.
         constexpr size_t kCbCryptMinimumSize = sizeof(generic_header) + 0x10;
 
+        static_assert(sizeof(cb_header) == 0x3C0);
+
+        // The payload offset of the console sequence allowance: cb_header's console_seq_allow
+        // block, minus the generic header that is not part of the payload.
+        constexpr size_t kConsoleAllowPayloadOffset =
+            offsetof(cb_header, console_seq_allow) +
+            offsetof(ConsoleTypeSeqAllow, console_sequence_allow) - sizeof(generic_header);
+        static_assert(kConsoleAllowPayloadOffset == 0x3A2);
+
+        // The per-box block sits right after the 16-byte nonce at the start of the payload.
+        constexpr size_t kPerboxPayloadOffset = 0x10;
+
+        // CB_A's generic header with its flag word cleared, as a CB_B keyed under flag 0x1000
+        // appends it to the HMAC input.
+        std::array<uint8_t, sizeof(generic_header)> cb_a_hmac_head(const generic_header& cb_a) {
+            generic_header head = cb_a;
+            head.flags = 0;
+            return wire::encode(head);
+        }
+
     } // namespace
 
     Result<BootloaderCb> BootloaderCb::parse(std::span<const uint8_t> bytes) {
@@ -27,13 +50,16 @@ namespace gxbuild3::nand {
         if (bytes.size() < sizeof(generic_header))
             return fail(ErrorCode::Truncated, "CB data too short");
 
-        std::memcpy(&cb.header, bytes.data(), sizeof(generic_header));
+        auto head = wire::read_head<generic_header>(bytes, "CB");
+        if (!head)
+            return std::unexpected(std::move(head.error()));
+        cb.header.header = head->value;
 
         if (auto size = aligned_stage_size(cb.header.header.size, sizeof(generic_header), "CB");
             !size)
             return std::unexpected(std::move(size.error()));
 
-        cb.data = std::vector<uint8_t>(bytes.begin() + sizeof(generic_header), bytes.end());
+        cb.data = std::vector<uint8_t>(head->rest.begin(), head->rest.end());
         cb.decrypted = cb.verify_decrypted();
         if (cb.decrypted)
             cb.populate_metadata();
@@ -63,9 +89,8 @@ namespace gxbuild3::nand {
         }
 
         if (perbox.has_value()) {
-            const auto* bytes = reinterpret_cast<const uint8_t*>(&(*perbox));
-            return !std::all_of(bytes, bytes + sizeof(cb_perbox),
-                                [](uint8_t value) { return value == 0; });
+            return !std::ranges::all_of(wire::bytes_of(*perbox),
+                                        [](uint8_t value) { return value == 0; });
         }
 
         if (data.size() < 0x30) {
@@ -90,7 +115,7 @@ namespace gxbuild3::nand {
         if (data.size() < payload_len)
             data.resize(payload_len, 0x00);
         if (decrypted)
-            synchronize_header_numeric_fields_to_data();
+            write_console_allow(data);
         return payload_len;
     }
 
@@ -139,16 +164,13 @@ namespace gxbuild3::nand {
         if (!payload_len)
             return std::unexpected(std::move(payload_len.error()));
 
-        // The CB_A generic header with its flags cleared.
-        auto cb_a_hdr_copy = wire::encode(cb_a_hdr.header);
-        cb_a_hdr_copy[6] = 0;
-        cb_a_hdr_copy[7] = 0;
+        const auto cb_a_head = cb_a_hmac_head(cb_a_hdr.header);
 
         EXCRYPT_HMACSHA_STATE state;
         ExCryptHmacShaInit(&state, cb_a_key, 16);
         ExCryptHmacShaUpdate(&state, data.data(), 0x10);
         ExCryptHmacShaUpdate(&state, cpu_key, 16);
-        ExCryptHmacShaUpdate(&state, cb_a_hdr_copy.data(), cb_a_hdr_copy.size());
+        ExCryptHmacShaUpdate(&state, cb_a_head.data(), cb_a_head.size());
         ExCryptHmacShaFinal(&state, digest, 20);
 
         apply_derived_key(digest, *payload_len);
@@ -187,9 +209,7 @@ namespace gxbuild3::nand {
         if (cb_a_header) {
             ExCryptHmacShaUpdate(&state, cpu_key.data(), 16);
             if ((cb_a_header->header.flags & 0x1000) != 0) {
-                generic_header header = cb_a_header->header;
-                header.flags = 0;
-                const auto head = wire::encode(header);
+                const auto head = cb_a_hmac_head(cb_a_header->header);
                 ExCryptHmacShaUpdate(&state, head.data(), head.size());
             }
         }
@@ -286,8 +306,19 @@ namespace gxbuild3::nand {
         if (!is_decrypted() || data.size() < sizeof(cb_header) - sizeof(generic_header))
             return;
 
-        std::memcpy(reinterpret_cast<uint8_t*>(&header) + sizeof(generic_header), data.data(),
-                    sizeof(cb_header) - sizeof(generic_header));
+        // The mirror is decoded from the generic header as it stands followed by the plaintext
+        // payload. It must not come from serialize(), which writes the stale console allowance
+        // of the old mirror over the value that was just decrypted.
+        std::array<uint8_t, sizeof(cb_header)> image{};
+        const auto head = wire::encode(header.header);
+        std::copy(head.begin(), head.end(), image.begin());
+        std::copy_n(data.begin(), sizeof(cb_header) - sizeof(generic_header),
+                    image.begin() + sizeof(generic_header));
+        // Cannot fail: the image holds exactly one cb_header.
+        auto mirror = wire::read<cb_header>(image, 0, "CB header");
+        if (!mirror)
+            return;
+        header = *mirror;
         // The size check above covers the per-box block, so this only degrades on an
         // inconsistent stage; `perbox` then keeps its previous value.
         if (auto parsed = parse_perbox(); !parsed)
@@ -301,9 +332,10 @@ namespace gxbuild3::nand {
             return fail(ErrorCode::Truncated,
                         "CB payload (0x{:X} bytes) is too short for per-box data", data.size());
 
-        cb_perbox pb{};
-        std::memcpy(&pb, data.data() + 0x10, sizeof(cb_perbox));
-        perbox = pb;
+        auto pb = wire::read<cb_perbox>(data, kPerboxPayloadOffset, "CB per-box data");
+        if (!pb)
+            return std::unexpected(std::move(pb.error()));
+        perbox = *pb;
         return {};
     }
 
@@ -316,38 +348,26 @@ namespace gxbuild3::nand {
             return fail(ErrorCode::Truncated,
                         "CB payload (0x{:X} bytes) is too short for per-box data", data.size());
 
-        std::memcpy(data.data() + 0x10, &(*perbox), sizeof(cb_perbox));
-        return {};
+        return wire::write(std::span<uint8_t>(data), kPerboxPayloadOffset, *perbox,
+                           "CB per-box data");
     }
 
-    void BootloaderCb::synchronize_header_numeric_fields_to_data() {
-        constexpr size_t console_sequence_allow_offset =
-            offsetof(cb_header, console_seq_allow) +
-            offsetof(ConsoleTypeSeqAllow, console_sequence_allow) - sizeof(generic_header);
+    void BootloaderCb::write_console_allow(std::span<uint8_t> payload) const {
         const auto& wire_value = header.console_seq_allow.console_sequence_allow.raw();
-        if (data.size() < console_sequence_allow_offset + wire_value.size())
+        if (payload.size() < kConsoleAllowPayloadOffset + wire_value.size())
             return;
 
-        std::memcpy(data.data() + console_sequence_allow_offset, wire_value.data(),
-                    wire_value.size());
+        std::copy(wire_value.begin(), wire_value.end(),
+                  payload.begin() + kConsoleAllowPayloadOffset);
     }
 
     std::vector<uint8_t> BootloaderCb::serialize() const {
-        std::vector<uint8_t> out(sizeof(generic_header));
-        std::memcpy(out.data(), &header.header, sizeof(generic_header));
-        auto serialized_data = data;
-        if (decrypted) {
-            constexpr size_t console_sequence_allow_offset =
-                offsetof(cb_header, console_seq_allow) +
-                offsetof(ConsoleTypeSeqAllow, console_sequence_allow) - sizeof(generic_header);
-            const auto& wire_value = header.console_seq_allow.console_sequence_allow.raw();
-            if (serialized_data.size() >= console_sequence_allow_offset + wire_value.size()) {
-                std::memcpy(serialized_data.data() + console_sequence_allow_offset,
-                            wire_value.data(), wire_value.size());
-            }
-        }
-        out.insert(out.end(), serialized_data.begin(), serialized_data.end());
-
+        std::vector<uint8_t> out;
+        out.reserve(sizeof(generic_header) + data.size());
+        wire::append(out, header.header);
+        out.insert(out.end(), data.begin(), data.end());
+        if (decrypted)
+            write_console_allow(std::span<uint8_t>(out).subspan(sizeof(generic_header)));
         return out;
     }
 

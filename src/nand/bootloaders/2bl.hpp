@@ -137,7 +137,9 @@ namespace gxbuild3::nand {
         // Keeps the first 16 digest bytes as the derived key and RC4s the payload with it.
         void apply_derived_key(const uint8_t digest[20], size_t payload_len);
         void do_rc4_decrypt(const uint8_t key[16], size_t payload_len);
-        void synchronize_header_numeric_fields_to_data();
+        // Copies the mirror's console sequence allowance into a plaintext payload large enough
+        // to hold it; a shorter payload is left as it is.
+        void write_console_allow(std::span<uint8_t> payload) const;
     };
 
 } // namespace gxbuild3::nand
