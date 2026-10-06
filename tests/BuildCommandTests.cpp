@@ -40,7 +40,7 @@ namespace {
             return std::expected<BuildRequest, ResolutionError>{std::move(request)};
         };
         services.build = [](const Input&) { return BuildResult{Bytes{1, 2, 3}}; };
-        services.write = [](const std::filesystem::path&, const Bytes&) { return true; };
+        services.write = [](const std::filesystem::path&, const Bytes&) { return Result<void>{}; };
         return services;
     }
 
@@ -72,10 +72,14 @@ namespace {
 
     bool test_write_failure_returns_exit_code_five() {
         auto services = successful_services();
-        services.write = [](const std::filesystem::path&, const Bytes&) { return false; };
+        services.write = [](const std::filesystem::path&, const Bytes&) -> Result<void> {
+            return fail(ErrorCode::IoError, "disk full");
+        };
         const auto result =
             gxbuild3::cli::run_build_command(minimum_build_args("output.bin"), services);
-        return require(result.exit_code == 5, "write failures return exit code 5");
+        return require(result.exit_code == 5, "write failures return exit code 5") &&
+               require(result.message.ends_with(": disk full"),
+                       "write failure message carries the write service's reason");
     }
 
     bool test_success_creates_output_parent_and_writes_bytes() {
@@ -84,18 +88,21 @@ namespace {
         std::error_code error;
         std::filesystem::remove_all(root, error);
 
-        bool wrote = false;
+        // The default write service owns parent creation, so this exercises the real one.
         auto services = successful_services();
-        services.write = [&](const std::filesystem::path& path, const Bytes& bytes) {
-            wrote = path == output_path && std::filesystem::is_directory(path.parent_path()) &&
-                    bytes == Bytes{1, 2, 3};
-            return true;
-        };
+        services.write = gxbuild3::cli::default_build_command_services(root).write;
         const auto result =
             gxbuild3::cli::run_build_command(minimum_build_args(output_path), services);
+        Bytes written;
+        {
+            std::ifstream output(output_path, std::ios::binary);
+            written.assign(std::istreambuf_iterator<char>(output),
+                           std::istreambuf_iterator<char>());
+        }
         std::filesystem::remove_all(root, error);
         return require(result.exit_code == 0, "successful command returns exit code 0") &&
-               require(wrote, "successful command creates the parent before writing bytes");
+               require(written == Bytes{1, 2, 3},
+                       "successful command creates the parent before writing bytes");
     }
 
     bool test_success_overwrites_existing_output() {
@@ -108,12 +115,16 @@ namespace {
 
         bool wrote = false;
         auto services = successful_services();
-        services.write = [&](const std::filesystem::path& path, const Bytes& bytes) {
+        services.write = [&](const std::filesystem::path& path,
+                             const Bytes& bytes) -> Result<void> {
             std::ofstream output(path, std::ios::binary | std::ios::trunc);
             output.write(reinterpret_cast<const char*>(bytes.data()),
                          static_cast<std::streamsize>(bytes.size()));
             wrote = static_cast<bool>(output);
-            return wrote;
+            if (!wrote) {
+                return fail(ErrorCode::IoError, "write failed");
+            }
+            return {};
         };
         const auto result =
             gxbuild3::cli::run_build_command(minimum_build_args(output_path), services);

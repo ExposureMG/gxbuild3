@@ -80,7 +80,13 @@ namespace gxbuild3::cli {
             if (!exists) {
                 return OptionsArgs{};
             }
-            if (!std::filesystem::is_regular_file(options_path, status_error)) {
+            const bool regular = std::filesystem::is_regular_file(options_path, status_error);
+            if (status_error) {
+                return std::unexpected(error(
+                    ResolutionErrorCode::OptionsReadFailed,
+                    "Could not inspect options.ini: " + status_error.message(), options_path));
+            }
+            if (!regular) {
                 return std::unexpected(error(ResolutionErrorCode::OptionsReadFailed,
                                              "Could not read options.ini", options_path));
             }
@@ -473,10 +479,19 @@ namespace gxbuild3::cli {
                     if (!std::filesystem::is_directory(directory, status_error)) {
                         continue;
                     }
+                    // A directory that cannot be listed is reported rather than skipped, so a
+                    // key in it is never passed over for one in a later root.
                     std::vector<std::filesystem::path> entries;
-                    for (const auto& entry :
-                         std::filesystem::directory_iterator(directory, status_error)) {
-                        entries.push_back(entry.path());
+                    std::filesystem::directory_iterator entry(directory, status_error);
+                    for (; !status_error && entry != std::filesystem::directory_iterator();
+                         entry.increment(status_error)) {
+                        entries.push_back(entry->path());
+                    }
+                    if (status_error) {
+                        return std::unexpected(error(ResolutionErrorCode::SigningKeyNotFound,
+                                                     "Could not list '" + directory.string() +
+                                                         "': " + status_error.message(),
+                                                     directory, "SB_priv.bin"));
                     }
                     std::sort(entries.begin(), entries.end());
                     for (const auto name : kNames) {
@@ -692,24 +707,15 @@ namespace gxbuild3::cli {
         std::optional<Input> donor;
         ImageType image_type{};
         if (nand_data) {
-            try {
-                auto extracted = extract_all(*nand_data, *cpu_key);
-                if (!extracted) {
-                    return std::unexpected(
-                        error(ResolutionErrorCode::InvalidDonor,
-                              "Could not extract donor NAND with the resolved CPU key: " +
-                                  extracted.error().describe(),
-                              *nand_path));
-                }
-                donor = std::move(*extracted);
-            } catch (const std::exception& exception) {
-                return std::unexpected(error(
-                    ResolutionErrorCode::InvalidDonor,
-                    "Could not parse donor NAND: " + std::string(exception.what()), *nand_path));
-            } catch (...) {
-                return std::unexpected(error(ResolutionErrorCode::InvalidDonor,
-                                             "Could not parse donor NAND", *nand_path));
+            auto extracted = extract_all(*nand_data, *cpu_key);
+            if (!extracted) {
+                return std::unexpected(
+                    error(ResolutionErrorCode::InvalidDonor,
+                          "Could not extract donor NAND with the resolved CPU key: " +
+                              extracted.error().describe(),
+                          *nand_path));
             }
+            donor = std::move(*extracted);
 
             const ImageType detected_type = donor->image_type;
             image_type = args.image_type.value_or(detected_type);
@@ -1173,6 +1179,7 @@ namespace gxbuild3::cli {
                 input.payloads = std::move(payloads);
             }
 
+            // Every InputErrorCode maps to InvalidInput; its message names the exact problem.
             if (const auto validation = validate_input(input); !validation) {
                 return std::unexpected(
                     error(ResolutionErrorCode::InvalidInput, validation.error().message));
@@ -1180,12 +1187,11 @@ namespace gxbuild3::cli {
             return BuildRequest{.input = std::move(input),
                                 .output_path = anchored(working_directory_, args.output_path)};
         } catch (const std::exception& exception) {
+            // The documented boundary: only std::bad_alloc and logic_error-family precondition
+            // violations can still escape the library, and they end up here.
             return std::unexpected(
                 error(ResolutionErrorCode::InvalidInput,
                       "Input resolution failed: " + std::string(exception.what())));
-        } catch (...) {
-            return std::unexpected(
-                error(ResolutionErrorCode::InvalidInput, "Input resolution failed"));
         }
     }
 

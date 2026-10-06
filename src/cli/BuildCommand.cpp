@@ -1,9 +1,6 @@
 #include "cli/BuildCommand.hpp"
 
-#include "utils/Log.hpp"
 #include "utils/Utils.hpp"
-
-#include <system_error>
 
 namespace gxbuild3::cli {
 
@@ -19,19 +16,10 @@ namespace gxbuild3::cli {
         }
 
         const auto& output_path = request->output_path;
-        if (output_path.has_parent_path()) {
-            std::error_code error;
-            std::filesystem::create_directories(output_path.parent_path(), error);
-            if (error) {
-                return {.exit_code = 5,
-                        .message = "Could not create output directory '" +
-                                   output_path.parent_path().string() + "': " + error.message()};
-            }
-        }
-
-        if (!services.write(output_path, *built)) {
+        if (auto written = services.write(output_path, *built); !written) {
             return {.exit_code = 5,
-                    .message = "Could not write output image to '" + output_path.string() + "'"};
+                    .message = "Could not write output image to '" + output_path.string() +
+                               "': " + written.error().describe()};
         }
         return {};
     }
@@ -43,14 +31,7 @@ namespace gxbuild3::cli {
             .build = [](const Input& input) { return run_build(input); },
             .write =
                 [](const std::filesystem::path& path, const std::vector<uint8_t>& data) {
-                    // The service still reports a bare bool (a typed write service comes
-                    // later), so this lambda is the boundary that consumes the Error: it logs
-                    // the reason once and run_build_command reports the summary.
-                    auto written = gxbuild3::utils::write_file(path, data);
-                    if (!written) {
-                        Log::Error("{}", written.error().describe());
-                    }
-                    return written.has_value();
+                    return gxbuild3::utils::write_file(path, data);
                 },
         };
     }
