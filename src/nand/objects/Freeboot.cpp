@@ -1,5 +1,6 @@
 #include "nand/objects/Freeboot.hpp"
 
+#include "Wire.hpp"
 #include "freeboot.h"
 #include "payload.h"
 
@@ -54,8 +55,8 @@ namespace gxbuild3::nand {
         const auto bytes = freeboot_payload();
         std::vector<uint8_t> out(bytes.begin(), bytes.end());
         const size_t words = (core_length + 3) / 4;
-        out[kLoadWordsOffset] = static_cast<uint8_t>(words >> 8);
-        out[kLoadWordsOffset + 1] = static_cast<uint8_t>(words);
+        std::ranges::copy(wire::encode(wire::be16{static_cast<uint16_t>(words)}),
+                          out.begin() + kLoadWordsOffset);
         return out;
     }
 

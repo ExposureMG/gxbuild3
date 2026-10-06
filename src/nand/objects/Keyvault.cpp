@@ -163,12 +163,12 @@ namespace gxbuild3::nand {
                        static_cast<uint32_t>(out_data.size() - 0x10));
         }
 
-        const uint8_t version_be[2] = {static_cast<uint8_t>(kv_version >> 8),
-                                       static_cast<uint8_t>(kv_version)};
+        const auto version_be = wire::encode(wire::be16{kv_version});
         uint8_t kv_digest[20];
         ExCryptHmacSha(cpu_key.data(), static_cast<uint32_t>(cpu_key.size()),
                        out_data.data() + 0x10, static_cast<uint32_t>(out_data.size() - 0x10),
-                       version_be, sizeof(version_be), nullptr, 0, kv_digest, 20);
+                       version_be.data(), static_cast<uint32_t>(version_be.size()), nullptr, 0,
+                       kv_digest, 20);
 
         uint8_t difference = 0;
         for (size_t i = 0; i < 0x10; ++i) {
@@ -194,12 +194,12 @@ namespace gxbuild3::nand {
 
         std::vector<uint8_t> out_data(data.begin(), data.end());
 
-        const uint8_t version_be[2] = {static_cast<uint8_t>(kv_version >> 8),
-                                       static_cast<uint8_t>(kv_version)};
+        const auto version_be = wire::encode(wire::be16{kv_version});
         uint8_t kv_digest[20];
         ExCryptHmacSha(cpu_key.data(), static_cast<uint32_t>(cpu_key.size()),
                        out_data.data() + 0x10, static_cast<uint32_t>(out_data.size() - 0x10),
-                       version_be, sizeof(version_be), nullptr, 0, kv_digest, 20);
+                       version_be.data(), static_cast<uint32_t>(version_be.size()), nullptr, 0,
+                       kv_digest, 20);
 
         std::memcpy(out_data.data(), kv_digest, 0x10);
 
