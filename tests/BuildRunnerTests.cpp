@@ -1,4 +1,5 @@
 #include "BuildRunner.hpp"
+#include "Library.hpp"
 #include "ScopedTimeZone.hpp"
 #include "XeRsaTestKey.hpp"
 #include "excrypt.h"
@@ -36,6 +37,10 @@ using namespace gxbuild3::nand;
 namespace {
 
     using Bytes = std::vector<uint8_t>;
+
+    // The failed extraction a test takes when the image it extracts from did not build.
+    const std::unexpected<gxbuild3::Error>
+        not_built(std::in_place, gxbuild3::ErrorCode::InvalidArgument, "the image did not build");
 
     bool require(bool condition, std::string_view message) {
         if (!condition) {
@@ -315,7 +320,7 @@ namespace {
         input.patches = std::move(patches);
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         if (!require(extracted.has_value(), "patched glitch image builds and extracts")) {
             return false;
         }
@@ -353,7 +358,7 @@ namespace {
         input.patches = std::move(patches);
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         if (!require(extracted.has_value(), "patched glitch2m image builds and extracts")) {
             return false;
         }
@@ -380,7 +385,7 @@ namespace {
         input.patches = std::move(patches);
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         if (!require(extracted.has_value() && extracted->bootloaders.cb_b.has_value(),
                      "Glitch2 CBB image builds and extracts")) {
             return false;
@@ -455,7 +460,7 @@ namespace {
         input.patches = std::move(patches);
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         const auto khv = built ? read_logical(*built, 0x80010, 3) : std::nullopt;
         return require(extracted.has_value() &&
                            extracted->bootloaders.cb_or_a.size() == original_cb_size,
@@ -497,8 +502,7 @@ namespace {
             input.patches = std::move(patches);
 
             const auto built = run_build(input);
-            const auto extracted =
-                built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+            const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
             const auto khv = built ? read_logical(*built, 0x80010, 3) : std::nullopt;
             if (!require(extracted.has_value(),
                          std::string(test_case.options) + " image builds and extracts") ||
@@ -764,7 +768,7 @@ namespace {
         }
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         if (!require(extracted.has_value(), "glitch image with mobile data extracts")) {
             return false;
         }
@@ -1039,7 +1043,7 @@ namespace {
         input.payloads = std::move(payloads);
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         return require(
                    extracted.has_value() && extracted->payloads && extracted->payloads->xell &&
                        *extracted->payloads->xell == *input.payloads->xell,
@@ -1075,7 +1079,7 @@ namespace {
                                   image->flash_driver.write_offset(0x95060, false_jtag_elf);
             const auto extracted =
                 modified ? extract_all(image->flash_driver.serialize(), input.metadata.cpu_key)
-                         : std::nullopt;
+                         : not_built;
 
             if (!require(modified, "shifted patch-base XeLL fixture is modified successfully") ||
                 !require(extracted.has_value() &&
@@ -1188,7 +1192,7 @@ namespace {
         input.payloads = std::move(payloads);
 
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         return require(extracted.has_value() && extracted->payloads &&
                            extracted->payloads->xell == input.payloads->xell &&
                            extracted->payloads->rebooter == input.payloads->rebooter &&
@@ -1535,7 +1539,7 @@ namespace {
         input.bootloaders.cg0 = cg0;
 
         const auto built = run_build(input);
-        const auto info = built ? extract_some_info(*built) : std::nullopt;
+        const auto info = built ? extract_some_info(*built) : not_built;
         return require(info.has_value(), "public NAND metadata extracts without a CPU key") &&
                require(info->block_type == ImageType::BigBlock,
                        "public NAND metadata reports the detected block type") &&
@@ -1560,7 +1564,7 @@ namespace {
     bool test_extract_all_info_reports_the_detected_block_type() {
         const auto input = fresh_input(ImageType::NewSmallBlock);
         const auto built = run_build(input);
-        const auto info = built ? extract_all_info(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto info = built ? extract_all_info(*built, input.metadata.cpu_key) : not_built;
         return require(info.has_value(), "full NAND metadata extracts") &&
                require(info->block_type == ImageType::NewSmallBlock,
                        "full NAND metadata reports the detected block type");
@@ -1629,6 +1633,37 @@ namespace {
         return passed;
     }
 
+    // The extraction cores return their reason and log nothing; the public GxBuild::Extract*
+    // shims log that reason once and return std::nullopt.
+    bool test_extraction_cores_return_their_reason_and_the_shims_return_nullopt() {
+        const auto input = fresh_input(ImageType::SmallBlock);
+        const auto built = run_build(input);
+        if (!require(built.has_value(), "the image to extract builds")) {
+            return false;
+        }
+        const auto& cpu_key = input.metadata.cpu_key;
+        const Bytes short_key(cpu_key.begin(), cpu_key.begin() + 15);
+        const auto short_key_all = extract_all(*built, short_key);
+        const auto empty_info = extract_some_info(Bytes{});
+        const auto malformed = with_short_cd_record(*built);
+        const auto malformed_all = extract_all(malformed, cpu_key);
+        return require(!short_key_all && short_key_all.error().code == ErrorCode::InvalidArgument &&
+                           short_key_all.error().describe().find("16 bytes") != std::string::npos,
+                       "extract_all names a CPU key of the wrong length") &&
+               require(!empty_info && empty_info.error().code == ErrorCode::InvalidArgument &&
+                           empty_info.error().describe().find("empty") != std::string::npos,
+                       "extract_some_info names an empty image") &&
+               require(!malformed_all &&
+                           malformed_all.error().describe().find(
+                               "Failed to parse the NAND image structure") != std::string::npos,
+                       "extract_all puts the parse context on a malformed record") &&
+               require(!GxBuild::ExtractAll(*built, short_key).has_value() &&
+                           !GxBuild::ExtractSomeInfo(Bytes{}).has_value() &&
+                           !GxBuild::ExtractAll(malformed, cpu_key).has_value() &&
+                           GxBuild::ExtractAll(*built, cpu_key).has_value(),
+                       "the public Extract* shims return nullopt exactly when the core fails");
+    }
+
     // The keyvault's fcrt.bin flag is read as xeBuild 1.21 reads it: bits 0x0320 of the big-endian
     // OddFeatures word at 0x1C.
     bool test_extract_all_info_reads_the_fcrt_flag_big_endian() {
@@ -1643,8 +1678,7 @@ namespace {
             plain[0x1D] = static_cast<uint8_t>(features);
             input.metadata.keyvault = canonical_keyvault(input.metadata.cpu_key, plain);
             const auto built = run_build(input);
-            const auto info =
-                built ? extract_all_info(*built, input.metadata.cpu_key) : std::nullopt;
+            const auto info = built ? extract_all_info(*built, input.metadata.cpu_key) : not_built;
             passed = require(info.has_value() && info->keyvault.present &&
                                  info->keyvault.fcrt_required == required,
                              "full NAND metadata reports the keyvault's fcrt.bin flag") &&
@@ -1689,7 +1723,7 @@ namespace {
         const auto plaintext_build = run_build(plaintext_source);
         const auto plaintext_extracted =
             plaintext_build ? extract_all(*plaintext_build, plaintext_source.metadata.cpu_key)
-                            : std::nullopt;
+                            : not_built;
 
         return require(encrypted_decrypted && encrypted_image->cb_section.sc.has_value() &&
                            encrypted_image->cb_section.sc->is_decrypted(),
@@ -1922,7 +1956,7 @@ namespace {
         input.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
             {"crl.bin", clear_crl}, {"extended.bin", extended}, {"fcrt.bin", fcrt}};
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, cpu_key) : not_built;
         if (!require(extracted.has_value() && extracted->flashfs_sec.has_value(),
                      "a build with secured files extracts")) {
             return false;
@@ -2000,7 +2034,7 @@ namespace {
 
         const auto image_fcrt = [&](const Input& build) -> std::optional<Bytes> {
             const auto built = run_build(build);
-            const auto extracted = built ? extract_all(*built, cpu_key) : std::nullopt;
+            const auto extracted = built ? extract_all(*built, cpu_key) : not_built;
             if (!extracted || !extracted->flashfs_sec) {
                 return std::nullopt;
             }
@@ -2501,7 +2535,7 @@ namespace {
         const auto bootloader_rebuilt = run_build(*bootloaders);
         const auto bootloader_roundtrip =
             bootloader_rebuilt ? extract_all(*bootloader_rebuilt, bootloaders->metadata.cpu_key)
-                               : std::nullopt;
+                               : not_built;
         const auto roundtrip_cd =
             bootloader_roundtrip
                 ? BootloaderCd::parse_or_throw(bootloader_roundtrip->bootloaders.cd)
@@ -2532,7 +2566,7 @@ namespace {
         source.payloads = std::move(payloads);
         const auto donor_bytes = run_build(source);
         auto payload_extracted =
-            donor_bytes ? extract_all(*donor_bytes, source.metadata.cpu_key) : std::nullopt;
+            donor_bytes ? extract_all(*donor_bytes, source.metadata.cpu_key) : not_built;
         if (!require(payload_extracted.has_value(), "serialized payload donor extracts") ||
             !require(payload_extracted->payloads.has_value() &&
                          payload_extracted->payloads->rebooter == source.payloads->rebooter,
@@ -2549,7 +2583,7 @@ namespace {
         payload_extracted->metadata.nand_image.reset();
         const auto rebuilt = run_build(*payload_extracted);
         const auto roundtrip =
-            rebuilt ? extract_all(*rebuilt, payload_extracted->metadata.cpu_key) : std::nullopt;
+            rebuilt ? extract_all(*rebuilt, payload_extracted->metadata.cpu_key) : not_built;
         return require(roundtrip.has_value() && roundtrip->payloads.has_value() &&
                            roundtrip->payloads->rebooter == source.payloads->rebooter,
                        "rebuilt rebooter remains serialized-identical") &&
@@ -2662,7 +2696,7 @@ namespace {
                                  image->cb_section.cb_B->parse_perbox();
         const auto* perbox = cb_b_perbox ? &*image->cb_section.cb_B->perbox : nullptr;
         const auto* perbox_bytes = reinterpret_cast<const uint8_t*>(perbox);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         const Bytes* secdata = nullptr;
         if (extracted && extracted->flashfs_sec) {
             for (const auto& [name, data] : *extracted->flashfs_sec) {
@@ -3330,14 +3364,13 @@ namespace {
         input.metadata.cf_ldv = 9;
         constexpr int64_t kSeconds = 1791105722;
         const auto stamp = gxbuild3::nand::secured_file_stamp(kSeconds);
-        const auto build_and_open = [&](const Input& build) -> std::optional<Input> {
+        const auto build_and_open = [&](const Input& build) -> Result<Input> {
             set_source_date_epoch("1791105722");
             const auto image = run_build(build);
             set_source_date_epoch(nullptr);
-            return image ? extract_all(*image, cpu_key) : std::nullopt;
+            return image ? extract_all(*image, cpu_key) : not_built;
         };
-        const auto file = [](const std::optional<Input>& from,
-                             std::string_view name) -> const Bytes* {
+        const auto file = [](const Result<Input>& from, std::string_view name) -> const Bytes* {
             if (!from || !from->flashfs_sec) {
                 return nullptr;
             }
@@ -4234,7 +4267,7 @@ namespace {
     bool test_devkit_image_reads_back_and_rebuilds_its_chain() {
         const auto input = devkit_input(ImageType::NewSmallBlock);
         const auto built = run_build(input);
-        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : std::nullopt;
+        const auto extracted = built ? extract_all(*built, input.metadata.cpu_key) : not_built;
         if (!require(extracted.has_value(), "a devkit image parses and opens") ||
             !require(extracted->build_type == BuildType::Devkit &&
                          extracted->image_type == ImageType::NewSmallBlock,
@@ -4527,6 +4560,7 @@ int main() {
     passed = test_extract_some_info_reads_public_nand_metadata_without_cpu_key() && passed;
     passed = test_extract_all_info_reports_the_detected_block_type() && passed;
     passed = test_extraction_reports_a_cd_record_shorter_than_its_header() && passed;
+    passed = test_extraction_cores_return_their_reason_and_the_shims_return_nullopt() && passed;
     passed = test_extract_all_info_reads_the_fcrt_flag_big_endian() && passed;
     passed = test_sc_survives_extraction_and_backing_cleared_layout_override() && passed;
     passed = test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() && passed;

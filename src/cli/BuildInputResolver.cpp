@@ -693,7 +693,15 @@ namespace gxbuild3::cli {
         ImageType image_type{};
         if (nand_data) {
             try {
-                donor = extract_all(*nand_data, *cpu_key);
+                auto extracted = extract_all(*nand_data, *cpu_key);
+                if (!extracted) {
+                    return std::unexpected(
+                        error(ResolutionErrorCode::InvalidDonor,
+                              "Could not extract donor NAND with the resolved CPU key: " +
+                                  extracted.error().describe(),
+                              *nand_path));
+                }
+                donor = std::move(*extracted);
             } catch (const std::exception& exception) {
                 return std::unexpected(error(
                     ResolutionErrorCode::InvalidDonor,
@@ -701,11 +709,6 @@ namespace gxbuild3::cli {
             } catch (...) {
                 return std::unexpected(error(ResolutionErrorCode::InvalidDonor,
                                              "Could not parse donor NAND", *nand_path));
-            }
-            if (!donor) {
-                return std::unexpected(
-                    error(ResolutionErrorCode::InvalidDonor,
-                          "Could not extract donor NAND with the resolved CPU key", *nand_path));
             }
 
             const ImageType detected_type = donor->image_type;
