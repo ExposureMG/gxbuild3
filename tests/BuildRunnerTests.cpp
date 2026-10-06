@@ -195,9 +195,9 @@ namespace {
         if (!key || cg_bytes.size() < sizeof(cg_header)) {
             return std::nullopt;
         }
-        auto cg = BootloaderCg::parse_or_throw(cg_bytes);
+        auto cg = test::must(BootloaderCg::parse(cg_bytes));
         if (!cg.decrypted) {
-            cg.decrypt_or_throw(key->data());
+            test::must(cg.decrypt(key->data()));
         }
         auto opened = cg.serialize();
         std::fill(opened.begin() + 0x10, opened.begin() + 0x20, 0);
@@ -3252,10 +3252,11 @@ namespace {
         cg.header.header.pairing = pairing;
         cg.header.header.size = sizeof(cg_header);
         const auto cg_wire = cg.serialize();
-        passed = require(has_big_endian_pairing(cg_wire) &&
-                             BootloaderCg::parse_or_throw(cg_wire).header.header.pairing == pairing,
-                         "CG generic pairing is big-endian on wire and host-order after parse") &&
-                 passed;
+        passed =
+            require(has_big_endian_pairing(cg_wire) &&
+                        test::must(BootloaderCg::parse(cg_wire)).header.header.pairing == pairing,
+                    "CG generic pairing is big-endian on wire and host-order after parse") &&
+            passed;
 
         cf.encrypt_or_throw(key_1bl);
         const auto encrypted_cf_wire = cf.serialize();
@@ -3320,7 +3321,7 @@ namespace {
         cg.header.target_size = 0x50607080;
         cg.data.assign(0x40, 0x33);
         const auto cg_wire = cg.serialize();
-        auto parsed_cg = BootloaderCg::parse_or_throw(cg_wire);
+        auto parsed_cg = test::must(BootloaderCg::parse(cg_wire));
         passed =
             require(
                 read_be32(cg_wire, offsetof(cg_header, source_size)) == 0x10203040 &&
@@ -3331,9 +3332,9 @@ namespace {
             passed;
 
         parsed_cg.decrypted = true;
-        parsed_cg.encrypt_or_throw(key_1bl);
-        auto crypt_roundtrip_cg = BootloaderCg::parse_or_throw(parsed_cg.serialize());
-        crypt_roundtrip_cg.decrypt_or_throw(key_1bl);
+        test::must(parsed_cg.encrypt(key_1bl));
+        auto crypt_roundtrip_cg = test::must(BootloaderCg::parse(parsed_cg.serialize()));
+        test::must(crypt_roundtrip_cg.decrypt(key_1bl));
         return require(passed && crypt_roundtrip_cg.header.source_size == 0x10203040 &&
                            crypt_roundtrip_cg.header.target_size == 0x50607080,
                        "CG encrypt/decrypt preserves normalized source and target sizes");

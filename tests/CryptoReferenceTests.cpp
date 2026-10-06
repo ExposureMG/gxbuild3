@@ -407,8 +407,8 @@ namespace {
                      "CB decrypt of a header-only CB fails and leaves the stage") &&
              ok;
 
-        auto cg = BootloaderCg::parse_or_throw(
-            stage_bytes(CG, sizeof(cg_header) + 0x20, sizeof(cg_header) + 0x20));
+        auto cg = gxbuild3::test::must(BootloaderCg::parse(
+            stage_bytes(CG, sizeof(cg_header) + 0x20, sizeof(cg_header) + 0x20)));
         cg.decrypted = false;
         cg.header.header.size = 0x10;
         const Bytes cg_data = cg.data;

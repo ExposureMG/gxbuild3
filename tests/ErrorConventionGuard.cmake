@@ -33,7 +33,6 @@ set(shim_name_allowlist
     src/nand/bootloaders/2bl.hpp
     src/nand/bootloaders/4bl.hpp
     src/nand/bootloaders/6bl.hpp
-    src/nand/bootloaders/7bl.hpp
     src/nand/bootloaders/Common.hpp
 )
 
