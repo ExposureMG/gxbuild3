@@ -17,7 +17,16 @@ namespace gxbuild3::nand {
             return {entry.filename, static_cast<size_t>(end - entry.filename)};
         }
 
+        // The name a path names: what follows its last '/' or '\\'.
+        std::string_view clean_name(std::string_view filename) {
+            if (const auto pos = filename.find_last_of("/\\"); pos != std::string_view::npos) {
+                return filename.substr(pos + 1);
+            }
+            return filename;
+        }
+
         constexpr size_t kMapLinks = kRootDirectoryPages * kBlocksPerPage;
+        constexpr size_t kPagesPerCluster = kCleanBlockSize / 512;
 
         // Link `index` of the block map, counted from the filesystem's base cluster.
         wire::be16& map_link(flashfs_root_cluster& root, size_t index) {
@@ -426,63 +435,55 @@ namespace gxbuild3::nand {
 
     Result<void> FlashFileSystem::add_file(std::string_view filename, std::span<const uint8_t> data,
                                            std::optional<uint32_t> timestamp) {
-        std::string_view clean_name = filename;
-        auto pos = clean_name.find_last_of("/\\");
-        if (pos != std::string_view::npos) {
-            clean_name = clean_name.substr(pos + 1);
-        }
-
-        if (clean_name.empty() || clean_name.size() >= kMaxFilenameLength) {
+        const std::string_view name = clean_name(filename);
+        if (name.empty() || name.size() >= kMaxFilenameLength) {
             return fail(ErrorCode::InvalidArgument,
-                        "invalid FlashFS filename '{}' (length must be 1-{} chars)", clean_name,
+                        "invalid FlashFS filename '{}' (length must be 1-{} chars)", name,
                         kMaxFilenameLength - 1);
         }
 
-        const bool replacing_existing_file = exists(clean_name);
+        const bool replacing_existing_file = exists(name);
         if (!replacing_existing_file && m_entries.size() >= kMaxDirectoryEntries) {
             return fail(ErrorCode::Exhausted, "FlashFS directory is full (maximum {} entries)",
                         kMaxDirectoryEntries);
         }
 
         if (replacing_existing_file) {
-            if (auto deleted = delete_file(clean_name); !deleted) {
+            if (auto deleted = delete_file(name); !deleted) {
                 return deleted;
             }
         }
 
         auto chain_start = allocate_chain(data.size());
         if (!chain_start) {
-            return fail(ErrorCode::Exhausted, "FlashFS out of space for '{}' ({} bytes)",
-                        clean_name, data.size());
+            return fail(ErrorCode::Exhausted, "FlashFS out of space for '{}' ({} bytes)", name,
+                        data.size());
         }
 
         FlashFileSystemEntry entry{};
-        std::ranges::copy(clean_name, entry.filename);
-        entry.filename[clean_name.size()] = '\0';
+        std::ranges::copy(name, entry.filename);
+        entry.filename[name.size()] = '\0';
         entry.block_number = *chain_start;
         entry.length = static_cast<uint32_t>(data.size());
         entry.timestamp = timestamp.value_or(m_timestamp);
 
         m_entries.push_back(entry);
-        m_file_data[std::string(clean_name)] = std::vector<uint8_t>(data.begin(), data.end());
+        m_file_data[std::string(name)] = std::vector<uint8_t>(data.begin(), data.end());
         return {};
     }
 
     Result<void> FlashFileSystem::insert_file(size_t position, std::string_view filename,
                                               std::span<const uint8_t> data,
                                               std::optional<uint32_t> timestamp) {
-        std::string_view clean_name = filename;
-        if (const auto pos = clean_name.find_last_of("/\\"); pos != std::string_view::npos) {
-            clean_name = clean_name.substr(pos + 1);
-        }
+        const std::string_view inserted_name = clean_name(filename);
         // The data may be a view of the file being replaced, which deleting it frees.
         const std::vector<uint8_t> inserted(data.begin(), data.end());
         for (size_t index = 0; index < m_entries.size(); ++index) {
-            if (m_entries[index].matches(clean_name)) {
+            if (m_entries[index].matches(inserted_name)) {
                 if (index < position) {
                     --position;
                 }
-                if (auto deleted = delete_file(clean_name); !deleted) {
+                if (auto deleted = delete_file(inserted_name); !deleted) {
                     return deleted;
                 }
                 break;
@@ -510,7 +511,7 @@ namespace gxbuild3::nand {
         }
         m_entries.erase(m_entries.begin() + static_cast<std::ptrdiff_t>(position), m_entries.end());
 
-        if (auto added = add_file(clean_name, inserted, timestamp); !added) {
+        if (auto added = add_file(inserted_name, inserted, timestamp); !added) {
             return added;
         }
         for (const auto& file : moved) {
@@ -522,18 +523,13 @@ namespace gxbuild3::nand {
     }
 
     std::optional<std::vector<uint8_t>> FlashFileSystem::get_file(std::string_view filename) const {
-        std::string_view clean_name = filename;
-        auto pos = clean_name.find_last_of("/\\");
-        if (pos != std::string_view::npos) {
-            clean_name = clean_name.substr(pos + 1);
-        }
-
-        auto it = m_file_data.find(std::string(clean_name));
+        const std::string_view name = clean_name(filename);
+        auto it = m_file_data.find(std::string(name));
         if (it != m_file_data.end()) {
             return it->second;
         }
 
-        const auto* entry = find_entry(clean_name);
+        const auto* entry = find_entry(name);
         if (!entry) {
             return std::nullopt;
         }
@@ -567,21 +563,16 @@ namespace gxbuild3::nand {
     }
 
     Result<void> FlashFileSystem::delete_file(std::string_view filename) {
-        std::string_view clean_name = filename;
-        auto pos = clean_name.find_last_of("/\\");
-        if (pos != std::string_view::npos) {
-            clean_name = clean_name.substr(pos + 1);
-        }
-
+        const std::string_view name = clean_name(filename);
         for (auto it = m_entries.begin(); it != m_entries.end(); ++it) {
-            if (it->matches(clean_name)) {
+            if (it->matches(name)) {
                 free_chain(it->block_number);
-                m_file_data.erase(std::string(clean_name));
+                m_file_data.erase(std::string(name));
                 m_entries.erase(it);
                 return {};
             }
         }
-        return fail(ErrorCode::NotFound, "FlashFS has no file '{}'", clean_name);
+        return fail(ErrorCode::NotFound, "FlashFS has no file '{}'", name);
     }
 
     bool FlashFileSystem::exists(std::string_view filename) const {
@@ -627,10 +618,7 @@ namespace gxbuild3::nand {
         return std::vector<uint8_t>(image.begin(), image.end());
     }
 
-    Result<void> FlashFileSystem::save() {
-        if (!m_driver) {
-            return fail(ErrorCode::InvalidArgument, "FlashFS save needs an attached driver");
-        }
+    Result<size_t> FlashFileSystem::write_root_cluster() {
         auto root_data = serialize_root_block();
         if (!root_data) {
             return std::unexpected(std::move(root_data.error()).add_context("saving FlashFS"));
@@ -640,98 +628,121 @@ namespace gxbuild3::nand {
             return fail(ErrorCode::OutOfRange, "FlashFS root cluster 0x{:X} is outside the NAND",
                         root_cluster);
         }
+        return root_cluster;
+    }
 
+    // Small-block data blocks are plain type 0x00 blocks with no size or page count; big-block
+    // ones carry type 0x2A and the constant reference stamp, as the big-block root does.
+    BlockMetadata FlashFileSystem::fs_metadata(BlockKind kind, uint32_t sequence,
+                                               uint16_t block_id) const {
         const bool big_block = m_driver->driver_mode() == Driver::DriverMode::Big;
-
-        BlockMetadata root_meta{};
-        root_meta.logical_block_id = m_root_block;
-        root_meta.sequence = m_version;
-        root_meta.block_type =
-            big_block ? FlashFsMetadata::kRootTypeBig : FlashFsMetadata::kRootTypeSmall;
-        root_meta.fs_size = big_block ? big_fs_size() : 0;
-        root_meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
-        root_meta.is_bad = false;
-
-        // Each file cluster and how many of its pages carry the file's spare.
-        std::map<size_t, size_t> file_clusters;
-        constexpr size_t kPagesPerCluster = kCleanBlockSize / 512;
-        for (const auto& entry : m_entries) {
-            if (!entry.is_valid()) {
-                continue;
-            }
-
-            auto it = m_file_data.find(std::string(entry.filename));
-            if (it == m_file_data.end()) {
-                continue;
-            }
-
-            const auto& file_bytes = it->second;
-            auto chain = get_chain(entry.block_number);
-            size_t bytes_written = 0;
-
-            for (uint16_t blk : chain) {
-                if (bytes_written >= file_bytes.size()) {
-                    break;
-                }
-
-                // The last cluster of a file is zero-padded to its end, so every page of a
-                // file cluster is programmed.
-                size_t chunk_len =
-                    std::min<size_t>(file_bytes.size() - bytes_written, kCleanBlockSize);
-                std::span<const uint8_t> chunk(file_bytes.data() + bytes_written, chunk_len);
-                const size_t cluster_offset = static_cast<size_t>(blk) * kCleanBlockSize;
-                if (!m_driver->write_offset(cluster_offset, chunk)) {
-                    return fail(ErrorCode::OutOfRange,
-                                "FlashFS cluster 0x{:X} of '{}' is outside the NAND", blk,
-                                it->first);
-                }
-                if (chunk_len < kCleanBlockSize) {
-                    const std::vector<uint8_t> padding(kCleanBlockSize - chunk_len, 0);
-                    if (!m_driver->write_offset(cluster_offset + chunk_len, padding)) {
-                        return fail(ErrorCode::OutOfRange,
-                                    "FlashFS cluster 0x{:X} of '{}' is outside the NAND", blk,
-                                    it->first);
-                    }
-                }
-
-                // A big-block file of one cluster states its spare on the pages its bytes
-                // reach; the zero padding after them keeps erased fields (xeBuild 1.21).
-                size_t pages = kPagesPerCluster;
-                if (big_block && file_bytes.size() <= kCleanBlockSize) {
-                    pages = std::max<size_t>(1, (chunk_len + 511) / 512);
-                }
-                file_clusters[blk] = pages;
-
-                bytes_written += chunk_len;
-            }
-            if (bytes_written != file_bytes.size()) {
-                return fail(ErrorCode::Truncated,
-                            "FlashFS chain of '{}' holds 0x{:X} of its 0x{:X} bytes", it->first,
-                            bytes_written, file_bytes.size());
-            }
-        }
-
-        // File data blocks carry FS sequence 0. Small-block data blocks are plain type 0x00
-        // blocks with no size or page count; big-block ones carry type 0x2A and the
-        // constant reference stamp. Only the 16 KiB clusters holding file data are stamped:
-        // the rest of a big block stays erased, as xeBuild leaves it.
-        const std::vector<uint8_t> erased_spare(16, 0xFF);
-        for (const auto& [cluster, pages] : file_clusters) {
-            BlockMetadata file_meta{};
-            file_meta.logical_block_id = static_cast<uint16_t>(cluster / clusters_per_block());
-            file_meta.sequence = 0;
-            file_meta.block_type =
+        BlockMetadata meta{};
+        meta.logical_block_id = block_id;
+        meta.sequence = sequence;
+        if (kind == BlockKind::Root) {
+            meta.block_type =
+                big_block ? FlashFsMetadata::kRootTypeBig : FlashFsMetadata::kRootTypeSmall;
+        } else {
+            meta.block_type =
                 big_block ? FlashFsMetadata::kDataTypeBig : FlashFsMetadata::kDataTypeSmall;
-            file_meta.fs_size = big_block ? big_fs_size() : 0;
-            file_meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
-            file_meta.is_bad = false;
+        }
+        meta.fs_size = big_block ? big_fs_size() : 0;
+        meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
+        meta.is_bad = false;
+        return meta;
+    }
+
+    Result<void> FlashFileSystem::write_file_chain(const FlashFileSystemEntry& entry,
+                                                   const std::string& name,
+                                                   std::span<const uint8_t> bytes,
+                                                   ClusterPages& clusters) {
+        const bool big_block = m_driver->driver_mode() == Driver::DriverMode::Big;
+        size_t bytes_written = 0;
+        for (uint16_t blk : get_chain(entry.block_number)) {
+            if (bytes_written >= bytes.size()) {
+                break;
+            }
+
+            // The last cluster of a file is zero-padded to its end, so every page of a file
+            // cluster is programmed.
+            const size_t chunk_len =
+                std::min<size_t>(bytes.size() - bytes_written, kCleanBlockSize);
+            const auto chunk = bytes.subspan(bytes_written, chunk_len);
+            const size_t cluster_offset = static_cast<size_t>(blk) * kCleanBlockSize;
+            if (!m_driver->write_offset(cluster_offset, chunk)) {
+                return fail(ErrorCode::OutOfRange,
+                            "FlashFS cluster 0x{:X} of '{}' is outside the NAND", blk, name);
+            }
+            if (chunk_len < kCleanBlockSize) {
+                const std::vector<uint8_t> padding(kCleanBlockSize - chunk_len, 0);
+                if (!m_driver->write_offset(cluster_offset + chunk_len, padding)) {
+                    return fail(ErrorCode::OutOfRange,
+                                "FlashFS cluster 0x{:X} of '{}' is outside the NAND", blk, name);
+                }
+            }
+
+            // A big-block file of one cluster states its spare on the pages its bytes reach;
+            // the zero padding after them keeps erased fields (xeBuild 1.21).
+            size_t pages = kPagesPerCluster;
+            if (big_block && bytes.size() <= kCleanBlockSize) {
+                pages = std::max<size_t>(1, (chunk_len + 511) / 512);
+            }
+            clusters[blk] = pages;
+
+            bytes_written += chunk_len;
+        }
+        if (bytes_written != bytes.size()) {
+            return fail(ErrorCode::Truncated,
+                        "FlashFS chain of '{}' holds 0x{:X} of its 0x{:X} bytes", name,
+                        bytes_written, bytes.size());
+        }
+        return {};
+    }
+
+    // File data blocks carry FS sequence 0. Only the 16 KiB clusters holding file data are
+    // stamped: the rest of a big block stays erased, as xeBuild leaves it, and so do the pages
+    // of a cluster past those its spare reaches.
+    void FlashFileSystem::stamp_file_clusters(const ClusterPages& clusters) {
+        const std::vector<uint8_t> erased_spare(16, 0xFF);
+        for (const auto& [cluster, pages] : clusters) {
+            const BlockMetadata file_meta = fs_metadata(
+                BlockKind::Data, 0, static_cast<uint16_t>(cluster / clusters_per_block()));
             m_driver->write_page_metadata(cluster * kPagesPerCluster, pages, file_meta);
             for (size_t page = pages; page < kPagesPerCluster; ++page) {
                 m_driver->write_page_spare(cluster * kPagesPerCluster + page, erased_spare);
             }
         }
+    }
 
-        m_driver->write_cluster_metadata(root_cluster, root_meta);
+    // Driver writes go in this order: the root bytes, every file's bytes in directory order,
+    // the file spares, and the root spare last.
+    Result<void> FlashFileSystem::save() {
+        if (!m_driver) {
+            return fail(ErrorCode::InvalidArgument, "FlashFS save needs an attached driver");
+        }
+        auto root_cluster = write_root_cluster();
+        if (!root_cluster) {
+            return std::unexpected(std::move(root_cluster.error()));
+        }
+
+        ClusterPages file_clusters;
+        for (const auto& entry : m_entries) {
+            if (!entry.is_valid()) {
+                continue;
+            }
+            auto it = m_file_data.find(std::string(entry.filename));
+            if (it == m_file_data.end()) {
+                continue;
+            }
+            if (auto written = write_file_chain(entry, it->first, it->second, file_clusters);
+                !written) {
+                return written;
+            }
+        }
+
+        stamp_file_clusters(file_clusters);
+        m_driver->write_cluster_metadata(*root_cluster,
+                                         fs_metadata(BlockKind::Root, m_version, m_root_block));
         return {};
     }
 

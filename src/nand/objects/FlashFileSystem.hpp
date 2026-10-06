@@ -207,6 +207,27 @@ namespace gxbuild3::nand {
         [[nodiscard]] std::vector<uint8_t> read_chain(const Driver& driver,
                                                       const FlashFileSystemEntry& entry) const;
 
+        enum class BlockKind {
+            Root,
+            Data
+        };
+        // Each file cluster and how many of its pages carry the file's spare.
+        using ClusterPages = std::map<size_t, size_t>;
+
+        // save()'s stages. Writes the encoded root bytes and returns the root cluster.
+        [[nodiscard]] Result<size_t> write_root_cluster();
+        // The spare stamp of a root or data block.
+        [[nodiscard]] BlockMetadata fs_metadata(BlockKind kind, uint32_t sequence,
+                                                uint16_t block_id) const;
+        // Writes the file's bytes through its chain, zero-padding the last cluster, and states
+        // in `clusters` how many pages of each cluster carry the file's spare.
+        [[nodiscard]] Result<void> write_file_chain(const FlashFileSystemEntry& entry,
+                                                    const std::string& name,
+                                                    std::span<const uint8_t> bytes,
+                                                    ClusterPages& clusters);
+        // Stamps the data spare on each cluster's stated pages and erases the rest.
+        void stamp_file_clusters(const ClusterPages& clusters);
+
         [[nodiscard]] static std::optional<size_t> checked_block_count(size_t bytes_needed,
                                                                        size_t clean_block_size);
 
