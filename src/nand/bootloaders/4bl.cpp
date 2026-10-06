@@ -11,7 +11,7 @@
 
 namespace gxbuild3::nand {
 
-    BootloaderCd BootloaderCd::parse(const std::vector<uint8_t>& bytes) {
+    BootloaderCd BootloaderCd::parse_or_throw(const std::vector<uint8_t>& bytes) {
         BootloaderCd cd;
         if (bytes.size() < sizeof(cd_header))
             throw std::runtime_error("CD/4BL data too short");
@@ -28,7 +28,7 @@ namespace gxbuild3::nand {
         return cd;
     }
 
-    void BootloaderCd::decrypt(const uint8_t parent_key[16], const uint8_t cpu_key[16]) {
+    void BootloaderCd::decrypt_or_throw(const uint8_t parent_key[16], const uint8_t cpu_key[16]) {
         if (decrypted)
             return;
         uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
@@ -64,7 +64,7 @@ namespace gxbuild3::nand {
         decrypted = true;
     }
 
-    void BootloaderCd::encrypt(const uint8_t parent_key[16], const uint8_t cpu_key[16]) {
+    void BootloaderCd::encrypt_or_throw(const uint8_t parent_key[16], const uint8_t cpu_key[16]) {
         if (!decrypted)
             return;
         uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;

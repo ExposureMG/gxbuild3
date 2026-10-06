@@ -435,37 +435,37 @@ namespace gxbuild3::nand {
             auto bldr_data = flash_driver.read_clean(cursor, align_16(bldr_size));
 
             if (magic == NANDBootloaderMagic::SB && cb_section.cb_or_A.data.empty()) {
-                cb_section.cb_or_A = BootloaderCb::parse(bldr_data);
+                cb_section.cb_or_A = BootloaderCb::parse_or_throw(bldr_data);
                 Log::Debug("Parsed SB bootloader at offset 0x{:X} (version {}, size 0x{:X})",
                            cursor, version, bldr_size);
             } else if (magic == NANDBootloaderMagic::SD) {
-                kernel_section.cd = BootloaderCd::parse(bldr_data);
+                kernel_section.cd = BootloaderCd::parse_or_throw(bldr_data);
                 Log::Debug("Parsed SD bootloader at offset 0x{:X} (version {}, size 0x{:X})",
                            cursor, version, bldr_size);
             } else if (magic == NANDBootloaderMagic::SE) {
-                kernel_section.ce = BootloaderCe::parse(bldr_data);
+                kernel_section.ce = BootloaderCe::parse_or_throw(bldr_data);
                 Log::Debug("Parsed SE bootloader at offset 0x{:X} (version {}, size 0x{:X})",
                            cursor, version, bldr_size);
             } else if (magic == 0x4342) {
                 if (version == 15432) {
-                    cb_section.cb_x = BootloaderCb::parse(bldr_data);
+                    cb_section.cb_x = BootloaderCb::parse_or_throw(bldr_data);
                 } else if (cb_section.cb_or_A.data.empty()) {
-                    cb_section.cb_or_A = BootloaderCb::parse(bldr_data);
+                    cb_section.cb_or_A = BootloaderCb::parse_or_throw(bldr_data);
                 } else {
-                    cb_section.cb_B = BootloaderCb::parse(bldr_data);
+                    cb_section.cb_B = BootloaderCb::parse_or_throw(bldr_data);
                 }
                 Log::Debug("Parsed CB bootloader at offset 0x{:X} (version {}, size 0x{:X})",
                            cursor, version, bldr_size);
             } else if (magic == 0x5343) {
-                cb_section.sc = BootloaderSc::parse(bldr_data);
+                cb_section.sc = BootloaderSc::parse_or_throw(bldr_data);
                 Log::Debug("Parsed SC bootloader at offset 0x{:X} (version {}, size 0x{:X})",
                            cursor, version, bldr_size);
             } else if (magic == 0x4344) {
-                kernel_section.cd = BootloaderCd::parse(bldr_data);
+                kernel_section.cd = BootloaderCd::parse_or_throw(bldr_data);
                 Log::Debug("Parsed CD bootloader at offset 0x{:X} (version {}, size 0x{:X})",
                            cursor, version, bldr_size);
             } else if (magic == 0x4345) {
-                kernel_section.ce = BootloaderCe::parse(bldr_data);
+                kernel_section.ce = BootloaderCe::parse_or_throw(bldr_data);
                 Log::Debug("Parsed CE bootloader at offset 0x{:X} (version {}, size 0x{:X})",
                            cursor, version, bldr_size);
             } else {
@@ -499,7 +499,7 @@ namespace gxbuild3::nand {
                 uint32_t cf_size = bswap32(slot_hdr.size);
                 if (cf_size > 0 && base_offset + cf_size <= image_bytes.size()) {
                     auto cf_data = flash_driver.read_clean(base_offset, cf_size);
-                    slot.cf = BootloaderCf::parse(cf_data);
+                    slot.cf = BootloaderCf::parse_or_throw(cf_data);
 
                     size_t cg_offset = base_offset + align_16(cf_size);
                     if (cg_offset + sizeof(generic_header) <= image_bytes.size()) {
@@ -518,7 +518,7 @@ namespace gxbuild3::nand {
                                                      : 0);
                                     if (prefix < cg_size) {
                                         auto decoded_cf = *slot.cf;
-                                        decoded_cf.decrypt(key_1bl);
+                                        decoded_cf.decrypt_or_throw(key_1bl);
                                         const auto& table = decoded_cf.data;
                                         const size_t count =
                                             table.size() >= 2 ? (size_t(table[0]) << 8) | table[1]
@@ -558,7 +558,7 @@ namespace gxbuild3::nand {
                                             }
                                         }
                                     }
-                                    slot.cg = BootloaderCg::parse(cg_data);
+                                    slot.cg = BootloaderCg::parse_or_throw(cg_data);
                                 }
                             }
                         }
@@ -1778,7 +1778,7 @@ namespace gxbuild3::nand {
             // Use the parser's full plaintext check, not is_decrypted()'s legacy
             // single-byte hint: encrypted CBs can contain that byte by chance.
             if (!cb_section.cb_or_A.data.empty() && !cb_section.cb_or_A.decrypted) {
-                cb_section.cb_or_A.decrypt(key_1bl);
+                cb_section.cb_or_A.decrypt_or_throw(key_1bl);
             }
 
             if (cb_section.cb_x && !cb_section.cb_x->data.empty() && !cb_section.cb_x->decrypted) {
@@ -1788,12 +1788,12 @@ namespace gxbuild3::nand {
                 }
                 const std::array<uint8_t, 16> zero_cpu_key{};
                 if ((cb_section.cb_or_A.header.header.flags & 0x1000) != 0) {
-                    cb_section.cb_x->decrypt_v2(cb_section.cb_or_A.header,
-                                                cb_section.cb_or_A.derived_key->data(),
-                                                zero_cpu_key.data());
+                    cb_section.cb_x->decrypt_v2_or_throw(cb_section.cb_or_A.header,
+                                                         cb_section.cb_or_A.derived_key->data(),
+                                                         zero_cpu_key.data());
                 } else {
-                    cb_section.cb_x->decrypt_v1(cb_section.cb_or_A.derived_key->data(),
-                                                zero_cpu_key.data());
+                    cb_section.cb_x->decrypt_v1_or_throw(cb_section.cb_or_A.derived_key->data(),
+                                                         zero_cpu_key.data());
                 }
             }
 
@@ -1813,9 +1813,9 @@ namespace gxbuild3::nand {
                     Log::Error("Cannot decrypt CB_B: CB_A derived key is missing");
                     return false;
                 }
-                cb_section.cb_B->decrypt_cb_b(cb_section.cb_or_A.header,
-                                              cb_section.cb_or_A.derived_key->data(),
-                                              cpu_key.data());
+                cb_section.cb_B->decrypt_cb_b_or_throw(cb_section.cb_or_A.header,
+                                                       cb_section.cb_or_A.derived_key->data(),
+                                                       cpu_key.data());
             }
 
             // SC is keyed from sixteen zero bytes, not from its parent. One with a zero nonce
@@ -1825,7 +1825,7 @@ namespace gxbuild3::nand {
                 std::any_of(std::begin(cb_section.sc->header.key),
                             std::end(cb_section.sc->header.key),
                             [](uint8_t byte) { return byte != 0; })) {
-                cb_section.sc->decrypt(BootloaderSc::kZeroSecret);
+                cb_section.sc->decrypt_or_throw(BootloaderSc::kZeroSecret);
             }
 
             if (!kernel_section.cd.data.empty() && !kernel_section.cd.is_decrypted()) {
@@ -1834,10 +1834,10 @@ namespace gxbuild3::nand {
                         Log::Error("Cannot decrypt SD: the SC key is missing");
                         return false;
                     }
-                    kernel_section.cd.decrypt(cb_section.sc->derived_key->data());
+                    kernel_section.cd.decrypt_or_throw(cb_section.sc->derived_key->data());
                 } else if (cb_section.cb_B.has_value() &&
                            cb_section.cb_B->derived_key.has_value()) {
-                    kernel_section.cd.decrypt(cb_section.cb_B->derived_key->data());
+                    kernel_section.cd.decrypt_or_throw(cb_section.cb_B->derived_key->data());
                 } else if (cb_section.cb_or_A.derived_key.has_value()) {
                     const uint8_t* cd_cpu_key = nullptr;
                     if (cb_section.cb_or_A.requires_cpu_key_for_cd()) {
@@ -1847,7 +1847,8 @@ namespace gxbuild3::nand {
                         }
                         cd_cpu_key = cpu_key.data();
                     }
-                    kernel_section.cd.decrypt(cb_section.cb_or_A.derived_key->data(), cd_cpu_key);
+                    kernel_section.cd.decrypt_or_throw(cb_section.cb_or_A.derived_key->data(),
+                                                       cd_cpu_key);
                 } else {
                     Log::Error("Cannot decrypt CD: parent derived key is missing");
                     return false;
@@ -1862,16 +1863,16 @@ namespace gxbuild3::nand {
                 }
                 // When CD arrived plaintext, its key slot is already the handoff
                 // key. For encrypted CD, use the key derived during decryption.
-                kernel_section.ce->decrypt(kernel_section.cd.derived_key
-                                               ? kernel_section.cd.derived_key->data()
-                                               : kernel_section.cd.header.key);
+                kernel_section.ce->decrypt_or_throw(kernel_section.cd.derived_key
+                                                        ? kernel_section.cd.derived_key->data()
+                                                        : kernel_section.cd.header.key);
             }
 
             if (system_update_0.cf.has_value() && !system_update_0.cf->is_decrypted()) {
-                system_update_0.cf->decrypt(key_1bl);
+                system_update_0.cf->decrypt_or_throw(key_1bl);
             }
             if (system_update_1.cf.has_value() && !system_update_1.cf->is_decrypted()) {
-                system_update_1.cf->decrypt(key_1bl);
+                system_update_1.cf->decrypt_or_throw(key_1bl);
             }
             if (system_update_0.cg.has_value() && !system_update_0.cg->is_decrypted()) {
                 if (!system_update_0.cf.has_value() || !system_update_0.cf->is_decrypted()) {
@@ -1883,7 +1884,7 @@ namespace gxbuild3::nand {
                     Log::Error("Cannot decrypt CG0: CF0 payload lacks a 7BL nonce at +0x330");
                     return false;
                 }
-                system_update_0.cg->decrypt(cg_key->data());
+                system_update_0.cg->decrypt_or_throw(cg_key->data());
             }
             if (system_update_1.cg.has_value() && !system_update_1.cg->is_decrypted()) {
                 if (!system_update_1.cf.has_value() || !system_update_1.cf->is_decrypted()) {
@@ -1895,7 +1896,7 @@ namespace gxbuild3::nand {
                     Log::Error("Cannot decrypt CG1: CF1 payload lacks a 7BL nonce at +0x330");
                     return false;
                 }
-                system_update_1.cg->decrypt(cg_key->data());
+                system_update_1.cg->decrypt_or_throw(cg_key->data());
             }
 
             if (smc.has_value() && smc->encrypted) {
@@ -1979,9 +1980,9 @@ namespace gxbuild3::nand {
 
             if (!cb_section.cb_or_A.data.empty() && cb_section.cb_or_A.decrypted) {
                 if (bind_single_cb)
-                    cb_section.cb_or_A.encrypt_retail(key_1bl, cpu_key, smc->data);
+                    cb_section.cb_or_A.encrypt_retail_or_throw(key_1bl, cpu_key, smc->data);
                 else
-                    cb_section.cb_or_A.encrypt(key_1bl);
+                    cb_section.cb_or_A.encrypt_or_throw(key_1bl);
             }
 
             if (plaintext_cb_b && cb_section.cb_x->decrypted) {
@@ -1991,12 +1992,12 @@ namespace gxbuild3::nand {
                 }
                 const std::array<uint8_t, 16> zero_cpu_key{};
                 if ((cb_section.cb_or_A.header.header.flags & 0x1000) != 0) {
-                    cb_section.cb_x->encrypt_v2(cb_section.cb_or_A.header,
-                                                cb_section.cb_or_A.derived_key->data(),
-                                                zero_cpu_key.data());
+                    cb_section.cb_x->encrypt_v2_or_throw(cb_section.cb_or_A.header,
+                                                         cb_section.cb_or_A.derived_key->data(),
+                                                         zero_cpu_key.data());
                 } else {
-                    cb_section.cb_x->encrypt_v1(cb_section.cb_or_A.derived_key->data(),
-                                                zero_cpu_key.data());
+                    cb_section.cb_x->encrypt_v1_or_throw(cb_section.cb_or_A.derived_key->data(),
+                                                         zero_cpu_key.data());
                 }
             }
 
@@ -2027,8 +2028,9 @@ namespace gxbuild3::nand {
                 }
                 // Computes the digest, or zeros it for a manufacturing chain or a zero
                 // CPU key, then seals under CB_A's regime.
-                cb_section.cb_B->encrypt_retail(cb_section.cb_or_A.derived_key->data(), cpu_key,
-                                                smc->data, &cb_section.cb_or_A.header);
+                cb_section.cb_B->encrypt_retail_or_throw(cb_section.cb_or_A.derived_key->data(),
+                                                         cpu_key, smc->data,
+                                                         &cb_section.cb_or_A.header);
             }
 
             // A devkit SC is sealed under the zero secret; its key seals SD. A sealed SC is
@@ -2036,25 +2038,26 @@ namespace gxbuild3::nand {
             if (devkit) {
                 auto& sc = *cb_section.sc;
                 if (!sc.decrypted) {
-                    sc.decrypt(BootloaderSc::kZeroSecret);
+                    sc.decrypt_or_throw(BootloaderSc::kZeroSecret);
                 }
-                sc.encrypt(BootloaderSc::kZeroSecret);
+                sc.encrypt_or_throw(BootloaderSc::kZeroSecret);
             }
 
             // xeBuild's CB_B patches keep CD decryption enabled. Plaintext CD is
             // specific to separate XeLL ECC payloads, not these dashboard builds.
             if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted()) {
                 if (devkit) {
-                    kernel_section.cd.encrypt(cb_section.sc->derived_key->data());
+                    kernel_section.cd.encrypt_or_throw(cb_section.sc->derived_key->data());
                 } else if (cb_section.cb_B.has_value()) {
                     if (!cb_section.cb_B->derived_key.has_value()) {
                         Log::Error("Cannot encrypt CD: CB_B derived key is missing");
                         return false;
                     }
-                    kernel_section.cd.encrypt(cb_section.cb_B->derived_key->data());
+                    kernel_section.cd.encrypt_or_throw(cb_section.cb_B->derived_key->data());
                 } else if (cb_section.cb_or_A.derived_key.has_value()) {
-                    kernel_section.cd.encrypt(cb_section.cb_or_A.derived_key->data(),
-                                              cd_requires_cpu_key ? cpu_key.data() : nullptr);
+                    kernel_section.cd.encrypt_or_throw(cb_section.cb_or_A.derived_key->data(),
+                                                       cd_requires_cpu_key ? cpu_key.data()
+                                                                           : nullptr);
                 } else {
                     Log::Error("Cannot encrypt CD: parent derived key is missing");
                     return false;
@@ -2067,14 +2070,14 @@ namespace gxbuild3::nand {
                     Log::Error("Cannot encrypt CE: CD derived key is missing");
                     return false;
                 }
-                kernel_section.ce->encrypt(kernel_section.cd.derived_key->data());
+                kernel_section.ce->encrypt_or_throw(kernel_section.cd.derived_key->data());
             }
 
             // The JTAG second chain: its CB sealed under HMAC(1BL key, nonce) with the
             // console's block bound to the SMC, and its CD under HMAC(CB key, nonce) with no
             // CPU-key pass, which only a retail single-CB chain takes.
             if (bind_extra_cb) {
-                payloads.extra_cb->encrypt_retail(key_1bl, cpu_key, smc->data);
+                payloads.extra_cb->encrypt_retail_or_throw(key_1bl, cpu_key, smc->data);
             }
             if (payloads.extra_cd && !payloads.extra_cd->data.empty() &&
                 payloads.extra_cd->is_decrypted()) {
@@ -2082,7 +2085,7 @@ namespace gxbuild3::nand {
                     Log::Error("Cannot encrypt the JTAG second CD: its CB key is missing");
                     return false;
                 }
-                payloads.extra_cd->encrypt(payloads.extra_cb->derived_key->data());
+                payloads.extra_cd->encrypt_or_throw(payloads.extra_cb->derived_key->data());
             }
 
             const bool glitch_layout =
@@ -2093,13 +2096,13 @@ namespace gxbuild3::nand {
                 if (!slot.cf || !slot.cg)
                     return true;
                 if (slot.cg->decrypted) {
-                    slot.cf->decrypt(key_1bl);
+                    slot.cf->decrypt_or_throw(key_1bl);
                     const auto cg_key = slot.cf->cg_key();
                     if (!cg_key) {
                         Log::Error("Cannot encrypt CG: CF payload lacks a 7BL nonce at +0x330");
                         return false;
                     }
-                    slot.cg->encrypt(cg_key->data());
+                    slot.cg->encrypt_or_throw(cg_key->data());
                 }
                 const auto cg = slot.cg->serialize();
                 const size_t cf_size = align_16(slot.cf->serialize().size());
@@ -2107,7 +2110,7 @@ namespace gxbuild3::nand {
                     return false;
                 const size_t prefix = std::min(cg.size(), stride - cf_size);
                 if (prefix == cg.size()) {
-                    slot.cf->decrypt(key_1bl);
+                    slot.cf->decrypt_or_throw(key_1bl);
                     if (slot.cf->data.size() >= 0x1C0)
                         std::fill_n(slot.cf->data.begin(), 0x1C0, 0);
                     slot.cg_spill_blocks.clear();
@@ -2152,7 +2155,7 @@ namespace gxbuild3::nand {
                 auto chain = filesystem->get_chain(entry->block_number);
                 if (chain.size() > 223 || chain.size() != (cg.size() - prefix + 0x3FFF) / 0x4000)
                     return false;
-                slot.cf->decrypt(key_1bl);
+                slot.cf->decrypt_or_throw(key_1bl);
                 if (slot.cf->data.size() < 0x1C0)
                     return false;
                 std::fill_n(slot.cf->data.begin(), 0x1C0, 0);
@@ -2174,14 +2177,14 @@ namespace gxbuild3::nand {
                 if (!cpu_key.empty() && update_slot_binds_console(build_type, 0)) {
                     system_update_0.cf->calc_mac(key_1bl, cpu_key.data());
                 }
-                system_update_0.cf->encrypt(key_1bl);
+                system_update_0.cf->encrypt_or_throw(key_1bl);
             }
             if (system_update_1.cf.has_value() && system_update_1.cf->is_decrypted()) {
                 system_update_1.cf->serialize_perbox();
                 if (!cpu_key.empty() && update_slot_binds_console(build_type, 1)) {
                     system_update_1.cf->calc_mac(key_1bl, cpu_key.data());
                 }
-                system_update_1.cf->encrypt(key_1bl);
+                system_update_1.cf->encrypt_or_throw(key_1bl);
             }
 
             if (smc.has_value() && !smc->encrypted) {

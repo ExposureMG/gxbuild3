@@ -832,14 +832,14 @@ namespace {
         ExCryptRc4(rc4_key, 0x10, expected.data() + 0x20,
                    static_cast<uint32_t>(expected.size() - 0x20));
 
-        cd.encrypt(parent_key.data(), cpu_key.data());
+        cd.encrypt_or_throw(parent_key.data(), cpu_key.data());
         if (!check(
                 cd.serialize() == expected,
                 "single-CB CD encryption must apply the CPU-key HMAC after the parent-key HMAC")) {
             return false;
         }
 
-        cd.decrypt(parent_key.data(), cpu_key.data());
+        cd.decrypt_or_throw(parent_key.data(), cpu_key.data());
         if (!check(cd.serialize() == plaintext,
                    "single-CB CD decryption must reverse the CPU-key-derived encryption")) {
             return false;
@@ -848,13 +848,13 @@ namespace {
         auto expected_split_chain = plaintext;
         ExCryptRc4(parent_digest, 0x10, expected_split_chain.data() + 0x20,
                    static_cast<uint32_t>(expected_split_chain.size() - 0x20));
-        cd.encrypt(parent_key.data());
+        cd.encrypt_or_throw(parent_key.data());
         if (!check(cd.serialize() == expected_split_chain,
                    "split-CB CD encryption must use only the CB_B-derived parent key")) {
             return false;
         }
 
-        cd.decrypt(parent_key.data());
+        cd.decrypt_or_throw(parent_key.data());
         return check(cd.serialize() == plaintext,
                      "split-CB CD decryption must reverse the default parent-key encryption");
     }

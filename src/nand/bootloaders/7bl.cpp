@@ -11,7 +11,7 @@
 
 namespace gxbuild3::nand {
 
-    BootloaderCg BootloaderCg::parse(const std::vector<uint8_t>& bytes) {
+    BootloaderCg BootloaderCg::parse_or_throw(const std::vector<uint8_t>& bytes) {
         BootloaderCg cg;
         if (bytes.size() < sizeof(cg_header))
             throw std::runtime_error("CG/7BL data too short");
@@ -28,7 +28,7 @@ namespace gxbuild3::nand {
         return cg;
     }
 
-    void BootloaderCg::decrypt(const uint8_t cg_hmac[16]) {
+    void BootloaderCg::decrypt_or_throw(const uint8_t cg_hmac[16]) {
         if (decrypted)
             return;
         uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
@@ -59,7 +59,7 @@ namespace gxbuild3::nand {
         decrypted = true;
     }
 
-    void BootloaderCg::encrypt(const uint8_t cg_hmac[16]) {
+    void BootloaderCg::encrypt_or_throw(const uint8_t cg_hmac[16]) {
         if (!decrypted)
             return;
         uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;

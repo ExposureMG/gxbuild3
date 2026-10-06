@@ -129,7 +129,7 @@ static bool spill(BuildType type) {
                 return false;
     }
     auto c = *f.system_update_0.cf;
-    c.decrypt(key_1bl);
+    c.decrypt_or_throw(key_1bl);
     if (!check(c.data[0] != 0 || c.data[1] != 0, "CF has a CG continuation block list"))
         return false;
     auto parsed = FlashImage::read(f.write());
@@ -151,10 +151,10 @@ static bool spill(BuildType type) {
         return false;
     // A duplicate continuation cluster must not silently replace part of the CG.
     auto corrupt = *f.system_update_0.cf;
-    corrupt.decrypt(key_1bl);
+    corrupt.decrypt_or_throw(key_1bl);
     corrupt.data[4] = corrupt.data[2];
     corrupt.data[5] = corrupt.data[3];
-    corrupt.encrypt(key_1bl);
+    corrupt.encrypt_or_throw(key_1bl);
     parsed->flash_driver.write_offset(parsed->header.cf_offset, corrupt.serialize());
     auto damaged = FlashImage::read(parsed->flash_driver.serialize());
     if (!check(damaged && !damaged->parse(), "duplicate CG continuation clusters are rejected"))
@@ -164,7 +164,7 @@ static bool spill(BuildType type) {
     if (!check(f.encrypt_all({}, type), "shrunk CG prepares"))
         return false;
     auto shrunk = *f.system_update_0.cf;
-    shrunk.decrypt(key_1bl);
+    shrunk.decrypt_or_throw(key_1bl);
     return check(shrunk.data[0] == 0 && shrunk.data[1] == 0 &&
                      !f.filesystem->exists("sysupdate.xexp1"),
                  "shrinking CG clears its block table and obsolete continuation file");

@@ -11,7 +11,7 @@
 
 namespace gxbuild3::nand {
 
-    BootloaderSc BootloaderSc::parse(const std::vector<uint8_t>& bytes) {
+    BootloaderSc BootloaderSc::parse_or_throw(const std::vector<uint8_t>& bytes) {
         BootloaderSc sc;
         if (bytes.size() < sizeof(sc_header))
             throw std::runtime_error("SC/3BL data too short");
@@ -27,7 +27,7 @@ namespace gxbuild3::nand {
         return sc;
     }
 
-    void BootloaderSc::decrypt(const uint8_t secret[16]) {
+    void BootloaderSc::decrypt_or_throw(const uint8_t secret[16]) {
         if (decrypted)
             return;
         uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
@@ -56,7 +56,7 @@ namespace gxbuild3::nand {
         decrypted = true;
     }
 
-    void BootloaderSc::encrypt(const uint8_t secret[16]) {
+    void BootloaderSc::encrypt_or_throw(const uint8_t secret[16]) {
         if (!decrypted)
             return;
         uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;

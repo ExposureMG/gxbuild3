@@ -11,7 +11,7 @@
 
 namespace gxbuild3::nand {
 
-    BootloaderCf BootloaderCf::parse(const std::vector<uint8_t>& bytes) {
+    BootloaderCf BootloaderCf::parse_or_throw(const std::vector<uint8_t>& bytes) {
         BootloaderCf cf;
         if (bytes.size() < sizeof(cf_header))
             throw std::runtime_error("CF/6BL data too short");
@@ -30,7 +30,7 @@ namespace gxbuild3::nand {
         return cf;
     }
 
-    void BootloaderCf::decrypt(const uint8_t onebl_key[16]) {
+    void BootloaderCf::decrypt_or_throw(const uint8_t onebl_key[16]) {
         if (decrypted)
             return;
 
@@ -53,7 +53,7 @@ namespace gxbuild3::nand {
         parse_perbox();
     }
 
-    void BootloaderCf::encrypt(const uint8_t onebl_key[16]) {
+    void BootloaderCf::encrypt_or_throw(const uint8_t onebl_key[16]) {
         if (!decrypted)
             return;
         serialize_perbox();

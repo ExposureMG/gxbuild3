@@ -66,16 +66,16 @@ namespace {
             return false;
 
         const uint8_t zero_secret[16] = {};
-        auto sc = BootloaderSc::parse(plain);
+        auto sc = BootloaderSc::parse_or_throw(plain);
         sc.decrypted = true;
-        sc.encrypt(zero_secret);
+        sc.encrypt_or_throw(zero_secret);
         const Bytes sealed = sc.serialize();
         if (!require(sha1(sealed) == digest_from_hex(kSealedSc),
                      "SC sealed under the zero secret matches xerunner"))
             return false;
 
-        auto reopened = BootloaderSc::parse(sealed);
-        reopened.decrypt(zero_secret);
+        auto reopened = BootloaderSc::parse_or_throw(sealed);
+        reopened.decrypt_or_throw(zero_secret);
         return require(reopened.serialize() == plain, "sealed SC opens back to the release file");
     }
 
@@ -174,9 +174,9 @@ namespace {
         if (!require(cba_bytes.size() > 0x400 && cbb_bytes.size() > 0x400,
                      "cba_9188_mfg.bin and cbb_6752.bin fixtures are present"))
             return false;
-        auto cba = BootloaderCb::parse(cba_bytes);
+        auto cba = BootloaderCb::parse_or_throw(cba_bytes);
         cba.decrypted = true;
-        cba.encrypt(key_1bl);
+        cba.encrypt_or_throw(key_1bl);
         if (!require(cba.derived_key && *cba.derived_key == key_from_hex(kCbAKey),
                      "CB_A key matches xerunner"))
             return false;
@@ -193,17 +193,17 @@ namespace {
             header.header.flags = vector.flags;
             for (const auto& [cpu, expected] : {std::pair{cpu_0f, vector.cb_b_key_cpu_0f},
                                                 std::pair{cpu_a5, vector.cb_b_key_cpu_a5}}) {
-                auto cbb = BootloaderCb::parse(cbb_bytes);
+                auto cbb = BootloaderCb::parse_or_throw(cbb_bytes);
                 cbb.decrypted = true;
                 cbb.populate_metadata();
-                cbb.encrypt_cb_b(header, cba.derived_key->data(), cpu.data());
+                cbb.encrypt_cb_b_or_throw(header, cba.derived_key->data(), cpu.data());
                 const std::string label = "CB_B key under CB_A flags " +
                                           std::to_string(vector.flags) + " matches xerunner";
                 ok =
                     require(cbb.derived_key && *cbb.derived_key == key_from_hex(expected), label) &&
                     ok;
-                auto sealed = BootloaderCb::parse(cbb.serialize());
-                sealed.decrypt_cb_b(header, cba.derived_key->data(), cpu.data());
+                auto sealed = BootloaderCb::parse_or_throw(cbb.serialize());
+                sealed.decrypt_cb_b_or_throw(header, cba.derived_key->data(), cpu.data());
                 ok = require(sealed.serialize() == cbb_bytes, "CB_B opens back: " + label) && ok;
             }
         }
@@ -215,9 +215,9 @@ namespace {
     bool test_unbound_cb_b_has_zero_digest() {
         const Bytes cba_bytes = read_common("cba_9188_mfg.bin");
         const Bytes cbb_bytes = read_common("cbb_6752.bin");
-        auto cba = BootloaderCb::parse(cba_bytes);
+        auto cba = BootloaderCb::parse_or_throw(cba_bytes);
         cba.decrypted = true;
-        cba.encrypt(key_1bl);
+        cba.encrypt_or_throw(key_1bl);
         const Bytes smc(0x3000, 0x5A);
 
         Key cpu_0f{};
@@ -231,14 +231,14 @@ namespace {
               std::tuple{uint16_t{0x1801}, cpu_0f, kCbBVectors[1].cb_b_key_cpu_0f}}) {
             auto header = cba.header;
             header.header.flags = flags;
-            auto cbb = BootloaderCb::parse(cbb_bytes);
+            auto cbb = BootloaderCb::parse_or_throw(cbb_bytes);
             cbb.decrypted = true;
             cbb.populate_metadata();
-            cbb.encrypt_retail(cba.derived_key->data(), cpu, smc, &header);
+            cbb.encrypt_retail_or_throw(cba.derived_key->data(), cpu, smc, &header);
             ok = require(cbb.derived_key && *cbb.derived_key == key_from_hex(expected),
                          "retail seal of a manufacturing CB_B uses xerunner's key") &&
                  ok;
-            cbb.decrypt_cb_b(header, cba.derived_key->data(), cpu.data());
+            cbb.decrypt_cb_b_or_throw(header, cba.derived_key->data(), cpu.data());
             ok = require(std::all_of(cbb.data.begin() + 0x20, cbb.data.begin() + 0x30,
                                      [](uint8_t b) { return b == 0; }),
                          "manufacturing CB_B digest slot is zero") &&
@@ -247,11 +247,11 @@ namespace {
 
         auto header = cba.header;
         header.header.flags = 0x0800;
-        auto cbb = BootloaderCb::parse(cbb_bytes);
+        auto cbb = BootloaderCb::parse_or_throw(cbb_bytes);
         cbb.decrypted = true;
         cbb.populate_metadata();
-        cbb.encrypt_retail(cba.derived_key->data(), zero_cpu, smc, &header);
-        cbb.decrypt_cb_b(header, cba.derived_key->data(), zero_cpu.data());
+        cbb.encrypt_retail_or_throw(cba.derived_key->data(), zero_cpu, smc, &header);
+        cbb.decrypt_cb_b_or_throw(header, cba.derived_key->data(), zero_cpu.data());
         ok = require(std::all_of(cbb.data.begin() + 0x20, cbb.data.begin() + 0x30,
                                  [](uint8_t b) { return b == 0; }),
                      "zero-CPU-key CB_B digest slot is zero") &&
@@ -275,9 +275,9 @@ namespace {
         if (!require(cba_bytes.size() > 0x400 && cbb_bytes.size() > 0x400,
                      "cba_9188.bin and cbb_6752.bin fixtures are present"))
             return false;
-        auto cba = BootloaderCb::parse(cba_bytes);
+        auto cba = BootloaderCb::parse_or_throw(cba_bytes);
         cba.decrypted = true;
-        cba.encrypt(key_1bl);
+        cba.encrypt_or_throw(key_1bl);
 
         Bytes smc(0x3000);
         for (size_t i = 0; i < smc.size(); ++i)
@@ -290,7 +290,7 @@ namespace {
         for (const auto& [flags, expected] : kBoundCbB) {
             auto header = cba.header;
             header.header.flags = flags;
-            auto cbb = BootloaderCb::parse(cbb_bytes);
+            auto cbb = BootloaderCb::parse_or_throw(cbb_bytes);
             cbb.decrypted = true;
             cbb.populate_metadata();
             // xerunner's console block: pairing, LDV 0, twelve zero bytes.
@@ -299,7 +299,7 @@ namespace {
             cbb.perbox->pairing_data[1] = 0x34;
             cbb.perbox->pairing_data[2] = 0x56;
             cbb.serialize_perbox();
-            cbb.encrypt_retail(cba.derived_key->data(), cpu, smc, &header);
+            cbb.encrypt_retail_or_throw(cba.derived_key->data(), cpu, smc, &header);
             ok = require(sha1(cbb.serialize()) == digest_from_hex(expected),
                          "bound CB_B under CB_A flags " + std::to_string(flags) +
                              " matches xerunner") &&

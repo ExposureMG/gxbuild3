@@ -184,7 +184,7 @@ namespace {
             keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)));
         input.bootloaders = valid_bootloaders();
 
-        auto cb = BootloaderCb::parse(input.bootloaders.cb_or_a);
+        auto cb = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
         cb.data.resize(sizeof(cb_header) - sizeof(generic_header), 0);
         cb.header.header.size = static_cast<uint32_t>(sizeof(generic_header) + cb.data.size());
         if (!cb.parse_perbox()) {

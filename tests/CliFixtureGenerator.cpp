@@ -64,7 +64,7 @@ namespace {
         sc.header.header.size = static_cast<uint32_t>(sizeof(sc_header) + 0x20);
         sc.data.assign(0x20, 0x53);
         sc.decrypted = true;
-        sc.encrypt(BootloaderSc::kZeroSecret);
+        sc.encrypt_or_throw(BootloaderSc::kZeroSecret);
 
         BootloaderCd cd{};
         cd.header.header.magic = NANDBootloaderMagic::CD;
@@ -110,10 +110,10 @@ namespace {
 
         auto cf0 = make_cf(5, 0x50);
         auto cg0 = make_cg(6, 0x60);
-        cg0.encrypt(cf0.data.data() + 0x300);
+        cg0.encrypt_or_throw(cf0.data.data() + 0x300);
         auto cf1 = make_cf(7, 0x70);
         auto cg1 = make_cg(8, 0x80);
-        cg1.encrypt(cf1.data.data() + 0x300);
+        cg1.encrypt_or_throw(cf1.data.data() + 0x300);
 
         InputBootloaders bootloaders{};
         bootloaders.cb_or_a = cb.serialize();

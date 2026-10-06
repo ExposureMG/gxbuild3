@@ -11,7 +11,7 @@
 
 namespace gxbuild3::nand {
 
-    BootloaderCe BootloaderCe::parse(const std::vector<uint8_t>& bytes) {
+    BootloaderCe BootloaderCe::parse_or_throw(const std::vector<uint8_t>& bytes) {
         BootloaderCe ce;
         if (bytes.size() < sizeof(ce_header))
             throw std::runtime_error("CE/5BL data too short");
@@ -28,7 +28,7 @@ namespace gxbuild3::nand {
         return ce;
     }
 
-    void BootloaderCe::decrypt(const uint8_t cd_key[16]) {
+    void BootloaderCe::decrypt_or_throw(const uint8_t cd_key[16]) {
         if (decrypted)
             return;
         uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
@@ -61,7 +61,7 @@ namespace gxbuild3::nand {
         decrypted = true;
     }
 
-    void BootloaderCe::encrypt(const uint8_t cd_key[16]) {
+    void BootloaderCe::encrypt_or_throw(const uint8_t cd_key[16]) {
         if (!decrypted)
             return;
         uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;

@@ -13,7 +13,7 @@
 
 namespace gxbuild3::nand {
 
-    BootloaderCb BootloaderCb::parse(const std::vector<uint8_t>& bytes) {
+    BootloaderCb BootloaderCb::parse_or_throw(const std::vector<uint8_t>& bytes) {
         BootloaderCb cb{};
 
         if (bytes.size() < sizeof(generic_header))
@@ -70,7 +70,7 @@ namespace gxbuild3::nand {
     }
 
     // CB / CB_A
-    void BootloaderCb::decrypt(const uint8_t onebl_key[16]) {
+    void BootloaderCb::decrypt_or_throw(const uint8_t onebl_key[16]) {
         uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
         size_t payload_len = size_aligned - sizeof(generic_header);
         uint8_t digest[20];
@@ -96,7 +96,7 @@ namespace gxbuild3::nand {
     }
 
     // CB_B
-    void BootloaderCb::decrypt_v1(const uint8_t cb_a_key[16], const uint8_t cpu_key[16]) {
+    void BootloaderCb::decrypt_v1_or_throw(const uint8_t cb_a_key[16], const uint8_t cpu_key[16]) {
         uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
         size_t payload_len = size_aligned - sizeof(generic_header);
         uint8_t digest[20];
@@ -122,8 +122,8 @@ namespace gxbuild3::nand {
     }
 
     // Other CB_B impl?
-    void BootloaderCb::decrypt_v2(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
-                                  const uint8_t cpu_key[16]) {
+    void BootloaderCb::decrypt_v2_or_throw(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
+                                           const uint8_t cpu_key[16]) {
         uint8_t digest[20];
         uint8_t cb_a_hdr_copy[16];
         std::array<uint8_t, 16> key;
@@ -162,10 +162,10 @@ namespace gxbuild3::nand {
             populate_metadata();
     }
 
-    void BootloaderCb::encrypt_retail(const uint8_t parent_key[16],
-                                      std::span<const uint8_t> cpu_key,
-                                      std::span<const uint8_t> encrypted_smc,
-                                      const cb_header* cb_a_header) {
+    void BootloaderCb::encrypt_retail_or_throw(const uint8_t parent_key[16],
+                                               std::span<const uint8_t> cpu_key,
+                                               std::span<const uint8_t> encrypted_smc,
+                                               const cb_header* cb_a_header) {
         if (!decrypted || cpu_key.size() != 16 || encrypted_smc.empty() ||
             encrypted_smc.size() % 4 != 0 || !parse_perbox()) {
             throw std::runtime_error(
@@ -182,7 +182,7 @@ namespace gxbuild3::nand {
             std::fill(std::begin(perbox->per_box_digest), std::end(perbox->per_box_digest), 0);
             if (!serialize_perbox())
                 throw std::runtime_error("Could not serialize retail CB authentication digest");
-            encrypt_cb_b(*cb_a_header, parent_key, cpu_key.data());
+            encrypt_cb_b_or_throw(*cb_a_header, parent_key, cpu_key.data());
             return;
         }
 
@@ -223,23 +223,23 @@ namespace gxbuild3::nand {
             throw std::runtime_error("Could not serialize retail CB authentication digest");
 
         if (!cb_a_header)
-            encrypt(parent_key);
+            encrypt_or_throw(parent_key);
         else
-            encrypt_cb_b(*cb_a_header, parent_key, cpu_key.data());
+            encrypt_cb_b_or_throw(*cb_a_header, parent_key, cpu_key.data());
     }
 
-    void BootloaderCb::decrypt_cb_b(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
-                                    const uint8_t cpu_key[16]) {
+    void BootloaderCb::decrypt_cb_b_or_throw(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
+                                             const uint8_t cpu_key[16]) {
         static constexpr uint8_t zero_key[16] = {};
         if (manufacturing_chain(cb_a_hdr))
-            decrypt_v1(cb_a_key, zero_key);
+            decrypt_v1_or_throw(cb_a_key, zero_key);
         else if ((cb_a_hdr.header.flags & 0x1000) != 0)
-            decrypt_v2(cb_a_hdr, cb_a_key, cpu_key);
+            decrypt_v2_or_throw(cb_a_hdr, cb_a_key, cpu_key);
         else
-            decrypt_v1(cb_a_key, cpu_key);
+            decrypt_v1_or_throw(cb_a_key, cpu_key);
     }
 
-    void BootloaderCb::decrypt_mfg(const uint8_t cb_a_key[16]) {
+    void BootloaderCb::decrypt_mfg_or_throw(const uint8_t cb_a_key[16]) {
         uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
         size_t payload_len = size_aligned - sizeof(generic_header);
         uint8_t hmac_input[0x20];

@@ -434,7 +434,7 @@ namespace gxbuild3 {
                 if (flash_image.cb_section.cb_B.has_value()) {
                     auto& cb_b = *flash_image.cb_section.cb_B;
                     if (!cb_a.decrypted) {
-                        cb_a.decrypt(key_1bl);
+                        cb_a.decrypt_or_throw(key_1bl);
                     }
                     if (!cb_b.decrypted) {
                         if (!cb_a.derived_key.has_value()) {
@@ -442,8 +442,8 @@ namespace gxbuild3 {
                                 BuildErrorCode::InvalidBootloader,
                                 "Could not derive CB_A key for replacement CB_B metadata"});
                         }
-                        cb_b.decrypt_cb_b(cb_a.header, cb_a.derived_key->data(),
-                                          metadata.cpu_key.data());
+                        cb_b.decrypt_cb_b_or_throw(cb_a.header, cb_a.derived_key->data(),
+                                                   metadata.cpu_key.data());
                     }
                     auto applied = zero_paired_cb_b ? zero_pair_cb(cb_b, "CB_B")
                                                     : apply_cb_metadata(cb_b, metadata, "CB_B");
@@ -452,7 +452,7 @@ namespace gxbuild3 {
                     }
                 } else {
                     if (!cb_a.decrypted) {
-                        cb_a.decrypt(key_1bl);
+                        cb_a.decrypt_or_throw(key_1bl);
                     }
                     auto applied = main_cb_paired ? apply_cb_metadata(cb_a, metadata, "CB/A")
                                                   : zero_pair_cb(cb_a, "CB/A");
@@ -463,7 +463,7 @@ namespace gxbuild3 {
 
                 if (auto& extra_cb = flash_image.payloads.extra_cb; extra_cb) {
                     if (!extra_cb->decrypted) {
-                        extra_cb->decrypt(key_1bl);
+                        extra_cb->decrypt_or_throw(key_1bl);
                     }
                     if (auto applied = apply_cb_metadata(*extra_cb, metadata, "JTAG second CB");
                         !applied) {
@@ -474,7 +474,7 @@ namespace gxbuild3 {
                 if (flash_image.system_update_0.cf.has_value()) {
                     auto& cf = *flash_image.system_update_0.cf;
                     if (!cf.is_decrypted()) {
-                        cf.decrypt(key_1bl);
+                        cf.decrypt_or_throw(key_1bl);
                     }
                     if (update_slot_binds_console(build_type, 0)) {
                         if (auto applied =
@@ -487,7 +487,7 @@ namespace gxbuild3 {
                 if (flash_image.system_update_1.cf.has_value()) {
                     auto& cf = *flash_image.system_update_1.cf;
                     if (!cf.is_decrypted()) {
-                        cf.decrypt(key_1bl);
+                        cf.decrypt_or_throw(key_1bl);
                     }
                     if (update_slot_binds_console(build_type, 1)) {
                         if (auto applied =
@@ -676,7 +676,7 @@ namespace gxbuild3 {
                 auto& cg = slot->cg;
                 if (cg && !cg->decrypted && !cg->data.empty() && cf && cf->is_decrypted()) {
                     if (const auto key = cf->cg_key()) {
-                        cg->decrypt(key->data());
+                        cg->decrypt_or_throw(key->data());
                     }
                 }
                 if (cg && cg->decrypted && !cg->data.empty()) {
@@ -972,9 +972,10 @@ namespace gxbuild3 {
             flash_image.system_update_0 = SystemUpdate{};
             flash_image.system_update_1 = SystemUpdate{};
 
-            flash_image.cb_section.cb_or_A = BootloaderCb::parse(input.bootloaders.cb_or_a);
+            flash_image.cb_section.cb_or_A =
+                BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
             if (input.bootloaders.cb_x && !input.bootloaders.cb_x->empty()) {
-                flash_image.cb_section.cb_x = BootloaderCb::parse(*input.bootloaders.cb_x);
+                flash_image.cb_section.cb_x = BootloaderCb::parse_or_throw(*input.bootloaders.cb_x);
                 if (input.build_type == BuildType::Glitch3) {
                     // Input CB_X is explicitly plaintext. It can contain instructions
                     // in the region the retail-CB parser uses for plaintext detection.
@@ -987,26 +988,30 @@ namespace gxbuild3 {
                 }
             }
             if (input.bootloaders.cb_b && !input.bootloaders.cb_b->empty()) {
-                flash_image.cb_section.cb_B = BootloaderCb::parse(*input.bootloaders.cb_b);
+                flash_image.cb_section.cb_B = BootloaderCb::parse_or_throw(*input.bootloaders.cb_b);
             }
             if (input.bootloaders.sc && !input.bootloaders.sc->empty()) {
-                flash_image.cb_section.sc = BootloaderSc::parse(*input.bootloaders.sc);
+                flash_image.cb_section.sc = BootloaderSc::parse_or_throw(*input.bootloaders.sc);
             }
-            flash_image.kernel_section.cd = BootloaderCd::parse(input.bootloaders.cd);
+            flash_image.kernel_section.cd = BootloaderCd::parse_or_throw(input.bootloaders.cd);
             if (input.bootloaders.ce && !input.bootloaders.ce->empty()) {
-                flash_image.kernel_section.ce = BootloaderCe::parse(*input.bootloaders.ce);
+                flash_image.kernel_section.ce = BootloaderCe::parse_or_throw(*input.bootloaders.ce);
             }
             if (input.bootloaders.cf0 && !input.bootloaders.cf0->empty()) {
-                flash_image.system_update_0.cf = BootloaderCf::parse(*input.bootloaders.cf0);
+                flash_image.system_update_0.cf =
+                    BootloaderCf::parse_or_throw(*input.bootloaders.cf0);
             }
             if (input.bootloaders.cg0 && !input.bootloaders.cg0->empty()) {
-                flash_image.system_update_0.cg = BootloaderCg::parse(*input.bootloaders.cg0);
+                flash_image.system_update_0.cg =
+                    BootloaderCg::parse_or_throw(*input.bootloaders.cg0);
             }
             if (input.bootloaders.cf1 && !input.bootloaders.cf1->empty()) {
-                flash_image.system_update_1.cf = BootloaderCf::parse(*input.bootloaders.cf1);
+                flash_image.system_update_1.cf =
+                    BootloaderCf::parse_or_throw(*input.bootloaders.cf1);
             }
             if (input.bootloaders.cg1 && !input.bootloaders.cg1->empty()) {
-                flash_image.system_update_1.cg = BootloaderCg::parse(*input.bootloaders.cg1);
+                flash_image.system_update_1.cg =
+                    BootloaderCg::parse_or_throw(*input.bootloaders.cg1);
             }
             // A devkit chain is supplied plaintext, as a release ships it and extract_all returns
             // it; the parsers' plaintext tests are for retail stages. The header states the SE
@@ -1169,7 +1174,7 @@ namespace gxbuild3 {
                     return BuildError{BuildErrorCode::PatchFailure, patched.error().message};
                 }
                 try {
-                    bootloader = std::decay_t<decltype(bootloader)>::parse(*patched);
+                    bootloader = std::decay_t<decltype(bootloader)>::parse_or_throw(*patched);
                 } catch (const std::exception& exception) {
                     return BuildError{BuildErrorCode::PatchFailure, "Failed to reparse patched " +
                                                                         std::string(stage_name) +
@@ -1220,7 +1225,7 @@ namespace gxbuild3 {
                                        "Could not sign the SD with the SB private key");
                 }
                 try {
-                    sd = BootloaderCd::parse(sd_bytes);
+                    sd = BootloaderCd::parse_or_throw(sd_bytes);
                 } catch (const std::exception& exception) {
                     return build_error(BuildErrorCode::PatchFailure,
                                        std::string("Failed to reparse the signed SD: ") +
@@ -1234,7 +1239,8 @@ namespace gxbuild3 {
         // are sealed with the main chain, so they are parsed before its metadata and nonces.
         if (input.bootloaders.extra_cb) {
             try {
-                flash_image.payloads.extra_cb = BootloaderCb::parse(*input.bootloaders.extra_cb);
+                flash_image.payloads.extra_cb =
+                    BootloaderCb::parse_or_throw(*input.bootloaders.extra_cb);
             } catch (const std::exception& exception) {
                 return build_error(BuildErrorCode::InvalidBootloader,
                                    std::string("Failed to parse JTAG extra CB: ") +
@@ -1243,7 +1249,8 @@ namespace gxbuild3 {
         }
         if (input.bootloaders.extra_cd) {
             try {
-                flash_image.payloads.extra_cd = BootloaderCd::parse(*input.bootloaders.extra_cd);
+                flash_image.payloads.extra_cd =
+                    BootloaderCd::parse_or_throw(*input.bootloaders.extra_cd);
             } catch (const std::exception& exception) {
                 return build_error(BuildErrorCode::InvalidBootloader,
                                    std::string("Failed to parse JTAG extra CD: ") +
