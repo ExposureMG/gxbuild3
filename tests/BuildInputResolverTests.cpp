@@ -1,4 +1,7 @@
 #include "BuildRunner.hpp"
+#include "ExtractProjection.hpp"
+#include "GoldenSnapshot.hpp"
+#include "ScopedTimeZone.hpp"
 #include "XeRsaTestKey.hpp"
 #include "cli/BuildInputResolver.hpp"
 #include "excrypt.h"
@@ -15,6 +18,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -177,7 +181,7 @@ namespace {
         return *built;
     }
 
-    Bytes donor_image_with_metadata(ImageType type, std::span<const uint8_t> key) {
+    Input donor_input_with_metadata(ImageType type, std::span<const uint8_t> key) {
         Input input{};
         input.image_type = type;
         input.metadata.cpu_key.assign(key.begin(), key.end());
@@ -225,8 +229,11 @@ namespace {
         input.metadata.cb_ldv = 7;
         input.metadata.cf_ldv = 8;
         input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
+        return input;
+    }
 
-        const auto built = run_build(input);
+    Bytes donor_image_with_metadata(ImageType type, std::span<const uint8_t> key) {
+        const auto built = run_build(donor_input_with_metadata(type, key));
         if (!built) {
             std::abort();
         }
@@ -1785,9 +1792,286 @@ namespace {
                        "validate_input failure becomes a structured InvalidInput error");
     }
 
+    // Holds SOURCE_DATE_EPOCH to a value for a scope and gives back the value the process had.
+    class ScopedSourceDateEpoch {
+      public:
+        explicit ScopedSourceDateEpoch(const char* value) {
+            if (const char* previous = std::getenv("SOURCE_DATE_EPOCH")) {
+                previous_ = previous;
+            }
+            set(value);
+        }
+
+        ~ScopedSourceDateEpoch() { set(previous_ ? previous_->c_str() : nullptr); }
+
+        ScopedSourceDateEpoch(const ScopedSourceDateEpoch&) = delete;
+        ScopedSourceDateEpoch& operator=(const ScopedSourceDateEpoch&) = delete;
+
+      private:
+        static void set(const char* value) {
+#ifdef _WIN32
+            _putenv_s("SOURCE_DATE_EPOCH", value ? value : "");
+#else
+            if (value) {
+                setenv("SOURCE_DATE_EPOCH", value, 1);
+            } else {
+                unsetenv("SOURCE_DATE_EPOCH");
+            }
+#endif
+        }
+
+        std::optional<std::string> previous_;
+    };
+
+    // A donor image built twice under the pinned build time (SOURCE_DATE_EPOCH=1791105724 in
+    // UTC) with every donor nonce filled, so no nonce is drawn; nullopt unless both builds succeed
+    // and are byte-identical.
+    std::optional<Bytes> pinned_donor_image(Input input, std::string_view label) {
+        const auto filled = [](uint8_t value) {
+            BootloaderNonce nonce{};
+            nonce.fill(value);
+            return nonce;
+        };
+        DonorNonces nonces{};
+        nonces.stages = {filled(0xA1), filled(0xA2), filled(0xA3), filled(0xA4)};
+        nonces.cf = filled(0xB1);
+        nonces.cg = filled(0xC1);
+        input.metadata.donor_nonces = nonces;
+
+        const ScopedTimeZone utc{"UTC0"};
+        const ScopedSourceDateEpoch epoch{"1791105724"};
+        const auto first = run_build(input);
+        const auto second = run_build(input);
+        if (!first || !second) {
+            std::cerr << "DONOR BUILD ERROR: " << label << ": "
+                      << (first ? second.error().message : first.error().message) << '\n';
+            return std::nullopt;
+        }
+        if (!require(*first == *second, std::string(label) + " donor builds byte-identically")) {
+            return std::nullopt;
+        }
+        return *first;
+    }
+
+    // A small-block glitch2 donor whose image carries a XeLL, so extract_all hands back
+    // payloads: CB_A and CB_B, SC, CD, a patch file and an ELF-headed 0x40000-byte XeLL.
+    Input glitch2_donor_input(std::span<const uint8_t> key) {
+        Input input{};
+        input.image_type = ImageType::SmallBlock;
+        input.build_type = BuildType::Glitch2;
+        input.metadata.cpu_key.assign(key.begin(), key.end());
+        input.metadata.smc = make_smc(0x65);
+        input.metadata.keyvault = canonical_keyvault(key, 0x66);
+        input.bootloaders = valid_bootloaders();
+        input.bootloaders.cb_b = input.bootloaders.cb_or_a;
+        InputPatches patches{};
+        patches.automatic = InputPatchFile{"automatic", valid_glitch_patchset(0xC5)};
+        input.patches = std::move(patches);
+        Bytes xell(0x40000, 0x00);
+        xell[0] = 0x7F;
+        xell[1] = 'E';
+        xell[2] = 'L';
+        xell[3] = 'F';
+        xell[0x100] = 0x58;
+        InputPayloads payloads{};
+        payloads.xell = std::move(xell);
+        input.payloads = std::move(payloads);
+        return input;
+    }
+
+    // One BuildRequest as golden lines: the output path relative to the fixture root (the root is
+    // a fresh temporary directory), then every Input field through tests/ExtractProjection.hpp:
+    // options, metadata scalars, the size and SHA-1 of every byte vector, FlashFS names in order,
+    // patch file names, payloads, and only the size of an SB key.
+    std::string render_request(const std::string& label, const ResolverFixture& fixture,
+                               const gxbuild3::cli::BuildRequest& request) {
+        return label + " output_path=" +
+               request.output_path.lexically_relative(fixture.root).generic_string() + '\n' +
+               gxbuild3::test::projection::render(label + ".input", request.input);
+    }
+
+    struct DigestCase {
+        std::string text;
+        bool stable = false;
+    };
+
+    // Resolves args twice; both requests must render identically.
+    DigestCase digest_resolve(const std::string& label, const ResolverFixture& fixture,
+                              const BuildArgs& args) {
+        const auto first = fixture.resolve(args);
+        const auto second = fixture.resolve(args);
+        if (!require_resolved(first, label + " resolves") ||
+            !require_resolved(second, label + " resolves again")) {
+            return DigestCase{label + " resolution-error\n", false};
+        }
+        const auto once = render_request(label, fixture, *first);
+        const bool stable = require(once == render_request(label, fixture, *second),
+                                    label + " resolves to an identical BuildRequest twice");
+        return DigestCase{stable ? once : label + " nondeterministic\n", stable};
+    }
+
+    // donor.retail: a pinned synthetic donor (CB/CF LDVs, pairing, CF/CG) under a falcon chain
+    // of loose CB and CD, a [flashfs] file, a mobile slot, options.ini and a CLI override.
+    DigestCase digest_donor_retail(const std::string& label) {
+        ResolverFixture fixture;
+        const auto key = valid_cpu_key();
+        const auto donor =
+            pinned_donor_image(donor_input_with_metadata(ImageType::SmallBlock, key), label);
+        if (!donor) {
+            return DigestCase{label + " donor-build-error\n", false};
+        }
+        fixture.write_binary("first/nanddump.bin", *donor);
+        fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
+        fixture.write_binary("first/cd.bin", Bytes{0xCD});
+        fixture.write_binary("first/launch.ini", Bytes{0x41, 0x42});
+        fixture.write_binary("first/mobileB.bin", Bytes{0xB2});
+        fixture.write_text("working/build.ini",
+                           "[falconbl]\ncb_1.bin\ncd.bin\n[flashfs]\nlaunch.ini\n");
+        fixture.write_text("working/options.ini", "nofcrt=true\ncbldv=3\n");
+        auto args = fixture.minimum_args();
+        args.build_ini = "build.ini";
+        args.section = "falcon";
+        args.console = ConsoleType::Falcon;
+        args.image_type.reset();
+        args.config = {"cfldv=5", "nomobile=false"};
+        return digest_resolve(label, fixture, args);
+    }
+
+    // loose.retail: no donor; kv.bin sealed, smc.bin, options.ini metadata, a sealed secdata.bin
+    // in [security], a [flashfs] file and a mobile slot.
+    DigestCase digest_loose_retail(const std::string& label) {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args();
+        auto secdata = Bytes(0x20, 0x51);
+        if (!gxbuild3::nand::crypt_secfile(valid_cpu_key(), secdata)) {
+            return DigestCase{label + " secdata-seal-error\n", false};
+        }
+        fixture.write_binary("first/secdata.bin", secdata);
+        fixture.write_binary("first/launch.ini", Bytes{0x43});
+        fixture.write_binary("first/mobileA.bin", Bytes{0xA1, 0xA2});
+        fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n[flashfs]\n"
+                                                "launch.ini\n[security]\nsecdata.bin\n");
+        return digest_resolve(label, fixture, args);
+    }
+
+    // loose.jtag: the falcon JTAG chain (second CB), [version] 17559, patches_falcon_test.bin and
+    // xell-2f.bin; payloads carry XeLL, the embedded rebooter and payload, and generated fuses.
+    DigestCase digest_loose_jtag(const std::string& label) {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Jtag);
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_falcon_test.bin", valid_glitch_patchset());
+        fixture.write_binary("first/xell-2f.bin", Bytes(0x40000, 0x5A));
+        return digest_resolve(label, fixture, args);
+    }
+
+    // loose.devgl: the glitch2m patch file and the throwaway stand-in SB key (XeRsaTestKey.hpp,
+    // made to state the SB key's CRC-32) found through the resolver's own lookup in a keys
+    // folder. The real SB key is never read; the golden records only the key's size.
+    DigestCase digest_loose_devgl(const std::string& label) {
+        ResolverFixture fixture;
+        auto args = fixture.complete_loose_args(BuildType::Devgl);
+        args.patch_extension = "test";
+        fixture.write_binary("first/bin/patches_g2mfalcon_test.bin", valid_glitch_patchset());
+        fixture.write_binary("first/keys/SB_priv.bin", sb_key_stand_in());
+        return digest_resolve(label, fixture, args);
+    }
+
+    // donor-glitch2.retail: a retail resolve from the pinned glitch2 donor (see
+    // test_retail_resolve_keeps_donor_payloads_as_today).
+    DigestCase digest_retail_from_glitch2_donor(const std::string& label) {
+        ResolverFixture fixture;
+        const auto donor = pinned_donor_image(glitch2_donor_input(valid_cpu_key()), label);
+        if (!donor) {
+            return DigestCase{label + " donor-build-error\n", false};
+        }
+        fixture.write_binary("first/nanddump.bin", *donor);
+        fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
+        fixture.write_binary("first/cd.bin", Bytes{0xCD});
+        fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+        auto args = fixture.minimum_args();
+        args.build_ini = "build.ini";
+        args.section = "falcon";
+        args.image_type.reset();
+        return digest_resolve(label, fixture, args);
+    }
+
+    // The resolver's whole BuildRequest for a donor, a loose-donor, a JTAG, a devgl and a
+    // retail-from-hacked-donor resolve, against tests/golden/resolver_build_requests.txt. Each
+    // donor is built twice under a pinned time and nonces, and each case resolves twice; both
+    // must be identical.
+    bool test_resolution_digests(const gxbuild3::test::GoldenOptions& options) {
+        using Digest = DigestCase (*)(const std::string&);
+        const std::array<std::pair<std::string_view, Digest>, 5> cases{{
+            {"donor.retail", digest_donor_retail},
+            {"loose.retail", digest_loose_retail},
+            {"loose.jtag", digest_loose_jtag},
+            {"loose.devgl", digest_loose_devgl},
+            {"donor-glitch2.retail", digest_retail_from_glitch2_donor},
+        }};
+        std::string rendered;
+        size_t stable = 0;
+        for (const auto& [label, digest] : cases) {
+            const auto result = digest(std::string{label});
+            rendered += result.text;
+            stable += result.stable ? 1 : 0;
+        }
+        const bool matched =
+            gxbuild3::test::check_golden(options, "resolver_build_requests", rendered);
+        std::cout << "resolver BuildRequest digests: resolved twice and identical " << stable << '/'
+                  << cases.size() << ", compared " << (matched ? stable : 0) << '/' << cases.size()
+                  << " with tests/golden/resolver_build_requests.txt\n";
+        return require(matched, "resolver BuildRequest digests match the golden") &&
+               require(stable == cases.size(), "every resolver digest case is stable");
+    }
+
+    // Today's behaviour, deliberate until decided: resolve seeds its Input from the donor's
+    // extract_all, and only the devgl and JTAG/glitch branches replace input.payloads, so a retail
+    // resolve from a hacked donor keeps the donor's XeLL. Whether that is a bug is an open
+    // question; this pin keeps a resolver split from changing it silently.
+    bool test_retail_resolve_keeps_donor_payloads_as_today() {
+        ResolverFixture fixture;
+        const auto key = valid_cpu_key();
+        const auto donor = pinned_donor_image(glitch2_donor_input(key), "glitch2 donor");
+        if (!require(donor.has_value(), "the glitch2 donor builds")) {
+            return false;
+        }
+        const auto extracted = extract_all(*donor, key);
+        if (!require(extracted && extracted->payloads && extracted->payloads->xell,
+                     "extract_all of the glitch2 donor carries its XeLL payload")) {
+            return false;
+        }
+        fixture.write_binary("first/nanddump.bin", *donor);
+        fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
+        fixture.write_binary("first/cd.bin", Bytes{0xCD});
+        fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+        auto args = fixture.minimum_args();
+        args.build_ini = "build.ini";
+        args.section = "falcon";
+        args.image_type.reset();
+        const auto result = fixture.resolve(args);
+        if (!require_resolved(result, "a retail resolve from the glitch2 donor")) {
+            return false;
+        }
+        const auto& kept = result->input.payloads;
+        const auto& source = *extracted->payloads;
+        return require(result->input.build_type == BuildType::Retail,
+                       "the resolve is a retail build") &&
+               require(!result->input.patches, "a retail resolve carries no patch file") &&
+               require(kept.has_value(), "a retail resolve keeps the donor's payloads (today)") &&
+               require(kept->xell == source.xell && kept->rebooter == source.rebooter &&
+                           kept->fuses == source.fuses && kept->patches == source.patches &&
+                           kept->payload == source.payload,
+                       "the kept payloads are exactly the donor's extract_all payloads");
+    }
+
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    const auto options = gxbuild3::test::golden_options(argc, argv);
+    if (!options) {
+        return 2;
+    }
     bool passed = true;
     passed = test_source_roots_are_all_validated() && passed;
     passed = test_source_roots_cannot_be_empty() && passed;
@@ -1844,5 +2128,7 @@ int main() {
     passed = test_direct_build_args_reject_unconfined_patch_components() && passed;
     passed = test_glitch_khv_donor_does_not_resolve_ambiguous_fixed_payloads() && passed;
     passed = test_final_input_is_validated_before_return() && passed;
+    passed = test_resolution_digests(*options) && passed;
+    passed = test_retail_resolve_keeps_donor_payloads_as_today() && passed;
     return passed ? 0 : 1;
 }
