@@ -34,8 +34,8 @@ namespace gxbuild3::stfs::detail {
     [[nodiscard]] Result<std::filesystem::path> safe_join(const std::filesystem::path& parent,
                                                           const std::filesystem::path& relative);
 
-    // TODO(parsing): Package and StfsContainer still report failures by throwing. They unwrap
-    // the Result-returning helpers through this shim until the parsing phase converts them.
+    // TODO(parsing): Package still reports failures by throwing. It unwraps the
+    // Result-returning helpers through this shim until the parsing phase converts it.
     template <class T> [[nodiscard]] T value_or_throw(Result<T>&& result) {
         if (!result) {
             throw std::runtime_error(result.error().describe());

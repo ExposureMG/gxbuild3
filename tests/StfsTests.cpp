@@ -299,9 +299,9 @@ namespace {
         TempDir dir;
         const auto bytes =
             make_package({{"..", {}, true, -1, true}, {"escaped", pattern(10, 2), true, 0}});
-        const stfs::StfsContainer container{bytes};
-        require_throws([&] { container.extract_all(dir.root / "out"); },
-                       "StfsContainer rejects a .. entry path");
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container && !container->extract_all(dir.root / "out"),
+                "StfsContainer rejects a .. entry path");
         require(!fs::exists(dir.root / "escaped"), "container writes nothing outside");
     }
 
@@ -338,9 +338,9 @@ namespace {
                        "a parent cycle through a later entry is rejected");
 
         const auto bytes = make_package({{"a", {}, true, 1, true}, {"b", {}, true, 0, true}});
-        const stfs::StfsContainer container{bytes};
-        require_throws([&] { container.extract_all(dir.root / "out"); },
-                       "StfsContainer rejects a forward parent reference");
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container && !container->extract_all(dir.root / "out"),
+                "StfsContainer rejects a forward parent reference");
     }
 
     void test_nested_extraction() {
@@ -484,8 +484,8 @@ namespace {
         require(package.extract_file(package.files().back(), true) == data,
                 "an entry from the second table block extracts");
 
-        const stfs::StfsContainer container{bytes};
-        require(container.extract_file_by_name("second.bin") == data,
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container && container->extract_file_by_name("second.bin") == data,
                 "StfsContainer reads the same file table");
     }
 
@@ -513,8 +513,8 @@ namespace {
         bytes[kVolumeDescriptor + 0x02] = std::byte{0x00}; // block_separation bit 0 clear
         require_throws([&] { (void) stfs::Package::from_data(bytes); },
                        "Package rejects block_separation bit 0 clear");
-        require_throws([&] { const stfs::StfsContainer container{bytes}; },
-                       "StfsContainer rejects block_separation bit 0 clear");
+        require(!stfs::StfsContainer::open(bytes),
+                "StfsContainer rejects block_separation bit 0 clear");
 
         bytes[kVolumeDescriptor + 0x02] = std::byte{0x03};
         require(stfs::Package::from_data(bytes).files().size() == 1,
@@ -588,9 +588,9 @@ namespace {
         TempDir dir;
         fs::create_directories(dir.root / "out");
         fs::create_symlink(full, dir.root / "out" / "a.bin");
-        const stfs::StfsContainer container{bytes};
-        require_throws([&] { container.extract_all(dir.root / "out"); },
-                       "StfsContainer::extract_all reports a failed write");
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container && !container->extract_all(dir.root / "out"),
+                "StfsContainer::extract_all reports a failed write");
 
         require_throws(
             [&] { package.extract_file_to_disk(package.files().at(0), dir.root / "no/dir/x"); },
@@ -679,8 +679,10 @@ namespace {
         require(std::string(display_name.begin(), display_name.end()) == "System Update",
                 "fixture display_name decodes from UTF-16BE");
 
-        const stfs::StfsContainer container{bytes};
-        const auto in_memory = container.extract_to_memory();
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value(), "StfsContainer opens the fixture");
+        const auto in_memory = container->extract_to_memory();
+        require(in_memory.has_value(), "StfsContainer extracts the fixture to memory");
         for (const auto& entry : package.files()) {
             const auto verified = package.extract_file(entry, true);
             std::string key = entry.name;
@@ -688,7 +690,7 @@ namespace {
                 key.erase(0, 7);
             std::transform(key.begin(), key.end(), key.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            require(in_memory.at(key) == verified,
+            require(in_memory->at(key) == verified,
                     "Package (verified) and StfsContainer extract identical bytes");
         }
 

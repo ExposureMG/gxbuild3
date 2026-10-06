@@ -10,8 +10,9 @@
 
 #include <algorithm>
 #include <cctype>
-#include <stdexcept>
 #include <string_view>
+#include <system_error>
+#include <utility>
 #include <variant>
 
 namespace gxbuild3::stfs {
@@ -41,63 +42,99 @@ namespace gxbuild3::stfs {
 
     } // namespace
 
-    StfsContainer::StfsContainer(std::span<const std::byte> data) : data_(data) {
-        if (!starts_with_pirs(data_)) {
-            throw std::runtime_error("Invalid STFS signature: expected PIRS");
+    StfsContainer::StfsContainer(std::span<const std::byte> data, std::uint32_t header_size,
+                                 std::vector<FileEntry> entries)
+        : data_(data), header_size_(header_size), entries_(std::move(entries)) {}
+
+    Result<StfsContainer> StfsContainer::open(std::span<const std::byte> data) {
+        if (!starts_with_pirs(data)) {
+            return fail(ErrorCode::Malformed, "Invalid STFS signature: expected PIRS");
         }
 
-        const auto header = detail::value_or_throw(stfs::parse_header(data_));
-        if (header.magic != stfs::Magic::PIRS) {
-            throw std::runtime_error("Invalid STFS signature: expected PIRS");
+        const auto header = stfs::parse_header(data);
+        if (!header) {
+            return std::unexpected(header.error());
+        }
+        if (header->magic != stfs::Magic::PIRS) {
+            return fail(ErrorCode::Malformed, "Invalid STFS signature: expected PIRS");
         }
 
-        const auto metadata = detail::value_or_throw(stfs::parse_metadata(data_));
-        if (metadata.descriptor_type != stfs::DescriptorType::Stfs) {
-            throw std::runtime_error("SVOD packages are not supported for PIRS extraction");
+        const auto metadata = stfs::parse_metadata(data);
+        if (!metadata) {
+            return std::unexpected(metadata.error());
+        }
+        if (metadata->descriptor_type != stfs::DescriptorType::Stfs) {
+            return fail(ErrorCode::Unsupported,
+                        "SVOD packages are not supported for PIRS extraction");
         }
 
-        const auto* vd = std::get_if<stfs::StfsVolumeDescriptor>(&metadata.volume_descriptor);
+        const auto* vd = std::get_if<stfs::StfsVolumeDescriptor>(&metadata->volume_descriptor);
         if (vd == nullptr) {
-            throw std::runtime_error("PIRS package is missing an STFS volume descriptor");
+            return fail(ErrorCode::Malformed, "PIRS package is missing an STFS volume descriptor");
         }
 
-        header_size_ = metadata.header_size;
-
-        const auto file_table =
-            detail::value_or_throw(detail::read_file_table(data_, header_size_, *vd));
-        entries_ = detail::value_or_throw(stfs::parse_file_listing(file_table));
-        Log::Debug("Opened STFS container ({} entries, header size 0x{:X})", entries_.size(),
-                   header_size_);
+        const auto header_size = metadata->header_size;
+        const auto file_table = detail::read_file_table(data, header_size, *vd);
+        if (!file_table) {
+            return std::unexpected(file_table.error());
+        }
+        auto entries = stfs::parse_file_listing(*file_table);
+        if (!entries) {
+            return std::unexpected(std::move(entries).error());
+        }
+        Log::Debug("Opened STFS container ({} entries, header size 0x{:X})", entries->size(),
+                   header_size);
+        return StfsContainer(data, header_size, std::move(*entries));
     }
 
-    void StfsContainer::extract_all(const std::filesystem::path& target_dir) const {
+    Result<void> StfsContainer::extract_all(const std::filesystem::path& target_dir) const {
         // Validate every destination before writing anything.
-        const auto relative_paths = detail::value_or_throw(detail::build_entry_paths(entries_));
+        const auto relative_paths = detail::build_entry_paths(entries_);
+        if (!relative_paths) {
+            return std::unexpected(relative_paths.error());
+        }
         std::vector<std::filesystem::path> destinations;
-        destinations.reserve(relative_paths.size());
-        for (const auto& relative : relative_paths) {
-            destinations.push_back(detail::value_or_throw(detail::safe_join(target_dir, relative)));
+        destinations.reserve(relative_paths->size());
+        for (const auto& relative : *relative_paths) {
+            auto destination = detail::safe_join(target_dir, relative);
+            if (!destination) {
+                return std::unexpected(std::move(destination).error());
+            }
+            destinations.push_back(std::move(*destination));
         }
 
-        std::filesystem::create_directories(target_dir);
+        std::error_code error;
+        std::filesystem::create_directories(target_dir, error);
+        if (error) {
+            return from_error_code(error, target_dir);
+        }
 
         for (std::size_t i = 0; i < entries_.size(); ++i) {
             const auto& entry = entries_[i];
             const auto& full_path = destinations[i];
 
+            const auto directory = entry.is_directory() ? full_path : full_path.parent_path();
+            std::filesystem::create_directories(directory, error);
+            if (error) {
+                return from_error_code(error, directory);
+            }
             if (entry.is_directory()) {
-                std::filesystem::create_directories(full_path);
                 continue;
             }
 
-            std::filesystem::create_directories(full_path.parent_path());
-            const auto file_data = detail::value_or_throw(
-                stfs::extract_file(data_, entry, stfs::Magic::PIRS, header_size_));
-            detail::value_or_throw(detail::write_file(full_path, file_data));
+            const auto file_data =
+                stfs::extract_file(data_, entry, stfs::Magic::PIRS, header_size_);
+            if (!file_data) {
+                return std::unexpected(file_data.error());
+            }
+            if (auto written = detail::write_file(full_path, *file_data); !written) {
+                return written;
+            }
         }
+        return {};
     }
 
-    ExtractedFiles
+    Result<ExtractedFiles>
     StfsContainer::extract_to_memory(std::span<const std::string> excluded_names) const {
         ExtractedFiles results;
 
@@ -112,8 +149,11 @@ namespace gxbuild3::stfs {
                 excluded_names.end()) {
                 continue;
             }
-            results.emplace(std::move(name), detail::value_or_throw(stfs::extract_file(
-                                                 data_, entry, stfs::Magic::PIRS, header_size_)));
+            auto file_data = stfs::extract_file(data_, entry, stfs::Magic::PIRS, header_size_);
+            if (!file_data) {
+                return std::unexpected(std::move(file_data).error());
+            }
+            results.emplace(std::move(name), std::move(*file_data));
         }
 
         return results;
@@ -131,7 +171,8 @@ namespace gxbuild3::stfs {
         });
     }
 
-    std::vector<std::byte> StfsContainer::extract_file_by_name(std::string_view name) const {
+    Result<std::vector<std::byte>>
+    StfsContainer::extract_file_by_name(std::string_view name) const {
         const auto wanted = lower_ascii(std::string{name});
 
         for (const auto& entry : entries_) {
@@ -142,12 +183,11 @@ namespace gxbuild3::stfs {
             auto entry_name = strip_flash_prefix(entry.name);
             entry_name = lower_ascii(std::move(entry_name));
             if (entry_name == wanted) {
-                return detail::value_or_throw(
-                    stfs::extract_file(data_, entry, stfs::Magic::PIRS, header_size_));
+                return stfs::extract_file(data_, entry, stfs::Magic::PIRS, header_size_);
             }
         }
 
-        throw std::runtime_error("STFS file not found: " + std::string{name});
+        return fail(ErrorCode::NotFound, "STFS file not found: {}", name);
     }
 
 } // namespace gxbuild3::stfs
