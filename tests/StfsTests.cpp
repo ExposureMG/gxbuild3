@@ -16,7 +16,6 @@
 #include "stfs/HashVerifier.hpp"
 #include "stfs/HeaderParser.hpp"
 #include "stfs/MetadataParser.hpp"
-#include "stfs/Package.hpp"
 #include "stfs/PackageCommon.hpp"
 #include "stfs/StfsContainer.hpp"
 
@@ -36,6 +35,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -53,28 +53,11 @@ namespace {
             throw std::runtime_error(std::string(message));
     }
 
-    template <typename F> std::string thrown_message(F&& action) {
-        try {
-            action();
-        } catch (const std::exception& e) {
-            return e.what();
-        }
-        throw std::runtime_error("expected an exception");
-    }
-
     template <typename R> bool fails_with(const R& result, gxbuild3::ErrorCode code) {
         return !result && result.error().code == code;
     }
 
-    template <typename F> void require_throws(F&& action, std::string_view message) {
-        bool threw = false;
-        try {
-            action();
-        } catch (const std::exception&) {
-            threw = true;
-        }
-        require(threw, message);
-    }
+    using Verify = gxbuild3::stfs::StfsContainer::Verify;
 
     // Synthetic read-only (block_separation bit 0 set) PIRS layout:
     //   header_size 0xA000, one level-0 hash table at 0xA000,
@@ -273,31 +256,32 @@ namespace {
 
     // --- Extraction paths ------------------------------------------------------------------
 
-    // Opens and extracts a package, returning the error message (empty if nothing threw).
+    // Opens and extracts a package, returning the describe() of whichever of open or
+    // extract_all fails (empty if both succeed).
     std::string extract_error(const Bytes& bytes, const fs::path& out) {
-        try {
-            stfs::Package::from_data(bytes).extract_all(out);
-        } catch (const std::exception& e) {
-            return e.what();
-        }
+        const auto container = stfs::StfsContainer::open(bytes);
+        if (!container)
+            return container.error().describe();
+        if (const auto extracted = container->extract_all(out); !extracted)
+            return extracted.error().describe();
         return {};
     }
 
-    void test_package_rejects_relative_escape() {
+    void test_container_rejects_relative_escape() {
         TempDir dir;
         // A ".." directory entry passes the name checks but escapes once joined.
         const auto dotdot = make_package({{"good.bin", pattern(10, 1)},
                                           {"..", {}, true, -1, true},
                                           {"escaped", pattern(10, 2), true, 1}});
         require(extract_error(dotdot, dir.root / "out").find("escapes") != std::string::npos,
-                "a .. entry path is rejected by Package::extract_all");
+                "a .. entry path is rejected by StfsContainer::extract_all");
         require(!fs::exists(dir.root / "escaped"), "nothing is written outside output_dir");
         require(!fs::exists(dir.root / "out" / "good.bin"),
                 "destinations are validated before anything is written");
 
         const auto slash = make_package({{"../escaped", pattern(10, 2)}});
         require(!extract_error(slash, dir.root / "out").empty(),
-                "a ../ entry name is rejected by Package");
+                "a ../ entry name is rejected by StfsContainer");
         require(!fs::exists(dir.root / "escaped"), "a ../ name writes nothing outside");
 
         const auto nested =
@@ -307,13 +291,13 @@ namespace {
         require(!fs::exists(dir.root / "escaped"), "nested escape writes nothing outside");
     }
 
-    void test_package_rejects_absolute_name() {
+    void test_container_rejects_absolute_name() {
         TempDir dir;
         const auto bytes = make_package({{"/stfs-absolute-escape", pattern(10, 1)}});
         const auto message = extract_error(bytes, dir.root / "out");
         require(message.find("absolute") != std::string::npos ||
                     message.find("separator") != std::string::npos,
-                "an absolute entry name is rejected by Package");
+                "an absolute entry name is rejected by StfsContainer");
         require(!fs::exists("/stfs-absolute-escape"), "nothing is written at the absolute path");
     }
 
@@ -348,16 +332,18 @@ namespace {
     void test_parent_cycle_rejected() {
         TempDir dir;
         // Entry 0 names itself as its parent.
-        const auto self =
-            stfs::Package::from_data(make_package({{"a.bin", pattern(10, 1), true, 0}}));
-        require_throws([&] { self.extract_all(dir.root / "out"); },
-                       "an entry that is its own parent is rejected");
+        const auto self_bytes = make_package({{"a.bin", pattern(10, 1), true, 0}});
+        const auto self = stfs::StfsContainer::open(self_bytes);
+        require(self.has_value(), "a self-parented entry opens");
+        require(fails_with(self->extract_all(dir.root / "out"), gxbuild3::ErrorCode::Malformed),
+                "an entry that is its own parent is rejected");
 
         // Entry 0 refers forward to entry 1, which refers back to entry 0.
-        const auto loop = stfs::Package::from_data(
-            make_package({{"a", {}, true, 1, true}, {"b", {}, true, 0, true}}));
-        require_throws([&] { loop.extract_all(dir.root / "out"); },
-                       "a parent cycle through a later entry is rejected");
+        const auto loop_bytes = make_package({{"a", {}, true, 1, true}, {"b", {}, true, 0, true}});
+        const auto loop = stfs::StfsContainer::open(loop_bytes);
+        require(loop.has_value(), "a forward-parented entry opens");
+        require(fails_with(loop->extract_all(dir.root / "out"), gxbuild3::ErrorCode::Malformed),
+                "a parent cycle through a later entry is rejected");
 
         const auto bytes = make_package({{"a", {}, true, 1, true}, {"b", {}, true, 0, true}});
         const auto container = stfs::StfsContainer::open(bytes);
@@ -368,9 +354,12 @@ namespace {
     void test_nested_extraction() {
         TempDir dir;
         const auto data = pattern(5000, 9);
-        const auto package = stfs::Package::from_data(
-            make_package({{"sub", {}, true, -1, true}, {"inner.bin", data, true, 0}}));
-        package.extract_all(dir.root / "out", true);
+        const auto bytes =
+            make_package({{"sub", {}, true, -1, true}, {"inner.bin", data, true, 0}});
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value(), "a nested package opens");
+        require(container->extract_all(dir.root / "out", Verify::Yes).has_value(),
+                "a nested package extracts with verification");
         std::ifstream in(dir.root / "out" / "sub" / "inner.bin", std::ios::binary);
         Bytes read(data.size() + 1);
         in.read(reinterpret_cast<char*>(read.data()), static_cast<std::streamsize>(read.size()));
@@ -380,13 +369,15 @@ namespace {
 
     // --- File extraction -------------------------------------------------------------------
 
-    void test_truncated_chain_throws() {
+    void test_truncated_chain_fails() {
         // A chained (non-consecutive) two-block file whose chain ends after the first block.
         auto bytes = make_package({{"a.bin", pattern(0x1800, 1), false}});
         put_be(bytes, hash_offset(1) + 0x15, 0xFFFFFF, 3);
-        const auto package = stfs::Package::from_data(bytes);
-        require_throws([&] { (void) package.extract_file(package.files().at(0)); },
-                       "a chain shorter than file_size must throw, not return a short buffer");
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value(), "a package with a truncated chain opens");
+        require(fails_with(container->extract(container->entries().at(0)),
+                           gxbuild3::ErrorCode::Truncated),
+                "a chain shorter than file_size must fail, not return a short buffer");
     }
 
     void test_longer_chain_is_cut_at_file_size() {
@@ -394,16 +385,19 @@ namespace {
         const auto data = pattern(0x1800, 4);
         auto bytes = make_package({{"a.bin", data, false}, {"b.bin", pattern(0x10, 5), false}});
         put_be(bytes, hash_offset(2) + 0x15, 3, 3); // a.bin's last block links on into b.bin
-        const auto package = stfs::Package::from_data(bytes);
-        require(package.extract_file(package.files().at(0)) == data,
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value(), "a package with a longer chain opens");
+        require(container->extract(container->entries().at(0)) == data,
                 "a longer chain yields exactly file_size bytes");
     }
 
     void test_zero_size_file_skips_chain() {
         auto bytes = make_package({{"a.bin", pattern(10, 1)}, {"empty.bin", {}}});
         put_le(bytes, entry_offset(1) + 0x2F, 3000, 3); // starting block far out of range
-        const auto package = stfs::Package::from_data(bytes);
-        require(package.extract_file(package.files().at(1)).empty(),
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value(), "a package with an empty file opens");
+        const auto extracted = container->extract(container->entries().at(1));
+        require(extracted.has_value() && extracted->empty(),
                 "a zero-size file returns no bytes without walking its chain");
     }
 
@@ -424,18 +418,20 @@ namespace {
         for (const std::uint32_t header_size : {0x100u, 0x100000u, 0xFFFFF000u}) {
             auto bytes = make_package({{"a.bin", pattern(10, 1)}});
             put_be(bytes, 0x340, header_size, 4);
-            require_throws([&] { (void) stfs::Package::from_data(bytes); },
-                           "an absurd header_size is rejected");
+            require(fails_with(stfs::StfsContainer::open(bytes), gxbuild3::ErrorCode::Malformed),
+                    "an absurd header_size is rejected");
         }
     }
 
     void test_invalid_hash_status_message_is_hex() {
         auto bytes = make_package({{"a.bin", pattern(10, 1), false}});
         bytes[hash_offset(1) + 0x14] = std::byte{0xAB};
-        const auto package = stfs::Package::from_data(bytes);
-        const auto message =
-            thrown_message([&] { (void) package.extract_file(package.files().at(0)); });
-        require(message.find("(0xAB)") != std::string::npos,
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value(), "a package with a bad hash status opens");
+        const auto extracted = container->extract(container->entries().at(0));
+        require(fails_with(extracted, gxbuild3::ErrorCode::Malformed),
+                "an invalid hash entry status is malformed");
+        require(extracted.error().describe().find("(0xAB)") != std::string::npos,
                 "the hash entry status is printed in hex");
     }
 
@@ -451,37 +447,45 @@ namespace {
             seal(*bytes);
         }
 
-        const auto package = stfs::Package::from_data(consecutive);
-        require(package.extract_file(package.files().at(0)) == data,
+        const auto container = stfs::StfsContainer::open(consecutive);
+        require(container.has_value(), "a consecutive package opens");
+        require(container->extract(container->entries().at(0)) == data,
                 "a consecutive file is read from starting_block without its chain");
-        require(package.extract_file(package.files().at(0), true) == data,
+        require(container->extract(container->entries().at(0), Verify::Yes) == data,
                 "a consecutive file still verifies block by block");
 
-        const auto chained_package = stfs::Package::from_data(chained);
-        require_throws([&] { (void) chained_package.extract_file(chained_package.files().at(0)); },
-                       "a non-consecutive file still follows (and trusts) its chain");
+        const auto chained_container = stfs::StfsContainer::open(chained);
+        require(chained_container.has_value(), "a chained package opens");
+        require(fails_with(chained_container->extract(chained_container->entries().at(0)),
+                           gxbuild3::ErrorCode::Truncated),
+                "a non-consecutive file still follows (and trusts) its chain");
     }
 
     void test_consecutive_file_bounds() {
         auto short_allocation = make_package({{"a.bin", pattern(0x2800, 6), true}});
         put_le(short_allocation, entry_offset(0) + 0x29, 2, 3); // 2 blocks for 0x2800 bytes
-        const auto package = stfs::Package::from_data(short_allocation);
-        require_throws([&] { (void) package.extract_file(package.files().at(0)); },
-                       "blocks_allocated too small for file_size is rejected");
+        const auto container = stfs::StfsContainer::open(short_allocation);
+        require(container.has_value(), "a short allocation opens");
+        require(fails_with(container->extract(container->entries().at(0)),
+                           gxbuild3::ErrorCode::Malformed),
+                "blocks_allocated too small for file_size is rejected");
 
         auto past_end = make_package({{"a.bin", pattern(0x2800, 6), true}});
         put_le(past_end, entry_offset(0) + 0x2F, 0xFFFFFE, 3);
-        const auto past_end_package = stfs::Package::from_data(past_end);
-        require_throws(
-            [&] { (void) past_end_package.extract_file(past_end_package.files().at(0)); },
-            "consecutive blocks past the last block number are rejected");
+        const auto past_end_container = stfs::StfsContainer::open(past_end);
+        require(past_end_container.has_value(), "a starting block near the end opens");
+        require(fails_with(past_end_container->extract(past_end_container->entries().at(0)),
+                           gxbuild3::ErrorCode::OutOfRange),
+                "consecutive blocks past the last block number are rejected");
 
         auto huge = make_package({{"a.bin", pattern(0x10, 6), true}});
         put_le(huge, entry_offset(0) + 0x29, 0xFFFFFF, 3);
         put_be(huge, entry_offset(0) + 0x34, 0xFFFFFFFF, 4);
-        const auto huge_package = stfs::Package::from_data(huge);
-        require_throws([&] { (void) huge_package.extract_file(huge_package.files().at(0)); },
-                       "a consecutive file larger than the package is rejected");
+        const auto huge_container = stfs::StfsContainer::open(huge);
+        require(huge_container.has_value(), "a huge consecutive file entry opens");
+        require(fails_with(huge_container->extract(huge_container->entries().at(0)),
+                           gxbuild3::ErrorCode::OutOfRange),
+                "a consecutive file larger than the package is rejected");
     }
 
     // --- File table and volume descriptor --------------------------------------------------
@@ -500,46 +504,45 @@ namespace {
         put_be(bytes, hash_offset(0) + 0x15, 2, 3);
         seal(bytes);
 
-        const auto package = stfs::Package::from_data(bytes);
-        require(package.files().size() == 65 && package.files().back().name == "second.bin",
-                "Package reads the file table through its hash chain");
-        require(package.extract_file(package.files().back(), true) == data,
-                "an entry from the second table block extracts");
-
         const auto container = stfs::StfsContainer::open(bytes);
-        require(container && container->extract_file_by_name("second.bin") == data,
-                "StfsContainer reads the same file table");
+        require(container.has_value(), "a package with a two-block file table opens");
+        require(container->entries().size() == 65 &&
+                    container->entries().back().name == "second.bin",
+                "StfsContainer reads the file table through its hash chain");
+        require(container->extract(container->entries().back(), Verify::Yes) == data,
+                "an entry from the second table block extracts");
+        require(container->extract_file_by_name("second.bin") == data,
+                "StfsContainer finds the entry from the second table block by name");
     }
 
     void test_invalid_file_table_descriptor_rejected() {
         auto empty = make_package({{"a.bin", pattern(10, 1)}});
         put_le(empty, kVolumeDescriptor + 0x03, 0, 2);
-        require_throws([&] { (void) stfs::Package::from_data(empty); },
-                       "Package rejects a zero file table block count");
+        require(fails_with(stfs::StfsContainer::open(empty), gxbuild3::ErrorCode::Malformed),
+                "StfsContainer rejects a zero file table block count");
 
         auto negative = make_package({{"a.bin", pattern(10, 1)}});
         put_le(negative, kVolumeDescriptor + 0x03, 0x8000, 2);
-        require_throws([&] { (void) stfs::Package::from_data(negative); },
-                       "Package rejects a negative file table block count");
+        require(fails_with(stfs::StfsContainer::open(negative), gxbuild3::ErrorCode::Malformed),
+                "StfsContainer rejects a negative file table block count");
     }
 
     void test_short_file_table_chain_rejected() {
         auto bytes = make_package({{"a.bin", pattern(10, 1)}});
         put_le(bytes, kVolumeDescriptor + 0x03, 2, 2); // claims two blocks, chain has one
-        require_throws([&] { (void) stfs::Package::from_data(bytes); },
-                       "a file table chain shorter than its block count is rejected");
+        require(fails_with(stfs::StfsContainer::open(bytes), gxbuild3::ErrorCode::Truncated),
+                "a file table chain shorter than its block count is rejected");
     }
 
     void test_writable_layout_rejected() {
         auto bytes = make_package({{"a.bin", pattern(10, 1)}});
         bytes[kVolumeDescriptor + 0x02] = std::byte{0x00}; // block_separation bit 0 clear
-        require_throws([&] { (void) stfs::Package::from_data(bytes); },
-                       "Package rejects block_separation bit 0 clear");
-        require(!stfs::StfsContainer::open(bytes),
+        require(fails_with(stfs::StfsContainer::open(bytes), gxbuild3::ErrorCode::Unsupported),
                 "StfsContainer rejects block_separation bit 0 clear");
 
         bytes[kVolumeDescriptor + 0x02] = std::byte{0x03};
-        require(stfs::Package::from_data(bytes).files().size() == 1,
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value() && container->entries().size() == 1,
                 "other block_separation bits do not matter");
     }
 
@@ -548,53 +551,58 @@ namespace {
     void test_name_length_beyond_field_rejected() {
         auto bytes = make_package({{"a.bin", pattern(10, 1)}});
         bytes[entry_offset(0) + 0x28] = std::byte{0x40 | 0x29};
-        require_throws([&] { (void) stfs::Package::from_data(bytes); },
-                       "name_length 0x29 is rejected");
+        require(fails_with(stfs::StfsContainer::open(bytes), gxbuild3::ErrorCode::Malformed),
+                "name_length 0x29 is rejected");
         bytes[entry_offset(0) + 0x28] = std::byte{0x40 | 0x3F};
-        require_throws([&] { (void) stfs::Package::from_data(bytes); },
-                       "name_length 0x3F is rejected");
+        require(fails_with(stfs::StfsContainer::open(bytes), gxbuild3::ErrorCode::Malformed),
+                "name_length 0x3F is rejected");
 
         const std::string longest(0x28, 'n');
-        const auto full = stfs::Package::from_data(make_package({{longest, pattern(10, 1)}}));
-        require(full.files().at(0).name == longest, "a 40-byte name is accepted");
+        const auto full_bytes = make_package({{longest, pattern(10, 1)}});
+        const auto full = stfs::StfsContainer::open(full_bytes);
+        require(full.has_value() && full->entries().at(0).name == longest,
+                "a 40-byte name is accepted");
     }
 
     void test_nameless_entry_ends_listing() {
         auto bytes = make_package(
             {{"a.bin", pattern(10, 1)}, {"b.bin", pattern(10, 2)}, {"c.bin", pattern(10, 3)}});
         bytes[entry_offset(1) + 0x28] = std::byte{0x40}; // name_length 0, other bytes set
-        const auto package = stfs::Package::from_data(bytes);
-        require(package.files().size() == 1 && package.files().at(0).name == "a.bin",
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value() && container->entries().size() == 1 &&
+                    container->entries().at(0).name == "a.bin",
                 "an entry without a name length ends the listing");
     }
 
     void test_entry_name_contents() {
         auto padded = make_package({{"a.bin", pattern(10, 1)}});
         padded[entry_offset(0) + 0x28] = std::byte{0x40 | 0x08}; // "a.bin\0\0\0"
-        require(stfs::Package::from_data(padded).files().at(0).name == "a.bin",
+        const auto padded_container = stfs::StfsContainer::open(padded);
+        require(padded_container.has_value() && padded_container->entries().at(0).name == "a.bin",
                 "NUL padding inside name_length is trimmed");
 
         auto empty = make_package({{"a.bin", pattern(10, 1)}});
         empty[entry_offset(0)] = std::byte{0};
-        require_throws([&] { (void) stfs::Package::from_data(empty); },
-                       "a name that starts with NUL is rejected");
+        require(fails_with(stfs::StfsContainer::open(empty), gxbuild3::ErrorCode::Malformed),
+                "a name that starts with NUL is rejected");
 
         for (const auto* name : {"a/b", "a\\b"}) {
             const auto bytes = make_package({{name, pattern(10, 1)}});
-            require_throws([&] { (void) stfs::Package::from_data(bytes); },
-                           "a name with a path separator is rejected");
+            require(fails_with(stfs::StfsContainer::open(bytes), gxbuild3::ErrorCode::Malformed),
+                    "a name with a path separator is rejected");
         }
 
-        const auto plain = stfs::Package::from_data(make_package(
-            {{"$flash_dash.xex", pattern(10, 1)}, {"$flash_SegoeXbox-Light.xtt", pattern(10, 2)}}));
-        require(plain.files().size() == 2 &&
-                    plain.files().at(1).name == "$flash_SegoeXbox-Light.xtt",
+        const auto plain_bytes = make_package(
+            {{"$flash_dash.xex", pattern(10, 1)}, {"$flash_SegoeXbox-Light.xtt", pattern(10, 2)}});
+        const auto plain = stfs::StfsContainer::open(plain_bytes);
+        require(plain.has_value() && plain->entries().size() == 2 &&
+                    plain->entries().at(1).name == "$flash_SegoeXbox-Light.xtt",
                 "system update names are accepted");
     }
 
     // --- Writing ---------------------------------------------------------------------------
 
-    void test_write_failure_throws() {
+    void test_write_failure_is_reported() {
         const fs::path full = "/dev/full";
         if (!fs::exists(full)) {
             std::cout << "  (skipped: no /dev/full)\n";
@@ -602,20 +610,25 @@ namespace {
         }
         const auto bytes = make_package({{"a.bin", pattern(10, 1)}});
 
-        const auto package = stfs::Package::from_data(bytes);
-        require_throws([&] { package.extract_file_to_disk(package.files().at(0), full); },
-                       "Package::extract_file_to_disk reports a failed write");
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value(), "the package opens");
+        const auto& entry = container->entries().at(0);
+        require(fails_with(stfs::extract_file_to_disk(bytes, entry, stfs::Magic::PIRS,
+                                                      container->header_size(), full),
+                           gxbuild3::ErrorCode::IoError),
+                "extract_file_to_disk reports a failed write");
 
         // StfsContainer::extract_all writing through a planted link to /dev/full.
         TempDir dir;
         fs::create_directories(dir.root / "out");
         fs::create_symlink(full, dir.root / "out" / "a.bin");
-        const auto container = stfs::StfsContainer::open(bytes);
-        require(container && !container->extract_all(dir.root / "out"),
+        require(!container->extract_all(dir.root / "out"),
                 "StfsContainer::extract_all reports a failed write");
 
-        require_throws(
-            [&] { package.extract_file_to_disk(package.files().at(0), dir.root / "no/dir/x"); },
+        require(
+            fails_with(stfs::extract_file_to_disk(bytes, entry, stfs::Magic::PIRS,
+                                                  container->header_size(), dir.root / "no/dir/x"),
+                       gxbuild3::ErrorCode::IoError),
             "an unopenable output path is reported");
     }
 
@@ -635,10 +648,12 @@ namespace {
 
     void test_verify_requires_total_blocks() {
         const auto bytes = make_package({{"a.bin", pattern(10, 1)}});
-        const auto package = stfs::Package::from_data(bytes);
-        const auto& entry = package.files().at(0);
-        const auto* vd =
-            std::get_if<stfs::StfsVolumeDescriptor>(&package.metadata().volume_descriptor);
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value(), "the package opens");
+        const auto& entry = container->entries().at(0);
+        const auto meta = stfs::parse_metadata(bytes);
+        require(meta.has_value(), "parse_metadata accepts the package");
+        const auto* vd = std::get_if<stfs::StfsVolumeDescriptor>(&meta->volume_descriptor);
         require(vd != nullptr, "synthetic package has an STFS descriptor");
 
         require(fails_with(stfs::extract_file(bytes, entry, stfs::Magic::PIRS, 0xA000, true,
@@ -660,13 +675,16 @@ namespace {
     void test_verify_detects_corruption() {
         auto data_corrupt = make_package({{"a.bin", pattern(10, 1)}});
         data_corrupt[data_offset(1) + 0x800] ^= std::byte{0x01}; // past file_size, still hashed
-        const auto package = stfs::Package::from_data(data_corrupt);
-        require(package.extract_file(package.files().at(0)) == pattern(10, 1),
+        const auto container = stfs::StfsContainer::open(data_corrupt);
+        require(container.has_value(), "the corrupted package opens");
+        require(container->extract(container->entries().at(0)) == pattern(10, 1),
                 "unverified extraction ignores the hash");
-        require_throws([&] { (void) package.extract_file(package.files().at(0), true); },
-                       "a corrupted data block fails verification");
-        const auto* vd =
-            std::get_if<stfs::StfsVolumeDescriptor>(&package.metadata().volume_descriptor);
+        require(fails_with(container->extract(container->entries().at(0), Verify::Yes),
+                           gxbuild3::ErrorCode::HashMismatch),
+                "a corrupted data block fails verification");
+        const auto meta = stfs::parse_metadata(data_corrupt);
+        require(meta.has_value(), "parse_metadata accepts the corrupted package");
+        const auto* vd = std::get_if<stfs::StfsVolumeDescriptor>(&meta->volume_descriptor);
         require(vd != nullptr, "synthetic package has an STFS descriptor");
         require(
             fails_with(stfs::verify_data_block(data_corrupt, 1, 0xA000, vd->top_hash_table_hash, 2),
@@ -679,10 +697,11 @@ namespace {
 
         auto table_corrupt = make_package({{"a.bin", pattern(10, 1)}});
         table_corrupt[hash_offset(5) + 0x3] ^= std::byte{0x01}; // unused hash slot
-        const auto table_package = stfs::Package::from_data(table_corrupt);
-        require_throws(
-            [&] { (void) table_package.extract_file(table_package.files().at(0), true); },
-            "a corrupted hash table fails the top hash");
+        const auto table_container = stfs::StfsContainer::open(table_corrupt);
+        require(table_container.has_value(), "the package with a corrupted hash table opens");
+        require(fails_with(table_container->extract(table_container->entries().at(0), Verify::Yes),
+                           gxbuild3::ErrorCode::HashMismatch),
+                "a corrupted hash table fails the top hash");
     }
 
     // The tracked system update package: two hash levels, 31 consecutive files.
@@ -695,37 +714,43 @@ namespace {
         std::transform(raw.begin(), raw.end(), bytes.begin(),
                        [](char c) { return static_cast<std::byte>(c); });
 
-        const auto package = stfs::Package::from_data(bytes);
-        require(package.files().size() == 31, "fixture lists 31 files");
-        const auto& display_name = package.metadata().display_name;
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value(), "StfsContainer opens the fixture");
+        require(container->entries().size() == 31, "fixture lists 31 files");
+        const auto meta = stfs::parse_metadata(bytes);
+        require(meta.has_value(), "parse_metadata accepts the fixture");
+        const auto& display_name = meta->display_name;
         require(std::string(display_name.begin(), display_name.end()) == "System Update",
                 "fixture display_name decodes from UTF-16BE");
 
-        const auto container = stfs::StfsContainer::open(bytes);
-        require(container.has_value(), "StfsContainer opens the fixture");
         const auto in_memory = container->extract_to_memory();
         require(in_memory.has_value(), "StfsContainer extracts the fixture to memory");
-        for (const auto& entry : package.files()) {
-            const auto verified = package.extract_file(entry, true);
+        const auto verified_bytes = [&](const stfs::FileEntry& entry) {
+            auto verified = container->extract(entry, Verify::Yes);
+            require(verified.has_value(), "StfsContainer verifies " + entry.name);
+            return std::move(*verified);
+        };
+        for (const auto& entry : container->entries()) {
+            const auto verified = verified_bytes(entry);
             std::string key = entry.name;
             if (key.starts_with("$flash_"))
                 key.erase(0, 7);
             std::transform(key.begin(), key.end(), key.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             require(in_memory->at(key) == verified,
-                    "Package (verified) and StfsContainer extract identical bytes");
+                    "verified extract and extract_to_memory return identical bytes");
         }
 
         const auto find = [&](std::string_view name) -> const stfs::FileEntry& {
-            for (const auto& entry : package.files())
+            for (const auto& entry : container->entries())
                 if (entry.name == name)
                     return entry;
             throw std::runtime_error("fixture entry missing");
         };
-        require(sha1_hex(package.extract_file(find("xboxupd.bin"), true)) ==
+        require(sha1_hex(verified_bytes(find("xboxupd.bin"))) ==
                     "ea7666ebe2799812270581538b342b8143397ab9",
                 "xboxupd.bin extracts byte-identically");
-        require(sha1_hex(package.extract_file(find("$flash_dash.xex"), true)) ==
+        require(sha1_hex(verified_bytes(find("$flash_dash.xex"))) ==
                     "3d44ef57781c20669705cd687e3b62b1c2f1ff6b",
                 "$flash_dash.xex extracts byte-identically");
     }
@@ -806,14 +831,14 @@ namespace {
         put_utf16be(bytes, 0x1691, std::u16string(0x40, u'T'));    // fills the whole field
         bytes[0x1691 + 0x80] = std::byte{0x41};                    // next field, not part of it
 
-        const auto package = stfs::Package::from_data(bytes);
-        const auto& meta = package.metadata();
-        require(as_string(meta.display_name) == "System Update", "display_name decodes");
-        require(as_string(meta.display_description) == "caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80",
+        const auto meta = stfs::parse_metadata(bytes);
+        require(meta.has_value(), "parse_metadata accepts the package");
+        require(as_string(meta->display_name) == "System Update", "display_name decodes");
+        require(as_string(meta->display_description) == "caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80",
                 "non-ASCII and surrogate pairs decode to UTF-8");
-        require(as_string(meta.publisher_name) == "Pub\xEF\xBF\xBDx",
+        require(as_string(meta->publisher_name) == "Pub\xEF\xBF\xBDx",
                 "unpaired surrogates become U+FFFD");
-        require(as_string(meta.title_name) == std::string(0x40, 'T'),
+        require(as_string(meta->title_name) == std::string(0x40, 'T'),
                 "a field without a terminator stops at its size");
     }
 
@@ -821,17 +846,17 @@ namespace {
         auto bytes = make_package({{"a.bin", pattern(10, 1)}});
         put_be(bytes, 0x1712, 0xFFFFFFFF, 4);
         put_be(bytes, 0x1716, 0x80000000, 4);
-        const auto package = stfs::Package::from_data(bytes);
-        const auto& meta = package.metadata();
-        require(meta.thumbnail_image.empty() && meta.title_thumbnail_image.empty(),
+        const auto meta = stfs::parse_metadata(bytes);
+        require(meta.has_value(), "parse_metadata accepts negative thumbnail sizes");
+        require(meta->thumbnail_image.empty() && meta->title_thumbnail_image.empty(),
                 "negative thumbnail sizes yield no image");
 
         put_be(bytes, 0x1712, 0x20, 4);
         put_be(bytes, 0x1716, 0x7FFFFFFF, 4);
-        const auto sized_package = stfs::Package::from_data(bytes);
-        const auto& sized = sized_package.metadata();
-        require(sized.thumbnail_image.size() == 0x20 &&
-                    sized.title_thumbnail_image.size() == 0x4000,
+        const auto sized = stfs::parse_metadata(bytes);
+        require(sized.has_value(), "parse_metadata accepts positive thumbnail sizes");
+        require(sized->thumbnail_image.size() == 0x20 &&
+                    sized->title_thumbnail_image.size() == 0x4000,
                 "positive sizes are kept and clamped to 0x4000");
     }
 
@@ -932,7 +957,6 @@ namespace {
     };
 
     EntrySnapshot render_entry_snapshot(const Bytes& bytes) {
-        const auto package = stfs::Package::from_data(bytes);
         const auto container = stfs::StfsContainer::open(bytes);
         require(container.has_value(), "StfsContainer opens the fixture");
         const auto in_memory = container->extract_to_memory();
@@ -940,10 +964,11 @@ namespace {
 
         EntrySnapshot snapshot;
         std::string& out = snapshot.text;
-        out += std::format("entries {}\n", package.files().size());
+        const auto& entries = container->entries();
+        out += std::format("entries {}\n", entries.size());
         out += std::format("extract_to_memory files {}\n", in_memory->size());
-        for (std::size_t i = 0; i < package.files().size(); ++i) {
-            const auto& entry = package.files()[i];
+        for (std::size_t i = 0; i < entries.size(); ++i) {
+            const auto& entry = entries[i];
             out +=
                 std::format("[{:02}] name={} flags=0x{:02X} blocks_allocated=0x{:06X} "
                             "blocks_allocated_copy=0x{:06X} starting_block=0x{:06X} "
@@ -965,14 +990,11 @@ namespace {
                                    escaped_text(key));
                 continue;
             }
-            // Package's hash-verified extraction must agree with the unverified container bytes;
+            // The hash-verified extraction must agree with the unverified extract_to_memory bytes;
             // a verification failure is rendered so the golden diff names the entry.
-            std::string verified;
-            try {
-                verified = package.extract_file(entry, true) == found->second ? "yes" : "no";
-            } catch (const std::exception&) {
-                verified = "verify-failed";
-            }
+            const auto checked = container->extract(entry, Verify::Yes);
+            const std::string verified =
+                !checked ? "verify-failed" : (*checked == found->second ? "yes" : "no");
             out += std::format("[{:02}] key={} size=0x{:08X} sha1={} verified_equal={}\n", i,
                                escaped_text(key), found->second.size(), sha1_hex(found->second),
                                verified);
@@ -1163,16 +1185,20 @@ namespace {
             return bytes;
         };
         const auto free_extract = [](const Bytes& bytes, stfs::Magic magic, bool verify) {
-            const auto package = stfs::Package::from_data(bytes);
-            const auto* vd =
-                std::get_if<stfs::StfsVolumeDescriptor>(&package.metadata().volume_descriptor);
+            const auto container = stfs::StfsContainer::open(bytes);
+            require(container.has_value(), "the synthetic package opens");
+            const auto meta = stfs::parse_metadata(bytes);
+            require(meta.has_value(), "parse_metadata accepts the synthetic package");
+            const auto* vd = std::get_if<stfs::StfsVolumeDescriptor>(&meta->volume_descriptor);
             require(vd != nullptr, "synthetic package has an STFS descriptor");
-            return error_of(stfs::extract_file(bytes, package.files().at(0), magic, 0xA000, verify,
-                                               &vd->top_hash_table_hash, total_blocks(bytes)));
+            return error_of(stfs::extract_file(bytes, container->entries().at(0), magic, 0xA000,
+                                               verify, &vd->top_hash_table_hash,
+                                               total_blocks(bytes)));
         };
         const auto free_to_disk = [](const Bytes& bytes, const fs::path& path) {
-            const auto package = stfs::Package::from_data(bytes);
-            return error_of(stfs::extract_file_to_disk(bytes, package.files().at(0),
+            const auto container = stfs::StfsContainer::open(bytes);
+            require(container.has_value(), "the synthetic package opens");
+            return error_of(stfs::extract_file_to_disk(bytes, container->entries().at(0),
                                                        stfs::Magic::PIRS, 0xA000, path));
         };
 
@@ -1352,13 +1378,13 @@ int main(int argc, char** argv) {
         {"parse_header rejects short buffer", test_parse_header_rejects_short_buffer},
         {"read_header_from_file requires full header",
          test_read_header_from_file_requires_full_header},
-        {"Package rejects relative escape", test_package_rejects_relative_escape},
-        {"Package rejects absolute name", test_package_rejects_absolute_name},
+        {"container rejects relative escape", test_container_rejects_relative_escape},
+        {"container rejects absolute name", test_container_rejects_absolute_name},
         {"StfsContainer rejects escape", test_container_rejects_escape},
         {"safe_join", test_safe_join},
         {"parent cycle rejected", test_parent_cycle_rejected},
         {"nested extraction", test_nested_extraction},
-        {"truncated chain throws", test_truncated_chain_throws},
+        {"truncated chain fails", test_truncated_chain_fails},
         {"longer chain is cut at file_size", test_longer_chain_is_cut_at_file_size},
         {"zero-size file skips chain", test_zero_size_file_skips_chain},
         {"block offsets are 64-bit", test_block_offsets_are_64_bit},
@@ -1373,7 +1399,7 @@ int main(int argc, char** argv) {
         {"name_length beyond field rejected", test_name_length_beyond_field_rejected},
         {"nameless entry ends listing", test_nameless_entry_ends_listing},
         {"entry name contents", test_entry_name_contents},
-        {"write failure throws", test_write_failure_throws},
+        {"write failure is reported", test_write_failure_is_reported},
         {"verify requires total_blocks", test_verify_requires_total_blocks},
         {"verify detects corruption", test_verify_detects_corruption},
         {"system update fixture", test_system_update_fixture},
