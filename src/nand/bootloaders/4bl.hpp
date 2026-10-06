@@ -28,25 +28,11 @@ namespace gxbuild3::nand {
         [[nodiscard]] Result<void> encrypt(const uint8_t parent_key[16],
                                            const uint8_t cpu_key[16] = nullptr);
 
-        // Throwing shims over the Result API (std::runtime_error carrying Error::describe()).
-        // TODO(test-phase): test-only; src must not call them (ErrorConventionGuard.cmake).
-        static BootloaderCd parse_or_throw(const std::vector<uint8_t>& bytes) {
-            return detail::value_or_throw(parse(bytes));
-        }
-        void decrypt_or_throw(const uint8_t parent_key[16], const uint8_t cpu_key[16] = nullptr) {
-            detail::value_or_throw(decrypt(parent_key, cpu_key));
-        }
-        void encrypt_or_throw(const uint8_t parent_key[16], const uint8_t cpu_key[16] = nullptr) {
-            detail::value_or_throw(encrypt(parent_key, cpu_key));
-        }
-
         bool is_decrypted() const;
         std::vector<uint8_t> serialize() const;
 
       private:
-        // Returns the payload length the declared size calls for, after validating it.
-        [[nodiscard]] Result<size_t> required_data_size() const;
-        // RC4s header tail and payload under the stage key and keeps that derived key.
+        // RC4s the stage from 0x20 on under the stage key and keeps that derived key.
         [[nodiscard]] Result<void> crypt_stage(const uint8_t parent_key[16],
                                                const uint8_t cpu_key[16]);
     };

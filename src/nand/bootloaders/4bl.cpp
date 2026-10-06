@@ -1,76 +1,57 @@
 #include "nand/bootloaders/4bl.hpp"
 
-#include "excrypt.h"
 #include "nand/bootloaders/BootloaderPacker.hpp"
+#include "nand/bootloaders/Stage.hpp"
 #include "utils/Log.hpp"
-#include "utils/Utils.hpp"
 
-#include <algorithm>
-#include <cstring>
+#include <string_view>
 #include <utility>
 
 namespace gxbuild3::nand {
 
+    namespace {
+
+        constexpr std::string_view kStage = "CD/4BL";
+
+    } // namespace
+
     Result<BootloaderCd> BootloaderCd::parse(std::span<const uint8_t> bytes) {
+        auto parsed = stage::parse_stage<cd_header>(bytes, kStage);
+        if (!parsed)
+            return std::unexpected(std::move(parsed.error()));
+
         BootloaderCd cd;
-        if (bytes.size() < sizeof(cd_header))
-            return fail(ErrorCode::Truncated, "CD/4BL data too short");
-
-        std::memcpy(&cd.header, bytes.data(), sizeof(cd_header));
-
-        if (auto size = aligned_stage_size(cd.header.header.size, sizeof(cd_header), "CD/4BL");
-            !size)
-            return std::unexpected(std::move(size.error()));
-
-        cd.data = std::vector<uint8_t>(bytes.begin() + sizeof(cd_header), bytes.end());
+        cd.header = parsed->header;
+        cd.data = std::move(parsed->data);
         cd.decrypted = cd.is_decrypted();
         Log::Debug("Parsed 4BL/CD: version={}, size=0x{:X}, entrypoint=0x{:08X}",
                    cd.header.header.version, cd.header.header.size, cd.header.header.entrypoint);
         return cd;
     }
 
-    Result<size_t> BootloaderCd::required_data_size() const {
-        auto size_aligned = aligned_stage_size(header.header.size, sizeof(cd_header), "CD/4BL");
-        if (!size_aligned)
-            return std::unexpected(std::move(size_aligned.error()));
-        return *size_aligned - sizeof(cd_header);
-    }
-
     Result<void> BootloaderCd::crypt_stage(const uint8_t parent_key[16],
                                            const uint8_t cpu_key[16]) {
-        uint8_t cur_key[16];
-        std::memcpy(cur_key, parent_key, 16);
-
-        std::vector<uint8_t> buffer(sizeof(cd_header) + data.size());
-        std::memcpy(buffer.data(), &header, sizeof(cd_header));
-        std::memcpy(buffer.data() + sizeof(cd_header), data.data(), data.size());
-
+        // With a CPU key the CD key is bound to the console: HMAC(cpu_key, HMAC(parent, nonce)).
         const auto hmac_type = cpu_key ? HmacType::Hmac1920 : HmacType::Default;
-        if (auto crypted = crypt_single_bl(buffer, hmac_type, cur_key, cpu_key, nullptr, 0x20);
-            !crypted)
-            return with_context(std::move(crypted), "CD/4BL");
-        derived_key.emplace();
-        std::copy_n(cur_key, derived_key->size(), derived_key->begin());
-
-        std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
-                    sizeof(cd_header) - 0x20);
-        std::memcpy(data.data(), buffer.data() + sizeof(cd_header), data.size());
+        auto key =
+            stage::crypt_stage_record(header, data, hmac_type, parent_key, cpu_key, 0x20, kStage);
+        if (!key)
+            return std::unexpected(std::move(key.error()));
+        derived_key = *key;
         return {};
     }
 
     Result<void> BootloaderCd::decrypt(const uint8_t parent_key[16], const uint8_t cpu_key[16]) {
         if (decrypted)
             return {};
-        auto required = required_data_size();
-        if (!required)
-            return std::unexpected(std::move(required.error()));
+        auto payload_size = stage::stage_payload_size(header, kStage);
+        if (!payload_size)
+            return std::unexpected(std::move(payload_size.error()));
 
         if (data.size() + sizeof(cd_header) < header.header.size)
             return fail(ErrorCode::Truncated, "CD/4BL payload too short");
 
-        if (data.size() < *required) {
-            data.resize(*required, 0x00);
-        }
+        stage::pad_payload(data, *payload_size);
 
         if (auto crypted = crypt_stage(parent_key, cpu_key); !crypted)
             return crypted;
@@ -81,23 +62,12 @@ namespace gxbuild3::nand {
     Result<void> BootloaderCd::encrypt(const uint8_t parent_key[16], const uint8_t cpu_key[16]) {
         if (!decrypted)
             return {};
-        auto required = required_data_size();
-        if (!required)
-            return std::unexpected(std::move(required.error()));
-        if (data.size() < *required) {
-            data.resize(*required, 0x00);
-        }
+        auto payload_size = stage::stage_payload_size(header, kStage);
+        if (!payload_size)
+            return std::unexpected(std::move(payload_size.error()));
+        stage::pad_payload(data, *payload_size);
 
-        bool is_zero = true;
-        for (size_t i = 0; i < 16; ++i) {
-            if (header.key[i] != 0) {
-                is_zero = false;
-                break;
-            }
-        }
-        if (is_zero) {
-            ExCryptRandom(header.key, 16);
-        }
+        stage::randomize_zero_nonce(header.key);
 
         if (auto crypted = crypt_stage(parent_key, cpu_key); !crypted)
             return crypted;
@@ -110,10 +80,7 @@ namespace gxbuild3::nand {
     }
 
     std::vector<uint8_t> BootloaderCd::serialize() const {
-        std::vector<uint8_t> out(sizeof(cd_header));
-        std::memcpy(out.data(), &header, sizeof(cd_header));
-        out.insert(out.end(), data.begin(), data.end());
-        return out;
+        return stage::serialize_stage(header, data);
     }
 
 } // namespace gxbuild3::nand

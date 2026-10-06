@@ -22,7 +22,6 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
-#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -372,11 +371,6 @@ namespace {
                                ErrorCode::Malformed),
                     "CG declaring less than its header is refused") &&
             ok;
-        try {
-            (void) BootloaderCd::parse_or_throw(stage_bytes(CD, sizeof(cd_header) + 0x20, 0x20));
-            ok = require(false, "CD parse_or_throw throws on an undersized declared size") && ok;
-        } catch (const std::runtime_error&) {
-        }
         return ok;
     }
 
@@ -386,8 +380,8 @@ namespace {
         using gxbuild3::ErrorCode;
         const uint8_t key[16] = {};
 
-        auto cd = BootloaderCd::parse_or_throw(
-            stage_bytes(CD, sizeof(cd_header) + 0x20, sizeof(cd_header) + 0x20));
+        auto cd = gxbuild3::test::must(BootloaderCd::parse(
+            stage_bytes(CD, sizeof(cd_header) + 0x20, sizeof(cd_header) + 0x20)));
         cd.header.header.size = 0x10;
         const Bytes cd_data = cd.data;
         const bool cd_was_decrypted = cd.decrypted;

@@ -1292,7 +1292,7 @@ namespace {
         }
         donor.cb_section.cb_or_A = BootloaderCb::parse_or_throw(source.bootloaders.cb_or_a);
         donor.cb_section.sc = test::must(BootloaderSc::parse(*source.bootloaders.sc));
-        donor.kernel_section.cd = BootloaderCd::parse_or_throw(source.bootloaders.cd);
+        donor.kernel_section.cd = test::must(BootloaderCd::parse(source.bootloaders.cd));
         if (!donor.encrypt_all(source.metadata.cpu_key)) {
             std::abort();
         }
@@ -2615,7 +2615,7 @@ namespace {
         const auto bootloader_donor = make_donor(source, {});
         auto bootloaders = extract_all(bootloader_donor, source.metadata.cpu_key);
         const auto extracted_cd = bootloaders
-                                      ? BootloaderCd::parse_or_throw(bootloaders->bootloaders.cd)
+                                      ? test::must(BootloaderCd::parse(bootloaders->bootloaders.cd))
                                       : BootloaderCd{};
         if (!require(bootloaders.has_value(), "serialized bootloader donor extracts") ||
             !require(bootloaders->bootloaders.cb_or_a == source.bootloaders.cb_or_a,
@@ -2636,7 +2636,7 @@ namespace {
                                : not_built;
         const auto roundtrip_cd =
             bootloader_roundtrip
-                ? BootloaderCd::parse_or_throw(bootloader_roundtrip->bootloaders.cd)
+                ? test::must(BootloaderCd::parse(bootloader_roundtrip->bootloaders.cd))
                 : BootloaderCd{};
         // The donor chain stops before CE, so the rebuild seals CB/A under a fresh nonce.
         const auto same_outside_nonce = [](const Bytes& left, const Bytes& right) {
@@ -3219,10 +3219,11 @@ namespace {
         cd.header.header.pairing = pairing;
         cd.header.header.size = sizeof(cd_header);
         const auto cd_wire = cd.serialize();
-        passed = require(has_big_endian_pairing(cd_wire) &&
-                             BootloaderCd::parse_or_throw(cd_wire).header.header.pairing == pairing,
-                         "CD generic pairing is big-endian on wire and host-order after parse") &&
-                 passed;
+        passed =
+            require(has_big_endian_pairing(cd_wire) &&
+                        test::must(BootloaderCd::parse(cd_wire)).header.header.pairing == pairing,
+                    "CD generic pairing is big-endian on wire and host-order after parse") &&
+            passed;
 
         BootloaderCe ce{};
         ce.header.header.magic = NANDBootloaderMagic::CE;
@@ -3292,7 +3293,7 @@ namespace {
         cd.header.padding = 0x1234;
         const auto cd_wire = cd.serialize();
         passed = require(read_be16(cd_wire, offsetof(cd_header, padding)) == 0x1234 &&
-                             BootloaderCd::parse_or_throw(cd_wire).header.padding == 0x1234,
+                             test::must(BootloaderCd::parse(cd_wire)).header.padding == 0x1234,
                          "CD padding is host-order after parse and big-endian on wire") &&
                  passed;
 

@@ -31,7 +31,6 @@ endif()
 #     migrates those call sites to the Result API and deletes them.
 set(shim_name_allowlist
     src/nand/bootloaders/2bl.hpp
-    src/nand/bootloaders/4bl.hpp
     src/nand/bootloaders/6bl.hpp
     src/nand/bootloaders/Common.hpp
 )
