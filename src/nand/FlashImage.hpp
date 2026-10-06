@@ -24,6 +24,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace gxbuild3::nand {
@@ -56,7 +57,9 @@ namespace gxbuild3::nand {
         std::optional<BootloaderCd> extra_cd;
     };
 
-    struct FlashImage {
+    // Everything a FlashImage holds, kept apart from its operations so FlashImage can copy and
+    // move it as one piece and then rebind what points into it.
+    struct ImageState {
         nand_header header;
         bool preserve_layout = false; // Direct read/write retains header-defined update anchors.
         std::optional<BuildType>
@@ -83,6 +86,18 @@ namespace gxbuild3::nand {
         std::vector<InputRawPatch> raw_patches;
 
         Driver flash_driver;
+    };
+
+    // A copy or a move rebinds the filesystem to the new object's own driver, so the filesystem
+    // never writes into (or reads from) the image it was copied or moved from.
+    struct FlashImage : ImageState {
+        FlashImage() = default;
+        FlashImage(const FlashImage& other);
+        FlashImage(FlashImage&& other) noexcept(std::is_nothrow_move_constructible_v<ImageState>);
+        FlashImage& operator=(const FlashImage& other);
+        FlashImage&
+        operator=(FlashImage&& other) noexcept(std::is_nothrow_move_assignable_v<ImageState>);
+        ~FlashImage() = default;
 
         // Empty input is absent, not a failure.
         static std::optional<FlashImage> read(std::vector<uint8_t> raw_image);
@@ -125,9 +140,9 @@ namespace gxbuild3::nand {
 
         // Lays the image into the driver. Unless preserve_layout is set (a parsed dump written
         // back), every good block is erased first, so what the writer does not lay stays erased.
-        [[nodiscard]] Result<void> write_to_driver() const;
+        [[nodiscard]] Result<void> write_to_driver();
         // Lays the image and returns the driver's raw bytes.
-        [[nodiscard]] Result<std::vector<uint8_t>> write() const;
+        [[nodiscard]] Result<std::vector<uint8_t>> write();
     };
 
     // Whether update slot `slot` carries the console: its slot number at 0x21B, pairing, LDV and

@@ -1106,7 +1106,7 @@ namespace {
     }
 
     // Records write(): size, SHA-256 and the 0x80 header bytes as laid, or the failure.
-    std::optional<Bytes> render_write(Snapshot& s, std::string_view p, const FlashImage& f) {
+    std::optional<Bytes> render_write(Snapshot& s, std::string_view p, FlashImage& f) {
         auto written = f.write();
         if (!written) {
             s.line(p, "write", "error " + describe_error(written.error()));
@@ -1581,7 +1581,7 @@ namespace {
         return count;
     }
 
-    void render_rewrite(std::ostringstream& text, std::string_view p, const FlashImage& img,
+    void render_rewrite(std::ostringstream& text, std::string_view p, FlashImage& img,
                         const Bytes& input) {
         const auto written = img.write();
         if (!written) {
@@ -1612,7 +1612,7 @@ namespace {
 
         // parse, layout queries, write() straight after parse.
         {
-            const auto img = read_and_parse(bytes);
+            auto img = read_and_parse(bytes);
             text << "parse=" << outcome(img) << '\n';
             if (!img) {
                 return text.str();

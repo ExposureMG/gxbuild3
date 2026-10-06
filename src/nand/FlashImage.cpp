@@ -1103,7 +1103,38 @@ namespace gxbuild3::nand {
             }
         }
 
+        // A FlashFS keeps a pointer to the driver it reads and writes; after a copy or a move it
+        // must name the new object's driver, not the one it was copied or moved from.
+        void rebind_filesystem(ImageState& state) {
+            if (state.filesystem) {
+                state.filesystem->set_driver(&state.flash_driver);
+            }
+        }
+
     } // namespace
+
+    FlashImage::FlashImage(const FlashImage& other) : ImageState(other) {
+        rebind_filesystem(*this);
+    }
+
+    FlashImage::FlashImage(FlashImage&& other) noexcept(
+        std::is_nothrow_move_constructible_v<ImageState>)
+        : ImageState(std::move(other)) {
+        rebind_filesystem(*this);
+    }
+
+    FlashImage& FlashImage::operator=(const FlashImage& other) {
+        ImageState::operator=(other);
+        rebind_filesystem(*this);
+        return *this;
+    }
+
+    FlashImage& FlashImage::operator=(FlashImage&& other) noexcept(
+        std::is_nothrow_move_assignable_v<ImageState>) {
+        ImageState::operator=(std::move(other));
+        rebind_filesystem(*this);
+        return *this;
+    }
 
     std::optional<FlashImage> FlashImage::read(std::vector<uint8_t> raw_image) {
         if (raw_image.empty()) {
@@ -1183,7 +1214,7 @@ namespace gxbuild3::nand {
         return cb_section.cb_or_A.header.header.magic == NANDBootloaderMagic::SB;
     }
 
-    Result<void> FlashImage::write_to_driver() const {
+    Result<void> FlashImage::write_to_driver() {
         if (flash_driver.block_count() == 0) {
             return fail(ErrorCode::InvalidArgument, "the NAND image has no blocks");
         }
@@ -1192,7 +1223,7 @@ namespace gxbuild3::nand {
             return layout;
         }
 
-        auto& driver = const_cast<Driver&>(flash_driver);
+        auto& driver = flash_driver;
 
         // A built image starts from erased flash, so whatever this writer does not lay (an
         // unused update slot, free filesystem blocks, the remap pool, a donor's old data)
@@ -1442,8 +1473,7 @@ namespace gxbuild3::nand {
         size_t min_blk = (highest_used_offset + fs_blk_size - 1) / fs_blk_size;
         size_t current_blk = std::max<size_t>(plan.fs_base / fs_blk_size, min_blk);
 
-        auto* mutable_filesystem =
-            filesystem ? &const_cast<FlashFileSystem&>(*filesystem) : nullptr;
+        auto* mutable_filesystem = filesystem ? &*filesystem : nullptr;
         if (mutable_filesystem) {
             // A donor FlashImage may have been moved since parsing its filesystem.
             // Rebind before checking allocation geometry, not just before saving.
@@ -1622,7 +1652,7 @@ namespace gxbuild3::nand {
             layout.fs_root_block = static_cast<uint16_t>(*root_start);
             layout.fs_version = filesystem->version();
             layout.big_fs_size = filesystem->big_fs_size();
-            auto& fs = const_cast<FlashFileSystem&>(*filesystem);
+            auto& fs = *filesystem;
             fs.set_driver(&driver);
             if (auto saved = fs.save(); !saved) {
                 return with_context(std::move(saved), "saving the Flash File System");
@@ -2111,12 +2141,12 @@ namespace gxbuild3::nand {
         return {};
     }
 
-    Result<std::vector<uint8_t>> FlashImage::write() const {
+    Result<std::vector<uint8_t>> FlashImage::write() {
         if (auto laid = write_to_driver(); !laid) {
             return std::unexpected(std::move(laid.error()));
         }
         // The mutable serialize() stamps the spare layout write_to_driver recorded.
-        return const_cast<Driver&>(flash_driver).serialize();
+        return flash_driver.serialize();
     }
 
     Result<void> FlashImage::decrypt_all(std::span<const uint8_t> cpu_key) {

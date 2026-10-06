@@ -1637,8 +1637,8 @@ namespace gxbuild3 {
 
     namespace {
 
-        // Reads and parses a NAND image into `image`. The image is parsed where it stays: its
-        // FlashFS keeps a pointer to the image's driver, so a parsed image must not be moved.
+        // Reads and parses a NAND image into `image`. Its FlashFS keeps a pointer to the image's
+        // driver; copying or moving a FlashImage rebinds that pointer to the new object's driver.
         [[nodiscard]] Result<void> parse_nand(FlashImage& image,
                                               std::span<const uint8_t> nand_image) {
             auto read =

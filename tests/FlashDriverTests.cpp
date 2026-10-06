@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -678,6 +679,76 @@ namespace {
                      "FlashImage must preserve files after root relocation");
     }
 
+    // A copied or moved image's filesystem reads and writes its own driver: adding a file to it
+    // and saving lands in that image's flash and leaves the image it came from untouched, even
+    // once the source is gone.
+    bool test_flash_image_copy_and_move_rebind_the_filesystem() {
+        FlashImage source{};
+        source.flash_driver = Driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
+        FlashFileSystem filesystem{};
+        filesystem.set_driver(&source.flash_driver);
+        const std::vector<uint8_t> source_file{0x11, 0x22, 0x33};
+        if (!check(filesystem.format(source.flash_driver.block_count()),
+                   "FlashFS must format for the rebinding check") ||
+            !check(filesystem.add_file("source.bin", source_file),
+                   "FlashFS must accept the source file") ||
+            !check(filesystem.save(), "FlashFS must save into the source image")) {
+            return false;
+        }
+        source.filesystem = std::move(filesystem);
+        const std::vector<uint8_t> source_bytes = std::as_const(source.flash_driver).serialize();
+
+        // Adds `name` to the image's filesystem, saves it and reads it back through a filesystem
+        // loaded fresh from the image's own driver.
+        const auto lands_in_own_driver = [](FlashImage& image, std::string_view name,
+                                            const std::vector<uint8_t>& data) {
+            if (!image.filesystem || !image.filesystem->add_file(name, data) ||
+                !image.filesystem->save()) {
+                return false;
+            }
+            FlashFileSystem reread{};
+            return reread.load(image.flash_driver, image.filesystem->root_block()).has_value() &&
+                   reread.get_file(name) == data && image.filesystem->get_file(name) == data;
+        };
+
+        bool ok = true;
+        {
+            FlashImage copy = source;
+            ok = check(lands_in_own_driver(copy, "copy.bin", {0x01}),
+                       "a copy-constructed image's filesystem must write its own driver") &&
+                 ok;
+        }
+        {
+            FlashImage assigned{};
+            assigned = source;
+            ok = check(lands_in_own_driver(assigned, "assigned.bin", {0x02}),
+                       "a copy-assigned image's filesystem must write its own driver") &&
+                 ok;
+        }
+        {
+            std::optional<FlashImage> donor = source;
+            FlashImage moved = std::move(*donor);
+            donor.reset();
+            ok = check(lands_in_own_driver(moved, "moved.bin", {0x03}),
+                       "a move-constructed image's filesystem must write its own driver") &&
+                 ok;
+        }
+        {
+            std::optional<FlashImage> donor = source;
+            FlashImage assigned{};
+            assigned = std::move(*donor);
+            donor.reset();
+            ok = check(lands_in_own_driver(assigned, "move_assigned.bin", {0x04}),
+                       "a move-assigned image's filesystem must write its own driver") &&
+                 ok;
+        }
+        return check(std::as_const(source.flash_driver).serialize() == source_bytes,
+                     "writes through a copy or a move must leave the source image's flash") &&
+               check(source.filesystem->list_files() == std::vector<std::string>{"source.bin"},
+                     "the source image's filesystem must keep only its own file") &&
+               ok;
+    }
+
     // Direct regression for the reported double-allocation bug: when files and mobile
     // data pack the data region so only the final block below the limit stays free, a
     // deferred-root filesystem must still place its root there and serialize. The old
@@ -965,6 +1036,7 @@ int main() {
     passed = test_mobile_longer_than_one_copy_is_refused() && passed;
     passed = test_settings_blocks_are_laid_at_the_head_of_erased_blocks() && passed;
     passed = test_flash_image_places_filesystem_root_consistently() && passed;
+    passed = test_flash_image_copy_and_move_rebind_the_filesystem() && passed;
     passed = test_flash_image_places_deferred_root_in_last_free_block() && passed;
     passed = test_flash_image_accepts_legacy_filesystem_root_type() && passed;
     passed = test_writes_reject_out_of_range_data() && passed;
