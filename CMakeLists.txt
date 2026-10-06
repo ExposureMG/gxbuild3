@@ -156,11 +156,14 @@ if(BUILD_TESTING)
     set_tests_properties(gxbuild3_stfs_tests PROPERTIES TIMEOUT 60)
     target_compile_definitions(gxbuild3_crypto_reference_tests PRIVATE
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
-    # In-process golden over the tracked mydata/image.bin (tests/golden/flashimage_golden.txt).
+    # In-process goldens over the tracked mydata/image.bin (tests/golden/flashimage_golden.txt),
+    # the synthetic fresh-layout matrix (flashimage_matrix.txt) and the FlashImage failure
+    # table (flashimage_failures.txt). The matrix writes 48 full-size images: about 30 s in
+    # Release, so the timeout leaves room for an unoptimized build.
     add_gxbuild3_test(gxbuild3_flashimage_golden_tests tests/FlashImageGoldenTests.cpp)
     target_compile_definitions(gxbuild3_flashimage_golden_tests PRIVATE
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
-    set_tests_properties(gxbuild3_flashimage_golden_tests PROPERTIES TIMEOUT 120)
+    set_tests_properties(gxbuild3_flashimage_golden_tests PROPERTIES TIMEOUT 600)
 
     add_executable(gxbuild3_keyvault_crypto_tests tests/KeyvaultCryptoTests.cpp)
     target_link_libraries(gxbuild3_keyvault_crypto_tests PRIVATE gxbuild3_internal)
