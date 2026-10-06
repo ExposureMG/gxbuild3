@@ -110,24 +110,22 @@ namespace gxbuild3::nand {
                                                   : PatchSectionTarget::Cbb;
         }
 
-    } // namespace
-
-    Result<ParsedPatchSet> parse_patch_set(std::span<const uint8_t> fileData, BuildType buildType) {
-        ParsedPatchSet parsed;
-
-        const auto patchSetKind = resolve_patch_set_kind(buildType);
-        if (!patchSetKind) {
-            return fail(ErrorCode::Unsupported, "build type {} takes no patchset",
-                        static_cast<int>(buildType));
+        // The KHV payload ends with the section delimiter when the file was written whole; drop
+        // it so an add-on can be appended before serialize_khv_payload puts it back.
+        void trim_khv_tail(std::vector<uint8_t>& raw) {
+            if (raw.size() < sizeof(uint32_t)) {
+                return;
+            }
+            const auto tail = raw.size() - sizeof(uint32_t);
+            const auto word = wire::read<wire::be32>(raw, tail, "KHV section delimiter");
+            if (word && *word == kSectionDelimiter) {
+                raw.resize(tail);
+            }
         }
 
-        parsed.kind = *patchSetKind;
-        // A devgl image reads the glitch2m patch file and lays its patch slot the same way:
-        // fuses first, the KHV payload at 0x60.
-        parsed.manufacturing = buildType == BuildType::Glitch2m || buildType == BuildType::Devgl;
-
-        if (*patchSetKind == PatchSetKind::Jtag) {
-            auto rawSections = split_raw_sections(fileData);
+        [[nodiscard]] Result<std::vector<ParsedPatchSection>>
+        parse_jtag_patch_set(std::span<const uint8_t> data) {
+            auto rawSections = split_raw_sections(data);
             if (rawSections.size() != 4) {
                 return fail(ErrorCode::Malformed, "JTAG patchset must have 4 sections, found {}",
                             rawSections.size());
@@ -140,59 +138,83 @@ namespace gxbuild3::nand {
                 PatchSectionTarget::JtagSection4,
             };
 
+            std::vector<ParsedPatchSection> sections;
             for (size_t i = 0; i < rawSections.size(); ++i) {
                 ParsedPatchSection section;
                 section.target = targets[i];
                 section.identifier = "jtag_section_" + std::to_string(i + 1);
                 section.raw_data = std::move(rawSections[i]);
-                parsed.sections.push_back(std::move(section));
+                sections.push_back(std::move(section));
             }
 
             Log::Debug("Parsed JTAG patchset bytes (4 sections)");
-            return parsed;
+            return sections;
         }
 
-        const auto glitchSections = split_raw_sections(fileData);
-        if (glitchSections.size() != 3) {
-            return fail(ErrorCode::Malformed,
-                        "Glitch patchset must have 3 sections [CB_B][CD][KHV], found {}",
-                        glitchSections.size());
-        }
-
-        size_t cursor = 0;
-        for (size_t i = 0; i < 2; ++i) {
-            ParsedPatchSection section;
-            section.target =
-                i == 0 ? resolve_glitch_section1_target(buildType) : PatchSectionTarget::Cd;
-            section.identifier =
-                i == 0 ? (section.target == PatchSectionTarget::Cb ? "cb" : "cbb") : "cd";
-
-            auto sectionBytes = parse_xe_patch_section_bytes(fileData, cursor);
-            if (!sectionBytes) {
-                return std::unexpected(
-                    std::move(sectionBytes.error())
-                        .add_context(std::format("{} patch section", section.identifier)));
+        // The delimiter-count gate scans every aligned word, so it can disagree with the entry
+        // cursor on a 0xFFFFFFFF data word; both are kept as they are.
+        [[nodiscard]] Result<std::vector<ParsedPatchSection>>
+        parse_glitch_patch_set(std::span<const uint8_t> data, BuildType buildType) {
+            const auto glitchSections = split_raw_sections(data);
+            if (glitchSections.size() != 3) {
+                return fail(ErrorCode::Malformed,
+                            "Glitch patchset must have 3 sections [CB_B][CD][KHV], found {}",
+                            glitchSections.size());
             }
-            section.entries = std::move(sectionBytes->entries);
-            cursor += sectionBytes->consumed;
-            parsed.sections.push_back(std::move(section));
-        }
 
-        ParsedPatchSection khvSection;
-        khvSection.target = PatchSectionTarget::Khv;
-        khvSection.identifier = "khv";
-        khvSection.raw_data.assign(fileData.begin() + cursor, fileData.end());
-        if (khvSection.raw_data.size() >= sizeof(uint32_t)) {
-            const auto tail = khvSection.raw_data.size() - sizeof(uint32_t);
-            const auto word =
-                wire::read<wire::be32>(khvSection.raw_data, tail, "KHV section delimiter");
-            if (word && *word == kSectionDelimiter) {
-                khvSection.raw_data.resize(tail);
+            std::vector<ParsedPatchSection> sections;
+            size_t cursor = 0;
+            for (size_t i = 0; i < 2; ++i) {
+                ParsedPatchSection section;
+                section.target =
+                    i == 0 ? resolve_glitch_section1_target(buildType) : PatchSectionTarget::Cd;
+                section.identifier =
+                    i == 0 ? (section.target == PatchSectionTarget::Cb ? "cb" : "cbb") : "cd";
+
+                auto sectionBytes = parse_xe_patch_section_bytes(data, cursor);
+                if (!sectionBytes) {
+                    return std::unexpected(
+                        std::move(sectionBytes.error())
+                            .add_context(std::format("{} patch section", section.identifier)));
+                }
+                section.entries = std::move(sectionBytes->entries);
+                cursor += sectionBytes->consumed;
+                sections.push_back(std::move(section));
             }
-        }
-        parsed.sections.push_back(std::move(khvSection));
 
-        Log::Debug("Parsed Glitch patchset bytes ({} sections)", glitchSections.size());
+            ParsedPatchSection khvSection;
+            khvSection.target = PatchSectionTarget::Khv;
+            khvSection.identifier = "khv";
+            khvSection.raw_data.assign(data.begin() + cursor, data.end());
+            trim_khv_tail(khvSection.raw_data);
+            sections.push_back(std::move(khvSection));
+
+            Log::Debug("Parsed Glitch patchset bytes ({} sections)", glitchSections.size());
+            return sections;
+        }
+
+    } // namespace
+
+    Result<ParsedPatchSet> parse_patch_set(std::span<const uint8_t> fileData, BuildType buildType) {
+        const auto patchSetKind = resolve_patch_set_kind(buildType);
+        if (!patchSetKind) {
+            return fail(ErrorCode::Unsupported, "build type {} takes no patchset",
+                        static_cast<int>(buildType));
+        }
+
+        ParsedPatchSet parsed;
+        parsed.kind = *patchSetKind;
+        // A devgl image reads the glitch2m patch file and lays its patch slot the same way:
+        // fuses first, the KHV payload at 0x60.
+        parsed.manufacturing = buildType == BuildType::Glitch2m || buildType == BuildType::Devgl;
+
+        auto sections = *patchSetKind == PatchSetKind::Jtag
+                            ? parse_jtag_patch_set(fileData)
+                            : parse_glitch_patch_set(fileData, buildType);
+        if (!sections) {
+            return std::unexpected(std::move(sections.error()));
+        }
+        parsed.sections = std::move(*sections);
         return parsed;
     }
 
