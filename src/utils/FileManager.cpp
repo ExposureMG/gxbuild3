@@ -1091,7 +1091,7 @@ namespace gxbuild3::utils {
                    BuildType build_type) {
         auto doc_res = ini::parse_file(ini_path);
         if (!doc_res) {
-            Log::Error("Could not parse INI file at '{}'", ini_path.string());
+            Log::Error("Could not parse INI file: {}", doc_res.error().describe());
             return std::nullopt;
         }
         const auto& doc = *doc_res;

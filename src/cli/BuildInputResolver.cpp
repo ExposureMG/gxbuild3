@@ -764,11 +764,9 @@ namespace gxbuild3::cli {
 
             const auto ini_document = ini::parse_file(ini_path);
             if (!ini_document) {
-                return std::unexpected(
-                    error(ResolutionErrorCode::BuildIniReadFailed,
-                          "Could not read build INI: " +
-                              std::string(ini::parse_error_string(ini_document.error())),
-                          ini_path));
+                return std::unexpected(error(
+                    ResolutionErrorCode::BuildIniReadFailed,
+                    "Could not read build INI: " + ini_document.error().describe(), ini_path));
             }
             if (args.section.empty()) {
                 return std::unexpected(error(ResolutionErrorCode::SectionNotFound,
