@@ -3,6 +3,7 @@
 #include "excrypt.h"
 #include "stfs/BlockParser.hpp"
 #include "stfs/Commons.hpp"
+#include "stfs/Layout.hpp"
 
 #include <array>
 #include <cstring>
@@ -14,10 +15,6 @@ namespace gxbuild3::stfs {
     namespace {
 
         using Digest = std::array<std::byte, 0x14>;
-
-        constexpr std::size_t kHashEntrySize = 0x18;
-        constexpr std::size_t kBlockSize = 0x1000;
-        constexpr std::array<std::uint32_t, 3> kDataBlocksPerHashLevel = {0xAA, 0x70E4, 0x4AF768};
 
         // Checks that the 4 KiB block at `offset` is inside the package and hashes to `expected`.
         [[nodiscard]] Result<void> check_block_hash(std::span<const std::byte> package,
@@ -43,22 +40,11 @@ namespace gxbuild3::stfs {
         [[nodiscard]] Result<Digest> read_level_hash(std::span<const std::byte> package,
                                                      std::uint32_t block_number, int level,
                                                      std::uint32_t header_size) {
-            std::uint32_t record = block_number;
-            if (level > 0) {
-                record /= kDataBlocksPerHashLevel[level - 1];
+            const auto entry_offset = hash_entry_offset(block_number, level, header_size);
+            if (!entry_offset) {
+                return std::unexpected(entry_offset.error());
             }
-            record %= kDataBlocksPerHashLevel[0];
-
-            const auto backing_block = compute_level_n_hash_block_number(block_number, level);
-            if (!backing_block) {
-                return std::unexpected(backing_block.error());
-            }
-            const auto table_offset = block_to_offset(*backing_block, header_size);
-            if (!table_offset) {
-                return std::unexpected(table_offset.error());
-            }
-            const std::uint64_t hash_offset =
-                *table_offset + std::uint64_t{record} * kHashEntrySize;
+            const std::uint64_t hash_offset = *entry_offset;
 
             if (hash_offset + kHashEntrySize > package.size()) {
                 return fail(ErrorCode::OutOfRange, "hash entry at 0x{:X} is outside the package",

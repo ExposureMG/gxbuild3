@@ -1,6 +1,7 @@
 #include "ContainerDetail.hpp"
 
 #include "stfs/FileExtractor.hpp"
+#include "stfs/Layout.hpp"
 
 #include <cstdint>
 #include <fstream>
@@ -22,7 +23,6 @@ namespace gxbuild3::stfs::detail {
             return fail(ErrorCode::Malformed, "STFS package has an invalid file table descriptor");
         }
 
-        constexpr std::size_t kBlockSize = 0x1000;
         FileEntry table_entry{};
         table_entry.name = "$filetable";
         table_entry.flags = 0; // follow the hash chain

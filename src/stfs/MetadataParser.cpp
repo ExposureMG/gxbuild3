@@ -2,6 +2,7 @@
 
 #include "Endian.hpp"
 #include "stfs/Commons.hpp"
+#include "stfs/Layout.hpp"
 
 #include <algorithm>
 #include <array>
@@ -118,7 +119,6 @@ namespace gxbuild3::stfs {
     } // namespace
 
     Result<Metadata> parse_metadata(std::span<const std::byte> data) {
-        constexpr std::size_t kMinMetadataSize = 0x571A + 0x4000;
         if (data.size() < kMinMetadataSize) {
             return fail(ErrorCode::Truncated,
                         "STFS metadata needs 0x{:X} bytes (v1 assumed), got 0x{:X}",
@@ -134,9 +134,8 @@ namespace gxbuild3::stfs {
         meta.header_size = read_be32(base + 0x0340);
         // Every header holds at least the v1 metadata parsed here (real packages use 0x971A or
         // 0xAD0E); a header approaching 1 MiB is not a real STFS header.
-        constexpr std::uint32_t kMinHeaderSize = 0x971A;
         constexpr std::uint32_t kMaxHeaderSize = 0xFFFF0;
-        if (meta.header_size < kMinHeaderSize || meta.header_size > kMaxHeaderSize) {
+        if (meta.header_size < kMinMetadataSize || meta.header_size > kMaxHeaderSize) {
             return fail(ErrorCode::Malformed, "STFS header size 0x{:X} is out of range",
                         meta.header_size);
         }

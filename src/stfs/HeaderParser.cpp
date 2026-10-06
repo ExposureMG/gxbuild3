@@ -2,6 +2,7 @@
 
 #include "Endian.hpp"
 #include "stfs/Commons.hpp"
+#include "stfs/Layout.hpp"
 
 #include <array>
 #include <cstring>
@@ -11,10 +12,6 @@
 namespace gxbuild3::stfs {
 
     namespace {
-
-        // CON signatures end at 0x22C (0x1AC + 0x80); LIVE/PIRS signatures end at 0x22C as
-        // well (0x004 + 0x100 + 0x128). Every header variant needs this many bytes.
-        constexpr std::size_t kHeaderSize = 0x22C;
 
         [[nodiscard]] Result<Magic> parse_magic(std::span<const std::byte> data) {
             std::array<char, 4> magic_bytes;
@@ -68,9 +65,9 @@ namespace gxbuild3::stfs {
     } // namespace
 
     Result<Header> parse_header(std::span<const std::byte> data) {
-        if (data.size() < kHeaderSize) {
+        if (data.size() < kHeaderRegionSize) {
             return fail(ErrorCode::Truncated, "STFS header needs 0x{:X} bytes, got 0x{:X}",
-                        kHeaderSize, data.size());
+                        kHeaderRegionSize, data.size());
         }
 
         auto magic = parse_magic(data);
@@ -100,7 +97,7 @@ namespace gxbuild3::stfs {
             return fail(ErrorCode::IoError, "cannot open {}", path.string());
         }
 
-        std::vector<std::byte> buffer(kHeaderSize);
+        std::vector<std::byte> buffer(kHeaderRegionSize);
         file.read(reinterpret_cast<char*>(buffer.data()),
                   static_cast<std::streamsize>(buffer.size()));
         if (file.gcount() != static_cast<std::streamsize>(buffer.size())) {
