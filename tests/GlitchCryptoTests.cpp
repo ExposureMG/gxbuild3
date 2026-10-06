@@ -1,4 +1,5 @@
 #include "BuildRunner.hpp"
+#include "TestResult.hpp"
 #include "excrypt.h"
 #include "nand/FlashImage.hpp"
 #include "nand/objects/Keyvault.hpp"
@@ -640,8 +641,8 @@ namespace {
                      name + " CE opens under CD's key") &&
              ok;
 
-        auto sealed_cf = BootloaderCf::parse_or_throw(image->system_update_0.cf->serialize());
-        sealed_cf.decrypt_or_throw(onebl.data());
+        auto sealed_cf = test::must(BootloaderCf::parse(image->system_update_0.cf->serialize()));
+        test::must(sealed_cf.decrypt(onebl.data()));
         if (!require(sealed_cf.parse_perbox().has_value(), name + " CF per-box parses"))
             return false;
         const auto& cf_perbox = *sealed_cf.perbox;

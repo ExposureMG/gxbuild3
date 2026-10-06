@@ -187,9 +187,9 @@ namespace {
     // run_build opens a supplied sealed CG and seals it again under a new nonce, so a CG is
     // compared by what it carries: its plaintext, with the nonce at +0x10 cleared.
     std::optional<Bytes> opened_cg(const Bytes& cf_bytes, const Bytes& cg_bytes) {
-        auto cf = BootloaderCf::parse_or_throw(cf_bytes);
+        auto cf = test::must(BootloaderCf::parse(cf_bytes));
         if (!cf.is_decrypted()) {
-            cf.decrypt_or_throw(key_1bl);
+            test::must(cf.decrypt(key_1bl));
         }
         const auto key = cf.cg_key();
         if (!key || cg_bytes.size() < sizeof(cg_header)) {
@@ -3243,10 +3243,11 @@ namespace {
         cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
         cf.decrypted = true;
         const auto cf_wire = cf.serialize();
-        passed = require(has_big_endian_pairing(cf_wire) &&
-                             BootloaderCf::parse_or_throw(cf_wire).header.header.pairing == pairing,
-                         "CF generic pairing is big-endian on wire and host-order after parse") &&
-                 passed;
+        passed =
+            require(has_big_endian_pairing(cf_wire) &&
+                        test::must(BootloaderCf::parse(cf_wire)).header.header.pairing == pairing,
+                    "CF generic pairing is big-endian on wire and host-order after parse") &&
+            passed;
 
         BootloaderCg cg{};
         cg.header.header.magic = NANDBootloaderMagic::CG;
@@ -3259,10 +3260,10 @@ namespace {
                     "CG generic pairing is big-endian on wire and host-order after parse") &&
             passed;
 
-        cf.encrypt_or_throw(key_1bl);
+        test::must(cf.encrypt(key_1bl));
         const auto encrypted_cf_wire = cf.serialize();
-        auto decrypted_cf = BootloaderCf::parse_or_throw(encrypted_cf_wire);
-        decrypted_cf.decrypt_or_throw(key_1bl);
+        auto decrypted_cf = test::must(BootloaderCf::parse(encrypted_cf_wire));
+        test::must(decrypted_cf.decrypt(key_1bl));
         passed = require(has_big_endian_pairing(encrypted_cf_wire) &&
                              decrypted_cf.header.header.pairing == pairing,
                          "CF encrypt/decrypt preserves the generic pairing endian invariant") &&

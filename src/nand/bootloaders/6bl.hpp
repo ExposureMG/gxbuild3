@@ -29,18 +29,6 @@ namespace gxbuild3::nand {
         // nothing, on a null key or a payload too short to hold the per-box block.
         [[nodiscard]] Result<void> calc_mac(const uint8_t onebl_key[16], const uint8_t cpu_key[16]);
 
-        // Throwing shims over the Result API (std::runtime_error carrying Error::describe()).
-        // TODO(test-phase): test-only; src must not call them (ErrorConventionGuard.cmake).
-        static BootloaderCf parse_or_throw(const std::vector<uint8_t>& bytes) {
-            return detail::value_or_throw(parse(bytes));
-        }
-        void decrypt_or_throw(const uint8_t onebl_key[16]) {
-            detail::value_or_throw(decrypt(onebl_key));
-        }
-        void encrypt_or_throw(const uint8_t onebl_key[16]) {
-            detail::value_or_throw(encrypt(onebl_key));
-        }
-
         bool is_decrypted() const;
         // The CG/7BL RC4 key material: the 7BL nonce in the decrypted CF payload at
         // kCfCgNonceOffset (0x330), never the header fixpoint at +0x20. Empty while the CF is
