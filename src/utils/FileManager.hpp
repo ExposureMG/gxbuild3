@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Args.hpp"
+#include "Error.hpp"
 
 #include <cstdint>
 #include <expected>
@@ -8,7 +9,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace gxbuild3::utils {
@@ -45,20 +45,17 @@ namespace gxbuild3::utils {
         AssetSource source{AssetSource::Loose};
     };
 
-    enum class FileLookupErrorCode {
-        InspectionFailed,
-        ReadFailed,
-    };
-
-    struct FileLookupError {
-        FileLookupErrorCode code;
-        std::string message;
+    // A failed lookup: the Error and the candidate and source root it concerns. For an
+    // in-memory package, source_path and root_path are empty and root_index counts the
+    // in-memory packages, as ResolvedFile::root_index does.
+    struct FileLookupError : Error {
         std::filesystem::path source_path;
         std::filesystem::path root_path;
         size_t root_index{0};
         AssetSource source{AssetSource::Loose};
     };
 
+    // An error means the lookup failed; an empty optional means no root has the asset.
     using FileLookupResult = std::expected<std::optional<ResolvedFile>, FileLookupError>;
 
     struct IniFilesResult {
@@ -79,38 +76,28 @@ namespace gxbuild3::utils {
     // Search roots are ordered from highest to lowest priority. Within a root,
     // loose files win over STFS entries, then derived CF/CG parts. Payloads are
     // unique by lowercase basename; bootloader chain slots remain independent.
-    std::optional<IniFilesResult>
+    // A source that cannot be inspected or read is skipped with a warning (xeBuild
+    // parity); an asset that escapes its source root fails the whole INI.
+    [[nodiscard]] Result<IniFilesResult>
     read_ini_files(const std::filesystem::path& ini_path, std::string_view target_section,
                    const std::vector<std::filesystem::path>& search_paths, ScanOptions options = {},
                    BuildType build_type = BuildType::Retail);
 
     // Convenience wrapper: fw_dir (or mydata), version, then common.
-    std::optional<IniFilesResult> read_ini_files(std::string_view version, std::string_view type,
-                                                 std::string_view target_section,
-                                                 const std::filesystem::path& fw_dir = {},
-                                                 ScanOptions options = {},
-                                                 BuildType build_type = BuildType::Retail);
+    [[nodiscard]] Result<IniFilesResult>
+    read_ini_files(std::string_view version, std::string_view type, std::string_view target_section,
+                   const std::filesystem::path& fw_dir = {}, ScanOptions options = {},
+                   BuildType build_type = BuildType::Retail);
 
-    // Same priority rules. STFS matches return the package path. Keys are
-    // lowercase basenames. Throws if any unique requested file is unavailable.
-    // Without an INI, nosusecurity excludes crl/dae/odd/extended/fcrt/secdata.bin.
-    std::unordered_map<std::string, std::filesystem::path>
-    find_files(const std::vector<std::string>& filenames,
-               const std::vector<std::filesystem::path>& search_paths, ScanOptions options = {});
-
-    // Returns bytes and provenance for an optional asset using the same lookup
-    // priority as find_files and read_ini_files.
-    std::optional<ResolvedFile>
-    find_file_data(std::string_view filename,
-                   const std::vector<std::filesystem::path>& search_paths, ScanOptions options = {},
-                   AssetKind kind = AssetKind::Regular);
-
-    // Detailed counterpart for callers that must distinguish absence from a failure to inspect or
-    // read the highest-priority candidate. Errors retain candidate and source-root provenance.
-    FileLookupResult find_file_data_detailed(std::string_view filename,
-                                             const std::vector<std::filesystem::path>& search_paths,
-                                             ScanOptions options = {},
-                                             AssetKind kind = AssetKind::Regular);
+    // Returns bytes and provenance for an asset, using the same lookup priority as
+    // read_ini_files. Without an INI, nosusecurity excludes
+    // crl/dae/odd/extended/fcrt/secdata.bin from STFS. Unlike read_ini_files, the
+    // highest-priority source that cannot be inspected or read fails the lookup instead
+    // of being skipped; the error retains candidate and source-root provenance.
+    [[nodiscard]] FileLookupResult
+    find_file_data_detailed(std::string_view filename,
+                            const std::vector<std::filesystem::path>& search_paths,
+                            ScanOptions options = {}, AssetKind kind = AssetKind::Regular);
 
     // Clears cached STFS containers, directory listings, and derived bootloader parts.
     void clear_stfs_cache();

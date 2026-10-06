@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -121,45 +122,55 @@ namespace {
         return it->second;
     }
 
-    void test_findfiles_priority() {
+    // The asset a lookup that must not fail found, if any.
+    std::optional<utils::ResolvedFile> found(utils::FileLookupResult result) {
+        if (!result)
+            throw std::runtime_error("lookup failed: " + result.error().describe());
+        return std::move(*result);
+    }
+
+    void test_lookup_priority() {
         Fixture f;
         write_stfs(f.root / "first/su_test", {{"$flash_dash.xex", {1}}});
         write_file(f.root / "second/dash.xex", {2});
-        auto result =
-            utils::find_files({"dash.xex", "DASH.XEX"}, {f.root / "first", f.root / "second"});
-        require(result.size() == 1 && result.at("dash.xex") == f.root / "first/su_test",
-                "earlier STFS wins over later loose file and duplicates collapse");
-        result = utils::find_files({"dash.xex"}, {f.root / "second", f.root / "first"});
-        require(result.at("dash.xex") == f.root / "second/dash.xex",
+        auto result = found(
+            utils::find_file_data_detailed("DASH.XEX", {f.root / "first", f.root / "second"}));
+        require(result && result->source_path == f.root / "first/su_test",
+                "earlier STFS wins over later loose file, whatever the requested case");
+        result = found(
+            utils::find_file_data_detailed("dash.xex", {f.root / "second", f.root / "first"}));
+        require(result && result->source_path == f.root / "second/dash.xex",
                 "reversing roots changes winner");
         write_file(f.root / "first/dash.xex", {3});
-        result = utils::find_files({"dash.xex"}, {f.root / "first"});
-        require(result.at("dash.xex") == f.root / "first/dash.xex", "loose wins within a root");
+        result = found(utils::find_file_data_detailed("dash.xex", {f.root / "first"}));
+        require(result && result->source_path == f.root / "first/dash.xex",
+                "loose wins within a root");
     }
 
     void test_find_file_data_priority_and_kind() {
         Fixture f;
         write_stfs(f.root / "first/su_test", {{"$flash_dash.xex", {1}}});
         write_file(f.root / "second/dash.xex", {2});
-        const auto resolved =
-            utils::find_file_data("dash.xex", {f.root / "first", f.root / "second"});
+        const auto resolved = found(
+            utils::find_file_data_detailed("dash.xex", {f.root / "first", f.root / "second"}));
         require(resolved && resolved->data == Bytes{1}, "earlier STFS bytes win");
         require(resolved->source == utils::AssetSource::Stfs, "provenance identifies STFS");
         require(resolved->root_index == 0, "provenance identifies winning root");
         require(resolved->requested_name == "dash.xex", "provenance preserves requested STFS name");
         require(resolved->source_path == f.root / "first/su_test",
                 "provenance identifies STFS package path");
-        require(!utils::find_file_data("dash.xex", {f.root / "first"}, {.nosu = true}),
-                "nosu makes STFS-only byte lookup unavailable");
+        require(
+            !found(utils::find_file_data_detailed("dash.xex", {f.root / "first"}, {.nosu = true})),
+            "nosu makes STFS-only byte lookup unavailable");
     }
 
     void test_find_file_data_optional_and_loose_priority() {
         Fixture f;
-        require(!utils::find_file_data("optional.bin", {f.root / "first"}),
+        require(!found(utils::find_file_data_detailed("optional.bin", {f.root / "first"})),
                 "missing byte lookup is optional");
         write_stfs(f.root / "first/su_test", {{"$flash_dash.xex", {1}}});
         write_file(f.root / "first/dash.xex", {2});
-        const auto resolved = utils::find_file_data("dash.xex", {f.root / "first"});
+        const auto resolved = found(utils::find_file_data_detailed("dash.xex", {f.root / "first"}));
         require(resolved && resolved->data == Bytes{2}, "loose bytes win within a root");
         require(resolved->source == utils::AssetSource::Loose, "provenance identifies loose files");
         require(resolved->requested_name == "dash.xex",
@@ -176,7 +187,7 @@ namespace {
         fs::create_directories(f.root / "first/cpukey.txt");
         const auto invalid =
             utils::find_file_data_detailed("cpukey.txt", {f.root / "first", f.root / "second"});
-        require(!invalid && invalid.error().code == utils::FileLookupErrorCode::InspectionFailed,
+        require(!invalid && invalid.error().code == ErrorCode::Unsupported,
                 "an existing non-file candidate is an inspection failure");
         require(invalid.error().source_path == f.root / "first/cpukey.txt" &&
                     invalid.error().root_path == f.root / "first" &&
@@ -195,28 +206,26 @@ namespace {
                 "detailed lookup keeps earlier-root STFS above later-root loose data");
     }
 
-    void test_detailed_stfs_failure_is_terminal_but_legacy_lookup_falls_back() {
+    void test_detailed_stfs_failure_is_terminal_but_ini_lookup_falls_back() {
         Fixture f;
         write_file(f.root / "first/su_corrupt", {0x00, 0x01, 0x02});
         write_file(f.root / "second/dash.xex", {0x22});
         const std::vector<fs::path> roots{f.root / "first", f.root / "second"};
 
         const auto detailed = utils::find_file_data_detailed("dash.xex", roots);
-        require(!detailed &&
-                    detailed.error().code == utils::FileLookupErrorCode::InspectionFailed &&
+        require(!detailed && detailed.error().code == ErrorCode::Malformed &&
                     detailed.error().source_path == f.root / "first/su_corrupt" &&
                     detailed.error().root_path == f.root / "first" &&
                     detailed.error().root_index == 0 &&
                     detailed.error().source == utils::AssetSource::Stfs,
                 "detailed lookup reports the first corrupt STFS package with exact provenance");
 
-        const auto legacy = utils::find_file_data("dash.xex", roots);
-        require(legacy && legacy->data == Bytes{0x22} && legacy->root_index == 1 &&
-                    legacy->source == utils::AssetSource::Loose,
-                "legacy lookup skips a corrupt STFS package and uses the later loose asset");
+        const auto ini = utils::read_ini_files(f.root / "version/_test.ini", "test", roots);
+        require(ini && payload(*ini, "dash.xex") == Bytes{0x22},
+                "an INI lookup skips a corrupt STFS package and uses the later loose asset");
     }
 
-    void test_detailed_xboxupd_failure_is_terminal_but_legacy_lookup_falls_back() {
+    void test_detailed_xboxupd_failure_is_terminal_but_ini_lookup_falls_back() {
         Fixture f;
         write_stfs(f.root / "first/su_test", {{"xboxupd.bin", {0x00, 0x01}}});
         write_file(f.root / "second/cf_1.bin", {0x22});
@@ -224,20 +233,18 @@ namespace {
 
         const auto detailed =
             utils::find_file_data_detailed("cf_1.bin", roots, {}, utils::AssetKind::Bootloader);
-        require(!detailed &&
-                    detailed.error().code == utils::FileLookupErrorCode::InspectionFailed &&
+        require(!detailed && detailed.error().code == ErrorCode::Truncated &&
                     detailed.error().source_path == f.root / "first/su_test" &&
                     detailed.error().root_path == f.root / "first" &&
                     detailed.error().root_index == 0 &&
                     detailed.error().source == utils::AssetSource::Xboxupd,
                 "detailed bootloader lookup reports failed xboxupd derivation with provenance");
 
-        const auto legacy =
-            utils::find_file_data("cf_1.bin", roots, {}, utils::AssetKind::Bootloader);
-        require(
-            legacy && legacy->data == Bytes{0x22} && legacy->root_index == 1 &&
-                legacy->source == utils::AssetSource::Loose,
-            "legacy bootloader lookup skips failed xboxupd derivation and uses later loose data");
+        write_text(f.root / "version/_test.ini", "[testbl]\ncf_1.bin\n");
+        const auto ini = utils::read_ini_files(f.root / "version/_test.ini", "test", roots);
+        require(ini && ini->bootloaders.cf0 == Bytes{0x22},
+                "an INI bootloader lookup skips failed xboxupd derivation and uses later loose "
+                "data");
     }
 
     void test_regular_lookup_does_not_extract_unrelated_xboxupd() {
@@ -255,10 +262,10 @@ namespace {
         Fixture f;
         const Bytes xboxupd = make_xboxupd();
         write_stfs(f.root / "first/su_test", {{"xboxupd.bin", xboxupd}});
-        require(!utils::find_file_data("cf_1.bin", {f.root / "first"}),
+        require(!found(utils::find_file_data_detailed("cf_1.bin", {f.root / "first"})),
                 "regular lookup does not derive bootloaders");
-        const auto resolved =
-            utils::find_file_data("cf_1.bin", {f.root / "first"}, {}, utils::AssetKind::Bootloader);
+        const auto resolved = found(utils::find_file_data_detailed(
+            "cf_1.bin", {f.root / "first"}, {}, utils::AssetKind::Bootloader));
         require(resolved && resolved->data == Bytes(xboxupd.begin(), xboxupd.begin() + 0x20),
                 "bootloader lookup derives CF from xboxupd");
         require(resolved->source == utils::AssetSource::Xboxupd,
@@ -401,33 +408,34 @@ namespace {
         require(bl.cd == Bytes{0x22}, "single CD is the boot-chain CD");
     }
 
-    void test_findfiles_alias_priority() {
+    void test_lookup_alias_priority() {
         Fixture f;
         write_file(f.root / "first/old/asset.bin", {1});
         write_file(f.root / "second/new/asset.bin", {2});
-        const auto result = utils::find_files({"old/asset.bin", "new/asset.bin"},
-                                              {f.root / "first", f.root / "second"});
-        require(result.size() == 1 && result.at("asset.bin") == f.root / "first/old/asset.bin",
-                "duplicate basenames must not discard higher priority lookup paths");
+        const std::vector<fs::path> roots{f.root / "first", f.root / "second"};
+        const auto old_alias = found(utils::find_file_data_detailed("old/asset.bin", roots));
+        const auto new_alias = found(utils::find_file_data_detailed("new/asset.bin", roots));
+        require(old_alias && new_alias &&
+                    old_alias->source_path == f.root / "first/old/asset.bin" &&
+                    new_alias->source_path == f.root / "second/new/asset.bin" &&
+                    old_alias->root_index < new_alias->root_index,
+                "same-basename lookup paths keep their own roots and priority");
     }
 
     void test_nosu() {
         Fixture f;
         write_stfs(f.root / "mydata/su_test", {{"$flash_dash.xex", {1}}});
-        bool missing = false;
-        try {
-            utils::find_files({"dash.xex"}, {f.root / "mydata"}, {.nosu = true});
-        } catch (const std::runtime_error&) {
-            missing = true;
-        }
-        require(missing, "nosu must make STFS-only find_files entries unavailable");
+        require(
+            !found(utils::find_file_data_detailed("dash.xex", {f.root / "mydata"}, {.nosu = true})),
+            "nosu must make STFS-only entries unavailable");
         const auto result = utils::read_ini_files("version", "test", "test", {}, {.nosu = true});
         require(result && result->flashfs_sec.empty(),
                 "nosu must skip STFS payloads in INI lookup");
         write_file(f.root / "version/dash.xex", {2});
-        const auto loose = utils::find_files({"dash.xex"}, {f.root / "mydata", f.root / "version"},
-                                             {.nosu = true});
-        require(loose.at("dash.xex") == f.root / "version/dash.xex", "nosu retains loose fallback");
+        const auto loose = found(utils::find_file_data_detailed(
+            "dash.xex", {f.root / "mydata", f.root / "version"}, {.nosu = true}));
+        require(loose && loose->source_path == f.root / "version/dash.xex",
+                "nosu retains loose fallback");
     }
 
     void test_nosusecurity() {
@@ -447,12 +455,14 @@ namespace {
         // [flashfs] is read before [security], so the file keeps its [flashfs] spelling.
         require(loose && payload(*loose, "SECDATA.BIN") == Bytes{3},
                 "nosusecurity retains loose security");
-        const auto paths =
-            utils::find_files({"secdata.bin", "dash.xex"}, {f.root / "mydata", f.root / "version"},
-                              {.nosusecurity = true});
-        require(paths.at("secdata.bin") == f.root / "version/secdata.bin" &&
-                    paths.at("dash.xex") == f.root / "mydata/su_test",
-                "find_files filters only security from STFS");
+        const std::vector<fs::path> roots{f.root / "mydata", f.root / "version"};
+        const auto secdata =
+            found(utils::find_file_data_detailed("secdata.bin", roots, {.nosusecurity = true}));
+        const auto dash =
+            found(utils::find_file_data_detailed("dash.xex", roots, {.nosusecurity = true}));
+        require(secdata && secdata->source_path == f.root / "version/secdata.bin" && dash &&
+                    dash->source_path == f.root / "mydata/su_test",
+                "the lookup filters only security from STFS");
     }
 
     // The FlashFS lists the [flashfs] files and then the [security] files, each in INI order,
@@ -533,11 +543,13 @@ namespace {
         write_file(f.root / "mydata/cf_1.bin", {5});
         const auto loose = utils::read_ini_files("version", "test", "test");
         require(loose && loose->bootloaders.cf0 == Bytes{5}, "loose bootloader wins within a root");
-        const auto aliases = utils::find_files({"cf", "6bl", "cf_split", "cg", "7bl", "cg_split"},
-                                               {f.root / "mydata"});
-        require(aliases.size() == 6 && aliases.at("cf_split") == f.root / "mydata/su_test" &&
-                    aliases.at("7bl") == f.root / "mydata/su_test",
-                "find_files retains split bootloader aliases");
+        for (const auto* alias : {"cf", "6bl", "cf_split", "cg", "7bl", "cg_split"}) {
+            const auto part = found(utils::find_file_data_detailed(alias, {f.root / "mydata"}, {},
+                                                                   utils::AssetKind::Bootloader));
+            require(part && part->source_path == f.root / "mydata/su_test" &&
+                        part->source == utils::AssetSource::Xboxupd,
+                    "split bootloader aliases resolve to the package's xboxupd");
+        }
     }
 
     void test_missing_and_invalid_sources() {
@@ -551,19 +563,15 @@ namespace {
                     payload(*result, "dash.xex") == Bytes{2},
                 "missing roots, regular-file roots, invalid packages, and repeated roots do not "
                 "prevent fallback");
-        require(utils::find_files({}, roots).empty(),
-                "empty requested files produce empty results");
         require(!utils::read_ini_files(f.root / "missing.ini", "test", roots),
                 "missing INI remains an error");
         require(!utils::read_ini_files(f.root / "version/_test.ini", "absent", roots),
                 "missing section remains an error");
-        bool missing = false;
-        try {
-            utils::find_files({"missing.bin"}, roots);
-        } catch (const std::runtime_error&) {
-            missing = true;
-        }
-        require(missing, "missing find_files entries remain an error");
+        require(!found(utils::find_file_data_detailed("missing.bin",
+                                                      {f.root / "absent", f.root / "second"})),
+                "a missing asset is reported absent");
+        require(!utils::find_file_data_detailed("missing.bin", roots),
+                "the strict lookup fails at an invalid package instead of reporting absence");
     }
 
     void test_duplicate_loose_wins_over_stfs() {
@@ -647,8 +655,8 @@ namespace {
         write_file(f.root / "common/cg_4532.bin", {0x46});
         const std::vector<fs::path> roots{f.root / "version", f.root / "common"};
 
-        const auto legacy =
-            utils::find_file_data("cf_4532.bin", roots, {}, utils::AssetKind::Bootloader);
+        const auto legacy = found(
+            utils::find_file_data_detailed("cf_4532.bin", roots, {}, utils::AssetKind::Bootloader));
         require(legacy && legacy->data == Bytes{0x45} && legacy->root_index == 1 &&
                     legacy->source == utils::AssetSource::Loose,
                 "a CF naming another release is not answered from the package's xboxupd");
@@ -665,10 +673,12 @@ namespace {
             utils::find_file_data_detailed("cf_17489.bin", roots, {}, utils::AssetKind::Bootloader);
         require(absent && !*absent, "a release no source supplies is reported absent");
 
-        const auto paths = utils::find_files({"cf_4532.bin", "cf_17559.bin"}, roots);
-        require(paths.at("cf_4532.bin") == f.root / "common/cf_4532.bin" &&
-                    paths.at("cf_17559.bin") == f.root / "version/su_test",
-                "find_files resolves CF requests by release");
+        require(legacy->source_path == f.root / "common/cf_4532.bin" &&
+                    found(utils::find_file_data_detailed("cf_17559.bin", roots, {},
+                                                         utils::AssetKind::Bootloader))
+                            .value()
+                            .source_path == f.root / "version/su_test",
+                "the lookup resolves CF requests by release");
 
         utils::ScanOptions in_memory;
         in_memory.in_memory_stfs.push_back(
@@ -755,12 +765,9 @@ namespace {
             write_stfs(f.root / "mydata/su_test", {{"cb_1.bin", {0x02}}});
             require(!utils::read_ini_files("version", "test", "test"),
                     "unconfined INI bootloader path cannot escape or fall through to STFS");
-            require(!utils::find_file_data(path, {f.root / "mydata"}),
-                    "legacy byte lookup also rejects an unsafe name before STFS fallback");
             const auto detailed = utils::find_file_data_detailed(path, {f.root / "mydata"});
-            require(!detailed &&
-                        detailed.error().code == utils::FileLookupErrorCode::InspectionFailed,
-                    "detailed lookup reports an unsafe name as an inspection failure");
+            require(!detailed && detailed.error().code == ErrorCode::InvalidArgument,
+                    "detailed lookup rejects an unsafe name before STFS fallback");
             write_text(f.root / "version/_test.ini", "[testbl]\nnone\n[flashfs]\n" + path + "\n");
             const auto payloads = utils::read_ini_files("version", "test", "test");
             if (path.starts_with("../")) {
@@ -810,8 +817,9 @@ namespace {
         const auto detailed = utils::find_file_data_detailed("sc_17489.bin", {f.root / "mydata"});
         require(detailed && *detailed && (**detailed).data == Bytes({0x53, 0x43}),
                 "the detailed lookup falls back to any case as well");
-        require(utils::find_file_data("SC_17489.BIN", {f.root / "mydata"}).has_value(),
-                "the byte lookup falls back to any case as well");
+        require(
+            found(utils::find_file_data_detailed("SC_17489.BIN", {f.root / "mydata"})).has_value(),
+            "an upper-case request falls back to any case as well");
     }
 
     void test_ini_payload_outside_release_and_rawpatch() {
@@ -928,12 +936,6 @@ namespace {
         require((*detailed)->root_index == 0, "root_index indicates in-memory package index");
         require((*detailed)->source == utils::AssetSource::Stfs,
                 "source identifies as AssetSource::Stfs");
-
-        // Legacy find_file_data also works with in-memory STFS
-        const auto legacy = utils::find_file_data("dash.xex", empty_roots, options);
-        require(legacy.has_value() && legacy->data == Bytes{0x42} && legacy->source_path.empty() &&
-                    legacy->source == utils::AssetSource::Stfs,
-                "legacy find_file_data accepts in-memory STFS without a path");
     }
 
     void test_in_memory_stfs_bootloader_derivation() {
@@ -1033,17 +1035,17 @@ namespace {
 
 int main() {
     const std::vector<std::pair<std::string_view, void (*)()>> tests = {
-        {"find_files priority", test_findfiles_priority},
+        {"lookup priority", test_lookup_priority},
         {"find_file_data priority and kind", test_find_file_data_priority_and_kind},
         {"find_file_data optional and loose priority",
          test_find_file_data_optional_and_loose_priority},
         {"find_file_data detailed errors",
          test_find_file_data_detailed_distinguishes_missing_and_inspection_failure},
         {"find_file_data detailed priority", test_find_file_data_detailed_preserves_root_priority},
-        {"find_file_data strict STFS error and tolerant fallback",
-         test_detailed_stfs_failure_is_terminal_but_legacy_lookup_falls_back},
-        {"find_file_data strict xboxupd error and tolerant fallback",
-         test_detailed_xboxupd_failure_is_terminal_but_legacy_lookup_falls_back},
+        {"find_file_data strict STFS error and tolerant INI fallback",
+         test_detailed_stfs_failure_is_terminal_but_ini_lookup_falls_back},
+        {"find_file_data strict xboxupd error and tolerant INI fallback",
+         test_detailed_xboxupd_failure_is_terminal_but_ini_lookup_falls_back},
         {"find_file_data regular lookup skips unrelated xboxupd extraction",
          test_regular_lookup_does_not_extract_unrelated_xboxupd},
         {"find_file_data bootloader derivation",
@@ -1056,7 +1058,7 @@ int main() {
         {"INI non-JTAG leaves extra bootloaders empty",
          test_ini_non_jtag_leaves_extra_bootloaders_empty},
         {"INI non-JTAG second CB stays CB_B", test_ini_non_jtag_second_cb_stays_cb_b},
-        {"find_files alias priority", test_findfiles_alias_priority},
+        {"lookup alias priority", test_lookup_alias_priority},
         {"nosu", test_nosu},
         {"nosusecurity", test_nosusecurity},
         {"flashfs files precede security files", test_flashfs_files_precede_security_files},

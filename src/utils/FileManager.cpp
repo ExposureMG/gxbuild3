@@ -10,10 +10,11 @@
 #include <cctype>
 #include <charconv>
 #include <cstddef>
+#include <format>
 #include <memory>
 #include <mutex>
 #include <span>
-#include <stdexcept>
+#include <unordered_map>
 #include <utility>
 
 namespace gxbuild3::utils {
@@ -197,19 +198,6 @@ namespace gxbuild3::utils {
                 result.push_back(std::to_integer<uint8_t>(byte));
             }
             return result;
-        }
-
-        // For the lookups that degrade instead of failing: a directory listing that cannot be
-        // read is reported and the exact path is tried instead.
-        [[nodiscard]] std::filesystem::path
-        loose_candidate_or_exact(const std::filesystem::path& root,
-                                 const std::filesystem::path& relative) {
-            auto candidate = loose_candidate(root, relative);
-            if (candidate)
-                return std::move(*candidate);
-            Log::Warn("Could not search '{}' for '{}': {}", root.string(), relative.string(),
-                      candidate.error().describe());
-            return root / relative;
         }
 
         std::vector<std::string> security_file_names() {
@@ -423,170 +411,249 @@ namespace gxbuild3::utils {
         using SourceRank = std::pair<size_t, unsigned>;
 
         struct LocatedFile {
-            std::filesystem::path path;
-            std::vector<uint8_t> data;
-            size_t root_index;
-            AssetSource source;
+            ResolvedFile file;
             SourceRank rank;
         };
 
-        class AssetSearch {
-          public:
-            AssetSearch(const std::vector<std::filesystem::path>& roots, ScanOptions options,
-                        std::vector<std::string> security_names = security_file_names())
-                : options_(std::move(options)),
-                  excluded_(options_.nosusecurity ? std::move(security_names)
-                                                  : std::vector<std::string>{}) {
-                for (const auto& root : roots)
-                    roots_.push_back({root});
+        using LocateResult = std::expected<std::optional<LocatedFile>, FileLookupError>;
+
+        // How a lookup treats a source it cannot inspect or read. Strict fails with the first
+        // such source. Lenient skips it with a warning and goes on, as xeBuild does. Either
+        // way, an asset name or path that escapes its source root fails the lookup.
+        enum class LookupPolicy {
+            Strict,
+            Lenient
+        };
+
+        struct Provenance {
+            std::filesystem::path source_path;
+            std::filesystem::path root_path;
+            size_t root_index = 0;
+            AssetSource source = AssetSource::Loose;
+        };
+
+        [[nodiscard]] FileLookupError lookup_error(Error error, std::string layer,
+                                                   Provenance where) {
+            if (!layer.empty())
+                error.add_context(std::move(layer));
+            return FileLookupError{std::move(error), std::move(where.source_path),
+                                   std::move(where.root_path), where.root_index, where.source};
+        }
+
+        // Under the lenient policy, reports a source that is skipped and returns true. A failed
+        // CF/CG derivation from xboxupd.bin is only a debug message: most packages hold none.
+        [[nodiscard]] bool tolerated(LookupPolicy policy, const FileLookupError& error) {
+            if (policy == LookupPolicy::Strict)
+                return false;
+            const auto where = error.source_path.empty()
+                                   ? std::format("in-memory STFS package {}", error.root_index)
+                                   : error.source_path.string();
+            if (error.source == AssetSource::Xboxupd)
+                Log::Debug("Skipping '{}': {}", where, error.describe());
+            else
+                Log::Warn("Skipping '{}': {}", where, error.describe());
+            return true;
+        }
+
+        // The entry `key` of one package (Stfs) or, for a bootloader request, the CF/CG its
+        // xboxupd.bin supplies (Xboxupd). A failure carries `where` with its source set.
+        [[nodiscard]] std::expected<std::optional<std::pair<std::vector<uint8_t>, AssetSource>>,
+                                    FileLookupError>
+        search_package(CachedPackage& pkg, const std::string& key, const std::string& stem,
+                       bool wants_xboxupd_part, Provenance where) {
+            if (pkg.container->contains_file_by_name(key)) {
+                auto data = get_package_file(pkg, key);
+                if (!data) {
+                    where.source = AssetSource::Stfs;
+                    return std::unexpected(lookup_error(std::move(data).error(),
+                                                        "Could not extract requested STFS entry",
+                                                        std::move(where)));
+                }
+                if (*data)
+                    return std::pair{**data, AssetSource::Stfs};
             }
-
-            std::optional<LocatedFile>
-            find(std::string_view name, AssetKind kind = AssetKind::Regular, bool contents = true) {
-                if (!safe_asset_name(name))
-                    return std::nullopt;
-                const auto relative = entry_to_lookup_path(name);
-                const auto key = normalize_file_key(std::string(name));
-                const auto stem = std::filesystem::path(key).stem().string();
-                const bool excluded =
-                    options_.nosusecurity &&
-                    std::find(excluded_.begin(), excluded_.end(), key) != excluded_.end();
-
-                // 1. In-memory STFS packages (evaluated first with highest priority)
-                if (!options_.nosu && !excluded) {
-                    for (size_t mem_idx = 0; mem_idx < options_.in_memory_stfs.size(); ++mem_idx) {
-                        auto pkg = get_or_load_memory_package(options_.in_memory_stfs[mem_idx]);
-                        if (!pkg) {
-                            Log::Warn("Failed to inspect in-memory STFS package: {}",
-                                      pkg.error().describe());
-                            continue;
-                        }
-                        auto located = find_in_package(**pkg, key, stem, kind, contents);
-                        if (!located) {
-                            Log::Warn("Failed to inspect in-memory STFS package: {}",
-                                      located.error().describe());
-                            continue;
-                        }
-                        if (*located) {
-                            auto& [data, source] = **located;
-                            const unsigned order = source == AssetSource::Stfs ? 1 : 2;
-                            return LocatedFile{
-                                {}, std::move(data), mem_idx, source, {mem_idx, order}};
-                        }
-                    }
-                }
-
-                // 2. Disk roots
-                const size_t mem_offset = options_.in_memory_stfs.size();
-                for (size_t index = 0; index < roots_.size(); ++index) {
-                    const auto& root = roots_[index];
-                    if (root.path.empty() || !std::filesystem::is_directory(root.path))
-                        continue;
-                    if (!contained_asset_path(root.path, relative)) {
-                        invalid_path_ = true;
-                        return std::nullopt;
-                    }
-                    const auto candidate = loose_candidate_or_exact(root.path, relative);
-                    if (std::filesystem::is_regular_file(candidate)) {
-                        if (!contents)
-                            return LocatedFile{
-                                candidate, {}, index, AssetSource::Loose, {mem_offset + index, 0}};
-                        if (auto data = read_file(candidate))
-                            return LocatedFile{candidate,
-                                               std::move(*data),
-                                               index,
-                                               AssetSource::Loose,
-                                               {mem_offset + index, 0}};
-                    }
-                    if (options_.nosu || excluded)
-                        continue;
-
-                    const auto package = find_stfs_file(root.path);
-                    if (!package) {
-                        Log::Warn("Failed to inspect STFS assets in '{}': {}", root.path.string(),
-                                  package.error().describe());
-                        continue;
-                    }
-                    if (!*package)
-                        continue;
-                    auto pkg = get_or_load_disk_package(**package);
-                    if (!pkg) {
-                        Log::Warn("Failed to inspect STFS assets in '{}': {}", root.path.string(),
-                                  pkg.error().describe());
-                        continue;
-                    }
-                    auto located = find_in_package(**pkg, key, stem, kind, contents);
-                    if (!located) {
-                        Log::Warn("Failed to inspect STFS assets in '{}': {}", root.path.string(),
-                                  located.error().describe());
-                        continue;
-                    }
-                    if (*located) {
-                        auto& [data, source] = **located;
-                        const unsigned order = source == AssetSource::Stfs ? 1 : 2;
-                        return LocatedFile{
-                            **package, std::move(data), index, source, {mem_offset + index, order}};
-                    }
-                }
+            if (!wants_xboxupd_part || !pkg.container->contains_file_by_name("xboxupd.bin"))
                 return std::nullopt;
+            auto parts = get_xboxupd_parts(pkg);
+            if (!parts) {
+                where.source = AssetSource::Xboxupd;
+                return std::unexpected(lookup_error(
+                    std::move(parts).error(),
+                    "Could not derive requested bootloader from xboxupd.bin", std::move(where)));
             }
+            if (const auto* part = xboxupd_part_for(**parts, key, stem); part && !part->empty())
+                return std::pair{*part, AssetSource::Xboxupd};
+            return std::nullopt;
+        }
 
-            bool invalid_path() const { return invalid_path_; }
-
-          private:
-            struct Root {
-                std::filesystem::path path;
+        // The one asset lookup: in-memory packages first, then each root's loose file, its
+        // STFS entry and its derived CF/CG. `security_names` are the names nosusecurity keeps
+        // out of STFS.
+        [[nodiscard]] LocateResult locate(std::string_view name,
+                                          const std::vector<std::filesystem::path>& roots,
+                                          const ScanOptions& options,
+                                          const std::vector<std::string>& security_names,
+                                          AssetKind kind, LookupPolicy policy) {
+            if (!safe_asset_name(name)) {
+                return std::unexpected(
+                    lookup_error(Error(ErrorCode::InvalidArgument,
+                                       "Asset name must be a confined relative path"),
+                                 {}, {entry_to_lookup_path(name), {}, 0, AssetSource::Loose}));
+            }
+            const auto relative = entry_to_lookup_path(name);
+            const auto key = normalize_file_key(std::string(name));
+            const auto stem = std::filesystem::path(key).stem().string();
+            const bool wants_xboxupd_part =
+                kind == AssetKind::Bootloader &&
+                (key.starts_with("cf") || key.starts_with("cg") || stem == "6bl" || stem == "7bl");
+            const bool excluded = options.nosusecurity &&
+                                  std::find(security_names.begin(), security_names.end(), key) !=
+                                      security_names.end();
+            const auto located = [&](std::filesystem::path path, std::vector<uint8_t> data,
+                                     size_t root_index, AssetSource source,
+                                     size_t rank_root) -> LocateResult {
+                const unsigned order = source == AssetSource::Loose  ? 0
+                                       : source == AssetSource::Stfs ? 1
+                                                                     : 2;
+                return LocatedFile{ResolvedFile{std::string(name), std::move(path), std::move(data),
+                                                root_index, source},
+                                   {rank_root, order}};
             };
 
-            // An entry of one package (Stfs) or, for a bootloader, the CF/CG its xboxupd.bin
-            // supplies (Xboxupd). Without `contents` the bytes are left empty and a package
-            // entry named by the request's stem also matches.
-            [[nodiscard]] Result<std::optional<std::pair<std::vector<uint8_t>, AssetSource>>>
-            find_in_package(CachedPackage& pkg, const std::string& key, const std::string& stem,
-                            AssetKind kind, bool contents) const {
-                bool contains = pkg.container->contains_file_by_name(key);
-                std::string matched_name = key;
-                if (!contains && !contents) {
-                    if (std::find(excluded_.begin(), excluded_.end(), stem) == excluded_.end() &&
-                        pkg.container->contains_file_by_name(stem)) {
-                        contains = true;
-                        matched_name = stem;
+            // 1. In-memory STFS packages (highest priority)
+            if (!options.nosu && !excluded) {
+                for (size_t mem_idx = 0; mem_idx < options.in_memory_stfs.size(); ++mem_idx) {
+                    const Provenance where{{}, {}, mem_idx, AssetSource::Stfs};
+                    auto pkg = get_or_load_memory_package(options.in_memory_stfs[mem_idx]);
+                    if (!pkg) {
+                        auto failure =
+                            lookup_error(std::move(pkg).error(),
+                                         "Could not inspect in-memory STFS package", where);
+                        if (tolerated(policy, failure))
+                            continue;
+                        return std::unexpected(std::move(failure));
                     }
-                }
-                if (contains) {
-                    std::vector<uint8_t> data;
-                    if (contents) {
-                        const auto p_data = get_package_file(pkg, matched_name);
-                        if (!p_data)
-                            return std::unexpected(p_data.error());
-                        if (*p_data)
-                            data = **p_data;
+                    auto found = search_package(**pkg, key, stem, wants_xboxupd_part, where);
+                    if (!found) {
+                        if (tolerated(policy, found.error()))
+                            continue;
+                        return std::unexpected(std::move(found).error());
                     }
-                    return std::pair{std::move(data), AssetSource::Stfs};
+                    if (*found)
+                        return located({}, std::move((*found)->first), mem_idx, (*found)->second,
+                                       mem_idx);
                 }
-
-                const bool wants_xboxupd_part = key.starts_with("cf") || key.starts_with("cg") ||
-                                                stem == "6bl" || stem == "7bl";
-                if (kind == AssetKind::Bootloader && wants_xboxupd_part &&
-                    pkg.container->contains_file_by_name("xboxupd.bin")) {
-                    const auto parts = get_xboxupd_parts(pkg);
-                    if (!parts) {
-                        Log::Debug("No CF/CG derived from xboxupd.bin: {}",
-                                   parts.error().describe());
-                    } else if (const auto* part = xboxupd_part_for(**parts, key, stem);
-                               part && !part->empty()) {
-                        return std::pair{contents ? *part : std::vector<uint8_t>{},
-                                         AssetSource::Xboxupd};
-                    }
-                }
-                return std::nullopt;
             }
 
-            ScanOptions options_;
-            std::vector<std::string> excluded_;
-            std::vector<Root> roots_;
-            bool invalid_path_ = false;
-        };
+            // 2. Disk roots
+            const size_t memory_count = options.in_memory_stfs.size();
+            for (size_t root_index = 0; root_index < roots.size(); ++root_index) {
+                const auto& root = roots[root_index];
+                if (root.empty())
+                    continue;
+                const auto failure_at = [&](Error error, std::string layer,
+                                            std::filesystem::path source_path,
+                                            AssetSource source = AssetSource::Loose) {
+                    return lookup_error(std::move(error), std::move(layer),
+                                        {std::move(source_path), root, root_index, source});
+                };
+
+                std::error_code status_error;
+                const auto root_status = std::filesystem::status(root, status_error);
+                if (status_error && root_status.type() != std::filesystem::file_type::not_found) {
+                    auto failure = failure_at(from_error_code(status_error, root).error(),
+                                              "Could not inspect source root", root);
+                    if (tolerated(policy, failure))
+                        continue;
+                    return std::unexpected(std::move(failure));
+                }
+                if (root_status.type() == std::filesystem::file_type::not_found ||
+                    !std::filesystem::is_directory(root_status))
+                    continue;
+
+                std::filesystem::path candidate;
+                if (auto found_candidate = loose_candidate(root, relative)) {
+                    candidate = std::move(*found_candidate);
+                } else {
+                    auto failure = failure_at(std::move(found_candidate).error(),
+                                              "Could not inspect source root", root);
+                    if (!tolerated(policy, failure))
+                        return std::unexpected(std::move(failure));
+                    candidate = root / relative;
+                }
+                if (!contained_asset_path(root, relative)) {
+                    return std::unexpected(failure_at(
+                        Error(ErrorCode::InvalidArgument,
+                              "Asset path escapes its source root or cannot be inspected"),
+                        {}, candidate));
+                }
+
+                // A loose candidate that cannot be used is skipped (lenient) in favour of the
+                // root's STFS package.
+                status_error.clear();
+                const auto candidate_status = std::filesystem::status(candidate, status_error);
+                if (status_error &&
+                    candidate_status.type() != std::filesystem::file_type::not_found) {
+                    auto failure = failure_at(from_error_code(status_error, candidate).error(),
+                                              "Could not inspect loose candidate", candidate);
+                    if (!tolerated(policy, failure))
+                        return std::unexpected(std::move(failure));
+                } else if (candidate_status.type() != std::filesystem::file_type::not_found &&
+                           std::filesystem::exists(candidate_status)) {
+                    if (!std::filesystem::is_regular_file(candidate_status)) {
+                        auto failure = failure_at(
+                            Error(ErrorCode::Unsupported, "Loose candidate is not a regular file"),
+                            {}, candidate);
+                        if (!tolerated(policy, failure))
+                            return std::unexpected(std::move(failure));
+                    } else if (auto data = read_file(candidate)) {
+                        return located(candidate, std::move(*data), root_index, AssetSource::Loose,
+                                       memory_count + root_index);
+                    } else {
+                        auto failure = failure_at(std::move(data).error(),
+                                                  "Could not read loose candidate", candidate);
+                        if (!tolerated(policy, failure))
+                            return std::unexpected(std::move(failure));
+                    }
+                }
+
+                if (options.nosu || excluded)
+                    continue;
+
+                auto package_path = find_stfs_file(root);
+                if (!package_path) {
+                    auto failure = failure_at(std::move(package_path).error(),
+                                              "Could not inspect source root", root);
+                    if (tolerated(policy, failure))
+                        continue;
+                    return std::unexpected(std::move(failure));
+                }
+                if (!*package_path)
+                    continue;
+                const auto package = std::move(**package_path);
+
+                auto pkg = get_or_load_disk_package(package);
+                if (!pkg) {
+                    auto failure =
+                        failure_at(std::move(pkg).error(), "Could not inspect STFS package",
+                                   package, AssetSource::Stfs);
+                    if (tolerated(policy, failure))
+                        continue;
+                    return std::unexpected(std::move(failure));
+                }
+                auto found = search_package(**pkg, key, stem, wants_xboxupd_part,
+                                            {package, root, root_index, AssetSource::Stfs});
+                if (!found) {
+                    if (tolerated(policy, found.error()))
+                        continue;
+                    return std::unexpected(std::move(found).error());
+                }
+                if (*found)
+                    return located(package, std::move((*found)->first), root_index,
+                                   (*found)->second, memory_count + root_index);
+            }
+            return std::optional<LocatedFile>{};
+        }
 
     } // namespace
 
@@ -603,387 +670,26 @@ namespace gxbuild3::utils {
         return entry.starts_with("..\\") || entry.starts_with("../");
     }
 
-    std::unordered_map<std::string, std::filesystem::path>
-    find_files(const std::vector<std::string>& filenames,
-               const std::vector<std::filesystem::path>& search_paths, ScanOptions options) {
-        AssetSearch search(search_paths, options);
-        std::unordered_map<std::string, LocatedFile> winners;
-        for (const auto& name : filenames) {
-            const auto key = normalize_file_key(name);
-            if (auto candidate = search.find(name, AssetKind::Bootloader, false)) {
-                const auto it = winners.find(key);
-                if (it == winners.end() || candidate->rank < it->second.rank)
-                    winners.insert_or_assign(key, std::move(*candidate));
-            }
-        }
-
-        std::string missing;
-        for (const auto& name : filenames) {
-            if (!winners.contains(normalize_file_key(name))) {
-                if (!missing.empty())
-                    missing += ", ";
-                missing += name;
-            }
-        }
-        if (!missing.empty())
-            throw std::runtime_error("find_files: could not locate required file(s): " + missing);
-
-        std::unordered_map<std::string, std::filesystem::path> result;
-        for (auto& [key, winner] : winners)
-            result.emplace(key, std::move(winner.path));
-        return result;
-    }
-
-    std::optional<ResolvedFile>
-    find_file_data(std::string_view filename,
-                   const std::vector<std::filesystem::path>& search_paths, ScanOptions options,
-                   AssetKind kind) {
-        if (!safe_asset_name(filename))
-            return std::nullopt;
-        const auto relative = entry_to_lookup_path(filename);
-        const auto key = normalize_file_key(std::string(filename));
-        const auto stem = std::filesystem::path(key).stem().string();
-        const bool wants_xboxupd_part =
-            key.starts_with("cf") || key.starts_with("cg") || stem == "6bl" || stem == "7bl";
-        const auto security_names = security_file_names();
-        const auto excluded =
-            options.nosusecurity &&
-            std::find(security_names.begin(), security_names.end(), key) != security_names.end();
-
-        // 1. In-memory STFS packages
-        if (!options.nosu && !excluded) {
-            for (size_t mem_idx = 0; mem_idx < options.in_memory_stfs.size(); ++mem_idx) {
-                const auto pkg = get_or_load_memory_package(options.in_memory_stfs[mem_idx]);
-                if (!pkg) {
-                    Log::Warn("Failed to inspect in-memory STFS package: {}",
-                              pkg.error().describe());
-                    continue;
-                }
-                auto& package = **pkg;
-                if (package.container->contains_file_by_name(key)) {
-                    const auto data = get_package_file(package, key);
-                    if (!data) {
-                        Log::Warn("Failed to inspect in-memory STFS package: {}",
-                                  data.error().describe());
-                        continue;
-                    }
-                    if (*data) {
-                        return ResolvedFile{
-                            std::string(filename), {}, **data, mem_idx, AssetSource::Stfs};
-                    }
-                }
-                if (kind == AssetKind::Bootloader && wants_xboxupd_part &&
-                    package.container->contains_file_by_name("xboxupd.bin")) {
-                    const auto parts = get_xboxupd_parts(package);
-                    if (!parts) {
-                        Log::Debug("No CF/CG derived from xboxupd.bin: {}",
-                                   parts.error().describe());
-                        continue;
-                    }
-                    const auto* part = xboxupd_part_for(**parts, key, stem);
-                    if (part && !part->empty()) {
-                        return ResolvedFile{
-                            std::string(filename), {}, *part, mem_idx, AssetSource::Xboxupd};
-                    }
-                }
-            }
-        }
-
-        // 2. Disk roots
-        for (size_t root_index = 0; root_index < search_paths.size(); ++root_index) {
-            const auto& root = search_paths[root_index];
-            std::error_code status_error;
-            if (root.empty() || !std::filesystem::is_directory(root, status_error)) {
-                continue;
-            }
-
-            if (!contained_asset_path(root, relative))
-                return std::nullopt;
-            const auto candidate = loose_candidate_or_exact(root, relative);
-            status_error.clear();
-            if (std::filesystem::is_regular_file(candidate, status_error)) {
-                if (auto data = read_file(candidate)) {
-                    return ResolvedFile{std::string(filename), candidate, std::move(*data),
-                                        root_index, AssetSource::Loose};
-                }
-            }
-            if (options.nosu || excluded) {
-                continue;
-            }
-
-            const auto package_path = find_stfs_file(root);
-            if (!package_path) {
-                Log::Warn("Failed to inspect STFS assets in '{}': {}", root.string(),
-                          package_path.error().describe());
-                continue;
-            }
-            if (!*package_path) {
-                continue;
-            }
-            const auto& package = **package_path;
-            const auto pkg = get_or_load_disk_package(package);
-            if (!pkg) {
-                Log::Warn("Failed to inspect STFS assets in '{}': {}", root.string(),
-                          pkg.error().describe());
-                continue;
-            }
-            if ((*pkg)->container->contains_file_by_name(key)) {
-                const auto data = get_package_file(**pkg, key);
-                if (!data) {
-                    Log::Warn("Failed to extract '{}' from STFS '{}': {}", filename,
-                              package.string(), data.error().describe());
-                    continue;
-                }
-                if (*data) {
-                    return ResolvedFile{std::string(filename), package, **data, root_index,
-                                        AssetSource::Stfs};
-                }
-            }
-
-            if (kind != AssetKind::Bootloader || !wants_xboxupd_part ||
-                !(*pkg)->container->contains_file_by_name("xboxupd.bin")) {
-                continue;
-            }
-            const auto parts = get_xboxupd_parts(**pkg);
-            if (!parts) {
-                Log::Warn("Failed to derive '{}' from xboxupd.bin in STFS '{}': {}", filename,
-                          package.string(), parts.error().describe());
-                continue;
-            }
-            const auto* part = xboxupd_part_for(**parts, key, stem);
-            if (part && !part->empty()) {
-                return ResolvedFile{std::string(filename), package, *part, root_index,
-                                    AssetSource::Xboxupd};
-            }
-        }
-        return std::nullopt;
-    }
-
     FileLookupResult find_file_data_detailed(std::string_view filename,
                                              const std::vector<std::filesystem::path>& search_paths,
                                              ScanOptions options, AssetKind kind) {
-        if (!safe_asset_name(filename)) {
-            return std::unexpected(
-                FileLookupError{.code = FileLookupErrorCode::InspectionFailed,
-                                .message = "Asset name must be a confined relative path",
-                                .source_path = entry_to_lookup_path(filename),
-                                .root_path = {}});
-        }
-        const auto relative = entry_to_lookup_path(filename);
-        const auto key = normalize_file_key(std::string(filename));
-        const auto stem = std::filesystem::path(key).stem().string();
-        const bool wants_xboxupd_part =
-            key.starts_with("cf") || key.starts_with("cg") || stem == "6bl" || stem == "7bl";
-        const auto security_names = security_file_names();
-        const bool excluded =
-            options.nosusecurity &&
-            std::find(security_names.begin(), security_names.end(), key) != security_names.end();
-
-        // 1. In-memory STFS packages (highest priority)
-        if (!options.nosu && !excluded) {
-            for (size_t mem_idx = 0; mem_idx < options.in_memory_stfs.size(); ++mem_idx) {
-                const auto pkg = get_or_load_memory_package(options.in_memory_stfs[mem_idx]);
-                if (!pkg) {
-                    return std::unexpected(
-                        FileLookupError{.code = FileLookupErrorCode::InspectionFailed,
-                                        .message = "Could not inspect in-memory STFS package: " +
-                                                   pkg.error().describe(),
-                                        .source_path = {},
-                                        .root_path = {},
-                                        .root_index = mem_idx,
-                                        .source = AssetSource::Stfs});
-                }
-                auto& package = **pkg;
-                if (package.container->contains_file_by_name(key)) {
-                    const auto data = get_package_file(package, key);
-                    if (!data) {
-                        return std::unexpected(
-                            FileLookupError{.code = FileLookupErrorCode::InspectionFailed,
-                                            .message = "Could not extract requested STFS entry: " +
-                                                       data.error().describe(),
-                                            .source_path = {},
-                                            .root_path = {},
-                                            .root_index = mem_idx,
-                                            .source = AssetSource::Stfs});
-                    }
-                    if (*data) {
-                        return std::optional<ResolvedFile>{ResolvedFile{
-                            std::string(filename), {}, **data, mem_idx, AssetSource::Stfs}};
-                    }
-                }
-
-                if (kind == AssetKind::Bootloader && wants_xboxupd_part &&
-                    package.container->contains_file_by_name("xboxupd.bin")) {
-                    const auto parts = get_xboxupd_parts(package);
-                    if (!parts) {
-                        return std::unexpected(FileLookupError{
-                            .code = FileLookupErrorCode::InspectionFailed,
-                            .message = "Could not derive requested bootloader from xboxupd.bin: " +
-                                       parts.error().describe(),
-                            .source_path = {},
-                            .root_path = {},
-                            .root_index = mem_idx,
-                            .source = AssetSource::Xboxupd});
-                    }
-                    const auto* part = xboxupd_part_for(**parts, key, stem);
-                    if (part && !part->empty()) {
-                        return std::optional<ResolvedFile>{ResolvedFile{
-                            std::string(filename), {}, *part, mem_idx, AssetSource::Xboxupd}};
-                    }
-                }
-            }
-        }
-
-        // 2. Disk roots
-        for (size_t root_index = 0; root_index < search_paths.size(); ++root_index) {
-            const auto& root = search_paths[root_index];
-            const auto root_failure = [&](const Error& error) {
-                return std::unexpected(
-                    FileLookupError{.code = FileLookupErrorCode::InspectionFailed,
-                                    .message = "Could not inspect source root: " + error.describe(),
-                                    .source_path = root,
-                                    .root_path = root,
-                                    .root_index = root_index,
-                                    .source = AssetSource::Loose});
-            };
-            std::error_code status_error;
-            const auto root_status = std::filesystem::status(root, status_error);
-            if (status_error && root_status.type() != std::filesystem::file_type::not_found) {
-                return std::unexpected(FileLookupError{
-                    .code = FileLookupErrorCode::InspectionFailed,
-                    .message = "Could not inspect source root: " + status_error.message(),
-                    .source_path = root,
-                    .root_path = root,
-                    .root_index = root_index,
-                    .source = AssetSource::Loose});
-            }
-            if (root_status.type() == std::filesystem::file_type::not_found ||
-                !std::filesystem::is_directory(root_status)) {
-                continue;
-            }
-
-            const auto found_candidate = loose_candidate(root, relative);
-            if (!found_candidate) {
-                return root_failure(found_candidate.error());
-            }
-            const auto& candidate = *found_candidate;
-            if (!contained_asset_path(root, relative)) {
-                return std::unexpected(FileLookupError{
-                    .code = FileLookupErrorCode::InspectionFailed,
-                    .message = "Asset path escapes its source root or cannot be inspected",
-                    .source_path = candidate,
-                    .root_path = root,
-                    .root_index = root_index,
-                    .source = AssetSource::Loose});
-            }
-            status_error.clear();
-            const auto candidate_status = std::filesystem::status(candidate, status_error);
-            if (status_error && candidate_status.type() != std::filesystem::file_type::not_found) {
-                return std::unexpected(FileLookupError{
-                    .code = FileLookupErrorCode::InspectionFailed,
-                    .message = "Could not inspect loose candidate: " + status_error.message(),
-                    .source_path = candidate,
-                    .root_path = root,
-                    .root_index = root_index,
-                    .source = AssetSource::Loose});
-            }
-            if (candidate_status.type() != std::filesystem::file_type::not_found &&
-                std::filesystem::exists(candidate_status)) {
-                if (!std::filesystem::is_regular_file(candidate_status)) {
-                    return std::unexpected(
-                        FileLookupError{.code = FileLookupErrorCode::InspectionFailed,
-                                        .message = "Loose candidate is not a regular file",
-                                        .source_path = candidate,
-                                        .root_path = root,
-                                        .root_index = root_index,
-                                        .source = AssetSource::Loose});
-                }
-                auto data = read_file(candidate);
-                if (!data) {
-                    return std::unexpected(FileLookupError{
-                        .code = FileLookupErrorCode::ReadFailed,
-                        .message = "Could not read loose candidate: " + data.error().describe(),
-                        .source_path = candidate,
-                        .root_path = root,
-                        .root_index = root_index,
-                        .source = AssetSource::Loose});
-                }
-                return std::optional<ResolvedFile>{ResolvedFile{std::string(filename), candidate,
-                                                                std::move(*data), root_index,
-                                                                AssetSource::Loose}};
-            }
-
-            if (options.nosu || excluded) {
-                continue;
-            }
-
-            const auto package_path = find_stfs_file(root);
-            if (!package_path) {
-                return root_failure(package_path.error());
-            }
-            if (!*package_path) {
-                continue;
-            }
-            const auto& package = **package_path;
-
-            const auto pkg = get_or_load_disk_package(package);
-            if (!pkg) {
-                return std::unexpected(FileLookupError{
-                    .code = FileLookupErrorCode::InspectionFailed,
-                    .message = "Could not inspect STFS package: " + pkg.error().describe(),
-                    .source_path = package,
-                    .root_path = root,
-                    .root_index = root_index,
-                    .source = AssetSource::Stfs});
-            }
-
-            if ((*pkg)->container->contains_file_by_name(key)) {
-                const auto data = get_package_file(**pkg, key);
-                if (!data) {
-                    return std::unexpected(
-                        FileLookupError{.code = FileLookupErrorCode::InspectionFailed,
-                                        .message = "Could not extract requested STFS entry: " +
-                                                   data.error().describe(),
-                                        .source_path = package,
-                                        .root_path = root,
-                                        .root_index = root_index,
-                                        .source = AssetSource::Stfs});
-                }
-                if (*data) {
-                    return std::optional<ResolvedFile>{ResolvedFile{
-                        std::string(filename), package, **data, root_index, AssetSource::Stfs}};
-                }
-            }
-
-            if (kind != AssetKind::Bootloader || !wants_xboxupd_part ||
-                !(*pkg)->container->contains_file_by_name("xboxupd.bin")) {
-                continue;
-            }
-            const auto parts = get_xboxupd_parts(**pkg);
-            if (!parts) {
-                return std::unexpected(FileLookupError{
-                    .code = FileLookupErrorCode::InspectionFailed,
-                    .message = "Could not derive requested bootloader from xboxupd.bin: " +
-                               parts.error().describe(),
-                    .source_path = package,
-                    .root_path = root,
-                    .root_index = root_index,
-                    .source = AssetSource::Xboxupd});
-            }
-            const auto* part = xboxupd_part_for(**parts, key, stem);
-            if (part && !part->empty()) {
-                return std::optional<ResolvedFile>{ResolvedFile{
-                    std::string(filename), package, *part, root_index, AssetSource::Xboxupd}};
-            }
-        }
-        return std::optional<ResolvedFile>{};
+        auto found = locate(filename, search_paths, options, security_file_names(), kind,
+                            LookupPolicy::Strict);
+        if (!found)
+            return std::unexpected(std::move(found).error());
+        if (!*found)
+            return std::optional<ResolvedFile>{};
+        return std::optional<ResolvedFile>{std::move((*found)->file)};
     }
 
-    std::optional<IniFilesResult> read_ini_files(std::string_view version, std::string_view type,
-                                                 std::string_view target_section,
-                                                 const std::filesystem::path& fw_dir,
-                                                 ScanOptions options, BuildType build_type) {
-        const auto cwd = std::filesystem::current_path();
+    Result<IniFilesResult> read_ini_files(std::string_view version, std::string_view type,
+                                          std::string_view target_section,
+                                          const std::filesystem::path& fw_dir, ScanOptions options,
+                                          BuildType build_type) {
+        std::error_code cwd_error;
+        const auto cwd = std::filesystem::current_path(cwd_error);
+        if (cwd_error)
+            return from_error_code(cwd_error, ".");
         const auto version_dir = cwd / version;
         return read_ini_files(
             version_dir / ("_" + std::string(type) + ".ini"), target_section,
@@ -991,15 +697,14 @@ namespace gxbuild3::utils {
             build_type);
     }
 
-    std::optional<IniFilesResult>
-    read_ini_files(const std::filesystem::path& ini_path, std::string_view target_section,
-                   const std::vector<std::filesystem::path>& search_paths, ScanOptions options,
-                   BuildType build_type) {
+    Result<IniFilesResult> read_ini_files(const std::filesystem::path& ini_path,
+                                          std::string_view target_section,
+                                          const std::vector<std::filesystem::path>& search_paths,
+                                          ScanOptions options, BuildType build_type) {
         auto doc_res = ini::parse_file(ini_path);
-        if (!doc_res) {
-            Log::Error("Could not parse INI file: {}", doc_res.error().describe());
-            return std::nullopt;
-        }
+        if (!doc_res)
+            return std::unexpected(
+                std::move(doc_res).error().add_context("Could not parse INI file"));
         const auto& doc = *doc_res;
         const ini::Section* bl_sec = doc.get(target_section);
         if (!bl_sec) {
@@ -1013,8 +718,8 @@ namespace gxbuild3::utils {
             }
         }
         if (!bl_sec) {
-            Log::Error("Bootloader section '[{}]' not found in INI configuration", target_section);
-            return std::nullopt;
+            return fail(ErrorCode::NotFound, "Bootloader section '[{}]' not found in INI '{}'",
+                        target_section, ini_path.string());
         }
 
         // Validate all names before loading anything, including optional payloads.
@@ -1028,10 +733,9 @@ namespace gxbuild3::utils {
             for (const auto& entry : *section) {
                 if (entry.key.empty() || normalize_file_key(entry.key) == "none")
                     continue;
-                if (!safe_asset_name(section == bl_sec ? entry.key : ini_asset_name(entry.key))) {
-                    Log::Error("INI asset '{}' is not confined to its source roots", entry.key);
-                    return std::nullopt;
-                }
+                if (!safe_asset_name(section == bl_sec ? entry.key : ini_asset_name(entry.key)))
+                    return fail(ErrorCode::InvalidArgument,
+                                "INI asset '{}' is not confined to its source roots", entry.key);
             }
         }
 
@@ -1043,8 +747,16 @@ namespace gxbuild3::utils {
         // A file from outside the release is only ever a loose one.
         ScanOptions loose_options = options;
         loose_options.nosu = true;
-        AssetSearch loose_search(search_paths, loose_options, security_names);
-        AssetSearch search(search_paths, options, std::move(security_names));
+        const auto search = [&](std::string_view name, const ScanOptions& scan,
+                                AssetKind kind = AssetKind::Regular) {
+            return locate(name, search_paths, scan, security_names, kind, LookupPolicy::Lenient);
+        };
+        // A lenient lookup fails only for an asset that escapes its source root.
+        const auto escaped = [](std::string_view entry, FileLookupError&& failure) {
+            Error error = std::move(failure);
+            return std::unexpected(
+                std::move(error).add_context(std::format("INI asset '{}'", entry)));
+        };
         IniFilesResult result{};
         const bool is_jtag = build_type == BuildType::Jtag;
         std::unordered_map<std::string, size_t> chain_counters;
@@ -1061,12 +773,13 @@ namespace gxbuild3::utils {
             else if (key.starts_with("cg") || stem == "7bl")
                 prefix = "cg";
             const auto chain = chain_counters[prefix]++;
-            auto found = search.find(entry.key, AssetKind::Bootloader);
-            if (!found) {
-                Log::Error("Required bootloader file '{}' not found", entry.key);
-                return std::nullopt;
-            }
-            auto data = std::move(found->data);
+            auto found = search(entry.key, options, AssetKind::Bootloader);
+            if (!found)
+                return escaped(entry.key, std::move(found).error());
+            if (!*found)
+                return fail(ErrorCode::NotFound, "Required bootloader file '{}' not found",
+                            entry.key);
+            auto data = std::move((*found)->file.data);
             if (key.starts_with("cba") || key.starts_with("cb_a") || key.starts_with("sb") ||
                 key == "2bl") {
                 result.bootloaders.cb_or_a = std::move(data);
@@ -1115,29 +828,33 @@ namespace gxbuild3::utils {
         std::unordered_map<std::string, std::pair<size_t, SourceRank>> payloads;
         // An entry from outside the release is found under its path in the roots, then by its
         // basename, and only as a loose file.
-        const auto find_listed = [&search, &loose_search](std::string_view entry) {
+        const auto find_listed = [&](std::string_view entry) -> LocateResult {
             if (!ini_asset_is_outside(entry))
-                return search.find(entry);
+                return search(entry, options);
             const auto name = ini_asset_name(entry);
-            auto found = loose_search.find(name);
-            if (!found)
-                found = loose_search.find(display_basename(name));
+            auto found = search(name, loose_options);
+            if (found && !*found)
+                found = search(display_basename(name), loose_options);
             return found;
         };
-        auto process_payload_entry = [&](const ini::Entry& entry, bool optional) {
+        auto process_payload_entry = [&](const ini::Entry& entry, bool optional) -> Result<void> {
             const auto key = normalize_file_key(entry.key);
             if (key.empty() || key == "none")
-                return;
-            if (auto found = find_listed(entry.key)) {
+                return {};
+            auto found = find_listed(entry.key);
+            if (!found)
+                return escaped(entry.key, std::move(found).error());
+            if (*found) {
+                auto& winner = **found;
                 std::string stored = flashfs_patch_suffix(display_basename(entry.key), build_type,
                                                           states_checksum(entry.value));
                 const auto [it, inserted] = payloads.emplace(
-                    normalize_file_key(stored), std::pair{result.flashfs_sec.size(), found->rank});
+                    normalize_file_key(stored), std::pair{result.flashfs_sec.size(), winner.rank});
                 if (inserted) {
-                    result.flashfs_sec.emplace_back(std::move(stored), std::move(found->data));
-                } else if (found->rank < it->second.second) {
-                    result.flashfs_sec[it->second.first].second = std::move(found->data);
-                    it->second.second = found->rank;
+                    result.flashfs_sec.emplace_back(std::move(stored), std::move(winner.file.data));
+                } else if (winner.rank < it->second.second) {
+                    result.flashfs_sec[it->second.first].second = std::move(winner.file.data);
+                    it->second.second = winner.rank;
                 }
             } else if (ini_asset_is_outside(entry.key)) {
                 Log::Warn("Could not read file '{}', skipping", entry.key);
@@ -1147,16 +864,22 @@ namespace gxbuild3::utils {
                 Log::Warn("Payload asset '{}' not found in eligible loose files or STFS packages",
                           entry.key);
             }
+            return {};
         };
         // The FlashFS lists the [flashfs] files and then the [security] files, each in the order
         // the INI names them (xeBuild 1.21).
         if (const auto* flashfs = doc.get("flashfs")) {
-            for (const auto& entry : *flashfs)
-                process_payload_entry(entry, false);
+            for (const auto& entry : *flashfs) {
+                if (auto added = process_payload_entry(entry, false); !added)
+                    return std::unexpected(std::move(added).error());
+            }
         }
         if (const auto* security = doc.get("security")) {
-            for (const auto& entry : *security)
-                process_payload_entry(entry, normalize_file_key(entry.key) == "fcrt.bin");
+            for (const auto& entry : *security) {
+                const bool optional = normalize_file_key(entry.key) == "fcrt.bin";
+                if (auto added = process_payload_entry(entry, optional); !added)
+                    return std::unexpected(std::move(added).error());
+            }
         }
         // [rawpatch] lists "file,offset": the file goes into the image as it is at that clean
         // offset. A file no root supplies is skipped with a warning.
@@ -1176,23 +899,20 @@ namespace gxbuild3::utils {
                     std::from_chars(digits.data(), digits.data() + digits.size(), offset, base);
                 if (digits.empty() || parsed.ec != std::errc{} ||
                     parsed.ptr != digits.data() + digits.size()) {
-                    Log::Error("[rawpatch] entry '{}' states no usable offset ('{}')", entry.key,
-                               entry.value);
-                    return std::nullopt;
+                    return fail(ErrorCode::Malformed,
+                                "[rawpatch] entry '{}' states no usable offset ('{}')", entry.key,
+                                entry.value);
                 }
                 auto found = find_listed(entry.key);
-                if (!found) {
+                if (!found)
+                    return escaped(entry.key, std::move(found).error());
+                if (!*found) {
                     Log::Warn("[rawpatch] file '{}' was not found; it is skipped", entry.key);
                     continue;
                 }
-                result.raw_patches.push_back(
-                    InputRawPatch{display_basename(entry.key), offset, std::move(found->data)});
+                result.raw_patches.push_back(InputRawPatch{display_basename(entry.key), offset,
+                                                           std::move((*found)->file.data)});
             }
-        }
-        if (search.invalid_path() || loose_search.invalid_path()) {
-            // TODO(E6c): return this as an Error once read_ini_files returns Result.
-            Log::Error("An INI asset escapes its source root or its path cannot be inspected");
-            return std::nullopt;
         }
         return result;
     }

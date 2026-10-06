@@ -175,7 +175,8 @@ unknown command-line argument.
 ```cpp
 gxbuild3::utils::ScanOptions options{.nosu = false, .nosusecurity = true};
 std::vector<std::filesystem::path> roots{"mydata", "17559", "common"};
-auto paths = gxbuild3::utils::find_files({"cf_17559.bin", "dash.xex"}, roots, options);
+auto cf = gxbuild3::utils::find_file_data_detailed("cf_17559.bin", roots, options,
+                                                   gxbuild3::utils::AssetKind::Bootloader);
 auto files = gxbuild3::utils::read_ini_files(
     std::filesystem::path{"17559/_retail.ini"}, "jasper", roots, options);
 ```
@@ -188,8 +189,12 @@ is selected. Equal-ranked filename aliases keep their first match.
 
 Results contain one entry per lowercase basename. INI payload names are also
 returned as lowercase basenames, while separate bootloader chain slots are
-preserved. `find_files` returns the container path for STFS matches and throws
-when a requested file cannot be located.
+preserved. `find_file_data_detailed` returns a `ResolvedFile` (bytes plus the loose
+path or STFS package path it came from), an empty optional when no root has the
+asset, and a `FileLookupError` when the highest-priority source cannot be inspected
+or read. `read_ini_files` returns a `Result`: it skips such a source with a warning,
+and fails only for a missing INI or section, a missing bootloader, a malformed
+`[rawpatch]` offset, or an asset that escapes its source roots.
 
 Both options default to `false`. `nosu` disables STFS discovery entirely.
 `nosusecurity` skips extracting STFS security contents while leaving loose

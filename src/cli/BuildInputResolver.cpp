@@ -203,7 +203,7 @@ namespace gxbuild3::cli {
             auto found = utils::find_file_data_detailed(name, roots, options, kind);
             if (!found) {
                 return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
-                                             found.error().message, found.error().source_path,
+                                             found.error().describe(), found.error().source_path,
                                              std::string(name)));
             }
             return std::move(*found);
@@ -653,7 +653,7 @@ namespace gxbuild3::cli {
             auto discovered = utils::find_file_data_detailed("cpukey.txt", roots);
             if (!discovered) {
                 return std::unexpected(error(ResolutionErrorCode::CpuKeyReadFailed,
-                                             discovered.error().message,
+                                             discovered.error().describe(),
                                              discovered.error().source_path, "cpukey.txt"));
             }
             if (*discovered) {
@@ -680,7 +680,7 @@ namespace gxbuild3::cli {
             auto discovered = utils::find_file_data_detailed("nanddump.bin", roots);
             if (!discovered) {
                 return std::unexpected(error(ResolutionErrorCode::InputReadFailed,
-                                             discovered.error().message,
+                                             discovered.error().describe(),
                                              discovered.error().source_path, "nanddump.bin"));
             }
             if (*discovered) {
@@ -853,7 +853,7 @@ namespace gxbuild3::cli {
                                                          scan_options, args.build_type);
             if (!ini_files) {
                 return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
-                                             "Could not resolve build INI assets", ini_path,
+                                             ini_files.error().describe(), ini_path,
                                              target_section));
             }
 
