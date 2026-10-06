@@ -1374,9 +1374,12 @@ namespace gxbuild3 {
             // Defer root placement so serialize allocates it once, last, from the same free
             // pool as the files and mobile data. Reserving a root here double-counts it and
             // starves a full image of the final block the root needs.
-            if (!fs.format(total_blocks, FlashFileSystem::kDeferRoot, version, reserved_boundary)) {
+            if (const auto formatted = fs.format(total_blocks, FlashFileSystem::kDeferRoot, version,
+                                                 reserved_boundary);
+                !formatted) {
                 return build_error(BuildErrorCode::SerializationFailure,
-                                   "Failed to format the Flash File System");
+                                   "Failed to format the Flash File System: " +
+                                       formatted.error().describe());
             }
             // Past the last usable block, xeBuild's table reserves the settings blocks of a 16 MB
             // part (four) and never names its remap pool after them; a big-block part's settings
@@ -1393,26 +1396,38 @@ namespace gxbuild3 {
                                                 ? 0
                                                 : std::min<size_t>(4, total_blocks - data_limit))
                                          : total_blocks - data_limit;
-                if ((held > 0 && !fs.reserve_blocks(data_limit, held)) ||
-                    (data_limit + held < total_blocks &&
-                     !fs.withhold_blocks(data_limit + held, total_blocks - data_limit - held,
-                                         BlockMapStatus::Unnamed))) {
+                Result<void> tail;
+                if (held > 0) {
+                    tail = fs.reserve_blocks(data_limit, held);
+                }
+                if (tail && data_limit + held < total_blocks) {
+                    tail = fs.withhold_blocks(data_limit + held, total_blocks - data_limit - held,
+                                              BlockMapStatus::Unnamed);
+                }
+                if (!tail) {
                     return build_error(
                         BuildErrorCode::SerializationFailure,
-                        "Failed to reserve geometry tail blocks for the Flash File System");
+                        "Failed to reserve geometry tail blocks for the Flash File System: " +
+                            tail.error().describe());
                 }
             }
             for (size_t block = 0; block < data_limit; ++block) {
-                if (flash_image.flash_driver.is_bad_block(block) && !fs.reserve_blocks(block, 1)) {
+                if (!flash_image.flash_driver.is_bad_block(block)) {
+                    continue;
+                }
+                if (const auto reserved = fs.reserve_blocks(block, 1); !reserved) {
                     return build_error(BuildErrorCode::SerializationFailure,
-                                       "Failed to reserve a bad block in the Flash File System");
+                                       "Failed to reserve a bad block in the Flash File System: " +
+                                           reserved.error().describe());
                 }
             }
             for (const auto& range : flash_image.active_payload_block_ranges()) {
-                if (!fs.reserve_blocks(range.start_block, range.block_count)) {
+                if (const auto reserved = fs.reserve_blocks(range.start_block, range.block_count);
+                    !reserved) {
                     return build_error(
                         BuildErrorCode::SerializationFailure,
-                        "Failed to reserve fixed payload blocks in the Flash File System");
+                        "Failed to reserve fixed payload blocks in the Flash File System: " +
+                            reserved.error().describe());
                 }
             }
             fs.set_driver(&flash_image.flash_driver);
@@ -1431,9 +1446,10 @@ namespace gxbuild3 {
                                        "Failed to encrypt secure FlashFS file");
                 }
                 Log::Debug("Adding FlashFS file: '{}' ({} bytes)", name, file_data->size());
-                if (!flash_image.filesystem->add_file(name, *file_data)) {
+                if (const auto added = flash_image.filesystem->add_file(name, *file_data); !added) {
                     return build_error(BuildErrorCode::SerializationFailure,
-                                       "Failed to add a Flash File System file");
+                                       "Failed to add a Flash File System file: " +
+                                           added.error().describe());
                 }
             }
         }

@@ -44,6 +44,14 @@ namespace gxbuild3::nand {
         // Everything in the JTAG window is counted from kJtagWindowOffset.
         constexpr uint32_t kJTAGPatchesSize = 0x4000;
 
+        // FlashImage still reports failure as bool: it logs a FlashFS Error once here.
+        [[nodiscard]] bool filesystem_ok(const Result<void>& result, std::string_view action) {
+            if (!result) {
+                Log::Error("Failed to {}: {}", action, result.error().describe());
+            }
+            return result.has_value();
+        }
+
         // xeBuild lays a built image in 16 KiB blocks on erased flash: the block holding the
         // end of the boot chain is programmed zero past it, and every byte nothing lays stays
         // erased.
@@ -665,8 +673,10 @@ namespace gxbuild3::nand {
 
                 if (corona_config->table != 0) {
                     FlashFileSystem fs{};
-                    if (fs.load(flash_driver, corona_config->table)) {
+                    if (const auto loaded = fs.load(flash_driver, corona_config->table)) {
                         filesystem = std::move(fs);
+                    } else {
+                        Log::Warn("Flash File System not loaded: {}", loaded.error().describe());
                     }
                 }
             }
@@ -749,9 +759,13 @@ namespace gxbuild3::nand {
             if (best_root) {
                 FlashFileSystem fs{};
                 fs.set_larger_filesystem(build_type == BuildType::Devkit);
-                if (fs.load(flash_driver, static_cast<uint16_t>(*best_root / clusters_per_block),
-                            *best_root % clusters_per_block)) {
+                const auto loaded =
+                    fs.load(flash_driver, static_cast<uint16_t>(*best_root / clusters_per_block),
+                            *best_root % clusters_per_block);
+                if (loaded) {
                     filesystem = std::move(fs);
+                } else {
+                    Log::Warn("Flash File System not loaded: {}", loaded.error().describe());
                 }
             }
         }
@@ -1183,11 +1197,14 @@ namespace gxbuild3::nand {
                     }
                     // The table states a blob's blocks free (xeBuild 1.21); they are only
                     // kept from the files and the root here.
-                    if (mutable_filesystem &&
-                        !mutable_filesystem->withhold_blocks(*free_start, blocks_needed,
-                                                             BlockMapStatus::Free)) {
-                        Log::Error("Failed to reserve mobile data type 0x{:02X} in FlashFS", bt);
-                        return false;
+                    if (mutable_filesystem) {
+                        if (const auto withheld = mutable_filesystem->withhold_blocks(
+                                *free_start, blocks_needed, BlockMapStatus::Free);
+                            !withheld) {
+                            Log::Error("Failed to reserve mobile data type 0x{:02X} in FlashFS: {}",
+                                       bt, withheld.error().describe());
+                            return false;
+                        }
                     }
                     // On big block the blobs start on an erase block, and the table never
                     // names the clusters stepped over between the last file and them.
@@ -1201,8 +1218,10 @@ namespace gxbuild3::nand {
                             --cluster;
                         }
                         if (cluster < blob_cluster &&
-                            !mutable_filesystem->withhold_clusters(cluster, blob_cluster - cluster,
-                                                                   BlockMapStatus::Unnamed)) {
+                            !filesystem_ok(
+                                mutable_filesystem->withhold_clusters(
+                                    cluster, blob_cluster - cluster, BlockMapStatus::Unnamed),
+                                "withhold the clusters before the mobile data")) {
                             return false;
                         }
                     }
@@ -1225,9 +1244,13 @@ namespace gxbuild3::nand {
 
         if (filesystem) {
             auto root_start = find_data_free_run(current_blk, 1);
-            if (!root_start || *root_start > std::numeric_limits<uint16_t>::max() ||
-                !mutable_filesystem->set_root_block(static_cast<uint16_t>(*root_start))) {
+            if (!root_start || *root_start > std::numeric_limits<uint16_t>::max()) {
                 Log::Error("Failed to place FlashFS root block after payload allocations");
+                return false;
+            }
+            if (!filesystem_ok(
+                    mutable_filesystem->set_root_block(static_cast<uint16_t>(*root_start)),
+                    "place the FlashFS root block after payload allocations")) {
                 return false;
             }
             layout.fs_root_block = static_cast<uint16_t>(*root_start);
@@ -1235,8 +1258,7 @@ namespace gxbuild3::nand {
             layout.big_fs_size = filesystem->big_fs_size();
             auto& fs = const_cast<FlashFileSystem&>(*filesystem);
             fs.set_driver(&driver);
-            if (!fs.save()) {
-                Log::Error("Failed to save Flash File System to NAND driver");
+            if (!filesystem_ok(fs.save(), "save the Flash File System to the NAND driver")) {
                 return false;
             }
             const size_t clusters_per_block = driver.block_size_clean() / 0x4000;
@@ -2116,7 +2138,8 @@ namespace gxbuild3::nand {
                     slot.cg_spill_blocks.clear();
                     if (filesystem) {
                         filesystem->set_driver(&flash_driver);
-                        if (filesystem->exists(filename) && !filesystem->delete_file(filename))
+                        if (filesystem->exists(filename) &&
+                            !filesystem_ok(filesystem->delete_file(filename), "delete a CG tail"))
                             return false;
                     }
                     return true;
@@ -2127,26 +2150,35 @@ namespace gxbuild3::nand {
                 }
                 filesystem->set_driver(&flash_driver);
                 for (auto range : active_payload_block_ranges())
-                    if (!filesystem->reserve_blocks(range.start_block, range.block_count))
+                    if (!filesystem_ok(
+                            filesystem->reserve_blocks(range.start_block, range.block_count),
+                            "reserve payload blocks for a CG tail"))
                         return false;
                 const bool jtag_layout =
                     build_type == BuildType::Jtag ||
                     (payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag);
                 const size_t base = update_base(*this, jtag_layout, glitch_layout);
                 if (const auto range = flash_driver.block_range_for_byte_interval(base, 2 * stride))
-                    if (!filesystem->reserve_blocks(range->start_block, range->block_count))
+                    if (!filesystem_ok(
+                            filesystem->reserve_blocks(range->start_block, range->block_count),
+                            "reserve the update slots for a CG tail"))
                         return false;
-                if (filesystem->exists(filename) && !filesystem->delete_file(filename))
+                if (filesystem->exists(filename) &&
+                    !filesystem_ok(filesystem->delete_file(filename), "delete a CG tail"))
                     return false;
                 // A built image lists each CG tail first, in slot order, and lays it on the
                 // filesystem's first free blocks, directly past the slots (xeBuild 1.21).
                 // A parsed image keeps its other files where they are.
                 if (preserve_layout) {
-                    if (!filesystem->add_file(filename, std::span(cg).subspan(prefix)))
+                    if (!filesystem_ok(
+                            filesystem->add_file(filename, std::span(cg).subspan(prefix)),
+                            "add a CG tail"))
                         return false;
                 } else {
-                    if (!filesystem->insert_file(leading_cg_tails(*filesystem), filename,
-                                                 std::span(cg).subspan(prefix)))
+                    if (!filesystem_ok(filesystem->insert_file(leading_cg_tails(*filesystem),
+                                                               filename,
+                                                               std::span(cg).subspan(prefix)),
+                                       "insert a CG tail"))
                         return false;
                 }
                 auto entry = filesystem->stat(filename);

@@ -17,6 +17,12 @@ namespace {
         return condition;
     }
 
+    bool check(const gxbuild3::Result<>& result, const char* message) {
+        if (!result)
+            std::cerr << "FAIL: " << message << ": " << result.error().describe() << '\n';
+        return result.has_value();
+    }
+
     void put16(Bytes& bytes, size_t offset, uint16_t value) {
         bytes[offset] = static_cast<uint8_t>(value >> 8);
         bytes[offset + 1] = static_cast<uint8_t>(value);
@@ -63,6 +69,52 @@ namespace {
         FlashFileSystem truncated;
         return check(!truncated.load(driver, 380),
                      "a truncated chain must not be cached as a successfully read file");
+    }
+
+    // load() is transactional: a root that fails to load leaves the filesystem, its root,
+    // table, directory, file data and driver, as the last successful load left it.
+    bool test_failed_load_leaves_filesystem_unchanged() {
+        const auto write_root = [](Driver& driver, uint16_t root_block, uint16_t first_link) {
+            Bytes root(0x4000, 0);
+            for (size_t cluster = 0; cluster < 4096; ++cluster) {
+                put16(root, map_offset(cluster), BlockMapStatus::Free);
+            }
+            put16(root, map_offset(988), first_link);
+            put16(root, map_offset(999), BlockMapStatus::EndOfChain);
+            std::memcpy(root.data() + 512, "secdata.bin", 12);
+            put16(root, 512 + 22, 988);
+            put32(root, 512 + 24, 0x4003);
+            const Bytes data(0x4003, 0x31);
+            return driver.write_block(root_block, root) &&
+                   driver.write_offset((0xAE0 + 988) * 0x4000, std::span(data).first(0x4000)) &&
+                   driver.write_offset((0xAE0 + 999) * 0x4000, std::span(data).subspan(0x4000));
+        };
+        Driver good(Driver::ImageSize::Bigordevkit, Driver::DriverMode::Big);
+        Driver bad(Driver::ImageSize::Bigordevkit, Driver::DriverMode::Big);
+        // The bad root's file chain ends after one cluster, short of the file's length.
+        if (!check(write_root(good, 380, 999) && write_root(bad, 381, BlockMapStatus::EndOfChain),
+                   "transactional-load fixtures write"))
+            return false;
+        FlashFileSystem fs;
+        if (!check(fs.load(good, 380), "the good root loads"))
+            return false;
+        const auto blockmap = fs.blockmap();
+        const auto entries = fs.entries().size();
+        const auto file = fs.get_file("secdata.bin");
+        const auto version = fs.version();
+
+        const auto failed = fs.load(bad, 381);
+        return check(!failed && failed.error().code == gxbuild3::ErrorCode::Truncated,
+                     "a root whose file chain is short fails as Truncated") &&
+               check(fs.root_block() == 380 && fs.version() == version && fs.has_root(),
+                     "a failed load keeps the loaded root") &&
+               check(fs.blockmap() == blockmap && fs.entries().size() == entries,
+                     "a failed load keeps the table and directory") &&
+               check(file && fs.get_file("secdata.bin") == file,
+                     "a failed load keeps the file data") &&
+               check(!fs.load(good, 380, 8), "a root cluster past its erase block fails") &&
+               check(fs.root_block() == 380 && fs.blockmap() == blockmap,
+                     "an out-of-range root cluster changes nothing");
     }
 
     bool test_big_block_writer_uses_clusters() {
@@ -432,21 +484,22 @@ namespace {
                    "a file cluster cannot be withheld"))
             return false;
         const auto table = fs.serialize_root_block();
-        return check(table.size() == kCleanBlockSize, "the table serializes") &&
-               check(stated_map_value(table, 0) == BlockMapStatus::EndOfChain,
+        if (!check(table && table->size() == kCleanBlockSize, "the table serializes"))
+            return false;
+        return check(stated_map_value(*table, 0) == BlockMapStatus::EndOfChain,
                      "the file ends its chain") &&
-               check(stated_map_value(table, 1) == BlockMapStatus::Unnamed &&
-                         stated_map_value(table, 7) == BlockMapStatus::Unnamed,
+               check(stated_map_value(*table, 1) == BlockMapStatus::Unnamed &&
+                         stated_map_value(*table, 7) == BlockMapStatus::Unnamed,
                      "stepped-over clusters are never named") &&
-               check(stated_map_value(table, 8) == BlockMapStatus::Free &&
-                         stated_map_value(table, 15) == BlockMapStatus::Free,
+               check(stated_map_value(*table, 8) == BlockMapStatus::Free &&
+                         stated_map_value(*table, 15) == BlockMapStatus::Free,
                      "a blob's clusters are stated free") &&
-               check(stated_map_value(table, 16) == BlockMapStatus::Table,
+               check(stated_map_value(*table, 16) == BlockMapStatus::Table,
                      "the root states itself") &&
-               check(stated_map_value(table, 17) == BlockMapStatus::Free &&
-                         stated_map_value(table, 23) == BlockMapStatus::Free,
+               check(stated_map_value(*table, 17) == BlockMapStatus::Free &&
+                         stated_map_value(*table, 23) == BlockMapStatus::Free,
                      "the rest of the root's erase block is stated free") &&
-               check(stated_map_value(table, 0x400) == BlockMapStatus::Unnamed,
+               check(stated_map_value(*table, 0x400) == BlockMapStatus::Unnamed,
                      "the tail is never named");
     }
 
@@ -493,6 +546,7 @@ namespace {
 
 int main() {
     bool passed = test_load_independent_big_block_layout();
+    passed = test_failed_load_leaves_filesystem_unchanged() && passed;
     passed = test_big_block_writer_uses_clusters() && passed;
     passed = test_big_block_stamps_retail_fs_metadata() && passed;
     passed = test_big_block_serialize_restamps_root() && passed;

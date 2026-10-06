@@ -43,6 +43,14 @@ namespace {
         return true;
     }
 
+    bool check(const gxbuild3::Result<>& result, std::string_view message) {
+        if (!result) {
+            std::cerr << "FAIL: " << message << ": " << result.error().describe() << '\n';
+            return false;
+        }
+        return true;
+    }
+
     bool test_fresh_blocks_are_not_bad() {
         Driver driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
         return check(!driver.is_bad_block(100),

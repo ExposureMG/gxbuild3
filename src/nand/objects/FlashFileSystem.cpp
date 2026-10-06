@@ -11,6 +11,14 @@
 
 namespace gxbuild3::nand {
 
+    namespace {
+        // An on-disk name fills all kMaxFilenameLength bytes when it has no terminator.
+        std::string_view entry_name(const FlashFileSystemEntry& entry) {
+            const char* end = std::find(entry.filename, entry.filename + kMaxFilenameLength, '\0');
+            return {entry.filename, static_cast<size_t>(end - entry.filename)};
+        }
+    } // namespace
+
     void FlashFileSystem::set_driver(Driver* driver) {
         m_driver = driver;
     }
@@ -70,16 +78,16 @@ namespace gxbuild3::nand {
         return true;
     }
 
-    bool FlashFileSystem::format(size_t total_blocks, uint16_t root_block, uint32_t version,
-                                 uint32_t reserved_boundary) {
+    Result<void> FlashFileSystem::format(size_t total_blocks, uint16_t root_block, uint32_t version,
+                                         uint32_t reserved_boundary) {
         const bool defer_root = (root_block == kDeferRoot);
         const size_t ratio = clusters_per_block();
         constexpr size_t map_capacity = kRootDirectoryPages * kBlocksPerPage;
         if (total_blocks == 0 || total_blocks > map_capacity / ratio ||
             (!defer_root && (root_block >= total_blocks || root_block * ratio < base_cluster()))) {
-            Log::Error("Invalid parameters for FlashFS format: total_blocks={}, root_block={}",
-                       total_blocks, root_block);
-            return false;
+            return fail(ErrorCode::InvalidArgument,
+                        "invalid FlashFS format parameters: total_blocks={}, root_block=0x{:X}",
+                        total_blocks, root_block);
         }
 
         m_version = version;
@@ -108,7 +116,7 @@ namespace gxbuild3::nand {
             Log::Debug("Formatted Flash File System: total_blocks={}, root_block={}, version={}",
                        total_blocks, root_block, version);
         }
-        return true;
+        return {};
     }
 
     // The root takes the first cluster of its erase block, which the table states as itself;
@@ -141,29 +149,32 @@ namespace gxbuild3::nand {
         m_root_placed = false;
     }
 
-    bool FlashFileSystem::set_root_block(uint16_t root_block) {
+    Result<void> FlashFileSystem::set_root_block(uint16_t root_block) {
         const size_t ratio = clusters_per_block();
         if (root_block >= m_blockmap.size() / ratio || root_block * ratio < base_cluster()) {
-            return false;
+            return fail(ErrorCode::OutOfRange,
+                        "FlashFS root block 0x{:X} is outside the filesystem", root_block);
         }
         if (m_root_placed && root_block == m_root_block) {
-            return true;
+            return {};
         }
         if (!is_block_free(root_block)) {
-            return false;
+            return fail(ErrorCode::InvalidArgument, "FlashFS root block 0x{:X} is not free",
+                        root_block);
         }
 
         release_root();
         place_root(root_block);
-        return true;
+        return {};
     }
 
-    bool FlashFileSystem::reserve_blocks(size_t start_block, size_t block_count) {
+    Result<void> FlashFileSystem::reserve_blocks(size_t start_block, size_t block_count) {
         const size_t ratio = clusters_per_block();
         const size_t physical_blocks = m_blockmap.size() / ratio;
         if (block_count == 0 || start_block >= physical_blocks ||
             block_count > physical_blocks - start_block) {
-            return false;
+            return fail(ErrorCode::OutOfRange, "cannot reserve {} FlashFS blocks from 0x{:X} of {}",
+                        block_count, start_block, physical_blocks);
         }
 
         start_block *= ratio;
@@ -172,40 +183,47 @@ namespace gxbuild3::nand {
         for (size_t block = start_block; block < start_block + block_count; ++block) {
             if (m_blockmap[block] != BlockMapStatus::Free &&
                 m_blockmap[block] != BlockMapStatus::Reserved) {
-                return false;
+                return fail(ErrorCode::InvalidArgument,
+                            "FlashFS cluster 0x{:X} is in use and cannot be reserved", block);
             }
         }
         for (size_t block = start_block; block < start_block + block_count; ++block) {
             m_blockmap[block] = BlockMapStatus::Reserved;
             m_stated.erase(block);
         }
-        return true;
+        return {};
     }
 
-    bool FlashFileSystem::withhold_clusters(size_t first_cluster, size_t cluster_count,
-                                            uint16_t stated) {
+    Result<void> FlashFileSystem::withhold_clusters(size_t first_cluster, size_t cluster_count,
+                                                    uint16_t stated) {
         if (cluster_count == 0 || first_cluster >= m_blockmap.size() ||
             cluster_count > m_blockmap.size() - first_cluster) {
-            return false;
+            return fail(ErrorCode::OutOfRange,
+                        "cannot withhold {} FlashFS clusters from 0x{:X} of {}", cluster_count,
+                        first_cluster, m_blockmap.size());
         }
         for (size_t cluster = first_cluster; cluster < first_cluster + cluster_count; ++cluster) {
             if (m_blockmap[cluster] != BlockMapStatus::Free &&
                 !(m_blockmap[cluster] == BlockMapStatus::Reserved && m_stated.contains(cluster))) {
-                return false;
+                return fail(ErrorCode::InvalidArgument,
+                            "FlashFS cluster 0x{:X} is in use and cannot be withheld", cluster);
             }
         }
         for (size_t cluster = first_cluster; cluster < first_cluster + cluster_count; ++cluster) {
             m_blockmap[cluster] = BlockMapStatus::Reserved;
             m_stated[cluster] = stated;
         }
-        return true;
+        return {};
     }
 
-    bool FlashFileSystem::withhold_blocks(size_t start_block, size_t block_count, uint16_t stated) {
+    Result<void> FlashFileSystem::withhold_blocks(size_t start_block, size_t block_count,
+                                                  uint16_t stated) {
         const size_t ratio = clusters_per_block();
         if (block_count == 0 || start_block >= m_blockmap.size() / ratio ||
             block_count > m_blockmap.size() / ratio - start_block) {
-            return false;
+            return fail(ErrorCode::OutOfRange,
+                        "cannot withhold {} FlashFS blocks from 0x{:X} of {}", block_count,
+                        start_block, m_blockmap.size() / ratio);
         }
         return withhold_clusters(start_block * ratio, block_count * ratio, stated);
     }
@@ -272,8 +290,7 @@ namespace gxbuild3::nand {
         }
 
         if (allocated.size() < block_count) {
-            Log::Error("FlashFS out of space: needed {} blocks, only {} free blocks available (out "
-                       "of {} total blocks)",
+            Log::Debug("FlashFS out of space: needed {} clusters, only {} of {} are free",
                        block_count, allocated.size(), m_blockmap.size());
             return std::nullopt;
         }
@@ -298,8 +315,8 @@ namespace gxbuild3::nand {
         }
     }
 
-    bool FlashFileSystem::add_file(std::string_view filename, std::span<const uint8_t> data,
-                                   std::optional<uint32_t> timestamp) {
+    Result<void> FlashFileSystem::add_file(std::string_view filename, std::span<const uint8_t> data,
+                                           std::optional<uint32_t> timestamp) {
         std::string_view clean_name = filename;
         auto pos = clean_name.find_last_of("/\\");
         if (pos != std::string_view::npos) {
@@ -307,26 +324,27 @@ namespace gxbuild3::nand {
         }
 
         if (clean_name.empty() || clean_name.size() >= kMaxFilenameLength) {
-            Log::Error("Invalid filename '{}' for FlashFS (length must be 1-{} chars)", clean_name,
-                       kMaxFilenameLength - 1);
-            return false;
+            return fail(ErrorCode::InvalidArgument,
+                        "invalid FlashFS filename '{}' (length must be 1-{} chars)", clean_name,
+                        kMaxFilenameLength - 1);
         }
 
         const bool replacing_existing_file = exists(clean_name);
         if (!replacing_existing_file && m_entries.size() >= kMaxDirectoryEntries) {
-            Log::Error("FlashFS directory is full (maximum {} entries)", kMaxDirectoryEntries);
-            return false;
+            return fail(ErrorCode::Exhausted, "FlashFS directory is full (maximum {} entries)",
+                        kMaxDirectoryEntries);
         }
 
         if (replacing_existing_file) {
-            delete_file(clean_name);
+            if (auto deleted = delete_file(clean_name); !deleted) {
+                return deleted;
+            }
         }
 
         auto chain_start = allocate_chain(data.size());
         if (!chain_start) {
-            Log::Error("FlashFS out of space: failed to allocate blocks for '{}' ({} bytes)",
-                       clean_name, data.size());
-            return false;
+            return fail(ErrorCode::Exhausted, "FlashFS out of space for '{}' ({} bytes)",
+                        clean_name, data.size());
         }
 
         FlashFileSystemEntry entry{};
@@ -338,12 +356,12 @@ namespace gxbuild3::nand {
 
         m_entries.push_back(entry);
         m_file_data[std::string(clean_name)] = std::vector<uint8_t>(data.begin(), data.end());
-        return true;
+        return {};
     }
 
-    bool FlashFileSystem::insert_file(size_t position, std::string_view filename,
-                                      std::span<const uint8_t> data,
-                                      std::optional<uint32_t> timestamp) {
+    Result<void> FlashFileSystem::insert_file(size_t position, std::string_view filename,
+                                              std::span<const uint8_t> data,
+                                              std::optional<uint32_t> timestamp) {
         std::string_view clean_name = filename;
         if (const auto pos = clean_name.find_last_of("/\\"); pos != std::string_view::npos) {
             clean_name = clean_name.substr(pos + 1);
@@ -355,7 +373,9 @@ namespace gxbuild3::nand {
                 if (index < position) {
                     --position;
                 }
-                delete_file(clean_name);
+                if (auto deleted = delete_file(clean_name); !deleted) {
+                    return deleted;
+                }
                 break;
             }
         }
@@ -373,23 +393,23 @@ namespace gxbuild3::nand {
             const std::string name{it->filename};
             auto data_it = m_file_data.find(name);
             if (data_it == m_file_data.end()) {
-                Log::Error("FlashFS file '{}' has no data to lay again", name);
-                return false;
+                return fail(ErrorCode::Internal, "FlashFS file '{}' has no data to lay again",
+                            name);
             }
             moved.push_back({name, std::move(data_it->second), it->timestamp});
             m_file_data.erase(data_it);
         }
         m_entries.erase(m_entries.begin() + static_cast<std::ptrdiff_t>(position), m_entries.end());
 
-        if (!add_file(clean_name, inserted, timestamp)) {
-            return false;
+        if (auto added = add_file(clean_name, inserted, timestamp); !added) {
+            return added;
         }
         for (const auto& file : moved) {
-            if (!add_file(file.name, file.data, file.timestamp)) {
-                return false;
+            if (auto added = add_file(file.name, file.data, file.timestamp); !added) {
+                return with_context(std::move(added), std::format("laying '{}' again", file.name));
             }
         }
-        return true;
+        return {};
     }
 
     std::optional<std::vector<uint8_t>> FlashFileSystem::get_file(std::string_view filename) const {
@@ -437,7 +457,7 @@ namespace gxbuild3::nand {
         return data;
     }
 
-    bool FlashFileSystem::delete_file(std::string_view filename) {
+    Result<void> FlashFileSystem::delete_file(std::string_view filename) {
         std::string_view clean_name = filename;
         auto pos = clean_name.find_last_of("/\\");
         if (pos != std::string_view::npos) {
@@ -449,10 +469,10 @@ namespace gxbuild3::nand {
                 free_chain(it->block_number);
                 m_file_data.erase(std::string(clean_name));
                 m_entries.erase(it);
-                return true;
+                return {};
             }
         }
-        return false;
+        return fail(ErrorCode::NotFound, "FlashFS has no file '{}'", clean_name);
     }
 
     bool FlashFileSystem::exists(std::string_view filename) const {
@@ -478,12 +498,13 @@ namespace gxbuild3::nand {
         return *entry;
     }
 
-    std::vector<uint8_t> FlashFileSystem::serialize_root_block() const {
+    Result<std::vector<uint8_t>> FlashFileSystem::serialize_root_block() const {
         if (!m_root_placed) {
-            return {};
+            return fail(ErrorCode::InvalidArgument, "FlashFS root block is not placed");
         }
         if (m_entries.size() > kMaxDirectoryEntries) {
-            return {};
+            return fail(ErrorCode::OutOfRange, "FlashFS directory holds {} entries; at most {} fit",
+                        m_entries.size(), kMaxDirectoryEntries);
         }
         std::vector<uint8_t> root_block(kCleanBlockSize, 0);
 
@@ -497,8 +518,11 @@ namespace gxbuild3::nand {
                 if (stated != m_stated.end()) {
                     val = stated->second;
                 } else if ((val & 0x7FFF) < BlockMapStatus::BadBlock) {
-                    if ((val & 0x7FFF) < base_cluster())
-                        return {};
+                    if ((val & 0x7FFF) < base_cluster()) {
+                        return fail(ErrorCode::Malformed,
+                                    "FlashFS cluster 0x{:X} links below the filesystem base 0x{:X}",
+                                    bm_written - 1, base_cluster());
+                    }
                     val = static_cast<uint16_t>((val & 0x8000) | ((val & 0x7FFF) - base_cluster()));
                 }
                 val = bswap16(val);
@@ -513,8 +537,11 @@ namespace gxbuild3::nand {
             for (size_t slot = 0; slot < kEntriesPerPage && entry_written < m_entries.size();
                  ++slot) {
                 FlashFileSystemEntry raw = m_entries[entry_written++];
-                if (raw.block_number < base_cluster())
-                    return {};
+                if (raw.block_number < base_cluster()) {
+                    return fail(ErrorCode::Malformed,
+                                "FlashFS file '{}' starts below the filesystem base 0x{:X}",
+                                entry_name(raw), base_cluster());
+                }
                 raw.block_number =
                     bswap16(static_cast<uint16_t>(raw.block_number - base_cluster()));
                 raw.length = bswap32(raw.length);
@@ -527,27 +554,18 @@ namespace gxbuild3::nand {
         return root_block;
     }
 
-    bool FlashFileSystem::save() {
+    Result<void> FlashFileSystem::save() {
         if (!m_driver) {
-            return false;
+            return fail(ErrorCode::InvalidArgument, "FlashFS save needs an attached driver");
         }
-        if (m_entries.size() > kMaxDirectoryEntries) {
-            Log::Error("FlashFS directory exceeds its {}-entry serialization capacity",
-                       kMaxDirectoryEntries);
-            return false;
-        }
-        if (!m_root_placed) {
-            Log::Error("FlashFS save attempted before root block allocation");
-            return false;
-        }
-
         auto root_data = serialize_root_block();
-        if (root_data.size() != kCleanBlockSize) {
-            return false;
+        if (!root_data) {
+            return std::unexpected(std::move(root_data.error()).add_context("saving FlashFS"));
         }
         const size_t root_cluster = m_root_block * clusters_per_block() + m_root_cluster_offset;
-        if (!m_driver->write_offset(root_cluster * kCleanBlockSize, root_data)) {
-            return false;
+        if (!m_driver->write_offset(root_cluster * kCleanBlockSize, *root_data)) {
+            return fail(ErrorCode::OutOfRange, "FlashFS root cluster 0x{:X} is outside the NAND",
+                        root_cluster);
         }
 
         const bool big_block = m_driver->driver_mode() == Driver::DriverMode::Big;
@@ -590,12 +608,16 @@ namespace gxbuild3::nand {
                 std::span<const uint8_t> chunk(file_bytes.data() + bytes_written, chunk_len);
                 const size_t cluster_offset = static_cast<size_t>(blk) * kCleanBlockSize;
                 if (!m_driver->write_offset(cluster_offset, chunk)) {
-                    return false;
+                    return fail(ErrorCode::OutOfRange,
+                                "FlashFS cluster 0x{:X} of '{}' is outside the NAND", blk,
+                                it->first);
                 }
                 if (chunk_len < kCleanBlockSize) {
                     const std::vector<uint8_t> padding(kCleanBlockSize - chunk_len, 0);
                     if (!m_driver->write_offset(cluster_offset + chunk_len, padding)) {
-                        return false;
+                        return fail(ErrorCode::OutOfRange,
+                                    "FlashFS cluster 0x{:X} of '{}' is outside the NAND", blk,
+                                    it->first);
                     }
                 }
 
@@ -610,7 +632,9 @@ namespace gxbuild3::nand {
                 bytes_written += chunk_len;
             }
             if (bytes_written != file_bytes.size()) {
-                return false;
+                return fail(ErrorCode::Truncated,
+                            "FlashFS chain of '{}' holds 0x{:X} of its 0x{:X} bytes", it->first,
+                            bytes_written, file_bytes.size());
             }
         }
 
@@ -635,14 +659,32 @@ namespace gxbuild3::nand {
         }
 
         m_driver->write_cluster_metadata(root_cluster, root_meta);
-        return true;
+        return {};
     }
 
-    bool FlashFileSystem::load(Driver& driver, uint16_t root_block, size_t cluster_in_block) {
+    Result<void> FlashFileSystem::load(Driver& driver, uint16_t root_block,
+                                       size_t cluster_in_block) {
+        // Read into a staged filesystem that carries only this one's settings, and commit it
+        // whole on success, so a failed load leaves this filesystem as it was.
+        FlashFileSystem staged;
+        staged.m_larger = m_larger;
+        staged.m_big_system_blocks = m_big_system_blocks;
+        staged.m_timestamp = m_timestamp;
+        if (auto loaded = staged.read_root(driver, root_block, cluster_in_block); !loaded) {
+            return loaded;
+        }
+        *this = std::move(staged);
+        return {};
+    }
+
+    Result<void> FlashFileSystem::read_root(Driver& driver, uint16_t root_block,
+                                            size_t cluster_in_block) {
         m_driver = &driver;
         m_root_block = root_block;
-        if (cluster_in_block >= clusters_per_block())
-            return false;
+        if (cluster_in_block >= clusters_per_block()) {
+            return fail(ErrorCode::OutOfRange, "FlashFS root cluster {} is past its erase block",
+                        cluster_in_block);
+        }
         m_root_cluster_offset = cluster_in_block;
         m_root_reserved_clusters = 1;
         const size_t root_cluster = root_block * clusters_per_block() + cluster_in_block;
@@ -651,7 +693,8 @@ namespace gxbuild3::nand {
 
         auto root_data = driver.read_clean(root_cluster * kCleanBlockSize, kCleanBlockSize);
         if (root_data.size() < kCleanBlockSize) {
-            return false;
+            return fail(ErrorCode::Truncated, "FlashFS root cluster 0x{:X} reads 0x{:X} bytes",
+                        root_cluster, root_data.size());
         }
         m_root_placed = true;
         m_stated.clear();
@@ -668,8 +711,11 @@ namespace gxbuild3::nand {
                 std::memcpy(&val, page_ptr + (entry * sizeof(uint16_t)), sizeof(uint16_t));
                 val = bswap16(val);
                 if ((val & 0x7FFF) < BlockMapStatus::BadBlock) {
-                    if ((val & 0x7FFF) + base_cluster() >= m_blockmap.size())
-                        return false;
+                    if ((val & 0x7FFF) + base_cluster() >= m_blockmap.size()) {
+                        return fail(ErrorCode::Malformed,
+                                    "FlashFS cluster 0x{:X} links past the map to 0x{:X}", bm_read,
+                                    (val & 0x7FFF) + base_cluster());
+                    }
                     val = static_cast<uint16_t>((val & 0x8000) | ((val & 0x7FFF) + base_cluster()));
                 }
                 m_blockmap[bm_read++] = val;
@@ -696,7 +742,9 @@ namespace gxbuild3::nand {
 
                 if (raw.is_valid()) {
                     if (physical_cluster >= m_blockmap.size()) {
-                        return false;
+                        return fail(ErrorCode::Malformed,
+                                    "FlashFS file '{}' starts past the map at 0x{:X}",
+                                    entry_name(raw), physical_cluster);
                     }
                     m_entries.push_back(raw);
                 }
@@ -720,14 +768,14 @@ namespace gxbuild3::nand {
             }
 
             if (file_bytes.size() != entry.length) {
-                Log::Error("FlashFS file '{}' is truncated: expected {} bytes, read {}",
-                           entry.filename, entry.length, file_bytes.size());
-                return false;
+                return fail(ErrorCode::Truncated,
+                            "FlashFS file '{}' is truncated: expected {} bytes, read {}",
+                            entry.filename, entry.length, file_bytes.size());
             }
             m_file_data[std::string(entry.filename)] = std::move(file_bytes);
         }
 
-        return true;
+        return {};
     }
 
     const std::vector<uint16_t>& FlashFileSystem::blockmap() const {

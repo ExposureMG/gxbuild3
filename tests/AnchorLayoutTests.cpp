@@ -111,7 +111,9 @@ static bool spill(BuildType type) {
         f.system_update_1 = {cf, cg};
     f.filesystem = FlashFileSystem{};
     f.filesystem->set_driver(&f.flash_driver);
-    f.filesystem->format(f.flash_driver.block_count(), 0x1D0);
+    if (!check(f.filesystem->format(f.flash_driver.block_count(), 0x1D0).has_value(),
+               "the filesystem formats"))
+        return false;
     const auto expected = cg.serialize();
     if (!check(f.encrypt_all({}, type) && f.write_to_driver(),
                "oversized CG prepares and writes within its slot"))
