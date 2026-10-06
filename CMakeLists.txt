@@ -140,6 +140,9 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_crypto_reference_tests tests/CryptoReferenceTests.cpp)
     add_gxbuild3_test(gxbuild3_stfs_tests tests/StfsTests.cpp)
     add_gxbuild3_test(gxbuild3_error_tests tests/ErrorTests.cpp)
+    # src/Wire.hpp: endian field types, record codecs, Cursor, the compile-time rejections
+    # (deleted swaps, no compound assignment) and formatting through std::format and Log.hpp.
+    add_gxbuild3_test(gxbuild3_wire_tests tests/WireTests.cpp)
     # Compile-time sizeof/offsetof pins of every bootloader record in Common.hpp, taken from
     # the on-disk layout; the run prints how many records and fields the build pinned.
     add_gxbuild3_test(gxbuild3_bootloader_layout_tests tests/BootloaderLayoutTests.cpp)

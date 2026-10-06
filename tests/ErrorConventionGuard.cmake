@@ -8,6 +8,13 @@ cmake_minimum_required(VERSION 3.29)
 #   2. `throw` may only appear in BigUint (precondition violations) and the shims.
 #   3. `catch (...)` may only appear in main().
 #
+# WireConventionGuard (see src/Wire.hpp): on-disk records are plain structs of wire:: field types,
+# so the legacy byte-order machinery is a second shrinking inventory.
+#   4. `#pragma pack` may only appear in the files that still declare packed records.
+#   5. The manual byte-order helpers (bswap16/32/64, swap32, read_be*/read_le*, including their
+#      __builtin_bswap* bodies) may only be named in the files that still use them.
+# A converting commit removes its file's entry in the same commit.
+#
 # Every allowlist entry must still match its rule: once a shim is deleted the guard fails until
 # the entry is removed, so the allowlists can only shrink. `//` comments are ignored.
 #
@@ -48,19 +55,57 @@ set(catch_all_allowlist
     src/Main.cpp
 )
 
+# WireConventionGuard inventories. XConfig.hpp keeps its packed bitfields on purpose; every other
+# entry goes away as its records move to src/Wire.hpp. src/Wire.hpp itself stays: it declares
+# the deleted bswap*/swap32 overloads that reject a manual swap on a wire field.
+set(pragma_pack_allowlist
+    src/nand/NandTypes.hpp
+    src/nand/bootloaders/Common.hpp
+    src/nand/objects/FlashFileSystem.hpp
+    src/nand/objects/Keyvault.hpp
+    src/nand/objects/XConfig.hpp
+)
+
+set(byte_swap_allowlist
+    src/BuildRunner.cpp
+    src/Endian.hpp
+    src/Wire.hpp
+    src/nand/FlashImage.cpp
+    src/nand/bootloaders/2bl.cpp
+    src/nand/bootloaders/Common.hpp
+    src/nand/objects/FlashFileSystem.cpp
+    src/nand/objects/Patchset.cpp
+    src/nand/objects/Xboxupd.cpp
+    src/patchers/Patcher.cpp
+    src/stfs/FileExtractor.cpp
+    src/stfs/FileTableParser.cpp
+    src/stfs/HeaderParser.cpp
+    src/stfs/MetadataParser.cpp
+    src/utils/FusesetGenerator.cpp
+    src/utils/XeRsa.cpp
+)
+
 set(rule_shim_name_regex "[A-Za-z0-9_]_or_throw[^A-Za-z0-9_]")
 set(rule_throw_regex "[^A-Za-z0-9_]throw[^A-Za-z0-9_]")
 set(rule_catch_all_regex "[^A-Za-z0-9_]catch[ \t]*\\([ \t]*\\.\\.\\.[ \t]*\\)")
+set(rule_pragma_pack_regex "#[ \t]*pragma[ \t]+pack")
+# Substring match on purpose: it also catches __builtin_bswap16 and helpers such as
+# try_read_be32 that wrap the legacy readers.
+set(rule_byte_swap_regex "bswap(16|32|64)|swap32|read_(be|le)(16|24|32|64)")
 
 set(rule_shim_name_label "throwing shim name (*_or_throw / value_or_throw)")
 set(rule_throw_label "`throw`")
 set(rule_catch_all_label "`catch (...)`")
+set(rule_pragma_pack_label "`#pragma pack` (use wire:: field types, src/Wire.hpp)")
+set(rule_byte_swap_label "manual byte-order helper (use wire:: field types, src/Wire.hpp)")
 
 set(rule_shim_name_allow ${shim_name_allowlist})
 set(rule_throw_allow ${throw_allowlist})
 set(rule_catch_all_allow ${catch_all_allowlist})
+set(rule_pragma_pack_allow ${pragma_pack_allowlist})
+set(rule_byte_swap_allow ${byte_swap_allowlist})
 
-set(rules shim_name throw catch_all)
+set(rules shim_name throw catch_all pragma_pack byte_swap)
 foreach(rule IN LISTS rules)
     set(hits_${rule} "")
 endforeach()
@@ -116,7 +161,8 @@ endforeach()
 
 if(NOT violations STREQUAL "")
     message(FATAL_ERROR
-        "error-convention guard failed (see the Result convention in src/Error.hpp):\n"
+        "error-convention guard failed (see the Result convention in src/Error.hpp and the wire "
+        "convention in src/Wire.hpp):\n"
         "${violations}")
 endif()
 
