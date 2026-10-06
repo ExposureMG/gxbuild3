@@ -730,6 +730,63 @@ namespace {
                 "$flash_dash.xex extracts byte-identically");
     }
 
+    // StfsContainer::extract with Verify::Yes checks the hash tables up to the top hash and
+    // returns the same bytes as the unverified extract_to_memory path.
+    void test_container_verified_extract() {
+        const fs::path path = fs::path(GXBUILD3_SUPPORT_DIR) / "17559" / "su20076000_00000000";
+        std::ifstream in(path, std::ios::binary);
+        const std::vector<char> raw(std::istreambuf_iterator<char>(in), {});
+        require(!raw.empty(), "fixture su20076000_00000000 is readable");
+        Bytes bytes(raw.size());
+        std::transform(raw.begin(), raw.end(), bytes.begin(),
+                       [](char c) { return static_cast<std::byte>(c); });
+
+        const auto container = stfs::StfsContainer::open(bytes);
+        require(container.has_value(), "StfsContainer opens the fixture");
+        require(container->entries().size() == 31, "StfsContainer lists 31 entries");
+        require(container->header_size() == 0xAD0E, "StfsContainer reports header size 0xAD0E");
+        const auto in_memory = container->extract_to_memory();
+        require(in_memory.has_value(), "StfsContainer extracts the fixture to memory");
+
+        std::size_t files = 0;
+        for (const auto& entry : container->entries()) {
+            if (entry.is_directory())
+                continue;
+            const auto verified = container->extract(entry, stfs::StfsContainer::Verify::Yes);
+            require(verified.has_value(), "StfsContainer verifies " + entry.name);
+            std::string key = entry.name;
+            if (key.starts_with("$flash_"))
+                key.erase(0, 7);
+            std::transform(key.begin(), key.end(), key.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            require(in_memory->at(key) == *verified,
+                    "verified extract equals extract_to_memory for " + entry.name);
+            ++files;
+        }
+        require(files == in_memory->size(), "every in-memory file was verified");
+
+        TempDir dir;
+        require(
+            container->extract_all(dir.root / "out", stfs::StfsContainer::Verify::Yes).has_value(),
+            "StfsContainer verified extract_all succeeds on the fixture");
+
+        auto data_corrupt = make_package({{"a.bin", pattern(10, 1)}});
+        data_corrupt[data_offset(1) + 0x800] ^= std::byte{0x01}; // past file_size, still hashed
+        const auto corrupt = stfs::StfsContainer::open(data_corrupt);
+        require(corrupt.has_value(), "StfsContainer opens the corrupted package");
+        const auto& entry = corrupt->entries().at(0);
+        require(corrupt->extract(entry) == pattern(10, 1),
+                "unverified container extraction ignores the hash");
+        require(fails_with(corrupt->extract(entry, stfs::StfsContainer::Verify::Yes),
+                           gxbuild3::ErrorCode::HashMismatch),
+                "verified container extraction fails the hash");
+        TempDir corrupt_dir;
+        require(fails_with(corrupt->extract_all(corrupt_dir.root / "out",
+                                                stfs::StfsContainer::Verify::Yes),
+                           gxbuild3::ErrorCode::HashMismatch),
+                "verified container extract_all fails the hash");
+    }
+
     // --- Metadata strings ------------------------------------------------------------------
 
     void put_utf16be(Bytes& bytes, std::size_t offset, std::u16string_view text) {
@@ -1320,6 +1377,7 @@ int main(int argc, char** argv) {
         {"verify requires total_blocks", test_verify_requires_total_blocks},
         {"verify detects corruption", test_verify_detects_corruption},
         {"system update fixture", test_system_update_fixture},
+        {"StfsContainer verified extract", test_container_verified_extract},
         {"locale strings decode UTF-16BE", test_locale_strings_decode_utf16be},
         {"negative thumbnail size is empty", test_negative_thumbnail_size_is_empty},
         {"system update fixture entry snapshot", test_system_update_fixture_entry_snapshot},

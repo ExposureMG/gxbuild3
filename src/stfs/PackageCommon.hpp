@@ -34,6 +34,13 @@ namespace gxbuild3::stfs::detail {
     [[nodiscard]] Result<std::filesystem::path> safe_join(const std::filesystem::path& parent,
                                                           const std::filesystem::path& relative);
 
+    // Destination of every file-table entry under `target_dir`, in table order: the
+    // build_entry_paths result joined through safe_join. Fails on the first bad entry, before
+    // anything is written.
+    [[nodiscard]] Result<std::vector<std::filesystem::path>>
+    plan_destinations(const std::vector<FileEntry>& entries,
+                      const std::filesystem::path& target_dir);
+
     // TODO(parsing): Package still reports failures by throwing. It unwraps the
     // Result-returning helpers through this shim until the parsing phase converts it.
     // tests/ErrorConventionGuard.cmake keeps it out of the rest of src/.

@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <fstream>
+#include <utility>
 
 namespace gxbuild3::stfs::detail {
 
@@ -101,6 +102,25 @@ namespace gxbuild3::stfs::detail {
         }
 
         return parent / normalized;
+    }
+
+    Result<std::vector<std::filesystem::path>>
+    plan_destinations(const std::vector<FileEntry>& entries,
+                      const std::filesystem::path& target_dir) {
+        const auto relative_paths = build_entry_paths(entries);
+        if (!relative_paths) {
+            return std::unexpected(relative_paths.error());
+        }
+        std::vector<std::filesystem::path> destinations;
+        destinations.reserve(relative_paths->size());
+        for (const auto& relative : *relative_paths) {
+            auto destination = safe_join(target_dir, relative);
+            if (!destination) {
+                return std::unexpected(std::move(destination).error());
+            }
+            destinations.push_back(std::move(*destination));
+        }
+        return destinations;
     }
 
 } // namespace gxbuild3::stfs::detail

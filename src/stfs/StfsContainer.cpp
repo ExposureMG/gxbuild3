@@ -43,8 +43,16 @@ namespace gxbuild3::stfs {
     } // namespace
 
     StfsContainer::StfsContainer(std::span<const std::byte> data, std::uint32_t header_size,
+                                 const StfsVolumeDescriptor& descriptor,
                                  std::vector<FileEntry> entries)
-        : data_(data), header_size_(header_size), entries_(std::move(entries)) {}
+        : data_(data), header_size_(header_size), top_hash_(descriptor.top_hash_table_hash),
+          total_blocks_(static_cast<std::uint32_t>(descriptor.total_allocated_block_count)),
+          entries_(std::move(entries)) {
+        keys_.reserve(entries_.size());
+        for (const auto& entry : entries_) {
+            keys_.push_back(lower_ascii(strip_flash_prefix(entry.name)));
+        }
+    }
 
     Result<StfsContainer> StfsContainer::open(std::span<const std::byte> data) {
         if (!starts_with_pirs(data)) {
@@ -84,23 +92,21 @@ namespace gxbuild3::stfs {
         }
         Log::Debug("Opened STFS container ({} entries, header size 0x{:X})", entries->size(),
                    header_size);
-        return StfsContainer(data, header_size, std::move(*entries));
+        return StfsContainer(data, header_size, *vd, std::move(*entries));
     }
 
-    Result<void> StfsContainer::extract_all(const std::filesystem::path& target_dir) const {
+    Result<std::vector<std::byte>> StfsContainer::extract(const FileEntry& entry,
+                                                          Verify verify) const {
+        return stfs::extract_file(data_, entry, stfs::Magic::PIRS, header_size_,
+                                  verify == Verify::Yes, &top_hash_, total_blocks_);
+    }
+
+    Result<void> StfsContainer::extract_all(const std::filesystem::path& target_dir,
+                                            Verify verify) const {
         // Validate every destination before writing anything.
-        const auto relative_paths = detail::build_entry_paths(entries_);
-        if (!relative_paths) {
-            return std::unexpected(relative_paths.error());
-        }
-        std::vector<std::filesystem::path> destinations;
-        destinations.reserve(relative_paths->size());
-        for (const auto& relative : *relative_paths) {
-            auto destination = detail::safe_join(target_dir, relative);
-            if (!destination) {
-                return std::unexpected(std::move(destination).error());
-            }
-            destinations.push_back(std::move(*destination));
+        const auto destinations = detail::plan_destinations(entries_, target_dir);
+        if (!destinations) {
+            return std::unexpected(destinations.error());
         }
 
         std::error_code error;
@@ -111,7 +117,7 @@ namespace gxbuild3::stfs {
 
         for (std::size_t i = 0; i < entries_.size(); ++i) {
             const auto& entry = entries_[i];
-            const auto& full_path = destinations[i];
+            const auto& full_path = (*destinations)[i];
 
             const auto directory = entry.is_directory() ? full_path : full_path.parent_path();
             std::filesystem::create_directories(directory, error);
@@ -122,8 +128,7 @@ namespace gxbuild3::stfs {
                 continue;
             }
 
-            const auto file_data =
-                stfs::extract_file(data_, entry, stfs::Magic::PIRS, header_size_);
+            const auto file_data = extract(entry, verify);
             if (!file_data) {
                 return std::unexpected(file_data.error());
             }
@@ -138,22 +143,22 @@ namespace gxbuild3::stfs {
     StfsContainer::extract_to_memory(std::span<const std::string> excluded_names) const {
         ExtractedFiles results;
 
-        for (const auto& entry : entries_) {
+        for (std::size_t i = 0; i < entries_.size(); ++i) {
+            const auto& entry = entries_[i];
             if (entry.is_directory()) {
                 continue;
             }
 
-            auto name = strip_flash_prefix(entry.name);
-            name = lower_ascii(std::move(name));
+            const auto& name = keys_[i];
             if (std::find(excluded_names.begin(), excluded_names.end(), name) !=
                 excluded_names.end()) {
                 continue;
             }
-            auto file_data = stfs::extract_file(data_, entry, stfs::Magic::PIRS, header_size_);
+            auto file_data = extract(entry);
             if (!file_data) {
                 return std::unexpected(std::move(file_data).error());
             }
-            results.emplace(std::move(name), std::move(*file_data));
+            results.emplace(name, std::move(*file_data));
         }
 
         return results;
@@ -162,28 +167,21 @@ namespace gxbuild3::stfs {
     bool StfsContainer::contains_file_by_name(std::string_view name) const {
         const auto wanted = lower_ascii(std::string{name});
 
-        return std::any_of(entries_.begin(), entries_.end(), [&](const auto& entry) {
-            if (entry.is_directory()) {
-                return false;
+        for (std::size_t i = 0; i < entries_.size(); ++i) {
+            if (!entries_[i].is_directory() && keys_[i] == wanted) {
+                return true;
             }
-            auto entry_name = strip_flash_prefix(entry.name);
-            return lower_ascii(std::move(entry_name)) == wanted;
-        });
+        }
+        return false;
     }
 
     Result<std::vector<std::byte>>
     StfsContainer::extract_file_by_name(std::string_view name) const {
         const auto wanted = lower_ascii(std::string{name});
 
-        for (const auto& entry : entries_) {
-            if (entry.is_directory()) {
-                continue;
-            }
-
-            auto entry_name = strip_flash_prefix(entry.name);
-            entry_name = lower_ascii(std::move(entry_name));
-            if (entry_name == wanted) {
-                return stfs::extract_file(data_, entry, stfs::Magic::PIRS, header_size_);
+        for (std::size_t i = 0; i < entries_.size(); ++i) {
+            if (!entries_[i].is_directory() && keys_[i] == wanted) {
+                return extract(entries_[i]);
             }
         }
 

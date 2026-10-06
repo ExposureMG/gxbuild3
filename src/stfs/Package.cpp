@@ -94,12 +94,8 @@ namespace gxbuild3::stfs {
 
     void Package::extract_all(const std::filesystem::path& output_dir, bool verify) const {
         // Validate every destination before writing anything.
-        const auto relative_paths = detail::value_or_throw(detail::build_entry_paths(files_));
-        std::vector<std::filesystem::path> destinations;
-        destinations.reserve(relative_paths.size());
-        for (const auto& relative : relative_paths) {
-            destinations.push_back(detail::value_or_throw(detail::safe_join(output_dir, relative)));
-        }
+        const auto destinations =
+            detail::value_or_throw(detail::plan_destinations(files_, output_dir));
 
         for (std::size_t i = 0; i < files_.size(); ++i) {
             const auto& entry = files_[i];
