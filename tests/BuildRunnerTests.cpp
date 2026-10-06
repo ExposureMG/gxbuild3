@@ -1687,6 +1687,98 @@ namespace {
         return passed;
     }
 
+    // The keyvault summary of the full NAND metadata, pinned against a plaintext keyvault written
+    // by hand at its on-disk offsets (not through XE_KEYVAULT_DATA), so a moved field, a dropped
+    // byte swap or a changed bound shows up here:
+    //   0x01C OddFeatures (big-endian)       0x0B0 serial, 12 chars, no terminator needed
+    //   0x0C8 game region (big-endian)       0x100 DVD key
+    //   0x9CA console id (5 bytes)           0x9E4 manufacturing date (8 chars)
+    //   0xC92 OSIG text (28 chars at most)   0x1EF0..0x1EF7 last 8 bytes of the special signature
+    // kv_type is 1 when every byte of that 8-byte tail is 0x00 or 0xFF, and 2 otherwise.
+    bool test_extract_all_info_pins_the_keyvault_summary_at_its_offsets() {
+        const auto put = [](Bytes& plain, size_t at, std::string_view text) {
+            std::copy(text.begin(), text.end(), plain.begin() + static_cast<std::ptrdiff_t>(at));
+        };
+        const auto keyvault = [&](uint16_t odd_features, uint16_t region, std::string_view osig,
+                                  uint8_t last_tail_byte) {
+            Bytes plain(Keyvault::kSize, 0x00);
+            plain[0x1C] = static_cast<uint8_t>(odd_features >> 8);
+            plain[0x1D] = static_cast<uint8_t>(odd_features);
+            put(plain, 0xB0, "123456789012");
+            plain[0xBC] = 'X'; // the padding after the serial is not part of it
+            plain[0xC8] = static_cast<uint8_t>(region >> 8);
+            plain[0xC9] = static_cast<uint8_t>(region);
+            for (size_t i = 0; i < 0x10; ++i) {
+                plain[0x100 + i] = static_cast<uint8_t>(0xD0 + i);
+            }
+            const std::array<uint8_t, 5> console_id{0x12, 0x34, 0x56, 0x78, 0x9A};
+            std::copy(console_id.begin(), console_id.end(), plain.begin() + 0x9CA);
+            put(plain, 0x9E4, "09-14-10");
+            put(plain, 0xC92, osig);
+            // A byte that is neither 0x00 nor 0xFF just before the tail does not count.
+            plain[0x1EEF] = 0x5A;
+            for (size_t i = 0; i < 8; ++i) {
+                plain[0x1EF0 + i] = (i % 2 == 0) ? 0xFF : 0x00;
+            }
+            plain[0x1EF7] = last_tail_byte;
+            return plain;
+        };
+
+        struct Case {
+            std::string_view name;
+            Bytes plain;
+            uint16_t region_raw;
+            std::string_view region_name;
+            std::string_view osig;
+            uint8_t kv_type;
+            bool fcrt_required;
+        };
+        const std::array<Case, 2> cases{{
+            {"type-1 keyvault", keyvault(0x0020, 0x01FE, "GXB SYNTHETIC OSIG 01", 0x00), 0x01FE,
+             "NTSC/JAP", "GXB SYNTHETIC OSIG 01", 1, true},
+            // The OSIG runs past 28 chars with no terminator: the summary stops at 28.
+            {"type-2 keyvault",
+             keyvault(0x0000, 0x02FE, "GXB SYNTHETIC OSIG TEXT 0123456789", 0x01), 0x02FE, "PAL/EU",
+             "GXB SYNTHETIC OSIG TEXT 0123", 2, false},
+        }};
+
+        bool passed = true;
+        for (const auto& test_case : cases) {
+            auto input = fresh_input(ImageType::SmallBlock);
+            input.metadata.keyvault = canonical_keyvault(input.metadata.cpu_key, test_case.plain);
+            const auto built = run_build(input);
+            const auto info = built ? extract_all_info(*built, input.metadata.cpu_key) : not_built;
+            if (!require(info.has_value() && info->keyvault.present && info->keyvault.decrypted,
+                         std::string(test_case.name) + ": full NAND metadata has the keyvault")) {
+                passed = false;
+                continue;
+            }
+            const auto& kv = info->keyvault;
+            const auto field = [&](bool ok, std::string_view what) {
+                return require(ok, std::string(test_case.name) + ": " + std::string(what));
+            };
+            passed = field(kv.serial_number == "123456789012", "serial_number at 0xB0") && passed;
+            passed = field(kv.region_raw == test_case.region_raw,
+                           "region_raw is the big-endian word at 0xC8") &&
+                     passed;
+            passed = field(kv.region_name == test_case.region_name, "region_name") && passed;
+            passed = field(kv.dvd_key == "D0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF", "dvd_key at 0x100") &&
+                     passed;
+            passed = field(kv.console_id_raw == "123456789A", "console_id_raw at 0x9CA") && passed;
+            // 0x123456789 printed in 11 digits, then the low nibble of the fifth byte.
+            passed =
+                field(kv.console_id_friendly == "0488671834510", "console_id_friendly") && passed;
+            passed = field(kv.mfr_date == "09-14-10", "mfr_date at 0x9E4") && passed;
+            passed = field(kv.osig == test_case.osig, "osig at 0xC92") && passed;
+            passed =
+                field(kv.kv_type == test_case.kv_type, "kv_type from the 0x1EF0 tail") && passed;
+            passed = field(kv.fcrt_required == test_case.fcrt_required,
+                           "fcrt_required from OddFeatures at 0x1C") &&
+                     passed;
+        }
+        return passed;
+    }
+
     bool test_sc_survives_extraction_and_backing_cleared_layout_override() {
         auto source = fresh_input(ImageType::SmallBlock);
         const auto donor = make_donor(source, {});
@@ -4562,6 +4654,7 @@ int main() {
     passed = test_extraction_reports_a_cd_record_shorter_than_its_header() && passed;
     passed = test_extraction_cores_return_their_reason_and_the_shims_return_nullopt() && passed;
     passed = test_extract_all_info_reads_the_fcrt_flag_big_endian() && passed;
+    passed = test_extract_all_info_pins_the_keyvault_summary_at_its_offsets() && passed;
     passed = test_sc_survives_extraction_and_backing_cleared_layout_override() && passed;
     passed = test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() && passed;
     passed = test_fresh_layouts_match_requested_image_types() && passed;
