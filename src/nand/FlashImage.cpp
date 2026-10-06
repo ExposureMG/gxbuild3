@@ -2149,181 +2149,216 @@ namespace gxbuild3::nand {
         return flash_driver.serialize();
     }
 
-    Result<void> FlashImage::decrypt_all(std::span<const uint8_t> cpu_key) {
-        // Use the parser's full plaintext check, not is_decrypted()'s legacy
-        // single-byte hint: encrypted CBs can contain that byte by chance.
-        if (!cb_section.cb_or_A.data.empty() && !cb_section.cb_or_A.decrypted) {
-            if (auto opened = cb_section.cb_or_A.decrypt(key_1bl); !opened) {
-                return with_context(std::move(opened), "decrypting CB_A");
-            }
-        }
+    namespace {
 
-        if (cb_section.cb_x && !cb_section.cb_x->data.empty() && !cb_section.cb_x->decrypted) {
-            if (!cb_section.cb_or_A.derived_key) {
-                return fail(ErrorCode::Malformed,
-                            "Cannot decrypt CB_X: CB_A derived key is missing");
-            }
-            const std::array<uint8_t, 16> zero_cpu_key{};
-            auto opened = (cb_section.cb_or_A.header.header.flags & 0x1000) != 0
-                              ? cb_section.cb_x->decrypt_v2(cb_section.cb_or_A.header,
-                                                            cb_section.cb_or_A.derived_key->data(),
-                                                            zero_cpu_key.data())
-                              : cb_section.cb_x->decrypt_v1(cb_section.cb_or_A.derived_key->data(),
-                                                            zero_cpu_key.data());
-            if (!opened) {
-                return with_context(std::move(opened), "decrypting CB_X");
-            }
-        }
-
-        // CB_X loads the real CB_B as plaintext. Its key slot is already the
-        // handoff key (as written by RGH2to3), not a nonce to derive again.
-        if (cb_section.cb_x && cb_section.cb_B && cb_section.cb_B->data.size() >= 16) {
-            cb_section.cb_B->decrypted = true;
-            cb_section.cb_B->populate_metadata();
-            std::array<uint8_t, 16> key{};
-            std::copy_n(cb_section.cb_B->data.begin(), key.size(), key.begin());
-            cb_section.cb_B->derived_key = key;
-        }
-
-        if (cb_section.cb_B.has_value() && !cb_section.cb_B->data.empty() &&
-            !cb_section.cb_B->decrypted) {
-            if (!cb_section.cb_or_A.derived_key.has_value()) {
-                return fail(ErrorCode::Malformed,
-                            "Cannot decrypt CB_B: CB_A derived key is missing");
-            }
-            if (auto opened = cb_section.cb_B->decrypt_cb_b(cb_section.cb_or_A.header,
-                                                            cb_section.cb_or_A.derived_key->data(),
-                                                            cpu_key.data());
-                !opened) {
-                return with_context(std::move(opened), "decrypting CB_B");
-            }
-        }
-
-        // SC is keyed from sixteen zero bytes, not from its parent. One with a zero nonce
-        // is taken as plaintext.
-        if (cb_section.sc.has_value() && !cb_section.sc->data.empty() &&
-            !cb_section.sc->is_decrypted() &&
-            std::any_of(std::begin(cb_section.sc->header.key), std::end(cb_section.sc->header.key),
-                        [](uint8_t byte) { return byte != 0; })) {
-            if (auto opened = cb_section.sc->decrypt(BootloaderSc::kZeroSecret); !opened) {
-                return with_context(std::move(opened), "decrypting SC");
-            }
-        }
-
-        if (!kernel_section.cd.data.empty() && !kernel_section.cd.is_decrypted()) {
-            Result<void> opened{};
-            if (devkit_chain()) {
-                if (!cb_section.sc || !cb_section.sc->derived_key) {
-                    return fail(ErrorCode::Malformed, "Cannot decrypt SD: the SC key is missing");
+        // Opens CB_A, CB_X, CB_B and SC in that order. CB_X's plaintext CB_B takes its key slot
+        // as the handoff key before the CB_B check, so that CB_B is never opened again.
+        [[nodiscard]] Result<void> open_cb_chain(CbSection& cb_section,
+                                                 std::span<const uint8_t> cpu_key) {
+            // Use the parser's full plaintext check, not is_decrypted()'s legacy
+            // single-byte hint: encrypted CBs can contain that byte by chance.
+            if (!cb_section.cb_or_A.data.empty() && !cb_section.cb_or_A.decrypted) {
+                if (auto opened = cb_section.cb_or_A.decrypt(key_1bl); !opened) {
+                    return with_context(std::move(opened), "decrypting CB_A");
                 }
-                opened = kernel_section.cd.decrypt(cb_section.sc->derived_key->data());
-            } else if (cb_section.cb_B.has_value() && cb_section.cb_B->derived_key.has_value()) {
-                opened = kernel_section.cd.decrypt(cb_section.cb_B->derived_key->data());
-            } else if (cb_section.cb_or_A.derived_key.has_value()) {
-                const uint8_t* cd_cpu_key = nullptr;
-                if (cb_section.cb_or_A.requires_cpu_key_for_cd()) {
-                    if (cpu_key.size() < 16) {
-                        return fail(ErrorCode::InvalidArgument,
-                                    "Cannot decrypt CD: single-CB chain requires a CPU key");
-                    }
-                    cd_cpu_key = cpu_key.data();
+            }
+
+            if (cb_section.cb_x && !cb_section.cb_x->data.empty() && !cb_section.cb_x->decrypted) {
+                if (!cb_section.cb_or_A.derived_key) {
+                    return fail(ErrorCode::Malformed,
+                                "Cannot decrypt CB_X: CB_A derived key is missing");
                 }
-                opened =
-                    kernel_section.cd.decrypt(cb_section.cb_or_A.derived_key->data(), cd_cpu_key);
-            } else {
-                return fail(ErrorCode::Malformed,
-                            "Cannot decrypt CD: parent derived key is missing");
+                const std::array<uint8_t, 16> zero_cpu_key{};
+                auto opened =
+                    (cb_section.cb_or_A.header.header.flags & 0x1000) != 0
+                        ? cb_section.cb_x->decrypt_v2(cb_section.cb_or_A.header,
+                                                      cb_section.cb_or_A.derived_key->data(),
+                                                      zero_cpu_key.data())
+                        : cb_section.cb_x->decrypt_v1(cb_section.cb_or_A.derived_key->data(),
+                                                      zero_cpu_key.data());
+                if (!opened) {
+                    return with_context(std::move(opened), "decrypting CB_X");
+                }
             }
-            if (!opened) {
-                return with_context(std::move(opened), "decrypting CD");
+
+            // CB_X loads the real CB_B as plaintext. Its key slot is already the
+            // handoff key (as written by RGH2to3), not a nonce to derive again.
+            if (cb_section.cb_x && cb_section.cb_B && cb_section.cb_B->data.size() >= 16) {
+                cb_section.cb_B->decrypted = true;
+                cb_section.cb_B->populate_metadata();
+                std::array<uint8_t, 16> key{};
+                std::copy_n(cb_section.cb_B->data.begin(), key.size(), key.begin());
+                cb_section.cb_B->derived_key = key;
             }
+
+            if (cb_section.cb_B.has_value() && !cb_section.cb_B->data.empty() &&
+                !cb_section.cb_B->decrypted) {
+                if (!cb_section.cb_or_A.derived_key.has_value()) {
+                    return fail(ErrorCode::Malformed,
+                                "Cannot decrypt CB_B: CB_A derived key is missing");
+                }
+                if (auto opened = cb_section.cb_B->decrypt_cb_b(
+                        cb_section.cb_or_A.header, cb_section.cb_or_A.derived_key->data(),
+                        cpu_key.data());
+                    !opened) {
+                    return with_context(std::move(opened), "decrypting CB_B");
+                }
+            }
+
+            // SC is keyed from sixteen zero bytes, not from its parent. One with a zero nonce
+            // is taken as plaintext.
+            if (cb_section.sc.has_value() && !cb_section.sc->data.empty() &&
+                !cb_section.sc->is_decrypted() &&
+                std::any_of(std::begin(cb_section.sc->header.key),
+                            std::end(cb_section.sc->header.key),
+                            [](uint8_t byte) { return byte != 0; })) {
+                if (auto opened = cb_section.sc->decrypt(BootloaderSc::kZeroSecret); !opened) {
+                    return with_context(std::move(opened), "decrypting SC");
+                }
+            }
+            return {};
         }
 
-        if (kernel_section.ce.has_value() && !kernel_section.ce->data.empty() &&
-            !kernel_section.ce->is_decrypted()) {
-            if (!kernel_section.cd.decrypted) {
-                return fail(ErrorCode::Malformed, "Cannot decrypt CE: CD is not decrypted");
-            }
-            // When CD arrived plaintext, its key slot is already the handoff
-            // key. For encrypted CD, use the key derived during decryption.
-            if (auto opened = kernel_section.ce->decrypt(kernel_section.cd.derived_key
-                                                             ? kernel_section.cd.derived_key->data()
-                                                             : kernel_section.cd.header.key);
-                !opened) {
-                return with_context(std::move(opened), "decrypting CE");
-            }
-        }
-
-        if (system_update_0.cf.has_value() && !system_update_0.cf->is_decrypted()) {
-            if (auto opened = system_update_0.cf->decrypt(key_1bl); !opened) {
-                return with_context(std::move(opened), "decrypting CF0");
-            }
-        }
-        if (system_update_1.cf.has_value() && !system_update_1.cf->is_decrypted()) {
-            if (auto opened = system_update_1.cf->decrypt(key_1bl); !opened) {
-                return with_context(std::move(opened), "decrypting CF1");
-            }
-        }
-        if (system_update_0.cg.has_value() && !system_update_0.cg->is_decrypted()) {
-            if (!system_update_0.cf.has_value() || !system_update_0.cf->is_decrypted()) {
-                return fail(ErrorCode::Malformed,
-                            "Cannot decrypt CG0: parent CF0 is missing or not decrypted");
-            }
-            const auto cg_key = system_update_0.cf->cg_key();
-            if (!cg_key) {
-                return fail(ErrorCode::Malformed,
-                            "Cannot decrypt CG0: CF0 payload lacks a 7BL nonce at +0x330");
-            }
-            if (auto opened = system_update_0.cg->decrypt(cg_key->data()); !opened) {
-                return with_context(std::move(opened), "decrypting CG0");
-            }
-        }
-        if (system_update_1.cg.has_value() && !system_update_1.cg->is_decrypted()) {
-            if (!system_update_1.cf.has_value() || !system_update_1.cf->is_decrypted()) {
-                return fail(ErrorCode::Malformed,
-                            "Cannot decrypt CG1: parent CF1 is missing or not decrypted");
-            }
-            const auto cg_key = system_update_1.cf->cg_key();
-            if (!cg_key) {
-                return fail(ErrorCode::Malformed,
-                            "Cannot decrypt CG1: CF1 payload lacks a 7BL nonce at +0x330");
-            }
-            if (auto opened = system_update_1.cg->decrypt(cg_key->data()); !opened) {
-                return with_context(std::move(opened), "decrypting CG1");
-            }
-        }
-
-        if (smc.has_value() && smc->encrypted) {
-            smc->decrypt();
-        }
-
-        // A console's keyvault does not open under the all-zero CPU key (only an image built
-        // under that key carries one that does), so under it a keyvault that does not open
-        // stays sealed and the build takes the console's from a kv.bin instead.
-        if (keyvault.has_value() && keyvault->encrypted && !cpu_key.empty()) {
-            if (is_zero_cpu_key(cpu_key)) {
-                if (auto opened = open_loose_keyvault(cpu_key, keyvault->raw_data);
-                    opened && opened->form == LooseKeyvault::Form::Sealed) {
-                    auto record = wire::read<XE_KEYVAULT_DATA>(opened->plain, 0, "keyvault");
-                    if (!record) {
-                        return std::unexpected(std::move(record.error())
-                                                   .add_context("reading the keyvault opened "
-                                                                "under the all-zero CPU key"));
+        // Opens CD from its parent's derived key (SC on a devkit chain, else CB_B, else CB_A),
+        // then CE from CD.
+        [[nodiscard]] Result<void> open_kernel(KernelSection& kernel_section,
+                                               const CbSection& cb_section, bool devkit,
+                                               std::span<const uint8_t> cpu_key) {
+            if (!kernel_section.cd.data.empty() && !kernel_section.cd.is_decrypted()) {
+                Result<void> opened{};
+                if (devkit) {
+                    if (!cb_section.sc || !cb_section.sc->derived_key) {
+                        return fail(ErrorCode::Malformed,
+                                    "Cannot decrypt SD: the SC key is missing");
                     }
-                    keyvault->raw_data = std::move(opened->plain);
-                    keyvault->data = *record;
-                    keyvault->encrypted = false;
+                    opened = kernel_section.cd.decrypt(cb_section.sc->derived_key->data());
+                } else if (cb_section.cb_B.has_value() &&
+                           cb_section.cb_B->derived_key.has_value()) {
+                    opened = kernel_section.cd.decrypt(cb_section.cb_B->derived_key->data());
+                } else if (cb_section.cb_or_A.derived_key.has_value()) {
+                    const uint8_t* cd_cpu_key = nullptr;
+                    if (cb_section.cb_or_A.requires_cpu_key_for_cd()) {
+                        if (cpu_key.size() < 16) {
+                            return fail(ErrorCode::InvalidArgument,
+                                        "Cannot decrypt CD: single-CB chain requires a CPU key");
+                        }
+                        cd_cpu_key = cpu_key.data();
+                    }
+                    opened = kernel_section.cd.decrypt(cb_section.cb_or_A.derived_key->data(),
+                                                       cd_cpu_key);
                 } else {
-                    Log::Warn("The keyvault does not open under the all-zero CPU key; it is "
-                              "left sealed");
+                    return fail(ErrorCode::Malformed,
+                                "Cannot decrypt CD: parent derived key is missing");
                 }
-            } else if (auto decrypted = keyvault->decrypt(cpu_key); !decrypted) {
-                return with_context(std::move(decrypted),
-                                    "decrypting the Keyvault with the provided CPU key");
+                if (!opened) {
+                    return with_context(std::move(opened), "decrypting CD");
+                }
             }
+
+            if (kernel_section.ce.has_value() && !kernel_section.ce->data.empty() &&
+                !kernel_section.ce->is_decrypted()) {
+                if (!kernel_section.cd.decrypted) {
+                    return fail(ErrorCode::Malformed, "Cannot decrypt CE: CD is not decrypted");
+                }
+                // When CD arrived plaintext, its key slot is already the handoff
+                // key. For encrypted CD, use the key derived during decryption.
+                if (auto opened = kernel_section.ce->decrypt(
+                        kernel_section.cd.derived_key ? kernel_section.cd.derived_key->data()
+                                                      : kernel_section.cd.header.key);
+                    !opened) {
+                    return with_context(std::move(opened), "decrypting CE");
+                }
+            }
+            return {};
         }
 
-        return {};
+        // Opens CF0 and CF1, then CG0 and CG1 from their CF's 7BL nonce. Both CFs open before
+        // either CG, so the first error and the stages left open after it stay as they were.
+        [[nodiscard]] Result<void> open_update_slots(SystemUpdate& slot_0, SystemUpdate& slot_1) {
+            const std::array<SystemUpdate*, 2> slots{&slot_0, &slot_1};
+            for (size_t index = 0; index < slots.size(); ++index) {
+                auto& cf = slots[index]->cf;
+                if (cf.has_value() && !cf->is_decrypted()) {
+                    if (auto opened = cf->decrypt(key_1bl); !opened) {
+                        return with_context(std::move(opened),
+                                            std::format("decrypting CF{}", index));
+                    }
+                }
+            }
+            for (size_t index = 0; index < slots.size(); ++index) {
+                const auto& cf = slots[index]->cf;
+                auto& cg = slots[index]->cg;
+                if (cg.has_value() && !cg->is_decrypted()) {
+                    if (!cf.has_value() || !cf->is_decrypted()) {
+                        return fail(ErrorCode::Malformed,
+                                    "Cannot decrypt CG{}: parent CF{} is missing or not decrypted",
+                                    index, index);
+                    }
+                    const auto cg_key = cf->cg_key();
+                    if (!cg_key) {
+                        return fail(ErrorCode::Malformed,
+                                    "Cannot decrypt CG{}: CF{} payload lacks a 7BL nonce at +0x330",
+                                    index, index);
+                    }
+                    if (auto opened = cg->decrypt(cg_key->data()); !opened) {
+                        return with_context(std::move(opened),
+                                            std::format("decrypting CG{}", index));
+                    }
+                }
+            }
+            return {};
+        }
+
+        // Opens the SMC and, under a usable CPU key, the keyvault.
+        [[nodiscard]] Result<void> open_smc_kv(std::optional<Smc>& smc,
+                                               std::optional<Keyvault>& keyvault,
+                                               std::span<const uint8_t> cpu_key) {
+            if (smc.has_value() && smc->encrypted) {
+                smc->decrypt();
+            }
+
+            // A console's keyvault does not open under the all-zero CPU key (only an image built
+            // under that key carries one that does), so under it a keyvault that does not open
+            // stays sealed and the build takes the console's from a kv.bin instead.
+            if (keyvault.has_value() && keyvault->encrypted && !cpu_key.empty()) {
+                if (is_zero_cpu_key(cpu_key)) {
+                    if (auto opened = open_loose_keyvault(cpu_key, keyvault->raw_data);
+                        opened && opened->form == LooseKeyvault::Form::Sealed) {
+                        auto record = wire::read<XE_KEYVAULT_DATA>(opened->plain, 0, "keyvault");
+                        if (!record) {
+                            return std::unexpected(std::move(record.error())
+                                                       .add_context("reading the keyvault opened "
+                                                                    "under the all-zero CPU key"));
+                        }
+                        keyvault->raw_data = std::move(opened->plain);
+                        keyvault->data = *record;
+                        keyvault->encrypted = false;
+                    } else {
+                        Log::Warn("The keyvault does not open under the all-zero CPU key; it is "
+                                  "left sealed");
+                    }
+                } else if (auto decrypted = keyvault->decrypt(cpu_key); !decrypted) {
+                    return with_context(std::move(decrypted),
+                                        "decrypting the Keyvault with the provided CPU key");
+                }
+            }
+            return {};
+        }
+
+    } // namespace
+
+    Result<void> FlashImage::decrypt_all(std::span<const uint8_t> cpu_key) {
+        if (auto opened = open_cb_chain(cb_section, cpu_key); !opened) {
+            return opened;
+        }
+        if (auto opened = open_kernel(kernel_section, cb_section, devkit_chain(), cpu_key);
+            !opened) {
+            return opened;
+        }
+        if (auto opened = open_update_slots(system_update_0, system_update_1); !opened) {
+            return opened;
+        }
+        return open_smc_kv(smc, keyvault, cpu_key);
     }
 
     Result<void> FlashImage::encrypt_all(std::span<const uint8_t> cpu_key, BuildType build_type) {
