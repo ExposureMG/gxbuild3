@@ -32,7 +32,6 @@
 // stages from, for mutation checks against scratch copies only.
 
 #include "BuildRunner.hpp"
-#include "Endian.hpp"
 #include "GoldenSnapshot.hpp"
 #include "Sha256.hpp"
 #include "excrypt.h"
@@ -355,7 +354,7 @@ namespace {
                sha1(std::string_view(
                    d.sz14ConsoleSerialNumber,
                    strnlen(d.sz14ConsoleSerialNumber, sizeof(d.sz14ConsoleSerialNumber)))));
-        s.num(p, "keyvault.region", bswap16(d.w16GameRegion));
+        s.num(p, "keyvault.region", d.w16GameRegion.get());
         s.line(p, "keyvault.console_id_sha1", sha1(raw_bytes(d.b36ConsoleCertificate.ConsoleId)));
         s.line(p, "keyvault.mfr_date_sha1",
                sha1(raw_bytes(d.b36ConsoleCertificate.ManufacturingDate)));
@@ -363,7 +362,7 @@ namespace {
             s.line(p, "keyvault.osig_sha1",
                    sha1(std::span<const uint8_t>(kv->raw_data).subspan(0xC92, 28)));
         }
-        s.num(p, "keyvault.odd_features", bswap16(d.w4OddFeatures));
+        s.num(p, "keyvault.odd_features", d.w4OddFeatures.get());
         if (!kv->encrypted) {
             s.line(p, "keyvault.fcrt_requirement", fcrt_name(fcrt_requirement(kv->serialize())));
         }

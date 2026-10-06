@@ -2084,9 +2084,14 @@ namespace gxbuild3::nand {
             if (is_zero_cpu_key(cpu_key)) {
                 if (auto opened = open_loose_keyvault(cpu_key, keyvault->raw_data);
                     opened && opened->form == LooseKeyvault::Form::Sealed) {
+                    auto record = wire::read<XE_KEYVAULT_DATA>(opened->plain, 0, "keyvault");
+                    if (!record) {
+                        return std::unexpected(std::move(record.error())
+                                                   .add_context("reading the keyvault opened "
+                                                                "under the all-zero CPU key"));
+                    }
                     keyvault->raw_data = std::move(opened->plain);
-                    std::memcpy(&keyvault->data, keyvault->raw_data.data(),
-                                sizeof(XE_KEYVAULT_DATA));
+                    keyvault->data = *record;
                     keyvault->encrypted = false;
                 } else {
                     Log::Warn("The keyvault does not open under the all-zero CPU key; it is "

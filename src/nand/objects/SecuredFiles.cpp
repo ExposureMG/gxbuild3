@@ -1,10 +1,12 @@
 #include "nand/objects/SecuredFiles.hpp"
 
+#include "Wire.hpp"
 #include "excrypt.h"
 #include "nand/bootloaders/Common.hpp"
 #include "nand/objects/Keyvault.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <string_view>
 
@@ -25,7 +27,6 @@ namespace gxbuild3::nand {
         constexpr size_t kDaeBodyOffset = 0x130;
         constexpr std::string_view kDaeMagic = "DAEP";
         constexpr uint8_t kExtendedNonceTail[2] = {0x07, 0x12};
-        constexpr size_t kOddFeaturesOffset = 0x1C;
         constexpr size_t kFcrtSize = 0x4000;
         constexpr size_t kFcrtIvOffset = 0x100;
         constexpr size_t kFcrtBodyOffsetField = 0x11C;
@@ -512,11 +513,12 @@ namespace gxbuild3::nand {
     }
 
     FcrtRequirement fcrt_requirement(std::span<const uint8_t> clear_keyvault) {
-        if (clear_keyvault.size() < kOddFeaturesOffset + 2) {
+        const auto odd_features = wire::read<wire::be16>(
+            clear_keyvault, offsetof(XE_KEYVAULT_DATA, w4OddFeatures), "keyvault odd features");
+        if (!odd_features) {
             return FcrtRequirement::NotRequired;
         }
-        const auto features = static_cast<uint16_t>((clear_keyvault[kOddFeaturesOffset] << 8) |
-                                                    clear_keyvault[kOddFeaturesOffset + 1]);
+        const uint16_t features = odd_features->get();
         if ((features & 0x0300) != 0) {
             return FcrtRequirement::RequiredByDrive;
         }

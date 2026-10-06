@@ -54,12 +54,10 @@ set(catch_all_allowlist
 # the deleted bswap*/swap32 overloads that reject a manual swap on a wire field.
 set(pragma_pack_allowlist
     src/nand/objects/FlashFileSystem.hpp
-    src/nand/objects/Keyvault.hpp
     src/nand/objects/XConfig.hpp
 )
 
 set(byte_swap_allowlist
-    src/BuildRunner.cpp
     src/Endian.hpp
     src/Wire.hpp
     src/nand/objects/FlashFileSystem.cpp

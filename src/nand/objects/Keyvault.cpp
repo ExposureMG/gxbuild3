@@ -280,9 +280,13 @@ namespace gxbuild3::nand {
                         bytes.size());
         }
 
+        auto record = wire::read<XE_KEYVAULT_DATA>(bytes, 0, "keyvault");
+        if (!record) {
+            return std::unexpected(std::move(record.error()));
+        }
         Keyvault kv;
         kv.raw_data.assign(bytes.begin(), bytes.end());
-        std::memcpy(&kv.data, bytes.data(), sizeof(XE_KEYVAULT_DATA));
+        kv.data = *record;
         kv.encrypted = true;
         Log::Debug("Parsed Keyvault (0x{:X} bytes)", bytes.size());
         return kv;
@@ -305,8 +309,12 @@ namespace gxbuild3::nand {
             return fail(ErrorCode::Truncated, "Keyvault is 0x{:X} bytes, not 0x{:X}",
                         crypted->size(), sizeof(XE_KEYVAULT_DATA));
         }
+        auto record = wire::read<XE_KEYVAULT_DATA>(*crypted, 0, "keyvault");
+        if (!record) {
+            return std::unexpected(std::move(record.error()));
+        }
         raw_data = std::move(*crypted);
-        std::memcpy(&data, raw_data.data(), sizeof(XE_KEYVAULT_DATA));
+        data = *record;
         encrypted = false;
         Log::Debug("Keyvault decrypted successfully");
         return {};
@@ -325,8 +333,12 @@ namespace gxbuild3::nand {
             return fail(ErrorCode::Truncated, "Keyvault is 0x{:X} bytes, not 0x{:X}",
                         crypted->size(), sizeof(XE_KEYVAULT_DATA));
         }
+        auto record = wire::read<XE_KEYVAULT_DATA>(*crypted, 0, "keyvault");
+        if (!record) {
+            return std::unexpected(std::move(record.error()));
+        }
         raw_data = std::move(*crypted);
-        std::memcpy(&data, raw_data.data(), sizeof(XE_KEYVAULT_DATA));
+        data = *record;
         encrypted = true;
         Log::Debug("Keyvault encrypted successfully");
         return {};
@@ -336,9 +348,8 @@ namespace gxbuild3::nand {
         if (raw_data.size() == kSize) {
             return raw_data;
         }
-        std::vector<uint8_t> out(kSize, 0x00);
-        std::memcpy(out.data(), &data, sizeof(XE_KEYVAULT_DATA));
-        return out;
+        const auto image = wire::encode(data);
+        return std::vector<uint8_t>(image.begin(), image.end());
     }
 
 } // namespace gxbuild3::nand

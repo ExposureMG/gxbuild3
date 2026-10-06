@@ -2059,16 +2059,16 @@ namespace gxbuild3 {
             info.keyvault.console_id_friendly = cid_buf;
 
             if (kv.raw_data.size() >= 0xCAD) {
-                info.keyvault.osig = std::string(
-                    reinterpret_cast<const char*>(kv.raw_data.data() + 0xC92),
-                    strnlen(reinterpret_cast<const char*>(kv.raw_data.data() + 0xC92), 28));
+                const auto* osig =
+                    reinterpret_cast<const char*>(kv.raw_data.data() + Keyvault::kOsigOffset);
+                info.keyvault.osig = std::string(osig, strnlen(osig, Keyvault::kOsigLength));
             }
             info.keyvault.mfr_date =
                 std::string(kv.data.b36ConsoleCertificate.ManufacturingDate,
                             strnlen(kv.data.b36ConsoleCertificate.ManufacturingDate,
                                     sizeof(kv.data.b36ConsoleCertificate.ManufacturingDate)));
 
-            info.keyvault.region_raw = bswap16(kv.data.w16GameRegion);
+            info.keyvault.region_raw = kv.data.w16GameRegion.get();
             switch (info.keyvault.region_raw) {
                 case 0x00FF:
                     info.keyvault.region_name = "NTSC/US";

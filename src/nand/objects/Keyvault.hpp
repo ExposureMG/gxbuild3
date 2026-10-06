@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Error.hpp"
+#include "Wire.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -11,20 +12,18 @@
 
 namespace gxbuild3::nand {
 
-#pragma pack(push, 1)
-
     struct CONSOLE_PUBLIC_KEY {
-        uint32_t PublicExponent;
+        wire::be32 PublicExponent;
         uint8_t Modulus[0x80];
     };
 
     struct XE_CONSOLE_CERTIFICATE {
-        uint16_t CertSize;
+        wire::be16 CertSize;
         uint8_t ConsoleId[0x5];
         char ConsolePartNumber[0xB];
         uint8_t Reserved[0x4];
-        uint16_t Privileges;
-        uint32_t ConsoleType;
+        wire::be16 Privileges;
+        wire::be32 ConsoleType;
         char ManufacturingDate[8];
         CONSOLE_PUBLIC_KEY ConsolePublicKey;
         uint8_t Signature[0x100];
@@ -37,16 +36,16 @@ namespace gxbuild3::nand {
         uint8_t b1AlternativeKeyVault;
         uint8_t b2RestrictedPrivilegesFlags;
         uint8_t b3ReservedByte3;
-        uint16_t w4OddFeatures;
-        uint16_t w5OddAuthType;
-        uint32_t dw6RestrictedHvExtLoader;
-        uint32_t dw7PolicyFlashSize;
-        uint32_t dw8PolicyBuiltInUsbMuSize;
-        uint32_t dw9ReservedDword4;
-        uint64_t qwARestrictedPrivileges;
-        uint64_t qwBReservedQword2;
-        uint64_t qwCReservedQword3;
-        uint64_t qwDReservedQword4;
+        wire::be16 w4OddFeatures;
+        wire::be16 w5OddAuthType;
+        wire::be32 dw6RestrictedHvExtLoader;
+        wire::be32 dw7PolicyFlashSize;
+        wire::be32 dw8PolicyBuiltInUsbMuSize;
+        wire::be32 dw9ReservedDword4;
+        wire::be64 qwARestrictedPrivileges;
+        wire::be64 qwBReservedQword2;
+        wire::be64 qwCReservedQword3;
+        wire::be64 qwDReservedQword4;
         uint8_t bEReservedKey1[0x10];
         uint8_t bFReservedKey2[0x10];
         uint8_t b10ReservedKey3[0x10];
@@ -54,9 +53,9 @@ namespace gxbuild3::nand {
         uint8_t b12ReservedRandomKey1[0x10];
         uint8_t b13ReservedRandomKey2[0x10];
         char sz14ConsoleSerialNumber[0xC];
-        uint32_t dw14Padding;
+        wire::be32 dw14Padding;
         uint8_t b15MoboSerialNumber[0x8];
-        uint16_t w16GameRegion;
+        wire::be16 w16GameRegion;
         uint8_t b16Padding[6];
         uint8_t b17ConsoleObfuscationKey[0x10];
         uint8_t b18KeyObfuscationKey[0x10];
@@ -96,7 +95,18 @@ namespace gxbuild3::nand {
         uint8_t b38CardeaCertificate[0x2108];
     };
 
-#pragma pack(pop)
+    // The keyvault records as the console stores them, big-endian (see src/Wire.hpp).
+    static_assert(wire::WireLayout<CONSOLE_PUBLIC_KEY> && sizeof(CONSOLE_PUBLIC_KEY) == 0x84);
+    static_assert(wire::WireLayout<XE_CONSOLE_CERTIFICATE> &&
+                  sizeof(XE_CONSOLE_CERTIFICATE) == 0x1A8);
+    static_assert(wire::WireLayout<XE_KEYVAULT_DATA> && sizeof(XE_KEYVAULT_DATA) == 0x4000);
+    static_assert(offsetof(XE_KEYVAULT_DATA, w4OddFeatures) == 0x1C);
+    static_assert(offsetof(XE_KEYVAULT_DATA, sz14ConsoleSerialNumber) == 0xB0);
+    static_assert(offsetof(XE_KEYVAULT_DATA, w16GameRegion) == 0xC8);
+    static_assert(offsetof(XE_KEYVAULT_DATA, b36ConsoleCertificate) == 0x9C8);
+    static_assert(offsetof(XE_KEYVAULT_DATA, b37XeikaCertificate) == 0xB70);
+    static_assert(offsetof(XE_KEYVAULT_DATA, b39SpecialKeyVaultSignature) == 0x1DF8);
+    static_assert(offsetof(XE_KEYVAULT_DATA, b38CardeaCertificate) == 0x1EF8);
 
     enum class CpuKeyStatus {
         Valid,
@@ -126,6 +136,12 @@ namespace gxbuild3::nand {
 
     struct Keyvault {
         static constexpr size_t kSize = 0x4000;
+        // The console's OSIG (its optical drive's identity string): 28 bytes inside the Xeika
+        // certificate.
+        static constexpr size_t kOsigOffset =
+            offsetof(XE_KEYVAULT_DATA, b37XeikaCertificate) + 0x122;
+        static constexpr size_t kOsigLength = 28;
+        static_assert(kOsigOffset == 0xC92 && sizeof(XE_KEYVAULT_DATA) == kSize);
 
         XE_KEYVAULT_DATA data{};
         bool encrypted{true};
