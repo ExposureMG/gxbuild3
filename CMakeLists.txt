@@ -179,6 +179,13 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_objects_corpus_tests tests/ObjectsCorpusTests.cpp)
     target_compile_definitions(gxbuild3_objects_corpus_tests PRIVATE
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
+    # run_build digests over the tracked mydata/image.bin (tests/golden/
+    # orchestration_mydata_builds.txt): extract_all, then retail, jtag and glitch2 rebuilds with
+    # the tracked patch files and XeLLs, each built twice under a pinned time and donor nonces.
+    add_gxbuild3_test(gxbuild3_orchestration_golden_tests tests/OrchestrationGoldenTests.cpp)
+    target_compile_definitions(gxbuild3_orchestration_golden_tests PRIVATE
+        GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
+    set_tests_properties(gxbuild3_orchestration_golden_tests PROPERTIES TIMEOUT 300)
 
     add_executable(gxbuild3_keyvault_crypto_tests tests/KeyvaultCryptoTests.cpp)
     target_link_libraries(gxbuild3_keyvault_crypto_tests PRIVATE gxbuild3_internal)

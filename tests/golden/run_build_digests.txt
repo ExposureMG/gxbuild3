@@ -1,0 +1,16 @@
+small.retail size=0x1080000 sha1=e286210801d702c859d1d729f3bceee8587c20b3
+small.glitch2 size=0x1080000 sha1=20b04ecf917bb8468e38f0be1644c455a36b9d92
+small.devkit size=0x4200000 sha1=20dddedc4fa9ea37f78ac52e6384c5a3ddfd10b3
+small.devgl size=0x1080000 sha1=d5dcb8281092d9ea30d5a349bbf68d8bac9de39c
+newsmall.retail size=0x1080000 sha1=c58fe1d22d0a286fd6b45b72d18c6d904584c26a
+newsmall.glitch2 size=0x1080000 sha1=b64e72e48a50f3cb8a7a9cf783f9ff9b63a818de
+newsmall.devkit size=0x4200000 sha1=fab55f91a6669be82c9eff3a53f19ed6bf4e46f0
+newsmall.devgl size=0x1080000 sha1=c3b93f8b0f2f5caf324cf1eace3d7df7ca563138
+big.retail size=0x4200000 sha1=8b7ac2356c0ed212ace13bc1e20ec1622e500cfb
+big.glitch2 size=0x4200000 sha1=2b479a77edcfa684004a066fb6860736aa1c0966
+big.devkit size=0x4200000 sha1=bad7e0c65309fa9a69fa6b8147a0f6aff366ef8e
+big.devgl size=0x4200000 sha1=ced08c308ad319b440a105b564a50f85a24e6231
+emmc.retail size=0x3000000 sha1=91b71658efe5b5223c5453c9e0c77cc7ced7cd5c
+emmc.glitch2 size=0x3000000 sha1=7860d63e63a20695b09b6de694e598405bb71fb9
+emmc.devkit size=0x3000000 sha1=ae6c0e590bfd13e4dceb947b4a4874c89bb88430
+emmc.devgl size=0x3000000 sha1=29dd71cb1276b6e155165ce1e79c3db29e72b2d6

@@ -1,4 +1,5 @@
 #include "BuildRunner.hpp"
+#include "GoldenSnapshot.hpp"
 #include "Library.hpp"
 #include "ScopedTimeZone.hpp"
 #include "XeRsaTestKey.hpp"
@@ -21,6 +22,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -4598,10 +4600,136 @@ namespace {
                            refused_malformed.error().code == BuildErrorCode::InvalidInput,
                        "a devgl build with a malformed key is refused");
     }
+
+    std::string sha1_hex(std::span<const uint8_t> bytes) {
+        std::array<uint8_t, 20> digest{};
+        ExCryptSha(bytes.data(), static_cast<uint32_t>(bytes.size()), nullptr, 0, nullptr, 0,
+                   digest.data(), static_cast<uint32_t>(digest.size()));
+        static constexpr char digits[] = "0123456789abcdef";
+        std::string out;
+        for (const uint8_t byte : digest) {
+            out.push_back(digits[byte >> 4]);
+            out.push_back(digits[byte & 0x0F]);
+        }
+        return out;
+    }
+
+    // Every nonce run_build would otherwise draw: the four boot-chain positions, CF and CG.
+    DonorNonces pinned_donor_nonces() {
+        DonorNonces nonces{};
+        nonces.stages = {filled_nonce(0xA1), filled_nonce(0xA2), filled_nonce(0xA3),
+                         filled_nonce(0xA4)};
+        nonces.cf = filled_nonce(0xB1);
+        nonces.cg = filled_nonce(0xC1);
+        return nonces;
+    }
+
+    // The synthetic input of one run_build digest. Retail and glitch2 carry a CE and a CF/CG
+    // slot; glitch2 also a CB_B, a patch file and a XeLL. Devkit and devgl are the devkit chain.
+    Input digest_input(ImageType image_type, BuildType build_type) {
+        Input input{};
+        switch (build_type) {
+            case BuildType::Devkit:
+                input = devkit_input(image_type);
+                break;
+            case BuildType::Devgl:
+                input = devgl_input(image_type);
+                break;
+            case BuildType::Glitch2: {
+                input = fresh_input(image_type);
+                input.build_type = BuildType::Glitch2;
+                input.bootloaders.cb_b = input.bootloaders.cb_or_a;
+                input.bootloaders.ce = valid_ce();
+                const auto [cf, cg] = valid_system_update(0x61);
+                input.bootloaders.cf0 = cf;
+                input.bootloaders.cg0 = cg;
+                InputPatches patches{};
+                patches.automatic = InputPatchFile{
+                    "automatic", glitch_patchset(0x20, 0xA1B2C3D4, 0x30, 0x10203040, Bytes{0xA5})};
+                input.patches = std::move(patches);
+                InputPayloads payloads{};
+                payloads.xell = valid_xell();
+                input.payloads = std::move(payloads);
+                break;
+            }
+            default: {
+                input = fresh_input(image_type);
+                input.build_type = build_type;
+                input.bootloaders.ce = valid_ce();
+                const auto [cf, cg] = valid_system_update(0x51);
+                input.bootloaders.cf0 = cf;
+                input.bootloaders.cg0 = cg;
+                break;
+            }
+        }
+        input.metadata.donor_nonces = pinned_donor_nonces();
+        return input;
+    }
+
+    // run_build output digests (tests/golden/run_build_digests.txt): SmallBlock, NewSmallBlock,
+    // BigBlock and Emmc crossed with retail, glitch2, devkit and devgl, each built twice under a
+    // pinned build time (SOURCE_DATE_EPOCH in UTC) with every donor nonce filled so no nonce is
+    // drawn. The two builds must be byte-identical; the SHA-1 of the output goes to the golden.
+    bool test_run_build_output_digests(const gxbuild3::test::GoldenOptions& options) {
+        constexpr std::array layouts{std::pair{ImageType::SmallBlock, "small"},
+                                     std::pair{ImageType::NewSmallBlock, "newsmall"},
+                                     std::pair{ImageType::BigBlock, "big"},
+                                     std::pair{ImageType::Emmc, "emmc"}};
+        constexpr std::array builds{
+            std::pair{BuildType::Retail, "retail"}, std::pair{BuildType::Glitch2, "glitch2"},
+            std::pair{BuildType::Devkit, "devkit"}, std::pair{BuildType::Devgl, "devgl"}};
+
+        const auto build_pinned = [](const Input& input) {
+            const ScopedTimeZone utc{"UTC0"};
+            set_source_date_epoch("1791105724");
+            auto result = run_build(input);
+            set_source_date_epoch(nullptr);
+            return result;
+        };
+
+        std::string rendered;
+        size_t total = 0;
+        size_t identical = 0;
+        bool ok = true;
+        for (const auto& [image_type, layout_name] : layouts) {
+            for (const auto& [build_type, build_name] : builds) {
+                ++total;
+                const std::string label = std::string{layout_name} + '.' + build_name;
+                const auto input = digest_input(image_type, build_type);
+                const auto first = build_pinned(input);
+                const auto second = build_pinned(input);
+                if (!first || !second) {
+                    rendered += label + " error=" +
+                                (first ? second.error().message : first.error().message) + '\n';
+                    ok = require(false, label + " builds") && ok;
+                    continue;
+                }
+                if (!require(*first == *second, label + " builds byte-identically twice")) {
+                    rendered += label + " nondeterministic\n";
+                    ok = false;
+                    continue;
+                }
+                ++identical;
+                char size[32];
+                std::snprintf(size, sizeof(size), "0x%zx", first->size());
+                rendered += label + " size=" + size + " sha1=" + sha1_hex(*first) + '\n';
+            }
+        }
+        const bool matched = gxbuild3::test::check_golden(options, "run_build_digests", rendered);
+        std::cout << "run_build digests: built twice and identical " << identical << '/' << total
+                  << ", compared " << (matched ? identical : 0) << '/' << total
+                  << " with tests/golden/run_build_digests.txt\n";
+        return require(matched, "run_build output digests match the golden") && ok;
+    }
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    const auto golden = gxbuild3::test::golden_options(argc, argv);
+    if (!golden) {
+        return 2;
+    }
     bool passed = true;
+    passed = test_run_build_output_digests(*golden) && passed;
     passed = test_glitch_patches_resize_cb_and_cd_and_update_declared_sizes() && passed;
     passed = test_glitch2_targets_cbb() && passed;
     passed = test_glitch2m_cd_patch_states_the_16_byte_aligned_size() && passed;
