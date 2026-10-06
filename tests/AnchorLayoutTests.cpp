@@ -1,10 +1,13 @@
 #include "TestResult.hpp"
 #include "nand/FlashImage.hpp"
+#include "nand/FlashImageLayout.hpp"
 #include "nand/bootloaders/Common.hpp"
 #include "nand/objects/Freeboot.hpp"
 
 #include <algorithm>
 #include <iostream>
+#include <limits>
+#include <string_view>
 #include <utility>
 
 using namespace gxbuild3;
@@ -318,6 +321,88 @@ static bool jtag_window(Driver::DriverMode mode) {
          ok;
     return ok;
 }
+// The payload layout's overflow steps, driven directly: a parsed or built image cannot reach
+// them on 64-bit, so these pin the texts and their precedence (a CF or CG range overflow is
+// reported as its slot's span) and the first-pair order of the collision check.
+static bool fails_with(const Error& error, ErrorCode code, std::string_view message) {
+    return error.code == code && error.message == message && error.context.empty();
+}
+static bool payload_range_overflow_precedence() {
+    using detail::PayloadRange;
+    constexpr size_t kMax = std::numeric_limits<size_t>::max();
+    constexpr std::string_view kCfSpan =
+        "System-update CF span exceeds the addressable payload layout";
+    constexpr std::string_view kCgSpan =
+        "System-update CG span exceeds the addressable payload layout";
+    bool ok = true;
+
+    std::vector<PayloadRange> ranges;
+    ok = check(detail::add_payload_range(ranges, "empty", kMax, 0) && ranges.empty(),
+               "an empty payload range is accepted and not recorded") &&
+         ok;
+    const auto range_overflow = detail::add_payload_range(ranges, "XeLL", kMax - 3, 8);
+    ok = check(!range_overflow &&
+                   fails_with(range_overflow.error(), ErrorCode::OutOfRange,
+                              "Payload layout range overflow for XeLL") &&
+                   ranges.empty(),
+               "an overflowing payload range fails with its name and is not recorded") &&
+         ok;
+
+    ranges.clear();
+    const auto cf_range = detail::add_update_slot_ranges(ranges, "CF0", "CG0", kMax - 4, 0x10000,
+                                                         size_t{0x10}, std::nullopt);
+    ok = check(!cf_range && fails_with(cf_range.error(), ErrorCode::OutOfRange, kCfSpan),
+               "a CF range overflow is reported as the CF span") &&
+         ok;
+    const auto cf_align =
+        detail::add_update_slot_ranges(ranges, "CF0", "CG0", 0, 0x10000, kMax - 3, std::nullopt);
+    ok = check(!cf_align && fails_with(cf_align.error(), ErrorCode::OutOfRange, kCfSpan),
+               "a CF that cannot be 16-aligned is reported as the CF span") &&
+         ok;
+    const auto cf_end = detail::add_update_slot_ranges(ranges, "CF0", "CG0", kMax - 0x1F, 0x10000,
+                                                       size_t{0x11}, std::nullopt);
+    ok = check(!cf_end && fails_with(cf_end.error(), ErrorCode::OutOfRange, kCfSpan),
+               "a CF whose aligned end overflows is reported as the CF span") &&
+         ok;
+
+    ranges.clear();
+    const auto cg_align = detail::add_update_slot_ranges(ranges, "CF0", "CG0", 0x1000, 0x10000,
+                                                         size_t{0x20}, kMax - 3);
+    ok = check(!cg_align && fails_with(cg_align.error(), ErrorCode::OutOfRange, kCgSpan),
+               "a CG that cannot be 16-aligned is reported as the CG span") &&
+         ok;
+    const auto cg_end = detail::add_update_slot_ranges(ranges, "CF0", "CG0", kMax - 0x2F, 0x10,
+                                                       size_t{0x10}, size_t{0x20});
+    ok = check(!cg_end && fails_with(cg_end.error(), ErrorCode::OutOfRange, kCgSpan),
+               "a CG whose aligned end overflows is reported as the CG span") &&
+         ok;
+
+    ranges.clear();
+    const auto no_cf = detail::add_update_slot_ranges(ranges, "CF0", "CG0", 0x70000, 0x10000,
+                                                      std::nullopt, size_t{0x20});
+    ok = check(no_cf && *no_cf == 0x70000 && ranges.empty(),
+               "a slot without a CF ends at its base and records nothing") &&
+         ok;
+    const auto spilled = detail::add_update_slot_ranges(ranges, "CF0", "CG0", 0x70000, 0x10000,
+                                                        size_t{0x123}, size_t{0x20000});
+    ok = check(spilled && *spilled == 0x80000 && ranges.size() == 2 && ranges[0].name == "CF0" &&
+                   ranges[0].offset == 0x70000 && ranges[0].length == 0x123 &&
+                   ranges[1].name == "CG0" && ranges[1].offset == 0x70130 &&
+                   ranges[1].length == 0x10000 - 0x130,
+               "a spilling CG records only its in-slot prefix and the slot end is clamped") &&
+         ok;
+
+    const std::vector<PayloadRange> overlapping{
+        {"first", 0x0, 0x10}, {"second", 0x20, 0x10}, {"third", 0x8, 0x20}};
+    const auto collision = detail::check_overlaps(overlapping);
+    ok = check(!collision && fails_with(collision.error(), ErrorCode::InvalidArgument,
+                                        "Payload layout collision: first overlaps third"),
+               "the first overlapping pair in index order is reported") &&
+         ok;
+    const std::vector<PayloadRange> disjoint{{"a", 0x0, 0x10}, {"b", 0x10, 0x10}};
+    ok = check(detail::check_overlaps(disjoint), "touching ranges do not collide") && ok;
+    return ok;
+}
 int main() {
     bool ok = check(XeLL::parse(raw_xell()).has_value(), "raw executable XeLL is accepted");
     ok = freeboot_provider() && ok;
@@ -328,5 +413,6 @@ int main() {
     ok = jtag_window(Driver::DriverMode::Small) && ok;
     ok = jtag_window(Driver::DriverMode::Big) && ok;
     ok = custom_header_roundtrip() && ok;
+    ok = payload_range_overflow_precedence() && ok;
     return ok ? 0 : 1;
 }
