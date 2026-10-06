@@ -214,10 +214,12 @@ static bool freeboot_provider() {
                    std::equal(version.begin(), version.end(), stated.begin() + 0xD0B),
                "the rebooter states the kernel version, zero-padded, at 0xD0B") &&
          ok;
-    Bytes rest(stated.begin(), stated.end());
-    std::copy(blank.begin(), blank.end(), rest.begin() + 0xD0B);
-    ok = check(std::equal(rest.begin(), rest.end(), core.begin()),
-               "the version string is the only change to the rebooter") &&
+    const auto version_end = 0xD0B + blank.size();
+    ok = check(
+             stated.size() == core.size() &&
+                 std::equal(stated.begin(), stated.begin() + 0xD0B, core.begin()) &&
+                 std::equal(stated.begin() + version_end, stated.end(), core.begin() + version_end),
+             "the version string is the only change to the rebooter") &&
          ok;
     const Bytes hold{0x80, 0x00, 0x00, 0x00, 0x01, 0x00, 0x30, 0x78};
     const Bytes old_hold{0x80, 0x00, 0x00, 0x00, 0x00, 0x1F, 0xFF, 0xF8};
