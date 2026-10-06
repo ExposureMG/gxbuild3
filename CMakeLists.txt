@@ -186,13 +186,25 @@ if(BUILD_TESTING)
 
     find_program(GXBUILD3_BASH_EXECUTABLE NAMES bash)
     if(UNIX)
+        # Byte oracle over build_all.sh against tests/golden/build_all.sha256. The
+        # capture target below is the only way to rewrite the manifest; CTest never
+        # passes GXBUILD3_UPDATE_GOLDEN.
+        set(GXBUILD3_FLASHIMAGE_ARGS
+            -DGXBUILD3_EXE=$<TARGET_FILE:gxbuild3>
+            -DGXBUILD3_SUPPORT_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files
+            -DGXBUILD3_BASH=${GXBUILD3_BASH_EXECUTABLE}
+            -DGXBUILD3_GOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/build_all.sha256
+            -DGXBUILD3_SCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/flashimage-tests)
         add_test(NAME gxbuild3_flashimage_tests
-            COMMAND ${CMAKE_COMMAND}
-                -DGXBUILD3_EXE=$<TARGET_FILE:gxbuild3>
-                -DGXBUILD3_SUPPORT_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files
-                -DGXBUILD3_BASH=${GXBUILD3_BASH_EXECUTABLE}
+            COMMAND ${CMAKE_COMMAND} ${GXBUILD3_FLASHIMAGE_ARGS}
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/FlashImageTests.cmake)
         set_tests_properties(gxbuild3_flashimage_tests PROPERTIES TIMEOUT 1800 SKIP_RETURN_CODE 77)
+        add_custom_target(gxbuild3_flashimage_golden_update
+            COMMAND ${CMAKE_COMMAND} ${GXBUILD3_FLASHIMAGE_ARGS} -DGXBUILD3_UPDATE_GOLDEN=1
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/FlashImageTests.cmake
+            DEPENDS gxbuild3
+            USES_TERMINAL
+            COMMENT "Capturing tests/golden/build_all.sha256 (two identical runs required)")
     endif()
 endif()
 
