@@ -1,6 +1,6 @@
 #include "stfs/StfsContainer.hpp"
 
-#include "PackageCommon.hpp"
+#include "ContainerDetail.hpp"
 #include "stfs/BlockParser.hpp"
 #include "stfs/FileExtractor.hpp"
 #include "stfs/FileTableParser.hpp"
@@ -62,9 +62,6 @@ namespace gxbuild3::stfs {
         const auto header = stfs::parse_header(data);
         if (!header) {
             return std::unexpected(header.error());
-        }
-        if (header->magic != stfs::Magic::PIRS) {
-            return fail(ErrorCode::Malformed, "Invalid STFS signature: expected PIRS");
         }
 
         const auto metadata = stfs::parse_metadata(data);

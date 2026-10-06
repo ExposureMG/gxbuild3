@@ -1,4 +1,4 @@
-#include "PackageCommon.hpp"
+#include "ContainerDetail.hpp"
 
 #include "stfs/FileExtractor.hpp"
 

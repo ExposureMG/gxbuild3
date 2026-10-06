@@ -1,7 +1,7 @@
 #include "stfs/FileExtractor.hpp"
 
+#include "ContainerDetail.hpp"
 #include "Endian.hpp"
-#include "PackageCommon.hpp"
 #include "stfs/BlockParser.hpp"
 #include "stfs/Commons.hpp"
 #include "stfs/HashVerifier.hpp"

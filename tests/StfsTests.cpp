@@ -12,11 +12,11 @@
 #include "GoldenSnapshot.hpp"
 #include "excrypt.h"
 #include "stfs/BlockParser.hpp"
+#include "stfs/ContainerDetail.hpp"
 #include "stfs/FileExtractor.hpp"
 #include "stfs/HashVerifier.hpp"
 #include "stfs/HeaderParser.hpp"
 #include "stfs/MetadataParser.hpp"
-#include "stfs/PackageCommon.hpp"
 #include "stfs/StfsContainer.hpp"
 
 #include <algorithm>
