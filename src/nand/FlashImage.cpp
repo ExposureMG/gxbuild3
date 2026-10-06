@@ -1103,6 +1103,211 @@ namespace gxbuild3::nand {
             }
         }
 
+        // What the write_to_driver stages share: the driver they lay into, the layout they lay
+        // by and the highest offset the boot chain and the update slots have reached so far.
+        struct WriteContext {
+            Driver& driver;
+            const LayoutPlan& plan;
+            size_t highest_used_offset;
+        };
+
+        // The 0x80-byte NAND header a built or written-back image carries. Pure: every field
+        // follows `header`, the layout and the SMC placement.
+        std::array<uint8_t, sizeof(nand_header)> encode_nand_header(const nand_header& header,
+                                                                    const LayoutPlan& plan,
+                                                                    uint32_t smc_len,
+                                                                    uint32_t smc_offset) {
+            nand_header raw = header;
+            raw.magic = header.magic ? header.magic.get() : uint16_t{0xFF4F};
+            raw.version = header.version ? header.version.get() : uint16_t{0x0760};
+            raw.entrypoint = header.entrypoint ? header.entrypoint.get() : kEntryOffset;
+            // The legacy bootloader-chain scanner used by tools such as J-Runner
+            // advances from the NAND header using this size.  It must therefore
+            // terminate at the first system-update slot, not retain a donor image's
+            // earlier boot-chain boundary.
+            raw.size = plan.update_base;
+            raw.kv_size =
+                header.kv_size ? header.kv_size.get() : static_cast<uint32_t>(Keyvault::kSize);
+            raw.cf_offset = plan.update_base;
+            // Two update slots on every image, as xeBuild states them. On a glitch image the
+            // second is the KHV patch slot, which the kernel passes over for want of a CF.
+            raw.patch_slots = uint16_t{2};
+            raw.kv_version = header.kv_version ? header.kv_version.get() : uint16_t{0x0712};
+            raw.kv_addr = header.kv_addr ? header.kv_addr.get() : kKeyvaultOffset;
+            raw.fs_addr = plan.slot_stride; // Runtime dwSysUpdateSlotSize (header + 0x70).
+            // Zero on every image, a donor's value or not: xeBuild never states the settings
+            // block here (xerunner build.py `header`), and the three console dumps measured
+            // carry zero. The block is found by its place in the layout instead.
+            raw.smc_config_offset = uint32_t{0};
+            raw.smc_boot_size = smc_len;
+            raw.smc_boot_offset = smc_offset;
+
+            std::array<uint8_t, sizeof(nand_header)> encoded{};
+            const auto bytes = wire::bytes_of(raw);
+            std::copy(bytes.begin(), bytes.end(), encoded.begin());
+            return encoded;
+        }
+
+        // Lays the NAND header, the zero fill up to the SMC on a built image, the SMC and the
+        // keyvault, in that order.
+        [[nodiscard]] Result<void> lay_header_and_secure_head(WriteContext& ctx,
+                                                              const FlashImage& image,
+                                                              uint32_t smc_len,
+                                                              uint32_t smc_offset) {
+            const auto encoded = encode_nand_header(image.header, ctx.plan, smc_len, smc_offset);
+            if (auto laid = write_or_fail(ctx.driver, 0, encoded, "NAND header"); !laid) {
+                return laid;
+            }
+            // On a built image the header block is programmed zero from the header to the SMC.
+            if (!image.preserve_layout) {
+                if (auto laid = write_or_fail(ctx.driver, encoded.size(),
+                                              std::vector<uint8_t>(smc_offset - encoded.size(), 0),
+                                              "header block fill");
+                    !laid) {
+                    return laid;
+                }
+            }
+
+            if (image.smc) {
+                if (auto laid = write_or_fail(ctx.driver, smc_offset, image.smc->data, "SMC");
+                    !laid) {
+                    return laid;
+                }
+            }
+
+            if (image.keyvault) {
+                auto kv_data = image.keyvault->serialize();
+                if (auto laid = write_or_fail(ctx.driver, kKeyvaultOffset, kv_data, "keyvault");
+                    !laid) {
+                    return laid;
+                }
+            }
+            return {};
+        }
+
+        // Lays one boot stage at `cursor` and moves the cursor past it, 16-byte aligned.
+        template <class Stage>
+        [[nodiscard]] Result<void> lay_stage(Driver& driver, size_t& cursor, const Stage& stage,
+                                             std::string_view name) {
+            const auto bytes = stage.serialize();
+            if (auto laid = write_or_fail(driver, cursor, bytes, name); !laid) {
+                return laid;
+            }
+            cursor += align_16(static_cast<uint32_t>(bytes.size()));
+            return {};
+        }
+
+        // Lays the boot chain from kEntryOffset (CB/A and CD when they hold data, the rule
+        // laid_boot_chain_end follows) and, on a built image, the zero fill to the end of the
+        // 16 KiB block holding its end. Returns where the chain ends.
+        [[nodiscard]] Result<size_t> lay_boot_chain(WriteContext& ctx, const FlashImage& image) {
+            auto& driver = ctx.driver;
+            const auto& cb_section = image.cb_section;
+            const auto& kernel_section = image.kernel_section;
+            size_t cursor = kEntryOffset;
+            if (!cb_section.cb_or_A.data.empty()) {
+                if (auto laid = lay_stage(driver, cursor, cb_section.cb_or_A, "CB_A"); !laid) {
+                    return std::unexpected(std::move(laid.error()));
+                }
+            }
+            if (cb_section.cb_x) {
+                if (auto laid = lay_stage(driver, cursor, *cb_section.cb_x, "CB_X"); !laid) {
+                    return std::unexpected(std::move(laid.error()));
+                }
+            }
+            if (cb_section.cb_B) {
+                if (auto laid = lay_stage(driver, cursor, *cb_section.cb_B, "CB_B"); !laid) {
+                    return std::unexpected(std::move(laid.error()));
+                }
+            }
+            if (cb_section.sc) {
+                if (auto laid = lay_stage(driver, cursor, *cb_section.sc, "SC"); !laid) {
+                    return std::unexpected(std::move(laid.error()));
+                }
+            }
+            if (!kernel_section.cd.data.empty()) {
+                if (auto laid = lay_stage(driver, cursor, kernel_section.cd, "CD"); !laid) {
+                    return std::unexpected(std::move(laid.error()));
+                }
+            }
+            if (kernel_section.ce) {
+                if (auto laid = lay_stage(driver, cursor, *kernel_section.ce, "CE"); !laid) {
+                    return std::unexpected(std::move(laid.error()));
+                }
+            }
+            if (!image.preserve_layout) {
+                const size_t block_end =
+                    (cursor + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize;
+                if (auto laid =
+                        write_or_fail(driver, cursor, std::vector<uint8_t>(block_end - cursor, 0),
+                                      "boot chain block fill");
+                    !laid) {
+                    return std::unexpected(std::move(laid.error()));
+                }
+            }
+            return cursor;
+        }
+
+        // Lays one update slot at `base_offset`: the CF, then the CG behind it, its prefix in
+        // the slot and the rest in its spill clusters. `end_offset` is where the slot's laid
+        // bytes end, and the context's highest offset follows it when the slot holds a CF.
+        [[nodiscard]] Result<void> lay_update_slot(WriteContext& ctx, uint32_t base_offset,
+                                                   const SystemUpdate& slot, size_t& end_offset) {
+            auto& driver = ctx.driver;
+            const auto& plan = ctx.plan;
+            end_offset = base_offset;
+            if (slot.cf) {
+                auto cf_bytes = slot.cf->serialize();
+                if (auto laid = write_or_fail(driver, base_offset, cf_bytes, "CF"); !laid) {
+                    return laid;
+                }
+                end_offset = base_offset + align_16(static_cast<uint32_t>(cf_bytes.size()));
+                if (slot.cg) {
+                    auto cg_bytes = slot.cg->serialize();
+                    if (end_offset > base_offset + plan.slot_stride) {
+                        return fail(ErrorCode::OutOfRange,
+                                    "the CF (0x{:X} bytes) leaves no room for its CG in the "
+                                    "0x{:X}-byte slot",
+                                    cf_bytes.size(), plan.slot_stride);
+                    }
+                    const size_t prefix =
+                        slot.cg_spill_blocks.empty()
+                            ? cg_bytes.size()
+                            : std::min<size_t>(cg_bytes.size(),
+                                               base_offset + plan.slot_stride - end_offset);
+                    if (end_offset + prefix > base_offset + plan.slot_stride) {
+                        return fail(ErrorCode::Internal,
+                                    "CG continuation has not been allocated before serialization");
+                    }
+                    if (auto laid = write_or_fail(driver, end_offset,
+                                                  std::span(cg_bytes).first(prefix), "CG");
+                        !laid) {
+                        return laid;
+                    }
+                    size_t consumed = prefix;
+                    for (uint16_t block : slot.cg_spill_blocks) {
+                        const size_t count =
+                            std::min<size_t>(kCgClusterSize, cg_bytes.size() - consumed);
+                        if (auto laid = write_or_fail(driver, size_t(block) * kCgClusterSize,
+                                                      std::span(cg_bytes).subspan(consumed, count),
+                                                      "CG continuation cluster");
+                            !laid) {
+                            return laid;
+                        }
+                        consumed += count;
+                    }
+                    if (consumed != cg_bytes.size()) {
+                        return fail(ErrorCode::Internal,
+                                    "the CG continuation clusters hold 0x{:X} of its 0x{:X} bytes",
+                                    consumed, cg_bytes.size());
+                    }
+                    end_offset += align_16(static_cast<uint32_t>(prefix));
+                }
+                ctx.highest_used_offset = std::max(ctx.highest_used_offset, end_offset);
+            }
+            return {};
+        }
+
         // A FlashFS keeps a pointer to the driver it reads and writes; after a copy or a move it
         // must name the new object's driver, not the one it was copied or moved from.
         void rebind_filesystem(ImageState& state) {
@@ -1256,173 +1461,28 @@ namespace gxbuild3::nand {
         const uint32_t smc_offset = kKeyvaultOffset - static_cast<uint32_t>(smc_len);
         const auto smc_cfg_offset = smc_config_offset(driver);
 
-        nand_header raw = header;
-        raw.magic = header.magic ? header.magic.get() : uint16_t{0xFF4F};
-        raw.version = header.version ? header.version.get() : uint16_t{0x0760};
-        raw.entrypoint = header.entrypoint ? header.entrypoint.get() : kEntryOffset;
-        // The legacy bootloader-chain scanner used by tools such as J-Runner
-        // advances from the NAND header using this size.  It must therefore
-        // terminate at the first system-update slot, not retain a donor image's
-        // earlier boot-chain boundary.
-        raw.size = plan.update_base;
-        raw.kv_size =
-            header.kv_size ? header.kv_size.get() : static_cast<uint32_t>(Keyvault::kSize);
-        raw.cf_offset = plan.update_base;
-        // Two update slots on every image, as xeBuild states them. On a glitch image the
-        // second is the KHV patch slot, which the kernel passes over for want of a CF.
-        raw.patch_slots = uint16_t{2};
-        raw.kv_version = header.kv_version ? header.kv_version.get() : uint16_t{0x0712};
-        raw.kv_addr = header.kv_addr ? header.kv_addr.get() : kKeyvaultOffset;
-        raw.fs_addr = plan.slot_stride; // Runtime dwSysUpdateSlotSize (header + 0x70).
-        // Zero on every image, a donor's value or not: xeBuild never states the settings
-        // block here (xerunner build.py `header`), and the three console dumps measured
-        // carry zero. The block is found by its place in the layout instead.
-        raw.smc_config_offset = uint32_t{0};
-        raw.smc_boot_size = static_cast<uint32_t>(smc_len);
-        raw.smc_boot_offset = smc_offset;
-
-        if (auto laid = write_or_fail(driver, 0, wire::bytes_of(raw), "NAND header"); !laid) {
+        WriteContext ctx{driver, plan, 0};
+        if (auto laid =
+                lay_header_and_secure_head(ctx, *this, static_cast<uint32_t>(smc_len), smc_offset);
+            !laid) {
             return laid;
         }
-        // On a built image the header block is programmed zero from the header to the SMC.
-        if (!preserve_layout) {
-            if (auto laid = write_or_fail(driver, sizeof(raw),
-                                          std::vector<uint8_t>(smc_offset - sizeof(raw), 0),
-                                          "header block fill");
-                !laid) {
-                return laid;
-            }
-        }
 
-        if (smc) {
-            if (auto laid = write_or_fail(driver, smc_offset, smc->data, "SMC"); !laid) {
-                return laid;
-            }
+        const auto chain_end = lay_boot_chain(ctx, *this);
+        if (!chain_end) {
+            return std::unexpected(chain_end.error());
         }
-
-        if (keyvault) {
-            auto kv_data = keyvault->serialize();
-            if (auto laid = write_or_fail(driver, kKeyvaultOffset, kv_data, "keyvault"); !laid) {
-                return laid;
-            }
-        }
-
-        size_t cursor = kEntryOffset;
-        const auto lay_stage = [&driver, &cursor](const auto& stage,
-                                                  std::string_view name) -> Result<void> {
-            const auto bytes = stage.serialize();
-            if (auto laid = write_or_fail(driver, cursor, bytes, name); !laid) {
-                return laid;
-            }
-            cursor += align_16(static_cast<uint32_t>(bytes.size()));
-            return {};
-        };
-        if (!cb_section.cb_or_A.data.empty()) {
-            if (auto laid = lay_stage(cb_section.cb_or_A, "CB_A"); !laid) {
-                return laid;
-            }
-        }
-        if (cb_section.cb_x) {
-            if (auto laid = lay_stage(*cb_section.cb_x, "CB_X"); !laid) {
-                return laid;
-            }
-        }
-        if (cb_section.cb_B) {
-            if (auto laid = lay_stage(*cb_section.cb_B, "CB_B"); !laid) {
-                return laid;
-            }
-        }
-        if (cb_section.sc) {
-            if (auto laid = lay_stage(*cb_section.sc, "SC"); !laid) {
-                return laid;
-            }
-        }
-        if (!kernel_section.cd.data.empty()) {
-            if (auto laid = lay_stage(kernel_section.cd, "CD"); !laid) {
-                return laid;
-            }
-        }
-        if (kernel_section.ce) {
-            if (auto laid = lay_stage(*kernel_section.ce, "CE"); !laid) {
-                return laid;
-            }
-        }
-        if (!preserve_layout) {
-            const size_t block_end = (cursor + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize;
-            if (auto laid =
-                    write_or_fail(driver, cursor, std::vector<uint8_t>(block_end - cursor, 0),
-                                  "boot chain block fill");
-                !laid) {
-                return laid;
-            }
-        }
-
-        size_t highest_used_offset = cursor;
-
-        auto write_patchslot = [&](uint32_t base_offset, const SystemUpdate& slot,
-                                   size_t& end_offset) -> Result<void> {
-            end_offset = base_offset;
-            if (slot.cf) {
-                auto cf_bytes = slot.cf->serialize();
-                if (auto laid = write_or_fail(driver, base_offset, cf_bytes, "CF"); !laid) {
-                    return laid;
-                }
-                end_offset = base_offset + align_16(static_cast<uint32_t>(cf_bytes.size()));
-                if (slot.cg) {
-                    auto cg_bytes = slot.cg->serialize();
-                    if (end_offset > base_offset + plan.slot_stride) {
-                        return fail(ErrorCode::OutOfRange,
-                                    "the CF (0x{:X} bytes) leaves no room for its CG in the "
-                                    "0x{:X}-byte slot",
-                                    cf_bytes.size(), plan.slot_stride);
-                    }
-                    const size_t prefix =
-                        slot.cg_spill_blocks.empty()
-                            ? cg_bytes.size()
-                            : std::min<size_t>(cg_bytes.size(),
-                                               base_offset + plan.slot_stride - end_offset);
-                    if (end_offset + prefix > base_offset + plan.slot_stride) {
-                        return fail(ErrorCode::Internal,
-                                    "CG continuation has not been allocated before serialization");
-                    }
-                    if (auto laid = write_or_fail(driver, end_offset,
-                                                  std::span(cg_bytes).first(prefix), "CG");
-                        !laid) {
-                        return laid;
-                    }
-                    size_t consumed = prefix;
-                    for (uint16_t block : slot.cg_spill_blocks) {
-                        const size_t count =
-                            std::min<size_t>(kCgClusterSize, cg_bytes.size() - consumed);
-                        if (auto laid = write_or_fail(driver, size_t(block) * kCgClusterSize,
-                                                      std::span(cg_bytes).subspan(consumed, count),
-                                                      "CG continuation cluster");
-                            !laid) {
-                            return laid;
-                        }
-                        consumed += count;
-                    }
-                    if (consumed != cg_bytes.size()) {
-                        return fail(ErrorCode::Internal,
-                                    "the CG continuation clusters hold 0x{:X} of its 0x{:X} bytes",
-                                    consumed, cg_bytes.size());
-                    }
-                    end_offset += align_16(static_cast<uint32_t>(prefix));
-                }
-                highest_used_offset = std::max(highest_used_offset, end_offset);
-            }
-            return {};
-        };
+        ctx.highest_used_offset = *chain_end;
 
         // A CG longer than its slot continues in spill blocks, so each slot ends within its
         // own stride.
         size_t slot0_end = plan.update_base;
-        if (auto laid = write_patchslot(plan.update_base, system_update_0, slot0_end); !laid) {
+        if (auto laid = lay_update_slot(ctx, plan.update_base, system_update_0, slot0_end); !laid) {
             return with_context(std::move(laid), "update slot 0");
         }
         size_t slot1_end = plan.update_base + plan.slot_stride;
-        if (auto laid =
-                write_patchslot(plan.update_base + plan.slot_stride, system_update_1, slot1_end);
+        if (auto laid = lay_update_slot(ctx, plan.update_base + plan.slot_stride, system_update_1,
+                                        slot1_end);
             !laid) {
             return with_context(std::move(laid), "update slot 1");
         }
@@ -1470,7 +1530,7 @@ namespace gxbuild3::nand {
         const size_t fs_blk_size =
             (driver.driver_mode() == Driver::DriverMode::Emmc) ? 0x4000 : block_size;
 
-        size_t min_blk = (highest_used_offset + fs_blk_size - 1) / fs_blk_size;
+        size_t min_blk = (ctx.highest_used_offset + fs_blk_size - 1) / fs_blk_size;
         size_t current_blk = std::max<size_t>(plan.fs_base / fs_blk_size, min_blk);
 
         auto* mutable_filesystem = filesystem ? &*filesystem : nullptr;
