@@ -21,6 +21,11 @@
 //   tests/golden/flashimage_failures.txt  ErrorCode and message of each reachable FlashImage
 //                                         failure, in today's check order.
 //
+// --snapshot <image> [--expect <file>] instead prints the parse., layout., write., decrypt.,
+// roundtrip. and info. lines of one image build_all.sh wrote (no image.info cross-check) and
+// optionally compares them with <file>; FlashImageTests.cmake runs it over every build_all.sh
+// image against tests/golden/build_all.parse.txt.
+//
 // The CPU key is the one already public in tests/gxBuild-support-files/build_all.sh. --update
 // rewrites the goldens (CTest never passes it). GXBUILD3_FLASHIMAGE_GOLDEN_IMAGE overrides the
 // image path and GXBUILD3_FLASHIMAGE_GOLDEN_SUPPORT the support directory the matrix reads its
@@ -487,7 +492,9 @@ namespace {
         return out.str();
     }
 
-    std::string render_layout(const FlashImage& img) {
+    // require_ok: count a payload_layout() failure as a test failure (the donor golden); the
+    // --snapshot mode only records it.
+    std::string render_layout(const FlashImage& img, bool require_ok = true) {
         std::ostringstream out;
         Snapshot s{out};
         constexpr std::string_view p = "layout.";
@@ -502,7 +509,9 @@ namespace {
         const auto layout = img.payload_layout();
         s.line(p, "payload_layout",
                layout ? "ok" : "error " + std::string{to_string(layout.error().code)});
-        check(layout, "payload_layout() on the parsed donor");
+        if (require_ok) {
+            check(layout, "payload_layout() on the parsed donor");
+        }
         return out.str();
     }
 
@@ -554,15 +563,19 @@ namespace {
         return std::nullopt;
     }
 
-    std::string render_info(const std::vector<uint8_t>& bytes, std::string_view image_info) {
-        std::ostringstream out;
-        Snapshot s{out};
+    // extract_all_info()'s summary of `bytes` under the public CPU key. With require_ok a
+    // failure is a test failure (the donor golden); the --snapshot mode only records it.
+    std::optional<AllNandInfo> render_info_summary(Snapshot& s, const std::vector<uint8_t>& bytes,
+                                                   bool require_ok) {
         constexpr std::string_view p = "info.";
-        const auto info =
+        auto info =
             extract_all_info(std::span<const uint8_t>(bytes), std::span<const uint8_t>(kCpuKey));
-        if (!check(info.has_value(), "extract_all_info on the donor")) {
+        if (!info.has_value()) {
+            if (require_ok) {
+                check(false, "extract_all_info on the donor");
+            }
             s.line(p, "result", "error " + std::string{to_string(info.error().code)});
-            return out.str();
+            return std::nullopt;
         }
         const auto& kv = info->keyvault;
         s.flag(p, "keyvault.present", kv.present);
@@ -589,6 +602,18 @@ namespace {
         s.num(p, "smc.size", info->smc.size);
         s.flag(p, "flashfs.present", info->flashfs.present);
         s.num(p, "flashfs.files", info->flashfs.files.size());
+        return std::move(*info);
+    }
+
+    std::string render_info(const std::vector<uint8_t>& bytes, std::string_view image_info) {
+        std::ostringstream out;
+        Snapshot s{out};
+        constexpr std::string_view p = "info.";
+        const auto info = render_info_summary(s, bytes, true);
+        if (!info) {
+            return out.str();
+        }
+        const auto& kv = info->keyvault;
 
         // xeBuild's own report of this dump must agree with what gxbuild3 reads.
         const auto serial = info_value(image_info, "Serial");
@@ -1539,6 +1564,137 @@ namespace {
         return "# F0c FlashImage failure table: code | describe().\n" + t.text();
     }
 
+    // ---- --snapshot <image> (tests/golden/build_all.parse.txt) ----------------------------
+    //
+    // The parse and round-trip summary of one image build_all.sh wrote, built from
+    // mydata/image.bin under the same public CPU key. FlashImageTests.cmake runs this over every
+    // image, concatenates the outputs under `== <image>` headers and compares them with the
+    // tracked tests/golden/build_all.parse.txt. Failures along the way are recorded as lines,
+    // never as test failures: the golden decides.
+
+    size_t differing_bytes(const Bytes& a, const Bytes& b) {
+        size_t count = a.size() > b.size() ? a.size() - b.size() : b.size() - a.size();
+        const size_t common = std::min(a.size(), b.size());
+        for (size_t i = 0; i < common; ++i) {
+            count += a[i] != b[i] ? 1 : 0;
+        }
+        return count;
+    }
+
+    void render_rewrite(std::ostringstream& text, std::string_view p, const FlashImage& img,
+                        const Bytes& input) {
+        const auto written = img.write();
+        if (!written) {
+            text << p << "write=error " << describe_error(written.error()) << '\n';
+            return;
+        }
+        text << p << "size=" << hex32(written->size()) << '\n';
+        text << p << "sha256=" << sha256(*written) << '\n';
+        text << p << "identity=" << (*written == input ? 1 : 0) << '\n';
+        text << p << "differing_bytes=" << hex32(differing_bytes(*written, input)) << '\n';
+    }
+
+    Result<FlashImage> read_and_parse(const Bytes& bytes) {
+        auto img = FlashImage::read(bytes);
+        if (!img) {
+            return fail(ErrorCode::Internal, "FlashImage::read returned no image");
+        }
+        if (auto parsed = img->parse(); !parsed) {
+            return std::unexpected(std::move(parsed.error()));
+        }
+        return std::move(*img);
+    }
+
+    std::string render_snapshot(const Bytes& bytes) {
+        std::ostringstream text;
+        text << "input.size=" << hex32(bytes.size()) << '\n';
+        text << "input.sha256=" << sha256(bytes) << '\n';
+
+        // parse, layout queries, write() straight after parse.
+        {
+            const auto img = read_and_parse(bytes);
+            text << "parse=" << outcome(img) << '\n';
+            if (!img) {
+                return text.str();
+            }
+            text << render_image(*img, "parse.");
+            text << render_layout(*img, false);
+            render_rewrite(text, "write.", *img, bytes);
+        }
+
+        // parse, decrypt_all (snapshot), encrypt_all, write().
+        if (auto img = read_and_parse(bytes)) {
+            const auto opened = img->decrypt_all(kCpuKey);
+            text << "decrypt=" << outcome(opened) << '\n';
+            if (opened) {
+                text << render_image(*img, "decrypt.");
+                const auto type = img->build_type.value_or(BuildType::Retail);
+                text << "roundtrip.encrypt_build_type=" << build_type_name(type) << '\n';
+                // encrypt_all draws a random nonce for a zero SC/CD/CE/CG nonce; such an image
+                // would not snapshot deterministically, so it is named instead.
+                if (const auto zero = zero_random_nonce(*img)) {
+                    text << "roundtrip=skipped: zero " << *zero << " nonce\n";
+                } else {
+                    const auto sealed = img->encrypt_all(kCpuKey, type);
+                    text << "roundtrip.encrypt=" << outcome(sealed) << '\n';
+                    if (sealed) {
+                        render_rewrite(text, "roundtrip.", *img, bytes);
+                    }
+                }
+            }
+        }
+
+        // The public summary (extract_all_info) of the same image.
+        Snapshot s{text};
+        (void) render_info_summary(s, bytes, false);
+        return text.str();
+    }
+
+    // --snapshot <image> [--expect <file>]: prints the snapshot of <image> on stdout. With
+    // --expect it also compares the snapshot with <file> (one section of build_all.parse.txt)
+    // and reports the first differing lines on stderr. Exit 0 on success, 1 on a mismatch or an
+    // unreadable file, 2 on a usage error.
+    int run_snapshot_mode(int argc, char** argv) {
+        std::optional<std::filesystem::path> image;
+        std::optional<std::filesystem::path> expect;
+        for (int i = 1; i < argc; ++i) {
+            const std::string_view arg{argv[i]};
+            if ((arg == "--snapshot" || arg == "--expect") && i + 1 < argc) {
+                (arg == "--snapshot" ? image : expect) = argv[++i];
+            } else {
+                std::cerr << "usage: " << argv[0] << " --snapshot <image> [--expect <file>]\n";
+                return 2;
+            }
+        }
+        if (!image) {
+            std::cerr << "usage: " << argv[0] << " --snapshot <image> [--expect <file>]\n";
+            return 2;
+        }
+        const auto bytes = read_file(*image);
+        if (!bytes || bytes->empty()) {
+            std::cerr << "FAIL: cannot read " << image->string() << '\n';
+            return 1;
+        }
+        const std::string rendered = render_snapshot(*bytes);
+        std::cout << rendered << std::flush;
+        if (!expect) {
+            return 0;
+        }
+        const auto expected = read_file(*expect);
+        if (!expected) {
+            std::cerr << "FAIL: cannot read the expected snapshot " << expect->string() << '\n';
+            return 1;
+        }
+        const std::string want(expected->begin(), expected->end());
+        if (const auto difference = test::golden_difference(want, rendered)) {
+            std::cerr << "snapshot of " << image->filename().string() << " differs from "
+                      << expect->string() << '\n'
+                      << *difference;
+            return 1;
+        }
+        return 0;
+    }
+
     void pin_build_time() {
 #ifdef _WIN32
         _putenv_s("SOURCE_DATE_EPOCH", kSourceDateEpoch);
@@ -1553,6 +1709,9 @@ namespace {
 
 int main(int argc, char** argv) {
     pin_build_time();
+    if (argc > 1 && std::string_view{argv[1]} == "--snapshot") {
+        return run_snapshot_mode(argc, argv);
+    }
     const auto options = test::golden_options(argc, argv);
     if (!options) {
         return 2;
