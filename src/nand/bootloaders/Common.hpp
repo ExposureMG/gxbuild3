@@ -10,7 +10,6 @@
 #include <limits>
 #include <optional>
 #include <stdbool.h>
-#include <stdexcept>
 #include <stdint.h>
 #include <string_view>
 #include <utility>
@@ -180,25 +179,5 @@ namespace gxbuild3::nand {
         }
         return static_cast<size_t>(aligned);
     }
-
-    namespace detail {
-
-        // TODO(test-phase): the test-only *_or_throw bootloader shims unwrap the Result API
-        // through these; the test rewrite deletes both. tests/ErrorConventionGuard.cmake keeps
-        // them out of the rest of src/.
-        template <class T> [[nodiscard]] T value_or_throw(Result<T>&& result) {
-            if (!result) {
-                throw std::runtime_error(result.error().describe());
-            }
-            return std::move(*result);
-        }
-
-        inline void value_or_throw(Result<void>&& result) {
-            if (!result) {
-                throw std::runtime_error(result.error().describe());
-            }
-        }
-
-    } // namespace detail
 
 } // namespace gxbuild3::nand

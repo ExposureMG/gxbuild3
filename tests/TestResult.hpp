@@ -2,8 +2,8 @@
 
 // Interim unwrap helper for tests: must() hands back the value of a successful Result and, on
 // failure, prints Error::describe() with the call site to stderr and aborts the test binary.
-// An abort fails the test the same way an uncaught *_or_throw shim exception does today. The
-// later test-framework rewrite replaces this with the framework's own assertion.
+// An abort fails the test like any other crash. The later test-framework rewrite replaces this
+// with the framework's own assertion.
 
 #include "Error.hpp"
 

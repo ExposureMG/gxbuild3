@@ -3,9 +3,8 @@ cmake_minimum_required(VERSION 3.29)
 # Error-convention guard: library code reports failures through gxbuild3::Result, so the
 # exception machinery that remains in src/ and include/ is an explicit, shrinking inventory.
 #
-#   1. The temporary throwing shims (*_or_throw, value_or_throw) may only be named in the files
-#      that define them or still depend on them.
-#   2. `throw` may only appear in BigUint (precondition violations) and the shims.
+#   1. The temporary throwing shims (*_or_throw, value_or_throw) are gone; none may come back.
+#   2. `throw` may only appear in BigUint (precondition violations).
 #   3. `catch (...)` may only appear in main().
 #
 # WireConventionGuard (see src/Wire.hpp): on-disk records are plain structs of wire:: field types,
@@ -25,16 +24,12 @@ if(NOT DEFINED SOURCE_ROOT OR NOT IS_DIRECTORY "${SOURCE_ROOT}/src")
     message(FATAL_ERROR "SOURCE_ROOT must name the gxbuild3 repository root")
 endif()
 
-# Shim inventory.
-#   TODO(test-phase): the bootloader detail::value_or_throw helper (Common.hpp) outlived the
-#     *_or_throw shims it backed; it goes next.
+# Shim inventory: empty. Tests unwrap Results with gxbuild3::test::must (tests/TestResult.hpp).
 set(shim_name_allowlist
-    src/nand/bootloaders/Common.hpp
 )
 
 # BigUint throws std::logic_error-family precondition violations by design.
 set(throw_allowlist
-    src/nand/bootloaders/Common.hpp
     src/utils/BigUint.cpp
 )
 
