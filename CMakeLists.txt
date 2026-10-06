@@ -114,6 +114,9 @@ if(BUILD_TESTING)
         add_executable(${name} ${source})
         target_link_libraries(${name} PRIVATE gxbuild3_internal)
         gxbuild3_enable_warnings(${name})
+        # Tracked text goldens for tests/GoldenSnapshot.hpp. CTest never passes --update.
+        target_compile_definitions(${name} PRIVATE
+            GXBUILD3_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden")
         add_test(NAME ${name} COMMAND ${name})
     endfunction()
 
@@ -137,6 +140,16 @@ if(BUILD_TESTING)
     add_gxbuild3_test(gxbuild3_crypto_reference_tests tests/CryptoReferenceTests.cpp)
     add_gxbuild3_test(gxbuild3_stfs_tests tests/StfsTests.cpp)
     add_gxbuild3_test(gxbuild3_error_tests tests/ErrorTests.cpp)
+    # Compile-time sizeof/offsetof pins of every bootloader record in Common.hpp, taken from
+    # the on-disk layout; the run prints how many records and fields the build pinned.
+    add_gxbuild3_test(gxbuild3_bootloader_layout_tests tests/BootloaderLayoutTests.cpp)
+    add_gxbuild3_test(gxbuild3_golden_snapshot_tests tests/GoldenSnapshotTests.cpp)
+    target_compile_definitions(gxbuild3_golden_snapshot_tests PRIVATE
+        GXBUILD3_TEST_SCRATCH_DIR="${CMAKE_CURRENT_BINARY_DIR}/golden-snapshot-tests")
+    add_test(NAME gxbuild3_must_abort_tests
+        COMMAND ${CMAKE_COMMAND}
+            -DGXBUILD3_SELFTEST=$<TARGET_FILE:gxbuild3_golden_snapshot_tests>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/MustAbortTest.cmake)
     foreach(cli_test gxbuild3_commandline_tests gxbuild3_resolver_tests
             gxbuild3_buildcommand_tests)
         target_link_libraries(${cli_test} PRIVATE gxbuild3_cli)
@@ -146,6 +159,35 @@ if(BUILD_TESTING)
     set_tests_properties(gxbuild3_stfs_tests PROPERTIES TIMEOUT 60)
     target_compile_definitions(gxbuild3_crypto_reference_tests PRIVATE
         GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
+    # In-process goldens over the tracked mydata/image.bin (tests/golden/flashimage_golden.txt),
+    # the synthetic fresh-layout matrix (flashimage_matrix.txt) and the FlashImage failure
+    # table (flashimage_failures.txt). The matrix writes 48 full-size images: about 30 s in
+    # Release, so the timeout leaves room for an unoptimized build.
+    add_gxbuild3_test(gxbuild3_flashimage_golden_tests tests/FlashImageGoldenTests.cpp)
+    target_compile_definitions(gxbuild3_flashimage_golden_tests PRIVATE
+        GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
+    set_tests_properties(gxbuild3_flashimage_golden_tests PROPERTIES TIMEOUT 600)
+    # Snapshot of every tracked bootloader stage fixture in common/*.bin
+    # (tests/golden/wire_corpus_bootloaders.txt): parse fields, serialize identity, per-box
+    # bytes and seals under fixed keys, with all-zero nonces pinned inside the test.
+    add_gxbuild3_test(gxbuild3_wire_corpus_tests tests/WireCorpusTests.cpp)
+    target_compile_definitions(gxbuild3_wire_corpus_tests PRIVATE
+        GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
+    # Snapshot of the NAND-object codecs over tracked fixtures (tests/golden/objects_corpus.txt):
+    # every patches_*.bin x build type with and without add-ons, XeLL, the mydata secured files,
+    # xboxupd.bin from su20076000, CoronaConfig, freeBOOT, XConfig and the SMC classifier.
+    add_gxbuild3_test(gxbuild3_objects_corpus_tests tests/ObjectsCorpusTests.cpp)
+    target_compile_definitions(gxbuild3_objects_corpus_tests PRIVATE
+        GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
+    # run_build digests over the tracked mydata/image.bin (tests/golden/
+    # orchestration_mydata_builds.txt): extract_all, then retail, jtag and glitch2 rebuilds with
+    # the tracked patch files and XeLLs, each built twice under a pinned time and donor nonces;
+    # then every public extract_* projection of image.bin and of the glitch2 rebuild
+    # (tests/golden/extract_projections_mydata.txt, via tests/ExtractProjection.hpp).
+    add_gxbuild3_test(gxbuild3_orchestration_golden_tests tests/OrchestrationGoldenTests.cpp)
+    target_compile_definitions(gxbuild3_orchestration_golden_tests PRIVATE
+        GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files")
+    set_tests_properties(gxbuild3_orchestration_golden_tests PROPERTIES TIMEOUT 300)
 
     add_executable(gxbuild3_keyvault_crypto_tests tests/KeyvaultCryptoTests.cpp)
     target_link_libraries(gxbuild3_keyvault_crypto_tests PRIVATE gxbuild3_internal)
@@ -186,13 +228,28 @@ if(BUILD_TESTING)
 
     find_program(GXBUILD3_BASH_EXECUTABLE NAMES bash)
     if(UNIX)
+        # Byte oracle over build_all.sh against tests/golden/build_all.sha256, plus the
+        # parse snapshot of every image it writes against tests/golden/build_all.parse.txt
+        # (gxbuild3_flashimage_golden_tests --snapshot). The capture target below is the
+        # only way to rewrite either golden; CTest never passes GXBUILD3_UPDATE_GOLDEN.
+        set(GXBUILD3_FLASHIMAGE_ARGS
+            -DGXBUILD3_EXE=$<TARGET_FILE:gxbuild3>
+            -DGXBUILD3_SUPPORT_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files
+            -DGXBUILD3_BASH=${GXBUILD3_BASH_EXECUTABLE}
+            -DGXBUILD3_GOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/build_all.sha256
+            -DGXBUILD3_SNAPSHOT_TOOL=$<TARGET_FILE:gxbuild3_flashimage_golden_tests>
+            -DGXBUILD3_PARSE_GOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/build_all.parse.txt
+            -DGXBUILD3_SCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/flashimage-tests)
         add_test(NAME gxbuild3_flashimage_tests
-            COMMAND ${CMAKE_COMMAND}
-                -DGXBUILD3_EXE=$<TARGET_FILE:gxbuild3>
-                -DGXBUILD3_SUPPORT_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/gxBuild-support-files
-                -DGXBUILD3_BASH=${GXBUILD3_BASH_EXECUTABLE}
+            COMMAND ${CMAKE_COMMAND} ${GXBUILD3_FLASHIMAGE_ARGS}
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/FlashImageTests.cmake)
         set_tests_properties(gxbuild3_flashimage_tests PROPERTIES TIMEOUT 1800 SKIP_RETURN_CODE 77)
+        add_custom_target(gxbuild3_flashimage_golden_update
+            COMMAND ${CMAKE_COMMAND} ${GXBUILD3_FLASHIMAGE_ARGS} -DGXBUILD3_UPDATE_GOLDEN=1
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/FlashImageTests.cmake
+            DEPENDS gxbuild3 gxbuild3_flashimage_golden_tests
+            USES_TERMINAL
+            COMMENT "Capturing tests/golden/build_all.sha256 and build_all.parse.txt (two identical runs required)")
     endif()
 endif()
 

@@ -1,0 +1,1563 @@
+# Wire corpus over tests/gxBuild-support-files/common/*.bin; one line per fixture and operation.
+fixtures 145
+context cba_9188 flags=0x0800
+context cf_4532 opened=as-parsed cg_key=b7efb3b7604938c4d2c3a28f53da7ae3
+context smc size=0x3000 sha1=9b56219e415900233f94c44f3f09f222ef712302
+SB_10375.bin input size=0x4100 sha1=aa215bbcf24bee8aa0eb32e39b142f3847995f22
+SB_10375.bin parse ok
+SB_10375.bin serialize identity=yes size=0x4100 sha1=aa215bbcf24bee8aa0eb32e39b142f3847995f22
+SB_10375.bin state is_decrypted=true decrypted=false
+SB_10375.bin header magic=0x5342 version=10375 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x4100
+SB_10375.bin fields console_type=0 console_sequence=0 sequence_allow=0x0000
+SB_10375.bin perbox none
+SB_10375.bin cb.requires_cpu_key_for_cd false
+SB_10375.bin cb.rgh3_v1 patched=false sha1=aa215bbcf24bee8aa0eb32e39b142f3847995f22
+SB_10375.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=true sha1=2a75c8e0e06a8ee69f9fe9c688d2dde4752a0c3d derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=false sha1=088bdae6a369fb4103836048b08a73c6fb5fed01
+SB_10375.bin cb.encrypt_retail nonce=pinned result=err=invalid argument msg="Retail CB authentication requires plaintext per-box data, a CPU key, and an aligned encrypted SMC"
+SB_14352.bin input size=0x40E0 sha1=9e293f37dd9ece21395e02867151d8a26770cacc
+SB_14352.bin parse ok
+SB_14352.bin serialize identity=yes size=0x40E0 sha1=9e293f37dd9ece21395e02867151d8a26770cacc
+SB_14352.bin state is_decrypted=true decrypted=false
+SB_14352.bin header magic=0x5342 version=14352 pairing=0x0000 flags=0x0000 entrypoint=0x000003D0 size=0x40E0
+SB_14352.bin fields console_type=0 console_sequence=0 sequence_allow=0x0000
+SB_14352.bin perbox none
+SB_14352.bin cb.requires_cpu_key_for_cd false
+SB_14352.bin cb.rgh3_v1 patched=false sha1=9e293f37dd9ece21395e02867151d8a26770cacc
+SB_14352.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=true sha1=fc09d8e0aea6c67d78f781914c5b7e592c0a0273 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=false sha1=edf4b26fe9c6dae756a413a2b8f0163e0dc94419
+SB_14352.bin cb.encrypt_retail nonce=pinned result=err=invalid argument msg="Retail CB authentication requires plaintext per-box data, a CPU key, and an aligned encrypted SMC"
+SC_12625_slim.bin input size=0x4700 sha1=61f64531fc390d749c30970694704e66d4c00d34
+SC_12625_slim.bin parse ok
+SC_12625_slim.bin serialize identity=yes size=0x4700 sha1=61f64531fc390d749c30970694704e66d4c00d34
+SC_12625_slim.bin state is_decrypted=false decrypted=false
+SC_12625_slim.bin header magic=0x5343 version=12625 pairing=0x8000 flags=0x0000 entrypoint=0x00000120 size=0x4700
+SC_12625_slim.bin fields none
+SC_12625_slim.bin seal.zero_secret nonce=pinned encrypt=ok decrypted=false sha1=4a15418036ff2aa7f6c0e21377400499bae5e186 derived_sha1=7d7469121408b0c8f0366d0bf935e24c2b736e01 decrypt=ok decrypted=true sha1=76c1442bc47dcc687359774d456a8100fa52a353
+SC_16547_phat.bin input size=0x6540 sha1=4cdebf899edd28f15b351de23685a8efa19cc34b
+SC_16547_phat.bin parse ok
+SC_16547_phat.bin serialize identity=yes size=0x6540 sha1=4cdebf899edd28f15b351de23685a8efa19cc34b
+SC_16547_phat.bin state is_decrypted=false decrypted=false
+SC_16547_phat.bin header magic=0x5343 version=16547 pairing=0x8000 flags=0x0000 entrypoint=0x00000120 size=0x6540
+SC_16547_phat.bin fields none
+SC_16547_phat.bin seal.zero_secret nonce=kept encrypt=ok decrypted=false sha1=81f65c441832d7da72f5c0192931865e9604c179 derived_sha1=03e4a2eab8f8d2e63ae23819f90e411ee5479f76 decrypt=ok decrypted=true sha1=4cdebf899edd28f15b351de23685a8efa19cc34b
+SC_16547_slim.bin input size=0x5BF0 sha1=a221748dcb9f2d1359c9a3319338fe857da4e232
+SC_16547_slim.bin parse ok
+SC_16547_slim.bin serialize identity=yes size=0x5BF0 sha1=a221748dcb9f2d1359c9a3319338fe857da4e232
+SC_16547_slim.bin state is_decrypted=false decrypted=false
+SC_16547_slim.bin header magic=0x5343 version=16547 pairing=0x8000 flags=0x0000 entrypoint=0x00000120 size=0x5BF0
+SC_16547_slim.bin fields none
+SC_16547_slim.bin seal.zero_secret nonce=pinned encrypt=ok decrypted=false sha1=14021a8e31b0fec2c3d2f3cc06ae05b6e6f5b422 derived_sha1=7d7469121408b0c8f0366d0bf935e24c2b736e01 decrypt=ok decrypted=true sha1=0a9ea49cd09bc33077f7b4dd7bffe6c6d308984b
+SC_17489.bin input size=0x6540 sha1=0a824dfa116d0ded430ece7dee9fc050559c60ef
+SC_17489.bin parse ok
+SC_17489.bin serialize identity=yes size=0x6540 sha1=0a824dfa116d0ded430ece7dee9fc050559c60ef
+SC_17489.bin state is_decrypted=false decrypted=false
+SC_17489.bin header magic=0x5343 version=17489 pairing=0x8000 flags=0x0000 entrypoint=0x00000120 size=0x6540
+SC_17489.bin fields none
+SC_17489.bin seal.zero_secret nonce=kept encrypt=ok decrypted=false sha1=c4bb96712e75a96d8f0fabc0896adbb7b6cfc93b derived_sha1=27ddfe1fde160625769a95df6adf912da8be9340 decrypt=ok decrypted=true sha1=0a824dfa116d0ded430ece7dee9fc050559c60ef
+SC_17489_xenon.bin input size=0x6750 sha1=4ab04226344f76645f8c3dfd067e25b5a838a979
+SC_17489_xenon.bin parse ok
+SC_17489_xenon.bin serialize identity=yes size=0x6750 sha1=4ab04226344f76645f8c3dfd067e25b5a838a979
+SC_17489_xenon.bin state is_decrypted=false decrypted=false
+SC_17489_xenon.bin header magic=0x5343 version=17489 pairing=0x8000 flags=0x0000 entrypoint=0x00000120 size=0x6750
+SC_17489_xenon.bin fields none
+SC_17489_xenon.bin seal.zero_secret nonce=kept encrypt=ok decrypted=false sha1=dea03f58e913755a13f27f562453e49ec7db1724 derived_sha1=9451c11013c9d503444c78dfc80719aeced79099 decrypt=ok decrypted=true sha1=4ab04226344f76645f8c3dfd067e25b5a838a979
+SD_12611.bin input size=0x4DE0 sha1=ebf0cc28d771a5edaf3994160d327782fc1f843d
+SD_12611.bin parse ok
+SD_12611.bin serialize identity=yes size=0x4DE0 sha1=ebf0cc28d771a5edaf3994160d327782fc1f843d
+SD_12611.bin state is_decrypted=true decrypted=true
+SD_12611.bin header magic=0x5344 version=12611 pairing=0x8000 flags=0x0000 entrypoint=0x00000270 size=0x4DE0
+SD_12611.bin fields padding=0x0000
+SD_12611.bin seal.default nonce=kept encrypt=ok decrypted=false sha1=f0187c6ab22cb1792d5db675b7d4d5d2b56a84e9 derived_sha1=9da75d6aaf0b46665c412128f0559b98fd194733 decrypt=ok decrypted=true sha1=ebf0cc28d771a5edaf3994160d327782fc1f843d
+SD_12611.bin seal.hmac1920 nonce=kept encrypt=ok decrypted=false sha1=b973d7a4deee3805d03a217770bb6f0ba548b938 derived_sha1=a3e6782bc7b52aeb2464bdfc503aefa9dd579a89 decrypt=ok decrypted=true sha1=ebf0cc28d771a5edaf3994160d327782fc1f843d
+SD_17489.bin input size=0x4F30 sha1=8d41a9f7175d24549dcec3d71b770cabd509b977
+SD_17489.bin parse ok
+SD_17489.bin serialize identity=yes size=0x4F30 sha1=8d41a9f7175d24549dcec3d71b770cabd509b977
+SD_17489.bin state is_decrypted=true decrypted=true
+SD_17489.bin header magic=0x5344 version=17489 pairing=0x8000 flags=0x0000 entrypoint=0x00000310 size=0x4F30
+SD_17489.bin fields padding=0x0000
+SD_17489.bin seal.default nonce=kept encrypt=ok decrypted=false sha1=d2cf6f9b442c77f00d714c4fd8f969b45847d212 derived_sha1=1f96415ec91bd9276babfb40ab0ca75a67ca0294 decrypt=ok decrypted=true sha1=8d41a9f7175d24549dcec3d71b770cabd509b977
+SD_17489.bin seal.hmac1920 nonce=kept encrypt=ok decrypted=false sha1=e72f745b161fb112dffbacf841622ec4f95b28bf derived_sha1=6e57d340924d875aff198e091100a5e2cbc23299 decrypt=ok decrypted=true sha1=8d41a9f7175d24549dcec3d71b770cabd509b977
+cb_1888.bin input size=0x61E0 sha1=00f542ea76085d66fbf14cfaafd1cda2ffa57397
+cb_1888.bin parse ok
+cb_1888.bin serialize identity=yes size=0x61E0 sha1=00f542ea76085d66fbf14cfaafd1cda2ffa57397
+cb_1888.bin state is_decrypted=true decrypted=true
+cb_1888.bin header magic=0x4342 version=1888 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x61E0
+cb_1888.bin fields console_type=1 console_sequence=2 sequence_allow=0x0003
+cb_1888.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_1888.bin cb.requires_cpu_key_for_cd false
+cb_1888.bin cb.rgh3_v1 patched=false sha1=00f542ea76085d66fbf14cfaafd1cda2ffa57397
+cb_1888.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=74678b82e4e053a83518a8f88d792ab0f6fc52ab derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=5ec466697fc812c516f57b609d15aa24e3c61406
+cb_1888.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=e87e59c9e095ebba368576a0f78d2dc8018b8b08 digest=3895a29b466f8294776d4e64e7095c94
+cb_1897.bin input size=0x65E0 sha1=a70835bd9c056e2fe4a1c8f89973e9eb96afb923
+cb_1897.bin parse ok
+cb_1897.bin serialize identity=yes size=0x65E0 sha1=a70835bd9c056e2fe4a1c8f89973e9eb96afb923
+cb_1897.bin state is_decrypted=true decrypted=true
+cb_1897.bin header magic=0x4342 version=1897 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x65E0
+cb_1897.bin fields console_type=1 console_sequence=2 sequence_allow=0x0003
+cb_1897.bin perbox e1310400000000000000000000000000de2290322562ace35edcc8d5729571f3
+cb_1897.bin cb.requires_cpu_key_for_cd false
+cb_1897.bin cb.rgh3_v1 patched=false sha1=a70835bd9c056e2fe4a1c8f89973e9eb96afb923
+cb_1897.bin cb.crypt_1bl nonce=kept encrypt=ok decrypted=false sha1=ff5939624ab5804f452369979cfc24dc705c878c derived_sha1=2ce07a8a5e10d874b0384a2ada2adf1aa29c8bab decrypt=ok decrypted=true sha1=a70835bd9c056e2fe4a1c8f89973e9eb96afb923
+cb_1897.bin cb.encrypt_retail nonce=kept result=ok decrypted=false sha1=323159b5ff95237d26705a383f70e630b9bd8ded digest=63bda0916319b8e55a53a054207cb7cd
+cb_1902.bin input size=0x8C80 sha1=a5d864b4ff42722d18e95fd464c60d78e9c90db6
+cb_1902.bin parse ok
+cb_1902.bin serialize identity=yes size=0x8C80 sha1=a5d864b4ff42722d18e95fd464c60d78e9c90db6
+cb_1902.bin state is_decrypted=true decrypted=true
+cb_1902.bin header magic=0x4342 version=1902 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x8C80
+cb_1902.bin fields console_type=1 console_sequence=2 sequence_allow=0x0003
+cb_1902.bin perbox 6b230c000000000000000000000000008e20f1e6c63d1198dfd1e08b72aae06a
+cb_1902.bin cb.requires_cpu_key_for_cd false
+cb_1902.bin cb.rgh3_v1 patched=false sha1=a5d864b4ff42722d18e95fd464c60d78e9c90db6
+cb_1902.bin cb.crypt_1bl nonce=kept encrypt=ok decrypted=false sha1=8f8df6e2968e70bda41778a585987c2e1e5f7237 derived_sha1=be4a015adc7b892e304f1fa4c39c61fa138d10b6 decrypt=ok decrypted=true sha1=a5d864b4ff42722d18e95fd464c60d78e9c90db6
+cb_1902.bin cb.encrypt_retail nonce=kept result=ok decrypted=false sha1=0c2b83f7502e3de2576ac9151c15b6d927a5da2a digest=4c94a7f5bd7c95b860634a413af70b7f
+cb_1903.bin input size=0x9310 sha1=6b6bc6ae69c2556045c4b68b380beefb4fdda22b
+cb_1903.bin parse ok
+cb_1903.bin serialize identity=yes size=0x9310 sha1=6b6bc6ae69c2556045c4b68b380beefb4fdda22b
+cb_1903.bin state is_decrypted=true decrypted=true
+cb_1903.bin header magic=0x4342 version=1903 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9310
+cb_1903.bin fields console_type=1 console_sequence=2 sequence_allow=0x0003
+cb_1903.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_1903.bin cb.requires_cpu_key_for_cd false
+cb_1903.bin cb.rgh3_v1 patched=false sha1=6b6bc6ae69c2556045c4b68b380beefb4fdda22b
+cb_1903.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=ea77f09b946bd467df09fea337a2f48c27fd25b0 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=113171593ec2640fa7dd953bcd6706b0c7019995
+cb_1903.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=882ea7d875e63c64ec5f46a218c7bd819e657e4b digest=3895a29b466f8294776d4e64e7095c94
+cb_1920.bin input size=0x9390 sha1=284221987727c3a78f35dcad83182afad333fbf5
+cb_1920.bin parse ok
+cb_1920.bin serialize identity=yes size=0x9390 sha1=284221987727c3a78f35dcad83182afad333fbf5
+cb_1920.bin state is_decrypted=true decrypted=true
+cb_1920.bin header magic=0x4342 version=1920 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9390
+cb_1920.bin fields console_type=1 console_sequence=4 sequence_allow=0x000B
+cb_1920.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_1920.bin cb.requires_cpu_key_for_cd false
+cb_1920.bin cb.rgh3_v1 patched=false sha1=284221987727c3a78f35dcad83182afad333fbf5
+cb_1920.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=e14ceb2e0a3df29ddd943fedd515f44e7219f147 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=770e46d528fd6fdd81d8ca3ef43c829191031605
+cb_1920.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=c60d98ed37b357f61b4a0536a1c953ba2944db14 digest=3895a29b466f8294776d4e64e7095c94
+cb_1921.bin input size=0x9800 sha1=6214742900e3d986c91ea31d0b9a924a68f1ce1c
+cb_1921.bin parse ok
+cb_1921.bin serialize identity=yes size=0x9800 sha1=6214742900e3d986c91ea31d0b9a924a68f1ce1c
+cb_1921.bin state is_decrypted=true decrypted=true
+cb_1921.bin header magic=0x4342 version=1921 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9800
+cb_1921.bin fields console_type=1 console_sequence=5 sequence_allow=0x001B
+cb_1921.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_1921.bin cb.requires_cpu_key_for_cd false
+cb_1921.bin cb.rgh3_v1 patched=false sha1=6214742900e3d986c91ea31d0b9a924a68f1ce1c
+cb_1921.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=5160878f4b1dac142ffaf0ce1fb943dc45dd3800 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=9ff0c879ef80e63ceac3de748ee6f7a62d08031a
+cb_1921.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=89b54b6b81561a4597b10a6dae9f5b2f75e3bfb3 digest=3895a29b466f8294776d4e64e7095c94
+cb_1922.bin input size=0x9D00 sha1=529823192acbfc5699437ddedcf934f92f1ece03
+cb_1922.bin parse ok
+cb_1922.bin serialize identity=yes size=0x9D00 sha1=529823192acbfc5699437ddedcf934f92f1ece03
+cb_1922.bin state is_decrypted=true decrypted=true
+cb_1922.bin header magic=0x4342 version=1922 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9D00
+cb_1922.bin fields console_type=1 console_sequence=6 sequence_allow=0x0023
+cb_1922.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_1922.bin cb.requires_cpu_key_for_cd false
+cb_1922.bin cb.rgh3_v1 patched=false sha1=529823192acbfc5699437ddedcf934f92f1ece03
+cb_1922.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=9aeb7bc399dc8d2a1905f264dc6c34e7c67347c6 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=c455e641b16014b5f255a30e606e894c59b604ef
+cb_1922.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=456155ae7f1946a6c01a7801df4eab0bfc885994 digest=3895a29b466f8294776d4e64e7095c94
+cb_1923.bin input size=0x9D00 sha1=1e1f885c211d9e1066621ca16cb716f96cf0f342
+cb_1923.bin parse ok
+cb_1923.bin serialize identity=yes size=0x9D00 sha1=1e1f885c211d9e1066621ca16cb716f96cf0f342
+cb_1923.bin state is_decrypted=true decrypted=true
+cb_1923.bin header magic=0x4342 version=1923 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9D00
+cb_1923.bin fields console_type=1 console_sequence=7 sequence_allow=0x007B
+cb_1923.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_1923.bin cb.requires_cpu_key_for_cd false
+cb_1923.bin cb.rgh3_v1 patched=false sha1=1e1f885c211d9e1066621ca16cb716f96cf0f342
+cb_1923.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=e79fcb93552294bb7c31b3d5b26c263ca056dad1 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=89ec1ce646862f59b34ba77dc9be8b653db6d326
+cb_1923.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=42c54314f0b981fd1211a040cdc4779eddc6ee8a digest=3895a29b466f8294776d4e64e7095c94
+cb_1940.bin input size=0x6720 sha1=7873be6305dc807aecd1f96dbc638df7a6d32e6a
+cb_1940.bin parse ok
+cb_1940.bin serialize identity=yes size=0x6720 sha1=7873be6305dc807aecd1f96dbc638df7a6d32e6a
+cb_1940.bin state is_decrypted=true decrypted=true
+cb_1940.bin header magic=0x4342 version=1940 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x6720
+cb_1940.bin fields console_type=1 console_sequence=6 sequence_allow=0x0023
+cb_1940.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_1940.bin cb.requires_cpu_key_for_cd false
+cb_1940.bin cb.rgh3_v1 patched=false sha1=7873be6305dc807aecd1f96dbc638df7a6d32e6a
+cb_1940.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=da5778ad7344821deef50ec265d21fa4063fdd4e derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=12da6c7df7b96afad70fcf6ce9ab8879888f2d24
+cb_1940.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=d8b7eed419bb1fc17139cd351b186e21af96be28 digest=3895a29b466f8294776d4e64e7095c94
+cb_4540.bin input size=0x6F20 sha1=c3ff05e764033266830ad93014953d17bff79531
+cb_4540.bin parse ok
+cb_4540.bin serialize identity=yes size=0x6F20 sha1=c3ff05e764033266830ad93014953d17bff79531
+cb_4540.bin state is_decrypted=true decrypted=true
+cb_4540.bin header magic=0x4342 version=4540 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x6F20
+cb_4540.bin fields console_type=1 console_sequence=3 sequence_allow=0x0004
+cb_4540.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_4540.bin cb.requires_cpu_key_for_cd false
+cb_4540.bin cb.rgh3_v1 patched=false sha1=c3ff05e764033266830ad93014953d17bff79531
+cb_4540.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=e494e79728e6c8ab077f120014e91388636f1ab9 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=f4f3f408ff76cf3d81d93a012db0064795cc64fa
+cb_4540.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=4515843a1891d5264e369a925163b69aaec6e5e5 digest=3895a29b466f8294776d4e64e7095c94
+cb_4558.bin input size=0x7A70 sha1=463b35144f23e3838017ccd31fa1ab281c153c59
+cb_4558.bin parse ok
+cb_4558.bin serialize identity=yes size=0x7A70 sha1=463b35144f23e3838017ccd31fa1ab281c153c59
+cb_4558.bin state is_decrypted=true decrypted=true
+cb_4558.bin header magic=0x4342 version=4558 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x7A70
+cb_4558.bin fields console_type=1 console_sequence=4 sequence_allow=0x000C
+cb_4558.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_4558.bin cb.requires_cpu_key_for_cd false
+cb_4558.bin cb.rgh3_v1 patched=false sha1=463b35144f23e3838017ccd31fa1ab281c153c59
+cb_4558.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=2c26f1becf9332083733df0d38f56bd05a691131 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=5eb9899e72536c703e62d1de7318d48f6913f55c
+cb_4558.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=4828a4cc6b8f32f1c764edd91f91beda1f6c73ad digest=3895a29b466f8294776d4e64e7095c94
+cb_4571.bin input size=0x73E0 sha1=c0d235f6d4914662bff09f6d84441c6dab32856f
+cb_4571.bin parse ok
+cb_4571.bin serialize identity=yes size=0x73E0 sha1=c0d235f6d4914662bff09f6d84441c6dab32856f
+cb_4571.bin state is_decrypted=true decrypted=true
+cb_4571.bin header magic=0x4342 version=4571 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x73E0
+cb_4571.bin fields console_type=1 console_sequence=6 sequence_allow=0x0024
+cb_4571.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_4571.bin cb.requires_cpu_key_for_cd false
+cb_4571.bin cb.rgh3_v1 patched=false sha1=c0d235f6d4914662bff09f6d84441c6dab32856f
+cb_4571.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=861e694607d550af8805a63c9705ebb97df0a8ec derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=e07fd4451c388794515c0c0f4b81984b74a6b703
+cb_4571.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=0543e91a232ddfdf5e3684bc7c158004163a3911 digest=3895a29b466f8294776d4e64e7095c94
+cb_4572.bin input size=0x73E0 sha1=01fe54dea4fe095dcbd4d982ba0b553098158970
+cb_4572.bin parse ok
+cb_4572.bin serialize identity=yes size=0x73E0 sha1=01fe54dea4fe095dcbd4d982ba0b553098158970
+cb_4572.bin state is_decrypted=true decrypted=true
+cb_4572.bin header magic=0x4342 version=4572 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x73E0
+cb_4572.bin fields console_type=1 console_sequence=7 sequence_allow=0x007C
+cb_4572.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_4572.bin cb.requires_cpu_key_for_cd false
+cb_4572.bin cb.rgh3_v1 patched=false sha1=01fe54dea4fe095dcbd4d982ba0b553098158970
+cb_4572.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=8c961ee47dbae9e8762020ff9d114ee101f39452 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=29c56e75aa145c24680ce4d83923b9c6f40c8d5c
+cb_4572.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=3fe3bd894051d71a330d67a82aec2f1e9064556d digest=3895a29b466f8294776d4e64e7095c94
+cb_4578.bin input size=0x7F20 sha1=5b4e1f902af65903d2cbd8f146d2e9c8fea76285
+cb_4578.bin parse ok
+cb_4578.bin serialize identity=yes size=0x7F20 sha1=5b4e1f902af65903d2cbd8f146d2e9c8fea76285
+cb_4578.bin state is_decrypted=true decrypted=true
+cb_4578.bin header magic=0x4342 version=4578 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x7F20
+cb_4578.bin fields console_type=1 console_sequence=7 sequence_allow=0x007C
+cb_4578.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_4578.bin cb.requires_cpu_key_for_cd false
+cb_4578.bin cb.rgh3_v1 patched=false sha1=5b4e1f902af65903d2cbd8f146d2e9c8fea76285
+cb_4578.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=e8254e52c01c1f52c778b59f2d2dd4d2a9264279 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=01805de94b87ab287eb37f5b2cfd08372cc6e4b9
+cb_4578.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=1f8142f4be6d1f30a6e1e05b18af0c1f729eb095 digest=3895a29b466f8294776d4e64e7095c94
+cb_4579.bin input size=0x7F20 sha1=4b1b47a84fe7696627494e7ad69d7e676d6db0f9
+cb_4579.bin parse ok
+cb_4579.bin serialize identity=yes size=0x7F20 sha1=4b1b47a84fe7696627494e7ad69d7e676d6db0f9
+cb_4579.bin state is_decrypted=true decrypted=true
+cb_4579.bin header magic=0x4342 version=4579 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x7F20
+cb_4579.bin fields console_type=1 console_sequence=6 sequence_allow=0x0024
+cb_4579.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_4579.bin cb.requires_cpu_key_for_cd false
+cb_4579.bin cb.rgh3_v1 patched=false sha1=4b1b47a84fe7696627494e7ad69d7e676d6db0f9
+cb_4579.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=8092989896171e00f6bba8cbfb882ff04240b25f derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=ffc23e8549d0859256516d17e4634f20942e142c
+cb_4579.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=0071cfa75289cf65c3d6db319f7739240e984a7c digest=3895a29b466f8294776d4e64e7095c94
+cb_4580.bin input size=0x7A30 sha1=486d04d3a622e6e12a5169c5cd8c35e85322c0aa
+cb_4580.bin parse ok
+cb_4580.bin serialize identity=yes size=0x7A30 sha1=486d04d3a622e6e12a5169c5cd8c35e85322c0aa
+cb_4580.bin state is_decrypted=true decrypted=true
+cb_4580.bin header magic=0x4342 version=4580 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x7A30
+cb_4580.bin fields console_type=1 console_sequence=5 sequence_allow=0x001C
+cb_4580.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_4580.bin cb.requires_cpu_key_for_cd false
+cb_4580.bin cb.rgh3_v1 patched=false sha1=486d04d3a622e6e12a5169c5cd8c35e85322c0aa
+cb_4580.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=c057250657bc3e3a6792609554a2f4d527947108 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=b459b8f4c3861f40359e30c6d2740b26d6d68db2
+cb_4580.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=53f9818419a42e39f1ed97a14ce16359a26bcd5b digest=3895a29b466f8294776d4e64e7095c94
+cb_5761.bin input size=0x7CD0 sha1=2688232ac98d966714995cc53fb6c35cdf5ee25a
+cb_5761.bin parse ok
+cb_5761.bin serialize identity=yes size=0x7CD0 sha1=2688232ac98d966714995cc53fb6c35cdf5ee25a
+cb_5761.bin state is_decrypted=true decrypted=true
+cb_5761.bin header magic=0x4342 version=5761 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x7CD0
+cb_5761.bin fields console_type=1 console_sequence=4 sequence_allow=0x0008
+cb_5761.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_5761.bin cb.requires_cpu_key_for_cd false
+cb_5761.bin cb.rgh3_v1 patched=false sha1=2688232ac98d966714995cc53fb6c35cdf5ee25a
+cb_5761.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=3f6b8b74bf7028585d0a69a7618000d6f628cc03 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=dbac81dcb4c6a39baf8ae1ff9942fcef022bab3b
+cb_5761.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=9496582ad42170749e93e4af1dcfbf5bbae106c2 digest=3895a29b466f8294776d4e64e7095c94
+cb_5766.bin input size=0x7C90 sha1=60ae7d5a2fc3398359dabce06a2f1ab254003c78
+cb_5766.bin parse ok
+cb_5766.bin serialize identity=yes size=0x7C90 sha1=60ae7d5a2fc3398359dabce06a2f1ab254003c78
+cb_5766.bin state is_decrypted=true decrypted=true
+cb_5766.bin header magic=0x4342 version=5766 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x7C90
+cb_5766.bin fields console_type=1 console_sequence=5 sequence_allow=0x0018
+cb_5766.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_5766.bin cb.requires_cpu_key_for_cd false
+cb_5766.bin cb.rgh3_v1 patched=false sha1=60ae7d5a2fc3398359dabce06a2f1ab254003c78
+cb_5766.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=2696db107ae346867087e79aae7a0f80a4046010 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=c98e1d919c932e34a7de0ae05bab8d57438f70ff
+cb_5766.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=154125e7674556cba8379ce59dd0914801ecdab4 digest=3895a29b466f8294776d4e64e7095c94
+cb_5770.bin input size=0x8E40 sha1=0de82668636e8160d12d66c264edb27320509297
+cb_5770.bin parse ok
+cb_5770.bin serialize identity=yes size=0x8E40 sha1=0de82668636e8160d12d66c264edb27320509297
+cb_5770.bin state is_decrypted=true decrypted=true
+cb_5770.bin header magic=0x4342 version=5770 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x8E40
+cb_5770.bin fields console_type=1 console_sequence=5 sequence_allow=0x0018
+cb_5770.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_5770.bin cb.requires_cpu_key_for_cd false
+cb_5770.bin cb.rgh3_v1 patched=false sha1=0de82668636e8160d12d66c264edb27320509297
+cb_5770.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=b4eb329754b2840fa52e6607d9c4b00f342f4d3b derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=c477adebbdd53e57c752c753b7d0b7c5dc7ed033
+cb_5770.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=67d63a73e091a0609019ae85b58700080e731c4c digest=3895a29b466f8294776d4e64e7095c94
+cb_5771.bin input size=0x9340 sha1=ba0b3390c2924f6c27c47daec1bbd76451aacde4
+cb_5771.bin parse ok
+cb_5771.bin serialize identity=yes size=0x9340 sha1=ba0b3390c2924f6c27c47daec1bbd76451aacde4
+cb_5771.bin state is_decrypted=true decrypted=true
+cb_5771.bin header magic=0x4342 version=5771 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9340
+cb_5771.bin fields console_type=1 console_sequence=7 sequence_allow=0x0058
+cb_5771.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_5771.bin cb.requires_cpu_key_for_cd false
+cb_5771.bin cb.rgh3_v1 patched=false sha1=ba0b3390c2924f6c27c47daec1bbd76451aacde4
+cb_5771.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=46d147a11d05b495e40ebf00955890b8e0ec897c derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=ebe739529965c4099283b304b8bcb86b80ad17ed
+cb_5771.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=3772f8a6fb7d2be5437d6358514e4a7c00012fdc digest=3895a29b466f8294776d4e64e7095c94
+cb_6712.bin input size=0x8E60 sha1=b7886d93e4d1e84fae8d9315f5b5107401726ec0
+cb_6712.bin parse ok
+cb_6712.bin serialize identity=yes size=0x8E60 sha1=b7886d93e4d1e84fae8d9315f5b5107401726ec0
+cb_6712.bin state is_decrypted=true decrypted=true
+cb_6712.bin header magic=0x4342 version=6712 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x8E60
+cb_6712.bin fields console_type=1 console_sequence=5 sequence_allow=0x0010
+cb_6712.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_6712.bin cb.requires_cpu_key_for_cd false
+cb_6712.bin cb.rgh3_v1 patched=false sha1=b7886d93e4d1e84fae8d9315f5b5107401726ec0
+cb_6712.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=9e764bf5e4c6a80d821a3cd02c780f6590a3f16e derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=39604ac03bee8c65ecdd480beed1cc5160a38184
+cb_6712.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=217d4b7ccba97c64b38472e1fd357ead25e5c025 digest=3895a29b466f8294776d4e64e7095c94
+cb_6723.bin input size=0x9550 sha1=b3deabc76da1ad08b22ea29c775ca1c3c7548b59
+cb_6723.bin parse ok
+cb_6723.bin serialize identity=yes size=0x9550 sha1=b3deabc76da1ad08b22ea29c775ca1c3c7548b59
+cb_6723.bin state is_decrypted=true decrypted=true
+cb_6723.bin header magic=0x4342 version=6723 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9550
+cb_6723.bin fields console_type=1 console_sequence=5 sequence_allow=0x0010
+cb_6723.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_6723.bin cb.requires_cpu_key_for_cd false
+cb_6723.bin cb.rgh3_v1 patched=false sha1=b3deabc76da1ad08b22ea29c775ca1c3c7548b59
+cb_6723.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=b5ff937d6548e4ca3b755e14a694dd9ffc7605f8 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=c7e527c2892b17e096a862510aa58b0fc2a46d00
+cb_6723.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=f5033524c30dc82659d1400c5572de17595bbdb2 digest=3895a29b466f8294776d4e64e7095c94
+cb_6750.bin input size=0x9A40 sha1=0d0ad86bf311ff3588c0d5e9a03aedb47bcec81d
+cb_6750.bin parse ok
+cb_6750.bin serialize identity=yes size=0x9A40 sha1=0d0ad86bf311ff3588c0d5e9a03aedb47bcec81d
+cb_6750.bin state is_decrypted=true decrypted=true
+cb_6750.bin header magic=0x4342 version=6750 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9A40
+cb_6750.bin fields console_type=1 console_sequence=7 sequence_allow=0x0050
+cb_6750.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_6750.bin cb.requires_cpu_key_for_cd false
+cb_6750.bin cb.rgh3_v1 patched=false sha1=0d0ad86bf311ff3588c0d5e9a03aedb47bcec81d
+cb_6750.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=e72347974df0bafa3bdd410f38d94bab69e56537 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=5b5dcfaa60eb42e74cae6b3d4a63093f384bb96c
+cb_6750.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=9e556cf48a3b6ffc40b3a4071e9a333a426f129a digest=3895a29b466f8294776d4e64e7095c94
+cb_6751.bin input size=0x9380 sha1=5dd1be6e7033fdc7504eab9cf821e0b1eb4502bc
+cb_6751.bin parse ok
+cb_6751.bin serialize identity=yes size=0x9380 sha1=5dd1be6e7033fdc7504eab9cf821e0b1eb4502bc
+cb_6751.bin state is_decrypted=true decrypted=true
+cb_6751.bin header magic=0x4342 version=6751 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9380
+cb_6751.bin fields console_type=1 console_sequence=7 sequence_allow=0x0050
+cb_6751.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_6751.bin cb.requires_cpu_key_for_cd false
+cb_6751.bin cb.rgh3_v1 patched=false sha1=5dd1be6e7033fdc7504eab9cf821e0b1eb4502bc
+cb_6751.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=47103741bfa95dcc5ce09f212257bce15ebf179f derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=6ee31c126f9bedc5cb248e3535b2f29e55e6e77b
+cb_6751.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=f5a4f201c1d8ad1e1044d02063e3e28e07af5706 digest=3895a29b466f8294776d4e64e7095c94
+cb_7373.bin input size=0x9720 sha1=cfd779928f475601d7199bb682f1dd093811c0b6
+cb_7373.bin parse ok
+cb_7373.bin serialize identity=yes size=0x9720 sha1=cfd779928f475601d7199bb682f1dd093811c0b6
+cb_7373.bin state is_decrypted=true decrypted=true
+cb_7373.bin header magic=0x4342 version=7373 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9720
+cb_7373.bin fields console_type=1 console_sequence=7 sequence_allow=0x005B
+cb_7373.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_7373.bin cb.requires_cpu_key_for_cd false
+cb_7373.bin cb.rgh3_v1 patched=false sha1=cfd779928f475601d7199bb682f1dd093811c0b6
+cb_7373.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=de60fe871ea7ad84ef7761e8a315d1ccc90818a6 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=679787caa603cac95253c05df4388e4da7100453
+cb_7373.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=8b21650c979f0d3bbb22da626126d6090e8b5f46 digest=3895a29b466f8294776d4e64e7095c94
+cb_7375.bin input size=0x9720 sha1=629d8a803c0f58055007cddddc0dfcf88e1e5db8
+cb_7375.bin parse ok
+cb_7375.bin serialize identity=yes size=0x9720 sha1=629d8a803c0f58055007cddddc0dfcf88e1e5db8
+cb_7375.bin state is_decrypted=true decrypted=true
+cb_7375.bin header magic=0x4342 version=7375 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9720
+cb_7375.bin fields console_type=1 console_sequence=7 sequence_allow=0x007B
+cb_7375.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_7375.bin cb.requires_cpu_key_for_cd false
+cb_7375.bin cb.rgh3_v1 patched=false sha1=629d8a803c0f58055007cddddc0dfcf88e1e5db8
+cb_7375.bin cb.crypt_1bl nonce=kept encrypt=ok decrypted=false sha1=a18ba6bb84ba5f5b73616ce53be732d7d984327c derived_sha1=c7f0d665ddb086644ef1aea80c47521fea6129dc decrypt=ok decrypted=true sha1=629d8a803c0f58055007cddddc0dfcf88e1e5db8
+cb_7375.bin cb.encrypt_retail nonce=kept result=ok decrypted=false sha1=cafcde20939b23bb4562af0b954548c48420dd4e digest=ed5b6d4cef6f0ca594da0c54ef417db1
+cb_8192.bin input size=0x9220 sha1=3b406f6b3547a7e6f98dcc0d4d5348860ac7a9c3
+cb_8192.bin parse ok
+cb_8192.bin serialize identity=yes size=0x9220 sha1=3b406f6b3547a7e6f98dcc0d4d5348860ac7a9c3
+cb_8192.bin state is_decrypted=true decrypted=true
+cb_8192.bin header magic=0x4342 version=8192 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9220
+cb_8192.bin fields console_type=1 console_sequence=5 sequence_allow=0x001B
+cb_8192.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cb_8192.bin cb.requires_cpu_key_for_cd false
+cb_8192.bin cb.rgh3_v1 patched=false sha1=3b406f6b3547a7e6f98dcc0d4d5348860ac7a9c3
+cb_8192.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=88e5604abf1f29640b38d82b30e9a1966640c511 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=1355b2371e0f6f32d60f14b72c34d59838b81f9b
+cb_8192.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=82c262ea593e52451c6fa31fff88d2a831858370 digest=3895a29b466f8294776d4e64e7095c94
+cba_13121.bin input size=0x1AF0 sha1=e2f294b606eb50f27a922f83638d8d5cc3950e6e
+cba_13121.bin parse ok
+cba_13121.bin serialize identity=yes size=0x1AF0 sha1=e2f294b606eb50f27a922f83638d8d5cc3950e6e
+cba_13121.bin state is_decrypted=true decrypted=true
+cba_13121.bin header magic=0x4342 version=13121 pairing=0x0000 flags=0x0800 entrypoint=0x000003D0 size=0x1AF0
+cba_13121.bin fields console_type=0 console_sequence=0 sequence_allow=0x0000
+cba_13121.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_13121.bin cb.requires_cpu_key_for_cd false
+cba_13121.bin cb.rgh3_v1 patched=false sha1=e2f294b606eb50f27a922f83638d8d5cc3950e6e
+cba_13121.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=fd06f012447a01ab56d1dfb0cfa2bff6d5772bcf derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=74b0329ab4a3d1c0c6d05feeef5e7190b2b4b8ca
+cba_13121.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=4a538cd4e21628260a9631f31aadd82ac22f6b9d digest=3895a29b466f8294776d4e64e7095c94
+cba_13180.bin input size=0x1FC0 sha1=5b117db0dfc7af5dc7ce7babe0c8a0ee6f85efd8
+cba_13180.bin parse ok
+cba_13180.bin serialize identity=yes size=0x1FC0 sha1=5b117db0dfc7af5dc7ce7babe0c8a0ee6f85efd8
+cba_13180.bin state is_decrypted=true decrypted=true
+cba_13180.bin header magic=0x4342 version=13180 pairing=0x0000 flags=0x0800 entrypoint=0x000003E0 size=0x1FC0
+cba_13180.bin fields console_type=3 console_sequence=3 sequence_allow=0x0006
+cba_13180.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_13180.bin cb.requires_cpu_key_for_cd false
+cba_13180.bin cb.rgh3_v1 patched=false sha1=5b117db0dfc7af5dc7ce7babe0c8a0ee6f85efd8
+cba_13180.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=554f08d3a595a39825d67cc4076d94cf576e1649 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=93ece85e6c4963e929155aaf236b379750608605
+cba_13180.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=a7a6c4ed2575439a861f3b943506b73cc09404f8 digest=3895a29b466f8294776d4e64e7095c94
+cba_13181.bin input size=0x2000 sha1=7aa0be2c1a0923444dadd1c4dc5bd06cb92814d6
+cba_13181.bin parse ok
+cba_13181.bin serialize identity=yes size=0x2000 sha1=7aa0be2c1a0923444dadd1c4dc5bd06cb92814d6
+cba_13181.bin state is_decrypted=true decrypted=true
+cba_13181.bin header magic=0x4342 version=13181 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_13181.bin fields console_type=3 console_sequence=4 sequence_allow=0x000E
+cba_13181.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_13181.bin cb.requires_cpu_key_for_cd false
+cba_13181.bin cb.rgh3_v1 patched=false sha1=7aa0be2c1a0923444dadd1c4dc5bd06cb92814d6
+cba_13181.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=55bf000161d53494c6cdd4280b450a6a5f56ddb4 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=a9fc0b2403bc7812aeaeb74f98879015f6b78fbf
+cba_13181.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=2ba4591ed10d9b9ecd973087084f180d6d1de468 digest=3895a29b466f8294776d4e64e7095c94
+cba_13182.bin input size=0x2000 sha1=434b0a3a60b212aa7e486270f2ac61f525898966
+cba_13182.bin parse ok
+cba_13182.bin serialize identity=yes size=0x2000 sha1=434b0a3a60b212aa7e486270f2ac61f525898966
+cba_13182.bin state is_decrypted=true decrypted=true
+cba_13182.bin header magic=0x4342 version=13182 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_13182.bin fields console_type=3 console_sequence=4 sequence_allow=0x000E
+cba_13182.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_13182.bin cb.requires_cpu_key_for_cd false
+cba_13182.bin cb.rgh3_v1 patched=false sha1=434b0a3a60b212aa7e486270f2ac61f525898966
+cba_13182.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=72bfb78c3a7bc078abca4ed531ac72875e793a1e derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=bdd503c4f2bece4f159724b7025a8e08999e8c1f
+cba_13182.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=8fcbd78d86b93c943aeba3dc7b82eba549f9b0a7 digest=3895a29b466f8294776d4e64e7095c94
+cba_16128.bin input size=0x2000 sha1=a34cd63cde92673de35048e578cb53794d257596
+cba_16128.bin parse ok
+cba_16128.bin serialize identity=yes size=0x2000 sha1=a34cd63cde92673de35048e578cb53794d257596
+cba_16128.bin state is_decrypted=true decrypted=true
+cba_16128.bin header magic=0x4342 version=16128 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_16128.bin fields console_type=3 console_sequence=5 sequence_allow=0x0010
+cba_16128.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_16128.bin cb.requires_cpu_key_for_cd false
+cba_16128.bin cb.rgh3_v1 patched=false sha1=a34cd63cde92673de35048e578cb53794d257596
+cba_16128.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=180e935338cfa1a4804d4193ea364a7f7a58be37 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=948c0689e89a5d3c40dbb9490040104ab8341138
+cba_16128.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=c31b38136504340779e1f615aa7184bbc6046f0d digest=3895a29b466f8294776d4e64e7095c94
+cba_1925.bin input size=0x1FC0 sha1=194a62ccb8bd8093ef55614014b838208edf38c0
+cba_1925.bin parse ok
+cba_1925.bin serialize identity=yes size=0x1FC0 sha1=194a62ccb8bd8093ef55614014b838208edf38c0
+cba_1925.bin state is_decrypted=true decrypted=true
+cba_1925.bin header magic=0x4342 version=1925 pairing=0x0000 flags=0x0800 entrypoint=0x000003E0 size=0x1FC0
+cba_1925.bin fields console_type=1 console_sequence=9 sequence_allow=0x0123
+cba_1925.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_1925.bin cb.requires_cpu_key_for_cd false
+cba_1925.bin cb.rgh3_v1 patched=false sha1=194a62ccb8bd8093ef55614014b838208edf38c0
+cba_1925.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=21b72fc83b0a0654c1ea0e0c88de0b698b0c5f8b derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=460b3782665f9b7dc479c018ef7ec2d34b7a71e2
+cba_1925.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=d66f4fa9d1785a7006ba93f934d29cd8ad033dbf digest=3895a29b466f8294776d4e64e7095c94
+cba_1926.bin input size=0x1FC0 sha1=82aa42f07f42a9a4eccdc030dbdb55227576a1b5
+cba_1926.bin parse ok
+cba_1926.bin serialize identity=yes size=0x1FC0 sha1=82aa42f07f42a9a4eccdc030dbdb55227576a1b5
+cba_1926.bin state is_decrypted=true decrypted=true
+cba_1926.bin header magic=0x4342 version=1926 pairing=0x0000 flags=0x0800 entrypoint=0x000003E0 size=0x1FC0
+cba_1926.bin fields console_type=1 console_sequence=10 sequence_allow=0x03FB
+cba_1926.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_1926.bin cb.requires_cpu_key_for_cd false
+cba_1926.bin cb.rgh3_v1 patched=false sha1=82aa42f07f42a9a4eccdc030dbdb55227576a1b5
+cba_1926.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=a53f0c53bb6c3dc76b3e107b92146beb45766080 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=0ffa42e895dd0d1a6d80eebb8f4d347de7ffcfa6
+cba_1926.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=27a2977fa4d84c3e53c3bd15d3d0a4cbd539163d digest=3895a29b466f8294776d4e64e7095c94
+cba_1927.bin input size=0x2000 sha1=9f5a4f1fab0c4ae4f5a1c07c1027ba107cad9dfa
+cba_1927.bin parse ok
+cba_1927.bin serialize identity=yes size=0x2000 sha1=9f5a4f1fab0c4ae4f5a1c07c1027ba107cad9dfa
+cba_1927.bin state is_decrypted=true decrypted=true
+cba_1927.bin header magic=0x4342 version=1927 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_1927.bin fields console_type=1 console_sequence=11 sequence_allow=0x0523
+cba_1927.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_1927.bin cb.requires_cpu_key_for_cd false
+cba_1927.bin cb.rgh3_v1 patched=false sha1=9f5a4f1fab0c4ae4f5a1c07c1027ba107cad9dfa
+cba_1927.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=894dca5ac377784b11e28689efd9de3885455077 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=a51b4e97cdf901239a1cd025ddd56af4af6f79ea
+cba_1927.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=84c7484c4f963a9efe4525f4e64b6a5e723079b1 digest=3895a29b466f8294776d4e64e7095c94
+cba_1928.bin input size=0x2000 sha1=bae6ba7ccc5e8537f19cf084919e9305d140d423
+cba_1928.bin parse ok
+cba_1928.bin serialize identity=yes size=0x2000 sha1=bae6ba7ccc5e8537f19cf084919e9305d140d423
+cba_1928.bin state is_decrypted=true decrypted=true
+cba_1928.bin header magic=0x4342 version=1928 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_1928.bin fields console_type=1 console_sequence=12 sequence_allow=0x0FFB
+cba_1928.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_1928.bin cb.requires_cpu_key_for_cd false
+cba_1928.bin cb.rgh3_v1 patched=false sha1=bae6ba7ccc5e8537f19cf084919e9305d140d423
+cba_1928.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=60b7f1e0701f4323dc43d632781d807894b4250e derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=0e872716a30082be7224b4d31e41784888b35c04
+cba_1928.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=a0d7b8914d970c63ec6cae3ddb9c55782a986da1 digest=3895a29b466f8294776d4e64e7095c94
+cba_1940.bin input size=0x6720 sha1=7873be6305dc807aecd1f96dbc638df7a6d32e6a
+cba_1940.bin parse ok
+cba_1940.bin serialize identity=yes size=0x6720 sha1=7873be6305dc807aecd1f96dbc638df7a6d32e6a
+cba_1940.bin state is_decrypted=true decrypted=true
+cba_1940.bin header magic=0x4342 version=1940 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x6720
+cba_1940.bin fields console_type=1 console_sequence=6 sequence_allow=0x0023
+cba_1940.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_1940.bin cb.requires_cpu_key_for_cd false
+cba_1940.bin cb.rgh3_v1 patched=false sha1=7873be6305dc807aecd1f96dbc638df7a6d32e6a
+cba_1940.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=da5778ad7344821deef50ec265d21fa4063fdd4e derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=12da6c7df7b96afad70fcf6ce9ab8879888f2d24
+cba_1940.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=d8b7eed419bb1fc17139cd351b186e21af96be28 digest=3895a29b466f8294776d4e64e7095c94
+cba_1941.bin input size=0x1FC0 sha1=bdc1551078a321f672da558b76a1d6f665b2de13
+cba_1941.bin parse ok
+cba_1941.bin serialize identity=yes size=0x1FC0 sha1=bdc1551078a321f672da558b76a1d6f665b2de13
+cba_1941.bin state is_decrypted=true decrypted=true
+cba_1941.bin header magic=0x4342 version=1941 pairing=0x0000 flags=0x0800 entrypoint=0x000003E0 size=0x1FC0
+cba_1941.bin fields console_type=1 console_sequence=9 sequence_allow=0x0123
+cba_1941.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_1941.bin cb.requires_cpu_key_for_cd false
+cba_1941.bin cb.rgh3_v1 patched=false sha1=bdc1551078a321f672da558b76a1d6f665b2de13
+cba_1941.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=13a487f7e02e27c310706cd4f25965fc46009142 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=bec99df2acc7163f8e4e8686af6bd725127d3964
+cba_1941.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=384eeab8d2a3daddfd613991662e429575645757 digest=3895a29b466f8294776d4e64e7095c94
+cba_1942.bin input size=0x2000 sha1=f161c87727e3ee66d575940246b2fd44fa1aed69
+cba_1942.bin parse ok
+cba_1942.bin serialize identity=yes size=0x2000 sha1=f161c87727e3ee66d575940246b2fd44fa1aed69
+cba_1942.bin state is_decrypted=true decrypted=true
+cba_1942.bin header magic=0x4342 version=1942 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_1942.bin fields console_type=1 console_sequence=11 sequence_allow=0x0523
+cba_1942.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_1942.bin cb.requires_cpu_key_for_cd false
+cba_1942.bin cb.rgh3_v1 patched=false sha1=f161c87727e3ee66d575940246b2fd44fa1aed69
+cba_1942.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=e73f1f7e5d51df70949b0badcb6df5cbfa221d41 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=2129bba61fb4b6c01d2183ac4514f4fb4e2de853
+cba_1942.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=bb62109ab252671fed0d922d351ec24aeecdad34 digest=3895a29b466f8294776d4e64e7095c94
+cba_4559.bin input size=0x1FC0 sha1=e4d24d63f14c0a271d390a45758c6dee87e2dee8
+cba_4559.bin parse ok
+cba_4559.bin serialize identity=yes size=0x1FC0 sha1=e4d24d63f14c0a271d390a45758c6dee87e2dee8
+cba_4559.bin state is_decrypted=true decrypted=true
+cba_4559.bin header magic=0x4342 version=4559 pairing=0x0000 flags=0x0800 entrypoint=0x000003E0 size=0x1FC0
+cba_4559.bin fields console_type=1 console_sequence=9 sequence_allow=0x0124
+cba_4559.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_4559.bin cb.requires_cpu_key_for_cd false
+cba_4559.bin cb.rgh3_v1 patched=false sha1=e4d24d63f14c0a271d390a45758c6dee87e2dee8
+cba_4559.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=352531a6eaf33783a58b7c1fa81d18d6a4ac7e1c derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=45648f78523ecaa95a3600a938229630a430da6f
+cba_4559.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=60437da7eafa015be0224545dc4fb5517e8916e4 digest=3895a29b466f8294776d4e64e7095c94
+cba_4560.bin input size=0x1FC0 sha1=6dc083412edd178a2b534058e5ba82d240d9f59d
+cba_4560.bin parse ok
+cba_4560.bin serialize identity=yes size=0x1FC0 sha1=6dc083412edd178a2b534058e5ba82d240d9f59d
+cba_4560.bin state is_decrypted=true decrypted=true
+cba_4560.bin header magic=0x4342 version=4560 pairing=0x0000 flags=0x0800 entrypoint=0x000003E0 size=0x1FC0
+cba_4560.bin fields console_type=1 console_sequence=10 sequence_allow=0x03FC
+cba_4560.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_4560.bin cb.requires_cpu_key_for_cd false
+cba_4560.bin cb.rgh3_v1 patched=false sha1=6dc083412edd178a2b534058e5ba82d240d9f59d
+cba_4560.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=ec04189e2889f8a0442dd9b398db81119f226236 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=07548a4ea585e8993f35afdf87dc5208a0cea6d6
+cba_4560.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=510159a8e204bf6acc02d858b469008989328d55 digest=3895a29b466f8294776d4e64e7095c94
+cba_4561.bin input size=0x2000 sha1=d918b4cac91803afef6af4889fb4a1091414cc2c
+cba_4561.bin parse ok
+cba_4561.bin serialize identity=yes size=0x2000 sha1=d918b4cac91803afef6af4889fb4a1091414cc2c
+cba_4561.bin state is_decrypted=true decrypted=true
+cba_4561.bin header magic=0x4342 version=4561 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_4561.bin fields console_type=1 console_sequence=11 sequence_allow=0x0524
+cba_4561.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_4561.bin cb.requires_cpu_key_for_cd false
+cba_4561.bin cb.rgh3_v1 patched=false sha1=d918b4cac91803afef6af4889fb4a1091414cc2c
+cba_4561.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=14ff174ebe10edb6644942d9d40f1e4d766fe618 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=1b6e394187eaeea687dd8fb87a0ad3d65588a4eb
+cba_4561.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=95d0c365d1580025902c022dbc1ba554f338e236 digest=3895a29b466f8294776d4e64e7095c94
+cba_4562.bin input size=0x2000 sha1=8e87cd33c96fb1a758d0a13d05b9f1fa10859f68
+cba_4562.bin parse ok
+cba_4562.bin serialize identity=yes size=0x2000 sha1=8e87cd33c96fb1a758d0a13d05b9f1fa10859f68
+cba_4562.bin state is_decrypted=true decrypted=true
+cba_4562.bin header magic=0x4342 version=4562 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_4562.bin fields console_type=1 console_sequence=12 sequence_allow=0x0FFC
+cba_4562.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_4562.bin cb.requires_cpu_key_for_cd false
+cba_4562.bin cb.rgh3_v1 patched=false sha1=8e87cd33c96fb1a758d0a13d05b9f1fa10859f68
+cba_4562.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=12b6a73bbb474280a9d19b1a36979b46344e27f6 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=df192e7658ded3ce588cfb80e2a1a503821829b5
+cba_4562.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=56f6cd0072cbca612dcc2f2fafcc309b144bafca digest=3895a29b466f8294776d4e64e7095c94
+cba_4569.bin input size=0x2000 sha1=bd2a0bdc3e7d8d41ab2aaa55b7e55c7810829c14
+cba_4569.bin parse ok
+cba_4569.bin serialize identity=yes size=0x2000 sha1=bd2a0bdc3e7d8d41ab2aaa55b7e55c7810829c14
+cba_4569.bin state is_decrypted=true decrypted=true
+cba_4569.bin header magic=0x4342 version=4569 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_4569.bin fields console_type=1 console_sequence=12 sequence_allow=0x0FFC
+cba_4569.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_4569.bin cb.requires_cpu_key_for_cd false
+cba_4569.bin cb.rgh3_v1 patched=false sha1=bd2a0bdc3e7d8d41ab2aaa55b7e55c7810829c14
+cba_4569.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=d49eb6a5877951d1a3da5a5e8e86163dba98446a derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=b58edf4cd77bdd62a8bfb1a53e130870a20ffda2
+cba_4569.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=bd2c9bddd04f21652e49fe7c06c354465f2a1290 digest=3895a29b466f8294776d4e64e7095c94
+cba_4574.bin input size=0x2000 sha1=7fe809289923e4a1fbe1bdf28f1352b7368fe8e6
+cba_4574.bin parse ok
+cba_4574.bin serialize identity=yes size=0x2000 sha1=7fe809289923e4a1fbe1bdf28f1352b7368fe8e6
+cba_4574.bin state is_decrypted=true decrypted=true
+cba_4574.bin header magic=0x4342 version=4574 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_4574.bin fields console_type=1 console_sequence=11 sequence_allow=0x0524
+cba_4574.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_4574.bin cb.requires_cpu_key_for_cd false
+cba_4574.bin cb.rgh3_v1 patched=false sha1=7fe809289923e4a1fbe1bdf28f1352b7368fe8e6
+cba_4574.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=53a4f24d3d3e4570e0734640cc85479536cc52bd derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=a04931f96bf1ced0fc9ec521188e438da59b8f37
+cba_4574.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=069392f6ddf16d131be712cfda27b868eb74c7b2 digest=3895a29b466f8294776d4e64e7095c94
+cba_4575.bin input size=0x1FC0 sha1=c105f400d9416b5dcd51f3cf98942f52ea94dc09
+cba_4575.bin parse ok
+cba_4575.bin serialize identity=yes size=0x1FC0 sha1=c105f400d9416b5dcd51f3cf98942f52ea94dc09
+cba_4575.bin state is_decrypted=true decrypted=true
+cba_4575.bin header magic=0x4342 version=4575 pairing=0x0000 flags=0x0800 entrypoint=0x000003E0 size=0x1FC0
+cba_4575.bin fields console_type=1 console_sequence=10 sequence_allow=0x03FC
+cba_4575.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_4575.bin cb.requires_cpu_key_for_cd false
+cba_4575.bin cb.rgh3_v1 patched=false sha1=c105f400d9416b5dcd51f3cf98942f52ea94dc09
+cba_4575.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=170f011580b08fee79281bbc99061161f1ad3408 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=3faf2d79f6abed1ca4dd580fe11983ea762459b9
+cba_4575.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=179c864f753bdc97270fbe6cb6fb00ed020a7c0e digest=3895a29b466f8294776d4e64e7095c94
+cba_4576.bin input size=0x1FC0 sha1=a62e1d1272e130b87f53a00d11b5fa504a114d2e
+cba_4576.bin parse ok
+cba_4576.bin serialize identity=yes size=0x1FC0 sha1=a62e1d1272e130b87f53a00d11b5fa504a114d2e
+cba_4576.bin state is_decrypted=true decrypted=true
+cba_4576.bin header magic=0x4342 version=4576 pairing=0x0000 flags=0x0800 entrypoint=0x000003E0 size=0x1FC0
+cba_4576.bin fields console_type=1 console_sequence=9 sequence_allow=0x0124
+cba_4576.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_4576.bin cb.requires_cpu_key_for_cd false
+cba_4576.bin cb.rgh3_v1 patched=false sha1=a62e1d1272e130b87f53a00d11b5fa504a114d2e
+cba_4576.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=418166d8c7715cbf0f7e025e2ef73bd15546c87c derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=58fbbe0f5fc797a8d34cec7d638d65008ebe987a
+cba_4576.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=724b40b7c2d031ea30fe3231183ae2af377f8710 digest=3895a29b466f8294776d4e64e7095c94
+cba_4577.bin input size=0x1AC0 sha1=e0cd131cc4de672f9dce5039b8840601f7324dbf
+cba_4577.bin parse ok
+cba_4577.bin serialize identity=yes size=0x1AC0 sha1=e0cd131cc4de672f9dce5039b8840601f7324dbf
+cba_4577.bin state is_decrypted=true decrypted=true
+cba_4577.bin header magic=0x4342 version=4577 pairing=0x0000 flags=0x0800 entrypoint=0x000003C0 size=0x1AC0
+cba_4577.bin fields console_type=1 console_sequence=8 sequence_allow=0x00FC
+cba_4577.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_4577.bin cb.requires_cpu_key_for_cd false
+cba_4577.bin cb.rgh3_v1 patched=false sha1=e0cd131cc4de672f9dce5039b8840601f7324dbf
+cba_4577.bin cb.crypt_1bl nonce=kept encrypt=ok decrypted=false sha1=a075ad127108f75f78e12defbd1392e5bb8d512c derived_sha1=ebb18e6e93746eec9c1feb1d6a22385d14a0148b decrypt=ok decrypted=true sha1=e0cd131cc4de672f9dce5039b8840601f7324dbf
+cba_4577.bin cb.encrypt_retail nonce=kept result=ok decrypted=false sha1=f3686ba2c492e03facb041a1fadfebb93e005b06 digest=a288e5cb1a5ccaf573b00aaebd0ed43c
+cba_5772.bin input size=0x1AC0 sha1=f5293843442d7cedeeecd622fa3e069fb0152090
+cba_5772.bin parse ok
+cba_5772.bin serialize identity=yes size=0x1AC0 sha1=f5293843442d7cedeeecd622fa3e069fb0152090
+cba_5772.bin state is_decrypted=true decrypted=true
+cba_5772.bin header magic=0x4342 version=5772 pairing=0x0000 flags=0x0800 entrypoint=0x000003C0 size=0x1AC0
+cba_5772.bin fields console_type=1 console_sequence=8 sequence_allow=0x00D8
+cba_5772.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_5772.bin cb.requires_cpu_key_for_cd false
+cba_5772.bin cb.rgh3_v1 patched=false sha1=f5293843442d7cedeeecd622fa3e069fb0152090
+cba_5772.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=c84f34b844edd15acb87d55689f7efd746f28052 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=c07c6ddfc909dbdc38b820ab5f871e181b234a2a
+cba_5772.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=14531e24702e8687aff0c846c2beed26e9b55bb2 digest=3895a29b466f8294776d4e64e7095c94
+cba_5773.bin input size=0x1FC0 sha1=0782ea072690bc3ab45ca601eed3ef09a7b3449e
+cba_5773.bin parse ok
+cba_5773.bin serialize identity=yes size=0x1FC0 sha1=0782ea072690bc3ab45ca601eed3ef09a7b3449e
+cba_5773.bin state is_decrypted=true decrypted=true
+cba_5773.bin header magic=0x4342 version=5773 pairing=0x0000 flags=0x0800 entrypoint=0x000003E0 size=0x1FC0
+cba_5773.bin fields console_type=1 console_sequence=10 sequence_allow=0x02D8
+cba_5773.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_5773.bin cb.requires_cpu_key_for_cd false
+cba_5773.bin cb.rgh3_v1 patched=false sha1=0782ea072690bc3ab45ca601eed3ef09a7b3449e
+cba_5773.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=daf115d9d6b3d4475363f8efdfbb44a7e16ad2c4 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=af2c62f9dcbf1c42a9c1f7d717c543f12a962d69
+cba_5773.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=5cf00fd5c98ede36b1d2e19a394c314ccd64a500 digest=3895a29b466f8294776d4e64e7095c94
+cba_5774.bin input size=0x2000 sha1=da58cb9cc9a8be61311ddfd588820bdd07c523c0
+cba_5774.bin parse ok
+cba_5774.bin serialize identity=yes size=0x2000 sha1=da58cb9cc9a8be61311ddfd588820bdd07c523c0
+cba_5774.bin state is_decrypted=true decrypted=true
+cba_5774.bin header magic=0x4342 version=5774 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_5774.bin fields console_type=1 console_sequence=12 sequence_allow=0x0AD8
+cba_5774.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_5774.bin cb.requires_cpu_key_for_cd false
+cba_5774.bin cb.rgh3_v1 patched=false sha1=da58cb9cc9a8be61311ddfd588820bdd07c523c0
+cba_5774.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=e9ca0e57bc43746b9cfb5e337d8c14f5f12527c9 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=42f4a1957c5a29fb809a75c961bb8a766e02957f
+cba_5774.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=4357ca07a6217be9386365c2f8af20879815624a digest=3895a29b466f8294776d4e64e7095c94
+cba_6752.bin input size=0x1AC0 sha1=fc6ee1632e857ca5cb52940d1f0cb478a4c5cd4f
+cba_6752.bin parse ok
+cba_6752.bin serialize identity=yes size=0x1AC0 sha1=fc6ee1632e857ca5cb52940d1f0cb478a4c5cd4f
+cba_6752.bin state is_decrypted=true decrypted=true
+cba_6752.bin header magic=0x4342 version=6752 pairing=0x0000 flags=0x0800 entrypoint=0x000003C0 size=0x1AC0
+cba_6752.bin fields console_type=1 console_sequence=8 sequence_allow=0x00D0
+cba_6752.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_6752.bin cb.requires_cpu_key_for_cd false
+cba_6752.bin cb.rgh3_v1 patched=false sha1=fc6ee1632e857ca5cb52940d1f0cb478a4c5cd4f
+cba_6752.bin cb.crypt_1bl nonce=kept encrypt=ok decrypted=false sha1=b40051a43295159a0f3d6adc775491cc77582551 derived_sha1=1e321c07148e85377fc3a399496a30c782175ad7 decrypt=ok decrypted=true sha1=fc6ee1632e857ca5cb52940d1f0cb478a4c5cd4f
+cba_6752.bin cb.encrypt_retail nonce=kept result=ok decrypted=false sha1=a48418ed7e35b07ad5d8ddffc2f48a95cfcd3a18 digest=156db2990ec9fe5077161b0bbf3371b6
+cba_6753.bin input size=0x1FC0 sha1=e99512df6fb1e2c227d5dab23a3b74358532d960
+cba_6753.bin parse ok
+cba_6753.bin serialize identity=yes size=0x1FC0 sha1=e99512df6fb1e2c227d5dab23a3b74358532d960
+cba_6753.bin state is_decrypted=true decrypted=true
+cba_6753.bin header magic=0x4342 version=6753 pairing=0x0000 flags=0x0800 entrypoint=0x000003E0 size=0x1FC0
+cba_6753.bin fields console_type=1 console_sequence=10 sequence_allow=0x02D0
+cba_6753.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_6753.bin cb.requires_cpu_key_for_cd false
+cba_6753.bin cb.rgh3_v1 patched=false sha1=e99512df6fb1e2c227d5dab23a3b74358532d960
+cba_6753.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=e5f2f5f4d94545401e2c2857970ced0bf4d0eaa3 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=5536e99e2ae9b6a59c9f008749e8bd21b356d5a3
+cba_6753.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=d8e8a3f847194940772d380c4f6018dd7e59d3ed digest=3895a29b466f8294776d4e64e7095c94
+cba_6754.bin input size=0x2000 sha1=7909643e59e7db4ba029d7dbedb833d167488758
+cba_6754.bin parse ok
+cba_6754.bin serialize identity=yes size=0x2000 sha1=7909643e59e7db4ba029d7dbedb833d167488758
+cba_6754.bin state is_decrypted=true decrypted=true
+cba_6754.bin header magic=0x4342 version=6754 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_6754.bin fields console_type=1 console_sequence=12 sequence_allow=0x0AD0
+cba_6754.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_6754.bin cb.requires_cpu_key_for_cd false
+cba_6754.bin cb.rgh3_v1 patched=false sha1=7909643e59e7db4ba029d7dbedb833d167488758
+cba_6754.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=e996a26e71f01e9e952c8a9718f704bf53010a20 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=ed4c7d139eda2661ed21628238260d492e0c0bea
+cba_6754.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=fa60741b99329c431cd9a24c8dfe4f34f3832c73 digest=3895a29b466f8294776d4e64e7095c94
+cba_7377.bin input size=0x1FC0 sha1=cd4844a8333c6cb51e5b2df8bcc2fb666762d981
+cba_7377.bin parse ok
+cba_7377.bin serialize identity=yes size=0x1FC0 sha1=cd4844a8333c6cb51e5b2df8bcc2fb666762d981
+cba_7377.bin state is_decrypted=true decrypted=true
+cba_7377.bin header magic=0x4342 version=7377 pairing=0x0000 flags=0x0800 entrypoint=0x000003E0 size=0x1FC0
+cba_7377.bin fields console_type=1 console_sequence=10 sequence_allow=0x03FB
+cba_7377.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_7377.bin cb.requires_cpu_key_for_cd false
+cba_7377.bin cb.rgh3_v1 patched=false sha1=cd4844a8333c6cb51e5b2df8bcc2fb666762d981
+cba_7377.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=f00373d1e494622493e7bf6fc1d202db7027b3ae derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=480b303d65617bd5f3d6e8e53c2d2fa3c0b4e59b
+cba_7377.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=d00a9626fd7bf5855ff85687c80fcda393ef2117 digest=3895a29b466f8294776d4e64e7095c94
+cba_7378.bin input size=0x2000 sha1=e67ab889b748e95f03d572c8ad93cded4f703c6e
+cba_7378.bin parse ok
+cba_7378.bin serialize identity=yes size=0x2000 sha1=e67ab889b748e95f03d572c8ad93cded4f703c6e
+cba_7378.bin state is_decrypted=true decrypted=true
+cba_7378.bin header magic=0x4342 version=7378 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_7378.bin fields console_type=1 console_sequence=12 sequence_allow=0x0FFB
+cba_7378.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_7378.bin cb.requires_cpu_key_for_cd false
+cba_7378.bin cb.rgh3_v1 patched=false sha1=e67ab889b748e95f03d572c8ad93cded4f703c6e
+cba_7378.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=82d6634050583b47a36d8bc0da7ef972f1901585 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=5c45fbe8f004cf8903cb8c36145b36cff7e928d6
+cba_7378.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=aa16e7c38e7fcdc6579b14d8152e683b16b8328a digest=3895a29b466f8294776d4e64e7095c94
+cba_9188.bin input size=0x1AC0 sha1=67dfb5775df1aecb16122d7a6ab4a5506b3829f9
+cba_9188.bin parse ok
+cba_9188.bin serialize identity=yes size=0x1AC0 sha1=67dfb5775df1aecb16122d7a6ab4a5506b3829f9
+cba_9188.bin state is_decrypted=true decrypted=true
+cba_9188.bin header magic=0x4342 version=9188 pairing=0x0000 flags=0x0800 entrypoint=0x000003C0 size=0x1AC0
+cba_9188.bin fields console_type=0 console_sequence=0 sequence_allow=0x0000
+cba_9188.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_9188.bin cb.requires_cpu_key_for_cd false
+cba_9188.bin cb.rgh3_v1 patched=false sha1=67dfb5775df1aecb16122d7a6ab4a5506b3829f9
+cba_9188.bin cb.crypt_1bl nonce=kept encrypt=ok decrypted=false sha1=38150d1647712887213c4e93b2aaabfc56a9d194 derived_sha1=7d290ede790da5f2e87b5ac5a565ea306048a558 decrypt=ok decrypted=true sha1=67dfb5775df1aecb16122d7a6ab4a5506b3829f9
+cba_9188.bin cb.encrypt_retail nonce=kept result=ok decrypted=false sha1=9883b477b98a0ff123968b7e321cad587d7659c6 digest=db9105870854d3a2a9925da39f5339c2
+cba_9188_mfg.bin input size=0x1AC0 sha1=0db4bca2d801455e660a41a462873e064ca40dda
+cba_9188_mfg.bin parse ok
+cba_9188_mfg.bin serialize identity=yes size=0x1AC0 sha1=0db4bca2d801455e660a41a462873e064ca40dda
+cba_9188_mfg.bin state is_decrypted=true decrypted=true
+cba_9188_mfg.bin header magic=0x4342 version=9188 pairing=0x0000 flags=0x0801 entrypoint=0x000003C0 size=0x1AC0
+cba_9188_mfg.bin fields console_type=0 console_sequence=0 sequence_allow=0x0000
+cba_9188_mfg.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_9188_mfg.bin cb.requires_cpu_key_for_cd false
+cba_9188_mfg.bin cb.rgh3_v1 patched=false sha1=0db4bca2d801455e660a41a462873e064ca40dda
+cba_9188_mfg.bin cb.crypt_1bl nonce=kept encrypt=ok decrypted=false sha1=81d49faabfb09b0509fb60a818e145c0e51ad418 derived_sha1=969ef86b7790fa1fb4365ece02d33d546c900f27 decrypt=ok decrypted=true sha1=0db4bca2d801455e660a41a462873e064ca40dda
+cba_9188_mfg.bin cb.encrypt_retail nonce=kept result=ok decrypted=false sha1=d3ed676690b67d3d43fbe0c2d1b56abfd3872bc4 digest=eab6049390ac700c833478a80058aee2
+cba_9230.bin input size=0x1FC0 sha1=94bb0ebe91de0a71170724e00e519d905b1179df
+cba_9230.bin parse ok
+cba_9230.bin serialize identity=yes size=0x1FC0 sha1=94bb0ebe91de0a71170724e00e519d905b1179df
+cba_9230.bin state is_decrypted=true decrypted=true
+cba_9230.bin header magic=0x4342 version=9230 pairing=0x0000 flags=0x0800 entrypoint=0x000003E0 size=0x1FC0
+cba_9230.bin fields console_type=3 console_sequence=3 sequence_allow=0x0005
+cba_9230.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_9230.bin cb.requires_cpu_key_for_cd false
+cba_9230.bin cb.rgh3_v1 patched=false sha1=94bb0ebe91de0a71170724e00e519d905b1179df
+cba_9230.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=c82a0851790ac4a7d6d866198caf0fd2b51b2ba7 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=ff6a3ec09bab1e2a099609529dd1810c2c93c7d4
+cba_9230.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=823bf3d8cfbe7405c5afc43c552fca073ac08f42 digest=3895a29b466f8294776d4e64e7095c94
+cba_9231.bin input size=0x2000 sha1=8585fd2eed04605104f3abcc511a39adc4031797
+cba_9231.bin parse ok
+cba_9231.bin serialize identity=yes size=0x2000 sha1=8585fd2eed04605104f3abcc511a39adc4031797
+cba_9231.bin state is_decrypted=true decrypted=true
+cba_9231.bin header magic=0x4342 version=9231 pairing=0x0000 flags=0x1800 entrypoint=0x000003E0 size=0x2000
+cba_9231.bin fields console_type=3 console_sequence=4 sequence_allow=0x000D
+cba_9231.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cba_9231.bin cb.requires_cpu_key_for_cd false
+cba_9231.bin cb.rgh3_v1 patched=false sha1=8585fd2eed04605104f3abcc511a39adc4031797
+cba_9231.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=b83a0f3f3e9a1f2f9965dc99bce4e0105358542f derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=f82ace306e65fdec07c5a3a3c33f250150617681
+cba_9231.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=679fbc6b6feafd644d1305f87d804a6eca7b0adf digest=3895a29b466f8294776d4e64e7095c94
+cbb_13121.bin input size=0x7B40 sha1=a33c48b284060c930d31d51cb0348783f337c08e
+cbb_13121.bin parse ok
+cbb_13121.bin serialize identity=yes size=0x7B40 sha1=a33c48b284060c930d31d51cb0348783f337c08e
+cbb_13121.bin state is_decrypted=true decrypted=true
+cbb_13121.bin header magic=0x4342 version=13121 pairing=0x0000 flags=0x0000 entrypoint=0x000003D0 size=0x7B40
+cbb_13121.bin fields console_type=3 console_sequence=2 sequence_allow=0x0002
+cbb_13121.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_13121.bin cb.requires_cpu_key_for_cd false
+cbb_13121.bin cb.rgh3_v1 patched=false sha1=a33c48b284060c930d31d51cb0348783f337c08e
+cbb_13121.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=a5bef6e726de735499d041c6a4065008a7e47479 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=c7b6f1c75779a6e3444376ecfca4b30d8ef01404
+cbb_13121.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=f5a27dfb45ff3e778fd2d0b69842e720552e4b7a derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=c7b6f1c75779a6e3444376ecfca4b30d8ef01404
+cbb_13121.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=0ce5492a268b9f3210d61aa0ebf2103c93fb45f8 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=c7b6f1c75779a6e3444376ecfca4b30d8ef01404
+cbb_13121.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=899ee013e40b3876746f0d9515a515642fab113f derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_13121.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=9cb772148ce89a7d1499faecf8696fee16246dc8 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_13121.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=0ce5492a268b9f3210d61aa0ebf2103c93fb45f8 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_13180.bin input size=0x7DF0 sha1=2e8cbc145870e8cbe7016cbeec3cda027adfabeb
+cbb_13180.bin parse ok
+cbb_13180.bin serialize identity=yes size=0x7DF0 sha1=2e8cbc145870e8cbe7016cbeec3cda027adfabeb
+cbb_13180.bin state is_decrypted=true decrypted=true
+cbb_13180.bin header magic=0x4342 version=13180 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x7DF0
+cbb_13180.bin fields console_type=3 console_sequence=3 sequence_allow=0x0006
+cbb_13180.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_13180.bin cb.requires_cpu_key_for_cd false
+cbb_13180.bin cb.rgh3_v1 patched=false sha1=2e8cbc145870e8cbe7016cbeec3cda027adfabeb
+cbb_13180.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=51d275314ced30538a399638b68a1ad6b0d7b6a8 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=bebcd4e128913a5ea64d65a08eba502829894748
+cbb_13180.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=bad81f31af845ebd42365f0edb32f4ed55a7f5bd derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=bebcd4e128913a5ea64d65a08eba502829894748
+cbb_13180.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=805f1d84c2602d5dd59ffea0b371f192586ae7a3 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=bebcd4e128913a5ea64d65a08eba502829894748
+cbb_13180.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=f10a9d14bc19646d070dddac4cff1d2ff8cd60ac derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_13180.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=1a87c42e88a277bee93efb71495a8783f44741d8 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_13180.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=805f1d84c2602d5dd59ffea0b371f192586ae7a3 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_13181.bin input size=0x7DF0 sha1=5052e31c20b610cf87f2ba4a1108c000dbe62553
+cbb_13181.bin parse ok
+cbb_13181.bin serialize identity=yes size=0x7DF0 sha1=5052e31c20b610cf87f2ba4a1108c000dbe62553
+cbb_13181.bin state is_decrypted=true decrypted=true
+cbb_13181.bin header magic=0x4342 version=13181 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x7DF0
+cbb_13181.bin fields console_type=3 console_sequence=4 sequence_allow=0x000E
+cbb_13181.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_13181.bin cb.requires_cpu_key_for_cd false
+cbb_13181.bin cb.rgh3_v1 patched=false sha1=5052e31c20b610cf87f2ba4a1108c000dbe62553
+cbb_13181.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=72f2b7c3dadaf674e3dabf8840dbbda23f379637 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=b62fe3a58aee604e2ec99214187dc7558b9a1d87
+cbb_13181.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=f787f5a9aadbbfcab385bfd75ee52e1fc37c513a derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=b62fe3a58aee604e2ec99214187dc7558b9a1d87
+cbb_13181.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=58c5cee0bb4aa66efab730119e629c74a6598deb derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=b62fe3a58aee604e2ec99214187dc7558b9a1d87
+cbb_13181.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=9473cea90701f64a73454342c9eccc19952c2e34 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_13181.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=3b3727b4195779437cf1816bbe83ae705891f485 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_13181.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=58c5cee0bb4aa66efab730119e629c74a6598deb derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_13182.bin input size=0x9080 sha1=0c32d6ca9216c7ca25d039e5558b23259c1dbbea
+cbb_13182.bin parse ok
+cbb_13182.bin serialize identity=yes size=0x9080 sha1=0c32d6ca9216c7ca25d039e5558b23259c1dbbea
+cbb_13182.bin state is_decrypted=true decrypted=true
+cbb_13182.bin header magic=0x4342 version=13182 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x9080
+cbb_13182.bin fields console_type=3 console_sequence=4 sequence_allow=0x000E
+cbb_13182.bin perbox a4adef00000000000000000000000000b7d7705e2ddcae87bc6b68a1c12675bd
+cbb_13182.bin cb.requires_cpu_key_for_cd true
+cbb_13182.bin cb.rgh3_v1 patched=false sha1=0c32d6ca9216c7ca25d039e5558b23259c1dbbea
+cbb_13182.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=kept encrypt=ok decrypted=false sha1=1f5725a6b2c3537612d2dafe13a3589d22d76594 derived_sha1=39dcbc9e5c8793de9b4a6c97f72205ab36929bcf decrypt=ok decrypted=true sha1=0c32d6ca9216c7ca25d039e5558b23259c1dbbea
+cbb_13182.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=kept encrypt=ok decrypted=false sha1=65d9bb67d4d2cd85138db34c917e2602113ad3fd derived_sha1=b6b85d0d39f3fd27a18f894e0e48e6906e06c2e3 decrypt=ok decrypted=true sha1=0c32d6ca9216c7ca25d039e5558b23259c1dbbea
+cbb_13182.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=kept encrypt=ok decrypted=false sha1=cecc70a93218011ef5dc37208173ff6751553972 derived_sha1=95638ee6aff2503f7a04ee338da6db02ac38450b decrypt=ok decrypted=true sha1=0c32d6ca9216c7ca25d039e5558b23259c1dbbea
+cbb_13182.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=kept result=ok decrypted=false sha1=030910a5a90d947abaa9e0bd14f5bc501b63bb08 derived_sha1=39dcbc9e5c8793de9b4a6c97f72205ab36929bcf digest=e3761944174ba62e744d5f03b73d2605
+cbb_13182.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=kept result=ok decrypted=false sha1=822dafa4efa39959683a69362a6ebaae7724bbc4 derived_sha1=b6b85d0d39f3fd27a18f894e0e48e6906e06c2e3 digest=8021778ceab69670d19a527e036153ff
+cbb_13182.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=kept result=ok decrypted=false sha1=e2cfae6cf73718cda6c5c9c2b9f1598bc1d17602 derived_sha1=95638ee6aff2503f7a04ee338da6db02ac38450b digest=00000000000000000000000000000000
+cbb_16128.bin input size=0x9080 sha1=ee3d5d158841919df35a9c8fd99bc782fbd34579
+cbb_16128.bin parse ok
+cbb_16128.bin serialize identity=yes size=0x9080 sha1=ee3d5d158841919df35a9c8fd99bc782fbd34579
+cbb_16128.bin state is_decrypted=true decrypted=true
+cbb_16128.bin header magic=0x4342 version=16128 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x9080
+cbb_16128.bin fields console_type=3 console_sequence=5 sequence_allow=0x0010
+cbb_16128.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_16128.bin cb.requires_cpu_key_for_cd false
+cbb_16128.bin cb.rgh3_v1 patched=false sha1=ee3d5d158841919df35a9c8fd99bc782fbd34579
+cbb_16128.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=a79817e35efbab3c02d8710d9b97ab3d41f8ee0d derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=a4ace1b38e615cb1ccc4c9cd4bfb9d1b4c188269
+cbb_16128.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=771996b6a8a8449649a4ca438d6f5a8be1eb13e0 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=a4ace1b38e615cb1ccc4c9cd4bfb9d1b4c188269
+cbb_16128.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=af79d32f7b54e8a72568a591dd9fa6f9770c502f derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=a4ace1b38e615cb1ccc4c9cd4bfb9d1b4c188269
+cbb_16128.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=6d508bcf380bdc323490ce3147eb050e61f1771a derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_16128.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=af5e7cd6d2ed7f096e48871665ee7b859ff04b40 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_16128.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=af79d32f7b54e8a72568a591dd9fa6f9770c502f derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_1925.bin input size=0x9BC0 sha1=06ab9dd7ad5b23ca294d88d645496373ff341a09
+cbb_1925.bin parse ok
+cbb_1925.bin serialize identity=yes size=0x9BC0 sha1=06ab9dd7ad5b23ca294d88d645496373ff341a09
+cbb_1925.bin state is_decrypted=true decrypted=true
+cbb_1925.bin header magic=0x4342 version=1925 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x9BC0
+cbb_1925.bin fields console_type=1 console_sequence=9 sequence_allow=0x0123
+cbb_1925.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_1925.bin cb.requires_cpu_key_for_cd false
+cbb_1925.bin cb.rgh3_v1 patched=false sha1=06ab9dd7ad5b23ca294d88d645496373ff341a09
+cbb_1925.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=4ac1645a1f1e03b917c494fb8ec97cad72936f5f derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=c66de40fb497143d5905a4fe869b7aa6a6f94dd2
+cbb_1925.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=6ffaefc09f9e3f93232d6534614bef69969d1d9c derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=c66de40fb497143d5905a4fe869b7aa6a6f94dd2
+cbb_1925.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=639d586f4f2e0cbf643d14041d7a46b7116d12da derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=c66de40fb497143d5905a4fe869b7aa6a6f94dd2
+cbb_1925.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=9d69ee8ab182f1db5f01ac0fb300a5abd1590411 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_1925.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=c748b75054add9086eff01156ea3e7ebd05675c9 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_1925.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=639d586f4f2e0cbf643d14041d7a46b7116d12da derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_1926.bin input size=0x9BC0 sha1=1a384f5bfba4dfff045e2f138f200da38a7d7fd9
+cbb_1926.bin parse ok
+cbb_1926.bin serialize identity=yes size=0x9BC0 sha1=1a384f5bfba4dfff045e2f138f200da38a7d7fd9
+cbb_1926.bin state is_decrypted=true decrypted=true
+cbb_1926.bin header magic=0x4342 version=1926 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x9BC0
+cbb_1926.bin fields console_type=1 console_sequence=10 sequence_allow=0x03FB
+cbb_1926.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_1926.bin cb.requires_cpu_key_for_cd false
+cbb_1926.bin cb.rgh3_v1 patched=false sha1=1a384f5bfba4dfff045e2f138f200da38a7d7fd9
+cbb_1926.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=4882aac9cdbf5278d3cbe3167706327aefc47ed3 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=4d81184ac8e5d3aefa49aa12f4c9bcc1aacf1ec4
+cbb_1926.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=31da2061ef498a8981f9d38bff88b77646cae311 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=4d81184ac8e5d3aefa49aa12f4c9bcc1aacf1ec4
+cbb_1926.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=c9eb8c8a8622d2a550beade844ae247a7253e7eb derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=4d81184ac8e5d3aefa49aa12f4c9bcc1aacf1ec4
+cbb_1926.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=7b7312fbf6d8196bfcd2c875697f78fb7c9de6ea derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_1926.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=e575c884d7fb4b1c81f56196a22ce640d0a6731d derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_1926.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=c9eb8c8a8622d2a550beade844ae247a7253e7eb derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_1927.bin input size=0x9BC0 sha1=ba3d3b05bfc54fd5214875001c8e47c6ec00cc8b
+cbb_1927.bin parse ok
+cbb_1927.bin serialize identity=yes size=0x9BC0 sha1=ba3d3b05bfc54fd5214875001c8e47c6ec00cc8b
+cbb_1927.bin state is_decrypted=true decrypted=true
+cbb_1927.bin header magic=0x4342 version=1927 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x9BC0
+cbb_1927.bin fields console_type=1 console_sequence=11 sequence_allow=0x0523
+cbb_1927.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_1927.bin cb.requires_cpu_key_for_cd false
+cbb_1927.bin cb.rgh3_v1 patched=false sha1=ba3d3b05bfc54fd5214875001c8e47c6ec00cc8b
+cbb_1927.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=57f345e8136f3e700f45599df41f0608199582eb derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=c7455cb79622b4bfaf977cdc296babfcfab84eb9
+cbb_1927.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=caa06a5cfb75e8edb4f68c1f8bbaf37712edb657 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=c7455cb79622b4bfaf977cdc296babfcfab84eb9
+cbb_1927.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=6abe2ecf5a003834d80e25d970e331513ffe1c26 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=c7455cb79622b4bfaf977cdc296babfcfab84eb9
+cbb_1927.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=e34494a015ab1194dd18cac7de262695f1de0a09 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_1927.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=36fbfa7c15812859008cffadbe2a92a26e40565d derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_1927.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=6abe2ecf5a003834d80e25d970e331513ffe1c26 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_1928.bin input size=0x9BC0 sha1=6f3875fb4ef04d6c33e9acfc6a4435bda39d5a73
+cbb_1928.bin parse ok
+cbb_1928.bin serialize identity=yes size=0x9BC0 sha1=6f3875fb4ef04d6c33e9acfc6a4435bda39d5a73
+cbb_1928.bin state is_decrypted=true decrypted=true
+cbb_1928.bin header magic=0x4342 version=1928 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x9BC0
+cbb_1928.bin fields console_type=1 console_sequence=12 sequence_allow=0x0FFB
+cbb_1928.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_1928.bin cb.requires_cpu_key_for_cd false
+cbb_1928.bin cb.rgh3_v1 patched=false sha1=6f3875fb4ef04d6c33e9acfc6a4435bda39d5a73
+cbb_1928.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=d1ded989945c7a30910a72cdb4c9f5e0bc067e55 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=4eb6108c7c0444b7409a1b4c2fcfe15cd1420a3b
+cbb_1928.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=a6d88a437ebfccf23f54eebb80b18f39e1d58a1d derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=4eb6108c7c0444b7409a1b4c2fcfe15cd1420a3b
+cbb_1928.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=c8e77c7ce1cfb4d6daa0e051c0e5dc405053387c derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=4eb6108c7c0444b7409a1b4c2fcfe15cd1420a3b
+cbb_1928.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=cbb07c0d6e3dc43a9a2448cdace647662165bc44 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_1928.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=54f634b6b538776826e6b9d27312d82d822b6634 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_1928.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=c8e77c7ce1cfb4d6daa0e051c0e5dc405053387c derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_1941.bin input size=0x6A90 sha1=06ca8e8e8da06bb517cfdf8709d021041b5458a4
+cbb_1941.bin parse ok
+cbb_1941.bin serialize identity=yes size=0x6A90 sha1=06ca8e8e8da06bb517cfdf8709d021041b5458a4
+cbb_1941.bin state is_decrypted=true decrypted=true
+cbb_1941.bin header magic=0x4342 version=1941 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x6A90
+cbb_1941.bin fields console_type=1 console_sequence=9 sequence_allow=0x0123
+cbb_1941.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_1941.bin cb.requires_cpu_key_for_cd false
+cbb_1941.bin cb.rgh3_v1 patched=false sha1=06ca8e8e8da06bb517cfdf8709d021041b5458a4
+cbb_1941.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=d963c0fa23bcd64684b90313ecb8eb10a4950abe derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=4404227758befbb6e8de2d9f84e01c9a49f5a7e5
+cbb_1941.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=79dd89650684942ba2d59e13678b20abd28b4fb1 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=4404227758befbb6e8de2d9f84e01c9a49f5a7e5
+cbb_1941.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=50d506ccb7b4b11116b01adfab06cb8280f113a1 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=4404227758befbb6e8de2d9f84e01c9a49f5a7e5
+cbb_1941.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=1cc263417760473ff87efa7def4404de3830c13c derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_1941.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=45df79b65c175a745ce7f2be38eac26298cde952 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_1941.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=50d506ccb7b4b11116b01adfab06cb8280f113a1 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_1942.bin input size=0x6A90 sha1=cd6cc8c093004c3c834339ec969dc9944076f6f0
+cbb_1942.bin parse ok
+cbb_1942.bin serialize identity=yes size=0x6A90 sha1=cd6cc8c093004c3c834339ec969dc9944076f6f0
+cbb_1942.bin state is_decrypted=true decrypted=true
+cbb_1942.bin header magic=0x4342 version=1942 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x6A90
+cbb_1942.bin fields console_type=1 console_sequence=11 sequence_allow=0x0523
+cbb_1942.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_1942.bin cb.requires_cpu_key_for_cd false
+cbb_1942.bin cb.rgh3_v1 patched=false sha1=cd6cc8c093004c3c834339ec969dc9944076f6f0
+cbb_1942.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=f36b99ee690c19b3d61621aaf41e17335408275b derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=8694c7f6a6585fe2413710d468aca3148ff07235
+cbb_1942.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=0fa5db495f83d638c7e8aba516158f13e91c2142 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=8694c7f6a6585fe2413710d468aca3148ff07235
+cbb_1942.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=6199d3ed4cccd45e90fd61349098ce4a4f8c5eff derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=8694c7f6a6585fe2413710d468aca3148ff07235
+cbb_1942.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=eff2d11d4c7f6a9272d54c44913c22c752253a5f derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_1942.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=7c99cba83b7acea152ea4b62af08402472644d27 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_1942.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=6199d3ed4cccd45e90fd61349098ce4a4f8c5eff derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_4559.bin input size=0x7720 sha1=e89beb0462f91434bf25aa6d5733cd5e9a87de05
+cbb_4559.bin parse ok
+cbb_4559.bin serialize identity=yes size=0x7720 sha1=e89beb0462f91434bf25aa6d5733cd5e9a87de05
+cbb_4559.bin state is_decrypted=true decrypted=true
+cbb_4559.bin header magic=0x4342 version=4559 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x7720
+cbb_4559.bin fields console_type=1 console_sequence=9 sequence_allow=0x0124
+cbb_4559.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_4559.bin cb.requires_cpu_key_for_cd false
+cbb_4559.bin cb.rgh3_v1 patched=false sha1=e89beb0462f91434bf25aa6d5733cd5e9a87de05
+cbb_4559.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=f677b2d257f63c916482bc341d74462251ba0420 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=231be927e666ff5bc3d0f92c92a1b17fd70d487f
+cbb_4559.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=859d1948177849ea16f1d0d75433d71ae73845c0 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=231be927e666ff5bc3d0f92c92a1b17fd70d487f
+cbb_4559.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=d33bd711b8b5008dc2cb6df31038a0993a1d7ed3 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=231be927e666ff5bc3d0f92c92a1b17fd70d487f
+cbb_4559.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=3296f700040dc7906dc50600560d2a938ccea05a derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_4559.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=db0480cf71c822cc069fc078295106baadcd62c3 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_4559.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=d33bd711b8b5008dc2cb6df31038a0993a1d7ed3 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_4560.bin input size=0x7720 sha1=bd6833274f4e6711d6b800f2e622d974302de813
+cbb_4560.bin parse ok
+cbb_4560.bin serialize identity=yes size=0x7720 sha1=bd6833274f4e6711d6b800f2e622d974302de813
+cbb_4560.bin state is_decrypted=true decrypted=true
+cbb_4560.bin header magic=0x4342 version=4560 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x7720
+cbb_4560.bin fields console_type=1 console_sequence=10 sequence_allow=0x03FC
+cbb_4560.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_4560.bin cb.requires_cpu_key_for_cd false
+cbb_4560.bin cb.rgh3_v1 patched=false sha1=bd6833274f4e6711d6b800f2e622d974302de813
+cbb_4560.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=3c1dc7c4689bcdd3adfeb2e0e92898ab06cebdc0 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=53cdb28c03e5000216a98f6f831cf641c14238d9
+cbb_4560.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=ec4288014e7e9b6de7e0919694f4f0f77fbe5c40 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=53cdb28c03e5000216a98f6f831cf641c14238d9
+cbb_4560.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=9e461915d87b98e1fbccf957a3a6d3d2de1fff49 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=53cdb28c03e5000216a98f6f831cf641c14238d9
+cbb_4560.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=c5f650f9c49faf4ef8985071a717ac900b541c80 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_4560.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=040d4ac0f08f24a52a0be83e7b8403b4fe165760 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_4560.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=9e461915d87b98e1fbccf957a3a6d3d2de1fff49 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_4561.bin input size=0x7720 sha1=3c74a36021c9202c3decd95dd644545e9ddbd7c1
+cbb_4561.bin parse ok
+cbb_4561.bin serialize identity=yes size=0x7720 sha1=3c74a36021c9202c3decd95dd644545e9ddbd7c1
+cbb_4561.bin state is_decrypted=true decrypted=true
+cbb_4561.bin header magic=0x4342 version=4561 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x7720
+cbb_4561.bin fields console_type=1 console_sequence=11 sequence_allow=0x0524
+cbb_4561.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_4561.bin cb.requires_cpu_key_for_cd false
+cbb_4561.bin cb.rgh3_v1 patched=false sha1=3c74a36021c9202c3decd95dd644545e9ddbd7c1
+cbb_4561.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=87cbcc2f5d72916ab7e6ad8c5b8844e6bc098256 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=111fa468114a1f8b7667bb7f9cdc4947bea7dc23
+cbb_4561.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=6f24e4064907a258b85832d22022a7c76a7373f3 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=111fa468114a1f8b7667bb7f9cdc4947bea7dc23
+cbb_4561.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=bb5aa5315a73a3c58a082b27a99f8e190d48a4fd derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=111fa468114a1f8b7667bb7f9cdc4947bea7dc23
+cbb_4561.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=b4b3e41cf6fb7ec7a67de455c2c5000e1ae0b671 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_4561.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=c92fc83ec42fd3bdfbf9143f266fecee4b4ff98a derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_4561.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=bb5aa5315a73a3c58a082b27a99f8e190d48a4fd derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_4562.bin input size=0x7720 sha1=a5e0c69baf133d70c8ecd1b0d7637444399d1c64
+cbb_4562.bin parse ok
+cbb_4562.bin serialize identity=yes size=0x7720 sha1=a5e0c69baf133d70c8ecd1b0d7637444399d1c64
+cbb_4562.bin state is_decrypted=true decrypted=true
+cbb_4562.bin header magic=0x4342 version=4562 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x7720
+cbb_4562.bin fields console_type=1 console_sequence=12 sequence_allow=0x0FFC
+cbb_4562.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_4562.bin cb.requires_cpu_key_for_cd false
+cbb_4562.bin cb.rgh3_v1 patched=false sha1=a5e0c69baf133d70c8ecd1b0d7637444399d1c64
+cbb_4562.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=acc05b2d648515e68d44a907a48f73cf092d45a5 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=79d83819b4affc539191adbed591e2c331c83e7a
+cbb_4562.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=cb0604d010f2e2cbaaaf347e36ad339e8339779d derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=79d83819b4affc539191adbed591e2c331c83e7a
+cbb_4562.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=7a596e920466d851f7a60688f668796cbea4c6aa derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=79d83819b4affc539191adbed591e2c331c83e7a
+cbb_4562.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=6c7185b80f0117b577a03a335c69bbc514eb55ff derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_4562.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=c896179fd96d3f59bd1a8c1260ccab5a01b61398 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_4562.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=7a596e920466d851f7a60688f668796cbea4c6aa derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_4569.bin input size=0x8260 sha1=a1f5ee232156ca9aa790cbd040416ae1e7d16077
+cbb_4569.bin parse ok
+cbb_4569.bin serialize identity=yes size=0x8260 sha1=a1f5ee232156ca9aa790cbd040416ae1e7d16077
+cbb_4569.bin state is_decrypted=true decrypted=true
+cbb_4569.bin header magic=0x4342 version=4569 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x8260
+cbb_4569.bin fields console_type=1 console_sequence=12 sequence_allow=0x0FFC
+cbb_4569.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_4569.bin cb.requires_cpu_key_for_cd false
+cbb_4569.bin cb.rgh3_v1 patched=false sha1=a1f5ee232156ca9aa790cbd040416ae1e7d16077
+cbb_4569.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=ba78a90f7fa098a39a9e52ad5085031ff4692c10 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=0cc4601cdbd9d57045bd252a99be944961834de9
+cbb_4569.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=7518ff0c83cd97a7f4804c4c76bdbda7c2c99df8 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=0cc4601cdbd9d57045bd252a99be944961834de9
+cbb_4569.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=080b73b2badf03027c0b01de58b54170afffcfa9 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=0cc4601cdbd9d57045bd252a99be944961834de9
+cbb_4569.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=88e5a60216c3a410df476f8be26696bdc699ef26 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_4569.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=1f5b128f0571672d3221fc046b67e50479a6ce9e derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_4569.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=080b73b2badf03027c0b01de58b54170afffcfa9 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_4574.bin input size=0x8260 sha1=78c87c9949b0c586e6c56f2af157187ad6d2c87d
+cbb_4574.bin parse ok
+cbb_4574.bin serialize identity=yes size=0x8260 sha1=78c87c9949b0c586e6c56f2af157187ad6d2c87d
+cbb_4574.bin state is_decrypted=true decrypted=true
+cbb_4574.bin header magic=0x4342 version=4574 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x8260
+cbb_4574.bin fields console_type=1 console_sequence=11 sequence_allow=0x0524
+cbb_4574.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_4574.bin cb.requires_cpu_key_for_cd false
+cbb_4574.bin cb.rgh3_v1 patched=false sha1=78c87c9949b0c586e6c56f2af157187ad6d2c87d
+cbb_4574.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=a6872fae2284d76e86a854df1b3132e2fed07bb4 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=94aba60feabdb6e16e1d7632b9203951efe04eb2
+cbb_4574.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=37a572c852c8e0bc6d1579d28856afbce7bb767f derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=94aba60feabdb6e16e1d7632b9203951efe04eb2
+cbb_4574.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=89510c34392324d76d68292be105ad87c0f00135 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=94aba60feabdb6e16e1d7632b9203951efe04eb2
+cbb_4574.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=29abb291d00361037a5e5fa04cef7ffb492444c6 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_4574.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=de21c1da4b6657f8ad6d51f85249bb10df8940cb derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_4574.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=89510c34392324d76d68292be105ad87c0f00135 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_4575.bin input size=0x8260 sha1=35b18f82d13a5ef2fd3a1941f3c6927a432c966d
+cbb_4575.bin parse ok
+cbb_4575.bin serialize identity=yes size=0x8260 sha1=35b18f82d13a5ef2fd3a1941f3c6927a432c966d
+cbb_4575.bin state is_decrypted=true decrypted=true
+cbb_4575.bin header magic=0x4342 version=4575 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x8260
+cbb_4575.bin fields console_type=1 console_sequence=10 sequence_allow=0x03FC
+cbb_4575.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_4575.bin cb.requires_cpu_key_for_cd false
+cbb_4575.bin cb.rgh3_v1 patched=false sha1=35b18f82d13a5ef2fd3a1941f3c6927a432c966d
+cbb_4575.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=ebaeec5945750ca33d3da1b73cfab8daa87af5d0 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=cf8e47a25783fc25037b624f52d4e63630145f8c
+cbb_4575.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=d166832e770d6cee85a6221636324d6e4a7bb1ed derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=cf8e47a25783fc25037b624f52d4e63630145f8c
+cbb_4575.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=bd96055cb3b8aa8f98bd1d2e1f5acd3917d435d7 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=cf8e47a25783fc25037b624f52d4e63630145f8c
+cbb_4575.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=317d46a8679fb2e5608c3e16af642498f1cfa0a8 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_4575.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=29063f38ed6792c881605b9737363a59273c5b3d derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_4575.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=bd96055cb3b8aa8f98bd1d2e1f5acd3917d435d7 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_4576.bin input size=0x8260 sha1=7c34bf8dba3640f5225849f28f0ca3dec320cd82
+cbb_4576.bin parse ok
+cbb_4576.bin serialize identity=yes size=0x8260 sha1=7c34bf8dba3640f5225849f28f0ca3dec320cd82
+cbb_4576.bin state is_decrypted=true decrypted=true
+cbb_4576.bin header magic=0x4342 version=4576 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x8260
+cbb_4576.bin fields console_type=1 console_sequence=9 sequence_allow=0x0124
+cbb_4576.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_4576.bin cb.requires_cpu_key_for_cd false
+cbb_4576.bin cb.rgh3_v1 patched=false sha1=7c34bf8dba3640f5225849f28f0ca3dec320cd82
+cbb_4576.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=4b8acacff055e0aaab59c461b7157cfb1c15a41d derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=a2a75d181f218e89958483435fa5e318db5b2274
+cbb_4576.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=4cf9dc843eb8e2c59937e56efc603e73b3adc3d8 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=a2a75d181f218e89958483435fa5e318db5b2274
+cbb_4576.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=1bceda17ce65ca915677fda584cdac9dc97af9cc derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=a2a75d181f218e89958483435fa5e318db5b2274
+cbb_4576.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=b266f141a4ac4100c6e6eda97962a9ecdfd545b1 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_4576.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=2769272a91c8aafb3e851512ab0972a6a333dd17 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_4576.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=1bceda17ce65ca915677fda584cdac9dc97af9cc derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_4577.bin input size=0x7F20 sha1=0ccf646a9f994c9d37559542a07f3a7702462094
+cbb_4577.bin parse ok
+cbb_4577.bin serialize identity=yes size=0x7F20 sha1=0ccf646a9f994c9d37559542a07f3a7702462094
+cbb_4577.bin state is_decrypted=true decrypted=true
+cbb_4577.bin header magic=0x4342 version=4577 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x7F20
+cbb_4577.bin fields console_type=1 console_sequence=7 sequence_allow=0x007C
+cbb_4577.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_4577.bin cb.requires_cpu_key_for_cd false
+cbb_4577.bin cb.rgh3_v1 patched=false sha1=0ccf646a9f994c9d37559542a07f3a7702462094
+cbb_4577.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=3402b8ab8692c1b86b73ab3e3bf8c93daf4204ea derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=c5749a3ab3c09473bc4fc821766794aa46bbd7e5
+cbb_4577.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=20e6972011bd0a2babacbad828cc81c8318f6fbf derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=c5749a3ab3c09473bc4fc821766794aa46bbd7e5
+cbb_4577.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=78c7b562b2b8ed3802eaa1b4d0a21e7b059eafa3 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=c5749a3ab3c09473bc4fc821766794aa46bbd7e5
+cbb_4577.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=6b4cd5fefd85dcbd0b94d6b35aade62a0ddec4ad derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_4577.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=80487e4e81a53d371dbdf49978c22843938a0151 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_4577.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=78c7b562b2b8ed3802eaa1b4d0a21e7b059eafa3 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_5772.bin input size=0x9350 sha1=fdd6ff5b576e50ff9e9a2d26b2e2316a032be07e
+cbb_5772.bin parse ok
+cbb_5772.bin serialize identity=yes size=0x9350 sha1=fdd6ff5b576e50ff9e9a2d26b2e2316a032be07e
+cbb_5772.bin state is_decrypted=true decrypted=true
+cbb_5772.bin header magic=0x4342 version=5772 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9350
+cbb_5772.bin fields console_type=1 console_sequence=8 sequence_allow=0x00D8
+cbb_5772.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_5772.bin cb.requires_cpu_key_for_cd false
+cbb_5772.bin cb.rgh3_v1 patched=false sha1=fdd6ff5b576e50ff9e9a2d26b2e2316a032be07e
+cbb_5772.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=3d3d385143eaff66233386f798658eb70abb6d56 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=7537bc31fd49d103b9adeba3b6a937749862befd
+cbb_5772.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=6a817565bd0f86e5c3a7337f418ed651ac840a38 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=7537bc31fd49d103b9adeba3b6a937749862befd
+cbb_5772.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=389889aa603343c77d9e04badd6ff05acb7aec05 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=7537bc31fd49d103b9adeba3b6a937749862befd
+cbb_5772.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=9c1a5b0ca2d4f1d9a77c914e9dfe7b3a8880b13d derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_5772.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=7eebb0492bc625cfb2f7acb2090815a7ca3145f2 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_5772.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=389889aa603343c77d9e04badd6ff05acb7aec05 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_5773.bin input size=0x9680 sha1=24463d5f57514857caeadd2e9ccd6a24a13d006f
+cbb_5773.bin parse ok
+cbb_5773.bin serialize identity=yes size=0x9680 sha1=24463d5f57514857caeadd2e9ccd6a24a13d006f
+cbb_5773.bin state is_decrypted=true decrypted=true
+cbb_5773.bin header magic=0x4342 version=5773 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x9680
+cbb_5773.bin fields console_type=1 console_sequence=10 sequence_allow=0x02D8
+cbb_5773.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_5773.bin cb.requires_cpu_key_for_cd false
+cbb_5773.bin cb.rgh3_v1 patched=false sha1=24463d5f57514857caeadd2e9ccd6a24a13d006f
+cbb_5773.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=203283dfdf4c96ff1a6b8a918032181895a41ce5 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=e1da2f4ce26ea12e0c4f805e2a759cf2e13e7c79
+cbb_5773.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=c7af3e1d5e1376c9ead2bb1990aa30d6dfd5ffc1 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=e1da2f4ce26ea12e0c4f805e2a759cf2e13e7c79
+cbb_5773.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=107303c1674bbc4b9b56cd0cdfdd5cddc8b4a5d8 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=e1da2f4ce26ea12e0c4f805e2a759cf2e13e7c79
+cbb_5773.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=39d091097747f68b6af8456d2af89373e43d2a81 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_5773.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=ce3dd71722ab08b731d6590d1f8fdcd94093982a derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_5773.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=107303c1674bbc4b9b56cd0cdfdd5cddc8b4a5d8 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_5774.bin input size=0x9680 sha1=048c6fd0f073dfec4a88da9701beecaf7ff42d7c
+cbb_5774.bin parse ok
+cbb_5774.bin serialize identity=yes size=0x9680 sha1=048c6fd0f073dfec4a88da9701beecaf7ff42d7c
+cbb_5774.bin state is_decrypted=true decrypted=true
+cbb_5774.bin header magic=0x4342 version=5774 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x9680
+cbb_5774.bin fields console_type=1 console_sequence=12 sequence_allow=0x0AD8
+cbb_5774.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_5774.bin cb.requires_cpu_key_for_cd false
+cbb_5774.bin cb.rgh3_v1 patched=false sha1=048c6fd0f073dfec4a88da9701beecaf7ff42d7c
+cbb_5774.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=466910d21d0d294acd0e8a540954067d57fd5ae9 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=5c4b6bcfcbd3df95162d7cd1463ff707469c6c4d
+cbb_5774.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=d37db3e044e10f69a6a727854d43ff0d088ea11d derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=5c4b6bcfcbd3df95162d7cd1463ff707469c6c4d
+cbb_5774.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=dfd1eb624459af3c97c32336c277552816e08948 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=5c4b6bcfcbd3df95162d7cd1463ff707469c6c4d
+cbb_5774.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=1d4604d730872f268697f2e7f2fd8be7cb68957b derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_5774.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=d4071d4ea5824ed19d83b4c9c6ccefd27f8ccfdc derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_5774.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=dfd1eb624459af3c97c32336c277552816e08948 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_6752.bin input size=0x9390 sha1=64a4219e2dc9ede5fb35e3b223690ea8364698e2
+cbb_6752.bin parse ok
+cbb_6752.bin serialize identity=yes size=0x9390 sha1=64a4219e2dc9ede5fb35e3b223690ea8364698e2
+cbb_6752.bin state is_decrypted=true decrypted=true
+cbb_6752.bin header magic=0x4342 version=6752 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x9390
+cbb_6752.bin fields console_type=1 console_sequence=8 sequence_allow=0x00D0
+cbb_6752.bin perbox d81110040000000000000000000000000290c60b1d7338236d7a7c35e941b78a
+cbb_6752.bin cb.requires_cpu_key_for_cd true
+cbb_6752.bin cb.rgh3_v1 patched=false sha1=64a4219e2dc9ede5fb35e3b223690ea8364698e2
+cbb_6752.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=kept encrypt=ok decrypted=false sha1=4345e75fe525d0ca4bd0537cdb7a354f5d8d1eb9 derived_sha1=78f82d95ec13b57c63bee0d683880faef015cf0c decrypt=ok decrypted=true sha1=64a4219e2dc9ede5fb35e3b223690ea8364698e2
+cbb_6752.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=kept encrypt=ok decrypted=false sha1=04e426cb811a19c469ea3b7adb0a035b7cfa0630 derived_sha1=877c1ca57599f370b69c69fde29c804f6d5beb87 decrypt=ok decrypted=true sha1=64a4219e2dc9ede5fb35e3b223690ea8364698e2
+cbb_6752.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=kept encrypt=ok decrypted=false sha1=a0966c88865cdce42442755f98867bec440e3187 derived_sha1=a7c4506d6771390bacd4854fe43db8def92a8f23 decrypt=ok decrypted=true sha1=64a4219e2dc9ede5fb35e3b223690ea8364698e2
+cbb_6752.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=kept result=ok decrypted=false sha1=a3ff13b81dd3941c89fffcfbbe16ba4a77b0d26b derived_sha1=78f82d95ec13b57c63bee0d683880faef015cf0c digest=40f8e1a9cca3c221cfa2bbe2e2d41dce
+cbb_6752.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=kept result=ok decrypted=false sha1=0bbc294674b0214c49a77466fd898ddccc6bc2ea derived_sha1=877c1ca57599f370b69c69fde29c804f6d5beb87 digest=9d6be48628b6a38a7eb0ef98bf6594c9
+cbb_6752.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=kept result=ok decrypted=false sha1=1501a20cfb778e69ae0b18d718114ede507ab60a derived_sha1=a7c4506d6771390bacd4854fe43db8def92a8f23 digest=00000000000000000000000000000000
+cbb_6753.bin input size=0x96C0 sha1=6a11a072c2c475a9b80fa9c0f8bcf0fc773e291e
+cbb_6753.bin parse ok
+cbb_6753.bin serialize identity=yes size=0x96C0 sha1=6a11a072c2c475a9b80fa9c0f8bcf0fc773e291e
+cbb_6753.bin state is_decrypted=true decrypted=true
+cbb_6753.bin header magic=0x4342 version=6753 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x96C0
+cbb_6753.bin fields console_type=1 console_sequence=10 sequence_allow=0x02D0
+cbb_6753.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_6753.bin cb.requires_cpu_key_for_cd false
+cbb_6753.bin cb.rgh3_v1 patched=false sha1=6a11a072c2c475a9b80fa9c0f8bcf0fc773e291e
+cbb_6753.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=742b41d107fd54602e8cf14a6bfc71400e732f5f derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=328b92b50676ecad4b8bb52f1f1f19dfd70b6a6e
+cbb_6753.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=b96004eac75652fc7acc65052ca194d286e86c64 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=328b92b50676ecad4b8bb52f1f1f19dfd70b6a6e
+cbb_6753.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=c20ce9bc4472fbd645060ca63cae9f33785c13bf derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=328b92b50676ecad4b8bb52f1f1f19dfd70b6a6e
+cbb_6753.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=92950da4d77cee77700d48ef410dad02de6872bc derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_6753.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=1940668ed82a95f01a84425a2d6c3407a0db6d25 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_6753.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=c20ce9bc4472fbd645060ca63cae9f33785c13bf derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_6754.bin input size=0x96C0 sha1=fbb80d8f8cfe16a972ec3193a188e3d3db3911cf
+cbb_6754.bin parse ok
+cbb_6754.bin serialize identity=yes size=0x96C0 sha1=fbb80d8f8cfe16a972ec3193a188e3d3db3911cf
+cbb_6754.bin state is_decrypted=true decrypted=true
+cbb_6754.bin header magic=0x4342 version=6754 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x96C0
+cbb_6754.bin fields console_type=1 console_sequence=12 sequence_allow=0x0AD0
+cbb_6754.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_6754.bin cb.requires_cpu_key_for_cd false
+cbb_6754.bin cb.rgh3_v1 patched=false sha1=fbb80d8f8cfe16a972ec3193a188e3d3db3911cf
+cbb_6754.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=94bf34eca01d072aeb627198af780d9c5de435fe derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=e344e35bea542eab2758225a013db4a90c337ef5
+cbb_6754.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=a1ebc2372c0f16e57eb3171ad34a5f03662a8e51 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=e344e35bea542eab2758225a013db4a90c337ef5
+cbb_6754.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=91d2d4e333f90a20ae67eb3b8f44cb267eb8dda8 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=e344e35bea542eab2758225a013db4a90c337ef5
+cbb_6754.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=7d23eafef1d4531658c110c8d8e92809cef1320b derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_6754.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=e6dcb308eb7551bd973b2880db8ba7c6300c3f9c derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_6754.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=91d2d4e333f90a20ae67eb3b8f44cb267eb8dda8 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_7377.bin input size=0x9A40 sha1=1698d9b66cb1a1b18fc04fcdbee76010ebbb0bc9
+cbb_7377.bin parse ok
+cbb_7377.bin serialize identity=yes size=0x9A40 sha1=1698d9b66cb1a1b18fc04fcdbee76010ebbb0bc9
+cbb_7377.bin state is_decrypted=true decrypted=true
+cbb_7377.bin header magic=0x4342 version=7377 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x9A40
+cbb_7377.bin fields console_type=1 console_sequence=10 sequence_allow=0x03FB
+cbb_7377.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_7377.bin cb.requires_cpu_key_for_cd false
+cbb_7377.bin cb.rgh3_v1 patched=false sha1=1698d9b66cb1a1b18fc04fcdbee76010ebbb0bc9
+cbb_7377.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=bc3a06119a907b14810516d4fe0baa4ab8a6a49e derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=8504ce6028b7dca84383383643f27dc669e6221b
+cbb_7377.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=9b806f065da0e73f63f808ef346cbd3c9d02770f derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=8504ce6028b7dca84383383643f27dc669e6221b
+cbb_7377.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=d15953a2175cf11090ef8cbf52b951ffb6110594 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=8504ce6028b7dca84383383643f27dc669e6221b
+cbb_7377.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=e9f302c62a082ce10deba4054c05a6e9682c2d3e derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_7377.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=d7c30c621dd0bd16584c1583edafdbe7d78258cb derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_7377.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=d15953a2175cf11090ef8cbf52b951ffb6110594 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_7378.bin input size=0x9A40 sha1=04da47a9c1334dfdca0b3dc1b2a5d07e27026171
+cbb_7378.bin parse ok
+cbb_7378.bin serialize identity=yes size=0x9A40 sha1=04da47a9c1334dfdca0b3dc1b2a5d07e27026171
+cbb_7378.bin state is_decrypted=true decrypted=true
+cbb_7378.bin header magic=0x4342 version=7378 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x9A40
+cbb_7378.bin fields console_type=1 console_sequence=12 sequence_allow=0x0FFB
+cbb_7378.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_7378.bin cb.requires_cpu_key_for_cd false
+cbb_7378.bin cb.rgh3_v1 patched=false sha1=04da47a9c1334dfdca0b3dc1b2a5d07e27026171
+cbb_7378.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=d58b12af30108416106b57d56011d02d5fd541bd derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=ddbf72e07b66e2287c8c0c9b96c80ed74141704e
+cbb_7378.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=ca96fea0618e6adf955b85e3feccac5f0641cf8e derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=ddbf72e07b66e2287c8c0c9b96c80ed74141704e
+cbb_7378.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=f530a6c68a2c9768cb0fa06dcbc66e74e66bb7d6 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=ddbf72e07b66e2287c8c0c9b96c80ed74141704e
+cbb_7378.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=aef4cb6296bff653784dd6ef7bc321b5935b88af derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_7378.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=e15ec23856b11a656aa3d30ba512fb6d0aee5781 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_7378.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=f530a6c68a2c9768cb0fa06dcbc66e74e66bb7d6 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_9188.bin input size=0x7800 sha1=a8f371709ca133d4ee62d7707bcde245c8d56491
+cbb_9188.bin parse ok
+cbb_9188.bin serialize identity=yes size=0x7800 sha1=a8f371709ca133d4ee62d7707bcde245c8d56491
+cbb_9188.bin state is_decrypted=true decrypted=true
+cbb_9188.bin header magic=0x4342 version=9188 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x7800
+cbb_9188.bin fields console_type=3 console_sequence=1 sequence_allow=0x0001
+cbb_9188.bin perbox 592e2e000000000000000000000000004638385a761a5d2f09287e5328d6095f
+cbb_9188.bin cb.requires_cpu_key_for_cd true
+cbb_9188.bin cb.rgh3_v1 patched=false sha1=a8f371709ca133d4ee62d7707bcde245c8d56491
+cbb_9188.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=kept encrypt=ok decrypted=false sha1=c4dad644ccf26a32f04b197d7bdd895226976fdc derived_sha1=17444e614bbe7d99adb0e84a0cc0c69fd1fdf9ed decrypt=ok decrypted=true sha1=a8f371709ca133d4ee62d7707bcde245c8d56491
+cbb_9188.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=kept encrypt=ok decrypted=false sha1=b390fa77c94a5a299d364171a44af86cebc099b0 derived_sha1=aeb8253f4950e0d2cd355b4307f39e7a3339a057 decrypt=ok decrypted=true sha1=a8f371709ca133d4ee62d7707bcde245c8d56491
+cbb_9188.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=kept encrypt=ok decrypted=false sha1=da17919537de8d406547897a868d5320b3a33b0d derived_sha1=ef194addcc96e96cc5f21b71a98d3c032eccd7c0 decrypt=ok decrypted=true sha1=a8f371709ca133d4ee62d7707bcde245c8d56491
+cbb_9188.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=kept result=ok decrypted=false sha1=7b68e575f5495652d757d578a7b63830e25ef630 derived_sha1=17444e614bbe7d99adb0e84a0cc0c69fd1fdf9ed digest=7e2a5142dca45611979bb46adddd6274
+cbb_9188.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=kept result=ok decrypted=false sha1=528b726452baddee994e4f30ce421a766993edd6 derived_sha1=aeb8253f4950e0d2cd355b4307f39e7a3339a057 digest=f587661e535568a5b6925e673f9c3b68
+cbb_9188.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=kept result=ok decrypted=false sha1=ebe1c8167d05fd5f2c71ddaa19cb7e975ce35ef5 derived_sha1=ef194addcc96e96cc5f21b71a98d3c032eccd7c0 digest=00000000000000000000000000000000
+cbb_9230.bin input size=0x7A30 sha1=06f76ea0504d156411c590ff3f5c016e8fc67bb6
+cbb_9230.bin parse ok
+cbb_9230.bin serialize identity=yes size=0x7A30 sha1=06f76ea0504d156411c590ff3f5c016e8fc67bb6
+cbb_9230.bin state is_decrypted=true decrypted=true
+cbb_9230.bin header magic=0x4342 version=9230 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x7A30
+cbb_9230.bin fields console_type=3 console_sequence=3 sequence_allow=0x0005
+cbb_9230.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_9230.bin cb.requires_cpu_key_for_cd false
+cbb_9230.bin cb.rgh3_v1 patched=false sha1=06f76ea0504d156411c590ff3f5c016e8fc67bb6
+cbb_9230.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=0a3703c9b96262aa31fe576a1219f3246720d013 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=b007529732f18c4c0b8221b0ac6f6263f17a378b
+cbb_9230.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=749409f4286ab8d18c602e6fd1fdc2a354a92fee derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=b007529732f18c4c0b8221b0ac6f6263f17a378b
+cbb_9230.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=2207fa9a4c4d0d4d14dac19fc4a646acdf49d34b derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=b007529732f18c4c0b8221b0ac6f6263f17a378b
+cbb_9230.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=8249f8a2d675cc345157d64e3ad87edd427c5de7 derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_9230.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=8eba95a217b82d5c25ed3d7472668d5dc6cde8a1 derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_9230.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=2207fa9a4c4d0d4d14dac19fc4a646acdf49d34b derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cbb_9231.bin input size=0x7A30 sha1=77ec58a0641b8e05df273e3c41164e7f1feb71cb
+cbb_9231.bin parse ok
+cbb_9231.bin serialize identity=yes size=0x7A30 sha1=77ec58a0641b8e05df273e3c41164e7f1feb71cb
+cbb_9231.bin state is_decrypted=true decrypted=true
+cbb_9231.bin header magic=0x4342 version=9231 pairing=0x0000 flags=0x0000 entrypoint=0x000003E0 size=0x7A30
+cbb_9231.bin fields console_type=3 console_sequence=4 sequence_allow=0x000D
+cbb_9231.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
+cbb_9231.bin cb.requires_cpu_key_for_cd false
+cbb_9231.bin cb.rgh3_v1 patched=false sha1=77ec58a0641b8e05df273e3c41164e7f1feb71cb
+cbb_9231.bin cbb.crypt.flags_as_is cba_flags=0x0800 nonce=pinned encrypt=ok decrypted=false sha1=26110c7996e85ae33d479d5a01c4577cff1ab7bf derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 decrypt=ok decrypted=true sha1=5b66f022122c405d361af2ce11e8a4bc674c15f5
+cbb_9231.bin cbb.crypt.flags_or_0x1000 cba_flags=0x1800 nonce=pinned encrypt=ok decrypted=false sha1=cb6b03b3f3ac2e65c92299db911dc0ad45e6f20c derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 decrypt=ok decrypted=true sha1=5b66f022122c405d361af2ce11e8a4bc674c15f5
+cbb_9231.bin cbb.crypt.flags_or_0x1 cba_flags=0x0801 nonce=pinned encrypt=ok decrypted=false sha1=6eef8eebacd6c6647488ffe3dfb5aeecef1302a0 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 decrypt=ok decrypted=true sha1=5b66f022122c405d361af2ce11e8a4bc674c15f5
+cbb_9231.bin cbb.encrypt_retail.flags_as_is cba_flags=0x0800 nonce=pinned result=ok decrypted=false sha1=f4b274196032a2225c2c757bb016cadd7ab40a9e derived_sha1=299f827d06fffb55c676512868d6bb45616d2580 digest=dcd5d0e76562ff79ff49d3cedd42740d
+cbb_9231.bin cbb.encrypt_retail.flags_or_0x1000 cba_flags=0x1800 nonce=pinned result=ok decrypted=false sha1=de73cdc1ca9036b75d8b70ccf16ed893fc86de9c derived_sha1=6908c0bc80dd88712507e8f4df4543c5b86e8af7 digest=e91b495a23e2c56e1529aa5272ae8166
+cbb_9231.bin cbb.encrypt_retail.flags_or_0x1 cba_flags=0x0801 nonce=pinned result=ok decrypted=false sha1=6eef8eebacd6c6647488ffe3dfb5aeecef1302a0 derived_sha1=42a8e26acd978e6abea5a4487aa981b07d5f4423 digest=00000000000000000000000000000000
+cd_12905.bin input size=0x5090 sha1=60c2f8a845a4120caecae4a137a35683b2eed350
+cd_12905.bin parse ok
+cd_12905.bin serialize identity=yes size=0x5090 sha1=60c2f8a845a4120caecae4a137a35683b2eed350
+cd_12905.bin state is_decrypted=true decrypted=true
+cd_12905.bin header magic=0x4344 version=12905 pairing=0x0000 flags=0x0000 entrypoint=0x00000300 size=0x5090
+cd_12905.bin fields padding=0x0000
+cd_12905.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=3ab7d20afa0fb6c270196ec069f3f183fc830410 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=70c624c795637e30eb268c26863604ec6649798f
+cd_12905.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=3dd1c8f1375973b3cd1ed59cbcf72ba0ec681f81 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=70c624c795637e30eb268c26863604ec6649798f
+cd_13180.bin input size=0x5080 sha1=95f7597201e6f2a6ec7e652d1bdd121e387f8602
+cd_13180.bin parse ok
+cd_13180.bin serialize identity=yes size=0x5080 sha1=95f7597201e6f2a6ec7e652d1bdd121e387f8602
+cd_13180.bin state is_decrypted=true decrypted=true
+cd_13180.bin header magic=0x4344 version=13180 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_13180.bin fields padding=0x0000
+cd_13180.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=b4a413788025d842d307e163a3b6c51b42c42a86 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=36bcdc612e4dbc2707adad795445efbff283a8ed
+cd_13180.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=ff156573079b9d3cb2c440980d194b0d7c680706 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=36bcdc612e4dbc2707adad795445efbff283a8ed
+cd_13181.bin input size=0x5080 sha1=668c38af6775977b022e4dfe103a1b105d0ba388
+cd_13181.bin parse ok
+cd_13181.bin serialize identity=yes size=0x5080 sha1=668c38af6775977b022e4dfe103a1b105d0ba388
+cd_13181.bin state is_decrypted=true decrypted=true
+cd_13181.bin header magic=0x4344 version=13181 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_13181.bin fields padding=0x0000
+cd_13181.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=9f23defffbbca3de07e8087014121e2198670367 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=8af65e801712168a3f658bc6bcd0ef956a1e5db0
+cd_13181.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=a5951164a3cee62f738338b065360d8e8b568313 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=8af65e801712168a3f658bc6bcd0ef956a1e5db0
+cd_13182.bin input size=0x5080 sha1=d36ce0dae22d6adee2a0340f0e51935694d158a8
+cd_13182.bin parse ok
+cd_13182.bin serialize identity=yes size=0x5080 sha1=d36ce0dae22d6adee2a0340f0e51935694d158a8
+cd_13182.bin state is_decrypted=true decrypted=true
+cd_13182.bin header magic=0x4344 version=13182 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_13182.bin fields padding=0x0000
+cd_13182.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=09fb963a0cf2bc11803ae42977a4ecdcea056950 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=eb4230b95e343a51812d7a639724bc2c6ce0021a
+cd_13182.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=448b5b67c1720a021325ddcb2d541f7f49dc300b derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=eb4230b95e343a51812d7a639724bc2c6ce0021a
+cd_16128.bin input size=0x5080 sha1=bf95c1af1bb5b7076a7580dc24afaa98467a0c89
+cd_16128.bin parse ok
+cd_16128.bin serialize identity=yes size=0x5080 sha1=bf95c1af1bb5b7076a7580dc24afaa98467a0c89
+cd_16128.bin state is_decrypted=true decrypted=true
+cd_16128.bin header magic=0x4344 version=16128 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_16128.bin fields padding=0x0000
+cd_16128.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=2a8db91096b3f120f28572f08aa2f73c3a1dff00 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=c827ed0a63427c1a96cec1acc8ae972b41bc2998
+cd_16128.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=154fe9daba79f2888b3338149db45998013f29a3 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=c827ed0a63427c1a96cec1acc8ae972b41bc2998
+cd_1888.bin input size=0x56F0 sha1=5dadb86e13f27ccbb60683ffe20c7c85e4d6160a
+cd_1888.bin parse ok
+cd_1888.bin serialize identity=yes size=0x56F0 sha1=5dadb86e13f27ccbb60683ffe20c7c85e4d6160a
+cd_1888.bin state is_decrypted=true decrypted=true
+cd_1888.bin header magic=0x4344 version=1888 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x56F0
+cd_1888.bin fields padding=0x0000
+cd_1888.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=881606cdad06b976ebce03b932dd166a166414d1 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=9c8eb1fe880f31b8dd9bf6836adb34b536c77047
+cd_1888.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=f47d159c44d670f561bc18c89f57662656abee0b derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=9c8eb1fe880f31b8dd9bf6836adb34b536c77047
+cd_1920.bin input size=0x5700 sha1=edcdc96628b29d9b8347a0fb8d9b1cd2095bbdb4
+cd_1920.bin parse ok
+cd_1920.bin serialize identity=yes size=0x5700 sha1=edcdc96628b29d9b8347a0fb8d9b1cd2095bbdb4
+cd_1920.bin state is_decrypted=false decrypted=false
+cd_1920.bin header magic=0x4344 version=1920 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x5700
+cd_1920.bin fields padding=0x1D58
+cd_1920.bin seal.default nonce=kept encrypt=ok decrypted=false sha1=bfe4d86e6e7e26878ef982dddb65ff36fa20c4e7 derived_sha1=e8d5cadf6f7c22d19f8c1f6dc21d8441a8f8b836 decrypt=ok decrypted=true sha1=edcdc96628b29d9b8347a0fb8d9b1cd2095bbdb4
+cd_1920.bin seal.hmac1920 nonce=kept encrypt=ok decrypted=false sha1=f9394542475b29a4f73f3bd7e216fd78c889df54 derived_sha1=8802786e7d35045ae7263c83c543a8e6d4b2396a decrypt=ok decrypted=true sha1=edcdc96628b29d9b8347a0fb8d9b1cd2095bbdb4
+cd_1921.bin input size=0x56C0 sha1=edabb85297c7c29249a6981943be0c92782820f4
+cd_1921.bin parse ok
+cd_1921.bin serialize identity=yes size=0x56C0 sha1=edabb85297c7c29249a6981943be0c92782820f4
+cd_1921.bin state is_decrypted=true decrypted=true
+cd_1921.bin header magic=0x4344 version=1921 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x56C0
+cd_1921.bin fields padding=0x0000
+cd_1921.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=0419bf011b786550cf75b1e0e76677c3f23b793d derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=93e979edcf42a3975fd28b3db5317f52323c703b
+cd_1921.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=6573db521244c40a1fff184260c88f8e684b3416 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=93e979edcf42a3975fd28b3db5317f52323c703b
+cd_1925.bin input size=0x5080 sha1=6d42267e899d8d4836de7b23e5c27936e304704f
+cd_1925.bin parse ok
+cd_1925.bin serialize identity=yes size=0x5080 sha1=6d42267e899d8d4836de7b23e5c27936e304704f
+cd_1925.bin state is_decrypted=true decrypted=true
+cd_1925.bin header magic=0x4344 version=1925 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_1925.bin fields padding=0x0000
+cd_1925.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=c6dcb3cda2bbb5db2bc2251d92ec0fd20ce28f60 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=5c7e534bbee1221a64710dff117549d4cb9dc853
+cd_1925.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=e181a975aac78e83c38917e6018c1b9d839a113c derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=5c7e534bbee1221a64710dff117549d4cb9dc853
+cd_1926.bin input size=0x5080 sha1=89b1b3e559f5cb638f6bb9bfdbfc1b4e669ef0d6
+cd_1926.bin parse ok
+cd_1926.bin serialize identity=yes size=0x5080 sha1=89b1b3e559f5cb638f6bb9bfdbfc1b4e669ef0d6
+cd_1926.bin state is_decrypted=true decrypted=true
+cd_1926.bin header magic=0x4344 version=1926 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_1926.bin fields padding=0x0000
+cd_1926.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=6c96fec3b666eb02965ae2cde39e4e0dc3051f0f derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=082ac7e4ce3d3e4d133430e87f39a93356ae594f
+cd_1926.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=fdcacf2d73239737d39d75c6e2400baef42199c6 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=082ac7e4ce3d3e4d133430e87f39a93356ae594f
+cd_1927.bin input size=0x5080 sha1=6f8790ad18fc268525ccc98597050a23071a91f4
+cd_1927.bin parse ok
+cd_1927.bin serialize identity=yes size=0x5080 sha1=6f8790ad18fc268525ccc98597050a23071a91f4
+cd_1927.bin state is_decrypted=true decrypted=true
+cd_1927.bin header magic=0x4344 version=1927 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_1927.bin fields padding=0x0000
+cd_1927.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=262db14048c84f2d26624122691f5217e554cac6 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=c22a148d7ac5db7b68f7719e378f8151dd923cc0
+cd_1927.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=3f97a1addf9fa9cecd0fb7df5c3bb98e351903e0 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=c22a148d7ac5db7b68f7719e378f8151dd923cc0
+cd_1928.bin input size=0x5080 sha1=14570260e985700a65b08067be19e550fe2d10ac
+cd_1928.bin parse ok
+cd_1928.bin serialize identity=yes size=0x5080 sha1=14570260e985700a65b08067be19e550fe2d10ac
+cd_1928.bin state is_decrypted=true decrypted=true
+cd_1928.bin header magic=0x4344 version=1928 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_1928.bin fields padding=0x0000
+cd_1928.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=259bddc1fe7e81923c667b35997ea1c1b26be918 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=36100139869d590245d973c3b0541b44bed88693
+cd_1928.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=3bc8b766d1873881bdf7bc5f15ea3dfccd97ab3e derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=36100139869d590245d973c3b0541b44bed88693
+cd_1941.bin input size=0x5080 sha1=cf84834aaa23a867e2f724fc8048e78ae4e5202a
+cd_1941.bin parse ok
+cd_1941.bin serialize identity=yes size=0x5080 sha1=cf84834aaa23a867e2f724fc8048e78ae4e5202a
+cd_1941.bin state is_decrypted=true decrypted=true
+cd_1941.bin header magic=0x4344 version=1941 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_1941.bin fields padding=0x0000
+cd_1941.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=8d59a6f4b6031edd07be0916c140d899e31359d3 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=38837aa463b92ef5fce10df6cb9fbb5f67005ae6
+cd_1941.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=abd75bac5b3552220a56891eb48c7fa321f0bb99 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=38837aa463b92ef5fce10df6cb9fbb5f67005ae6
+cd_1942.bin input size=0x5080 sha1=3bfff7b3f7049fc5cc74632d021a494eddb57b39
+cd_1942.bin parse ok
+cd_1942.bin serialize identity=yes size=0x5080 sha1=3bfff7b3f7049fc5cc74632d021a494eddb57b39
+cd_1942.bin state is_decrypted=true decrypted=true
+cd_1942.bin header magic=0x4344 version=1942 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_1942.bin fields padding=0x0000
+cd_1942.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=a5514393e615908be443c4744ddc561bcd24b5ff derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=1ba6af3805a7be30a10dda05e9028169e39dc463
+cd_1942.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=ef741df0be15bad3570bae0de7289dda0bf7dff8 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=1ba6af3805a7be30a10dda05e9028169e39dc463
+cd_4540.bin input size=0x5700 sha1=2f4b9c1c793512f497579d1ba8c359f4e2bff010
+cd_4540.bin parse ok
+cd_4540.bin serialize identity=yes size=0x5700 sha1=2f4b9c1c793512f497579d1ba8c359f4e2bff010
+cd_4540.bin state is_decrypted=true decrypted=true
+cd_4540.bin header magic=0x4344 version=4540 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x5700
+cd_4540.bin fields padding=0x0000
+cd_4540.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=76c3231b5a455de8eebfe1149188f07d4cc08b50 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=b462d93d77d996b237cf64cff28a97cab0b38d74
+cd_4540.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=d6cbf2849ecd8c11992985943d118fbcaf94296d derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=b462d93d77d996b237cf64cff28a97cab0b38d74
+cd_4558.bin input size=0x5700 sha1=7989e3d0009a7632882a164110393125c963069d
+cd_4558.bin parse ok
+cd_4558.bin serialize identity=yes size=0x5700 sha1=7989e3d0009a7632882a164110393125c963069d
+cd_4558.bin state is_decrypted=true decrypted=true
+cd_4558.bin header magic=0x4344 version=4558 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x5700
+cd_4558.bin fields padding=0x0000
+cd_4558.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=3e77c6ff56f9d376ee6787b1fb1fb4141731950e derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=118a240dcdbe39423d0b31ec7774bb728d44935c
+cd_4558.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=f7c1810d3871d2be24dd7996160f46a62ca05e57 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=118a240dcdbe39423d0b31ec7774bb728d44935c
+cd_4559.bin input size=0x5080 sha1=f3230b54418861a5c5936dc7337088a6f8c651cf
+cd_4559.bin parse ok
+cd_4559.bin serialize identity=yes size=0x5080 sha1=f3230b54418861a5c5936dc7337088a6f8c651cf
+cd_4559.bin state is_decrypted=true decrypted=true
+cd_4559.bin header magic=0x4344 version=4559 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_4559.bin fields padding=0x0000
+cd_4559.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=56da21d963021e6211ef2fc2606fc6b721f60c23 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=731f79649ed4c3b901d3545d612d2df2ff81dca0
+cd_4559.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=3fe7703ed191d91d305e0d827a2a6d1d78e773a0 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=731f79649ed4c3b901d3545d612d2df2ff81dca0
+cd_4560.bin input size=0x5080 sha1=74f1d4bfbf9e9ee5d7e67e1be6546eeebd435388
+cd_4560.bin parse ok
+cd_4560.bin serialize identity=yes size=0x5080 sha1=74f1d4bfbf9e9ee5d7e67e1be6546eeebd435388
+cd_4560.bin state is_decrypted=true decrypted=true
+cd_4560.bin header magic=0x4344 version=4560 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_4560.bin fields padding=0x0000
+cd_4560.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=931912984974b33f04a6122f749de43008bd56fe derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=9f60838d15060add1fa5a7a0a8c6435dc4034a1b
+cd_4560.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=a27f447c46c1ef14bba98a0ed089cbd3f8c6cadb derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=9f60838d15060add1fa5a7a0a8c6435dc4034a1b
+cd_4561.bin input size=0x5080 sha1=f0e19ce96620b83490b17cd7ef6dad416eac8a89
+cd_4561.bin parse ok
+cd_4561.bin serialize identity=yes size=0x5080 sha1=f0e19ce96620b83490b17cd7ef6dad416eac8a89
+cd_4561.bin state is_decrypted=true decrypted=true
+cd_4561.bin header magic=0x4344 version=4561 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_4561.bin fields padding=0x0000
+cd_4561.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=953e1b9f9c5bc180e9464759aebe10fac5518800 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=6dba155100fb37c5a82792c2405d089cccf1a28d
+cd_4561.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=04cbfb72496aa657f1795ce5ffd9c25388bfad9c derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=6dba155100fb37c5a82792c2405d089cccf1a28d
+cd_4562.bin input size=0x5080 sha1=95027cf03e23dc2bbbb02570d5547b40e95be5a7
+cd_4562.bin parse ok
+cd_4562.bin serialize identity=yes size=0x5080 sha1=95027cf03e23dc2bbbb02570d5547b40e95be5a7
+cd_4562.bin state is_decrypted=true decrypted=true
+cd_4562.bin header magic=0x4344 version=4562 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_4562.bin fields padding=0x0000
+cd_4562.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=50e5b6055ce7d3bfd9f0d2c3c8a2e5dc648f8268 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=fd26c7edf14b59267d5f1f950acff5d1e2b04737
+cd_4562.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=312636f239cff9f2a46456c80a54ee85aca771fb derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=fd26c7edf14b59267d5f1f950acff5d1e2b04737
+cd_4569.bin input size=0x5080 sha1=aa30a5a9988bc18402450a5d93dd6b39970fb43e
+cd_4569.bin parse ok
+cd_4569.bin serialize identity=yes size=0x5080 sha1=aa30a5a9988bc18402450a5d93dd6b39970fb43e
+cd_4569.bin state is_decrypted=true decrypted=true
+cd_4569.bin header magic=0x4344 version=4569 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_4569.bin fields padding=0x0000
+cd_4569.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=f9dafdfaa534e6b2d3f91a33d84cca81548db39f derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=50e61244033acfb9b0c942c3a9d7a7b99491a7f1
+cd_4569.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=543d9fc529664847077d4a9939f93dd2e7570d57 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=50e61244033acfb9b0c942c3a9d7a7b99491a7f1
+cd_4574.bin input size=0x5080 sha1=b2bbb4dc7d22e345ae64e0bb94ecd073b19cea8b
+cd_4574.bin parse ok
+cd_4574.bin serialize identity=yes size=0x5080 sha1=b2bbb4dc7d22e345ae64e0bb94ecd073b19cea8b
+cd_4574.bin state is_decrypted=true decrypted=true
+cd_4574.bin header magic=0x4344 version=4574 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_4574.bin fields padding=0x0000
+cd_4574.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=7ad866e166218146d3273233713fde7de746c2be derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=408396d5c3b1c621b5558217b6cf18d663564944
+cd_4574.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=0dc6ea8bdad2adeab65b8ef86c4dee0f139ecb4d derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=408396d5c3b1c621b5558217b6cf18d663564944
+cd_4575.bin input size=0x5080 sha1=6b78f044001f83ac8693f783d22dda6a6e97f5c1
+cd_4575.bin parse ok
+cd_4575.bin serialize identity=yes size=0x5080 sha1=6b78f044001f83ac8693f783d22dda6a6e97f5c1
+cd_4575.bin state is_decrypted=true decrypted=true
+cd_4575.bin header magic=0x4344 version=4575 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_4575.bin fields padding=0x0000
+cd_4575.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=71567666aeedbb29738390ec9d80fe391f68efcd derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=458378e8757a04d7cd306224564672883ed8a1bc
+cd_4575.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=e54d2b7e8059803bec1b4cca74f8391ee8903a89 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=458378e8757a04d7cd306224564672883ed8a1bc
+cd_4576.bin input size=0x5080 sha1=b6abdda809cd379b8c22430dd7e93c2acec0c3d3
+cd_4576.bin parse ok
+cd_4576.bin serialize identity=yes size=0x5080 sha1=b6abdda809cd379b8c22430dd7e93c2acec0c3d3
+cd_4576.bin state is_decrypted=true decrypted=true
+cd_4576.bin header magic=0x4344 version=4576 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_4576.bin fields padding=0x0000
+cd_4576.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=fbf5d4a48882d377c2361e64477a22e84e4a71de derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=919350870a863b64f416d403cdca7d148adfd498
+cd_4576.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=30edbc497a3a22966bc12d59614db53e82b7da8e derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=919350870a863b64f416d403cdca7d148adfd498
+cd_4580.bin input size=0x56C0 sha1=d52fa5f498caca9380e4d241845f2465d9c2de1e
+cd_4580.bin parse ok
+cd_4580.bin serialize identity=yes size=0x56C0 sha1=d52fa5f498caca9380e4d241845f2465d9c2de1e
+cd_4580.bin state is_decrypted=true decrypted=true
+cd_4580.bin header magic=0x4344 version=4580 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x56C0
+cd_4580.bin fields padding=0x0000
+cd_4580.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=d591976fc7559a7f9d0dde3ba3f0252c92d23b22 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=bf25eaea3c77f40113109ed8fa461032c674e3c7
+cd_4580.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=29773f611274ab11bdac05206ddd93a14e98bdb7 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=bf25eaea3c77f40113109ed8fa461032c674e3c7
+cd_5761.bin input size=0x5700 sha1=cb44598c324f2ebbfb0953f4deb81f7d0e7b3bfa
+cd_5761.bin parse ok
+cd_5761.bin serialize identity=yes size=0x5700 sha1=cb44598c324f2ebbfb0953f4deb81f7d0e7b3bfa
+cd_5761.bin state is_decrypted=true decrypted=true
+cd_5761.bin header magic=0x4344 version=5761 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x5700
+cd_5761.bin fields padding=0x0000
+cd_5761.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=e90dec20e449d8ad0d908281685106ef1c0c1f4d derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=53b769202a5c257f6551b920b324c6b17ea0f106
+cd_5761.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=ae31f1b23aaffbab150cc08ba51fd95164e2a3bd derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=53b769202a5c257f6551b920b324c6b17ea0f106
+cd_5766.bin input size=0x56C0 sha1=69535b4a21c5bca364326d31ea75f017b2653ad7
+cd_5766.bin parse ok
+cd_5766.bin serialize identity=yes size=0x56C0 sha1=69535b4a21c5bca364326d31ea75f017b2653ad7
+cd_5766.bin state is_decrypted=false decrypted=false
+cd_5766.bin header magic=0x4344 version=5766 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x56C0
+cd_5766.bin fields padding=0xE650
+cd_5766.bin seal.default nonce=kept encrypt=ok decrypted=false sha1=e1da192fa22d3f5b8c7aa496d14bda8bca7760c9 derived_sha1=e9e218040c1f5f39a12fdd728ab82327812cfc7f decrypt=ok decrypted=true sha1=69535b4a21c5bca364326d31ea75f017b2653ad7
+cd_5766.bin seal.hmac1920 nonce=kept encrypt=ok decrypted=false sha1=7a3dd0dfa52c6c8821f8adb62ed1c5a16b6412d8 derived_sha1=d555f49cbce068107db502ee4d4a78bafea69dc3 decrypt=ok decrypted=true sha1=69535b4a21c5bca364326d31ea75f017b2653ad7
+cd_5770.bin input size=0x56C0 sha1=8d9779ab3a6497a6864cd811b8809a4e0409d620
+cd_5770.bin parse ok
+cd_5770.bin serialize identity=yes size=0x56C0 sha1=8d9779ab3a6497a6864cd811b8809a4e0409d620
+cd_5770.bin state is_decrypted=true decrypted=true
+cd_5770.bin header magic=0x4344 version=5770 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x56C0
+cd_5770.bin fields padding=0x0000
+cd_5770.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=d2f753592f4df1531c1beca530552e673c8c3386 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=d5594deef19941ab10b42827ffb8501e2a1ef2d4
+cd_5770.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=dfb984697c0325793cc1e03ddde3b74ebfec3116 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=d5594deef19941ab10b42827ffb8501e2a1ef2d4
+cd_5773.bin input size=0x5080 sha1=c00c673b8946668647e336606fcf63b0b97cd660
+cd_5773.bin parse ok
+cd_5773.bin serialize identity=yes size=0x5080 sha1=c00c673b8946668647e336606fcf63b0b97cd660
+cd_5773.bin state is_decrypted=true decrypted=true
+cd_5773.bin header magic=0x4344 version=5773 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_5773.bin fields padding=0x0000
+cd_5773.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=0079b22a1f845a0adcb95e82d3b9ea41d3cce1fb derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=04e5d651c0eecb5e342063ae24b41b43ddb3bcff
+cd_5773.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=9008f8b57daf742682ac9dad602068075cf62747 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=04e5d651c0eecb5e342063ae24b41b43ddb3bcff
+cd_5774.bin input size=0x5080 sha1=d6ec47da9fd94369819dd4ae7f5ef089a4b75a09
+cd_5774.bin parse ok
+cd_5774.bin serialize identity=yes size=0x5080 sha1=d6ec47da9fd94369819dd4ae7f5ef089a4b75a09
+cd_5774.bin state is_decrypted=true decrypted=true
+cd_5774.bin header magic=0x4344 version=5774 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_5774.bin fields padding=0x0000
+cd_5774.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=64d157ec7e0acff5305090ef229455322ce707d2 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=d1a028a92119b5f4e5b36734e4c8624548a4baa2
+cd_5774.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=c5deae33bb72cddab876cb4053551eff3cb437c3 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=d1a028a92119b5f4e5b36734e4c8624548a4baa2
+cd_6712.bin input size=0x56F0 sha1=3d64da6b6f7565cd959a67b794be604a328cfc1a
+cd_6712.bin parse ok
+cd_6712.bin serialize identity=yes size=0x56F0 sha1=3d64da6b6f7565cd959a67b794be604a328cfc1a
+cd_6712.bin state is_decrypted=true decrypted=true
+cd_6712.bin header magic=0x4344 version=6712 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x56F0
+cd_6712.bin fields padding=0x0000
+cd_6712.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=e35a8d6428df2100c7717b1badfd5621da31a745 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=38dd226d89c0305b5499afe50448c62f6d443aa4
+cd_6712.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=024380517b4be2f7360bb78f30460c61469c4df1 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=38dd226d89c0305b5499afe50448c62f6d443aa4
+cd_6723.bin input size=0x56F0 sha1=1e366882ae9a880d21860d01fb53948fdcf5afd0
+cd_6723.bin parse ok
+cd_6723.bin serialize identity=yes size=0x56F0 sha1=1e366882ae9a880d21860d01fb53948fdcf5afd0
+cd_6723.bin state is_decrypted=true decrypted=true
+cd_6723.bin header magic=0x4344 version=6723 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x56F0
+cd_6723.bin fields padding=0x0000
+cd_6723.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=34b9de5846210c16875cd439adfd9ff446a5c569 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=ff0c3b412837248a3cba01af1007f8461c367010
+cd_6723.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=15010f7b500d134c604d0b6a9c37bc36be8b870a derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=ff0c3b412837248a3cba01af1007f8461c367010
+cd_6753.bin input size=0x5080 sha1=e3f427be0560dbeaa26aea738b13f7ace6f7dc58
+cd_6753.bin parse ok
+cd_6753.bin serialize identity=yes size=0x5080 sha1=e3f427be0560dbeaa26aea738b13f7ace6f7dc58
+cd_6753.bin state is_decrypted=true decrypted=true
+cd_6753.bin header magic=0x4344 version=6753 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_6753.bin fields padding=0x0000
+cd_6753.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=1f4c529bddce8580237567e958d43b3298b5a282 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=9a6ca4cc287a43a127b3f10165b806eb0d4e931d
+cd_6753.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=556fcaee31b2df26cfd9e0a6fdb7e72f2557f0c0 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=9a6ca4cc287a43a127b3f10165b806eb0d4e931d
+cd_6754.bin input size=0x5080 sha1=39f61addc75fd5270b423402d1e041a2b79f19c0
+cd_6754.bin parse ok
+cd_6754.bin serialize identity=yes size=0x5080 sha1=39f61addc75fd5270b423402d1e041a2b79f19c0
+cd_6754.bin state is_decrypted=true decrypted=true
+cd_6754.bin header magic=0x4344 version=6754 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_6754.bin fields padding=0x0000
+cd_6754.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=6b3ee672f61ad8580399cd7eae48df85a7d6ff52 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=5fdc9f644309385b2d88f04cb839b69dc096100e
+cd_6754.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=011780d3abdc029c3e4a3eb08c464f3f176fe6a2 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=5fdc9f644309385b2d88f04cb839b69dc096100e
+cd_7377.bin input size=0x5080 sha1=a3df759806b7e089dd7d4a4d29e11fd87f833052
+cd_7377.bin parse ok
+cd_7377.bin serialize identity=yes size=0x5080 sha1=a3df759806b7e089dd7d4a4d29e11fd87f833052
+cd_7377.bin state is_decrypted=true decrypted=true
+cd_7377.bin header magic=0x4344 version=7377 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_7377.bin fields padding=0x0000
+cd_7377.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=635a358b4f6c8ce21c62c70ee997fd480ed55fd2 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=ca73b92118035883275d74e66d9f3227cac30f14
+cd_7377.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=643318a4771a1a3a97823e31a2d1c8b6c34d06b3 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=ca73b92118035883275d74e66d9f3227cac30f14
+cd_7378.bin input size=0x5080 sha1=81850b5fc0729aa6e42c37cf327eada11bfb7529
+cd_7378.bin parse ok
+cd_7378.bin serialize identity=yes size=0x5080 sha1=81850b5fc0729aa6e42c37cf327eada11bfb7529
+cd_7378.bin state is_decrypted=true decrypted=true
+cd_7378.bin header magic=0x4344 version=7378 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_7378.bin fields padding=0x0000
+cd_7378.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=d00efc92ee46bb2cc71953c349f8bb56b14fed7d derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=63229022a91b192b24bab6c8de89bb3d3db2c16d
+cd_7378.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=bb008bd8c30172c1ca04a68d672bb6a29d57da63 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=63229022a91b192b24bab6c8de89bb3d3db2c16d
+cd_8192.bin input size=0x5710 sha1=15769f28dbf75fccdd118460906d8ac61cebd2c3
+cd_8192.bin parse ok
+cd_8192.bin serialize identity=yes size=0x5710 sha1=15769f28dbf75fccdd118460906d8ac61cebd2c3
+cd_8192.bin state is_decrypted=true decrypted=true
+cd_8192.bin header magic=0x4344 version=8192 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x5710
+cd_8192.bin fields padding=0x0000
+cd_8192.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=b8747fab8964ebc3802f092d288fc12664c1419f derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=86f6e5510700a85b73c5cca1d5759aa2bdeea30a
+cd_8192.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=7f23d01e5435f40c1c96e84beb3268874902cba7 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=86f6e5510700a85b73c5cca1d5759aa2bdeea30a
+cd_8453.bin input size=0x5780 sha1=a2acaba53d014d620ffc38152eebba0c79a66478
+cd_8453.bin parse ok
+cd_8453.bin serialize identity=yes size=0x5780 sha1=a2acaba53d014d620ffc38152eebba0c79a66478
+cd_8453.bin state is_decrypted=true decrypted=true
+cd_8453.bin header magic=0x4344 version=8453 pairing=0x0000 flags=0x0000 entrypoint=0x00000260 size=0x5780
+cd_8453.bin fields padding=0x0000
+cd_8453.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=892ed3a4c8a085e628a63bab97b949d59063a6e8 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=8305867166df84ba12f6916c824fc9711f926405
+cd_8453.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=76b021366754cc48ad041fc97f7f01de5492ee61 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=8305867166df84ba12f6916c824fc9711f926405
+cd_9230.bin input size=0x5080 sha1=00afe64b0747331272348f8e0adc10ed84e18ba2
+cd_9230.bin parse ok
+cd_9230.bin serialize identity=yes size=0x5080 sha1=00afe64b0747331272348f8e0adc10ed84e18ba2
+cd_9230.bin state is_decrypted=true decrypted=true
+cd_9230.bin header magic=0x4344 version=9230 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_9230.bin fields padding=0x0000
+cd_9230.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=e56349910dd5fa15abfb92af0b4368860abd9dcc derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=02d8ffbb6d8897d4aba5426b5faaa3076207ce55
+cd_9230.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=3015beb9677a84bd49c70b69f68ddc454f2951ce derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=02d8ffbb6d8897d4aba5426b5faaa3076207ce55
+cd_9231.bin input size=0x5080 sha1=3d894d37de130bd3da10bec911388c88be3ec3ac
+cd_9231.bin parse ok
+cd_9231.bin serialize identity=yes size=0x5080 sha1=3d894d37de130bd3da10bec911388c88be3ec3ac
+cd_9231.bin state is_decrypted=true decrypted=true
+cd_9231.bin header magic=0x4344 version=9231 pairing=0x0000 flags=0x0000 entrypoint=0x00000310 size=0x5080
+cd_9231.bin fields padding=0x0000
+cd_9231.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=683f3b71c4651a455f13c13cace67254ca65b734 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=a3a2c0c68232c4359a19865005ba40ddb78ecc30
+cd_9231.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=86ece5ccc3875aeae7081625ea6388e68ad42d0c derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=a3a2c0c68232c4359a19865005ba40ddb78ecc30
+cd_9452.bin input size=0x4F20 sha1=fc2c0b5640476dd5894993bcb1a5ffc0456d8ebf
+cd_9452.bin parse ok
+cd_9452.bin serialize identity=yes size=0x4F20 sha1=fc2c0b5640476dd5894993bcb1a5ffc0456d8ebf
+cd_9452.bin state is_decrypted=true decrypted=true
+cd_9452.bin header magic=0x4344 version=9452 pairing=0x0000 flags=0x0000 entrypoint=0x00000270 size=0x4F20
+cd_9452.bin fields padding=0x0000
+cd_9452.bin seal.default nonce=kept encrypt=ok decrypted=false sha1=2dd01e1281a55dbbae8625d895020f83c6fe1828 derived_sha1=7d928bcfcb768c746b47e862648116376fa5f5d7 decrypt=ok decrypted=true sha1=fc2c0b5640476dd5894993bcb1a5ffc0456d8ebf
+cd_9452.bin seal.hmac1920 nonce=kept encrypt=ok decrypted=false sha1=207f59fba14d26ac0d3d2ed67eb04bfe2bb18fab derived_sha1=fe183b47bc57b9cf53d5a58861dfc5ebc9521176 decrypt=ok decrypted=true sha1=fc2c0b5640476dd5894993bcb1a5ffc0456d8ebf
+ce_1888.bin input size=0x5606A sha1=b76cfddca14075ba89f1c0668fdab76449edb0a7
+ce_1888.bin parse ok
+ce_1888.bin serialize identity=yes size=0x5606A sha1=b76cfddca14075ba89f1c0668fdab76449edb0a7
+ce_1888.bin state is_decrypted=true decrypted=true
+ce_1888.bin header magic=0x4345 version=1888 pairing=0x0000 flags=0x0000 entrypoint=0x00000000 size=0x5606A
+ce_1888.bin fields address=0x0000000000000000 size=0x120000 padding=0x00000000
+ce_1888.bin seal.parent_key nonce=pinned encrypt=ok decrypted=false sha1=653b98841c9f5f51dbea2ab45c0cd1ad4124cd8c derived_sha1=n/a decrypt=ok decrypted=true sha1=16e325567b7d243009f36c666fa6144c7191f8dc
+cf_4532.bin input size=0x44C0 sha1=12b644ede1b60a34dedd2e281747b989e490d646
+cf_4532.bin parse ok
+cf_4532.bin serialize identity=yes size=0x44C0 sha1=12b644ede1b60a34dedd2e281747b989e490d646
+cf_4532.bin state is_decrypted=true decrypted=true
+cf_4532.bin header magic=0x4346 version=4532 pairing=0x0000 flags=0x4000 entrypoint=0x00000360 size=0x44C0
+cf_4532.bin fields source_version=1888 source_qfe=0 target_version=4532 target_qfe=0 reserved=0x00000000 cg_size=0x2EF40 fixpoint_sha1=e129f27c5103bc5cc44bcdf0a15e160d445066ff
+cf_4532.bin perbox 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+cf_4532.bin cf.cg_key b7efb3b7604938c4d2c3a28f53da7ae3
+cf_4532.bin cf.calc_mac result=ok sha1=1ee0e105cd4eedaf3c691c49544a583b246008a9 digest=140a2ffab0464e65a605e40b4af68f17
+cf_4532.bin seal.1bl encrypt=ok decrypted=false sha1=650e1face78f4fde6cfef30f04d349f0d292a630 decrypt=ok decrypted=true sha1=12b644ede1b60a34dedd2e281747b989e490d646 cg_key=b7efb3b7604938c4d2c3a28f53da7ae3
+cg_4532.bin input size=0x2EF40 sha1=b42cf0a521e609c68315f64261b6d9387f13d204
+cg_4532.bin parse ok
+cg_4532.bin serialize identity=yes size=0x2EF40 sha1=b42cf0a521e609c68315f64261b6d9387f13d204
+cg_4532.bin state is_decrypted=true decrypted=true
+cg_4532.bin header magic=0x4347 version=4532 pairing=0x0000 flags=0x0000 entrypoint=0x00000000 size=0x2EF3A
+cg_4532.bin fields source_size=0x120000 target_size=0x140000
+cg_4532.bin seal.cf_4532_cg_key nonce=pinned encrypt=ok decrypted=false sha1=5fb627a2b8c267e29369c8d78aca5fe980604654 derived_sha1=n/a decrypt=ok decrypted=true sha1=9b817543918cb92a261da3bb747e0d4c10e92475
+sd_21076.bin input size=0x4E70 sha1=0cfcb173defde461c39ed0d9ae11205ec16d4cf2
+sd_21076.bin parse ok
+sd_21076.bin serialize identity=yes size=0x4E70 sha1=0cfcb173defde461c39ed0d9ae11205ec16d4cf2
+sd_21076.bin state is_decrypted=true decrypted=true
+sd_21076.bin header magic=0x5344 version=21076 pairing=0x8000 flags=0x0000 entrypoint=0x00000300 size=0x4E70
+sd_21076.bin fields padding=0x0000
+sd_21076.bin seal.default nonce=pinned encrypt=ok decrypted=false sha1=0af60e4f6bdb3d8b9a286646707ee57f4fd276b2 derived_sha1=6cf5413c2b8053015b052f9426cc58a9f99b666e decrypt=ok decrypted=true sha1=837633716d5acdfc275c0b9efcf9cfc5febb4f4f
+sd_21076.bin seal.hmac1920 nonce=pinned encrypt=ok decrypted=false sha1=9f48b51e23ff84a74f2371a488babcae07b9b495 derived_sha1=e96cdc7d1e0347411eb0c94c17e0ce0df74366c1 decrypt=ok decrypted=true sha1=837633716d5acdfc275c0b9efcf9cfc5febb4f4f

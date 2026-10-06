@@ -1,0 +1,225 @@
+donor.retail output_path=working/result.bin
+donor.retail.input build_type=retail image_type=SmallBlock console=Falcon
+donor.retail.input options cbldv="3" pairing_data=unset cfldv="5" xellbutton=unset xellbutton2=unset cygnos=unset demon=unset olddvd=unset nodvd=unset dualboot=unset
+donor.retail.input options nomobile=false nofcrt=true noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
+donor.retail.input options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
+donor.retail.input.metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
+donor.retail.input.metadata nand_image size=0x1080000 sha1=f2bb66045c15a0eaf0af374b291d2fbadf3e74fa
+donor.retail.input.metadata keyvault size=0x4000 sha1=a8b415fe31dcbbae87338e0fb9b45671dd0fff00
+donor.retail.input.metadata smc size=0x300 sha1=473191a3317ca0ad5e1872e4d37bbc4f5047b289
+donor.retail.input.metadata cb_ldv=7 pairing=a1b2c3 cf_ldv=5 cf_pairing=a1b2c3
+donor.retail.input.metadata console_type=0x0 console_sequence=0x0 console_sequence_allow=0x0
+donor.retail.input.metadata donor_nonces none
+donor.retail.input.metadata smc_config none
+donor.retail.input.metadata statistics size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+donor.retail.input.metadata manufacturing size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+donor.retail.input.metadata console_secured_files=0
+donor.retail.input.bootloaders cb_or_a size=0x1 sha1=12bdd00fd4038756cbcf8ecdad1b0cd862603cd8
+donor.retail.input.bootloaders cb_x none
+donor.retail.input.bootloaders cb_b none
+donor.retail.input.bootloaders sc none
+donor.retail.input.bootloaders cd size=0x1 sha1=126fe40d9e64df223c05078f44bf57cb794dd3e7
+donor.retail.input.bootloaders ce none
+donor.retail.input.bootloaders cf0 none
+donor.retail.input.bootloaders cg0 none
+donor.retail.input.bootloaders cf1 none
+donor.retail.input.bootloaders cg1 none
+donor.retail.input.bootloaders extra_cb none
+donor.retail.input.bootloaders extra_cd none
+donor.retail.input.mobiles 0x31 none
+donor.retail.input.mobiles 0x32 size=0x1 sha1=ffc54ca808e7666f250133ad0ae2185ad688a826
+donor.retail.input.mobiles 0x33 none
+donor.retail.input.mobiles 0x34 none
+donor.retail.input.mobiles 0x35 none
+donor.retail.input.mobiles 0x36 none
+donor.retail.input.mobiles 0x37 none
+donor.retail.input.mobiles 0x38 none
+donor.retail.input.mobiles 0x39 none
+donor.retail.input.patches none
+donor.retail.input.payloads none
+donor.retail.input.flashfs_sec files=1
+donor.retail.input.flashfs_sec "launch.ini" size=0x2 sha1=06d945942aa26a61be18c3e22bf19bbca8dd2b5d
+donor.retail.input.raw_patches=0
+donor.retail.input.sb_private_key none
+loose.retail output_path=working/result.bin
+loose.retail.input build_type=retail image_type=SmallBlock console=Falcon
+loose.retail.input options cbldv="2" pairing_data="010203" cfldv="3" xellbutton=unset xellbutton2=unset cygnos=unset demon=unset olddvd=unset nodvd=unset dualboot=unset
+loose.retail.input options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
+loose.retail.input options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
+loose.retail.input.metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
+loose.retail.input.metadata nand_image none
+loose.retail.input.metadata keyvault size=0x4000 sha1=a8b415fe31dcbbae87338e0fb9b45671dd0fff00
+loose.retail.input.metadata smc size=0x300 sha1=473191a3317ca0ad5e1872e4d37bbc4f5047b289
+loose.retail.input.metadata cb_ldv=2 pairing=010203 cf_ldv=3 cf_pairing=none
+loose.retail.input.metadata console_type=0x0 console_sequence=0x0 console_sequence_allow=0x0
+loose.retail.input.metadata donor_nonces none
+loose.retail.input.metadata smc_config none
+loose.retail.input.metadata statistics none
+loose.retail.input.metadata manufacturing none
+loose.retail.input.metadata console_secured_files=0
+loose.retail.input.bootloaders cb_or_a size=0x2 sha1=2aa415cf035c9871d20b38a18376ffcc36bf631c
+loose.retail.input.bootloaders cb_x none
+loose.retail.input.bootloaders cb_b none
+loose.retail.input.bootloaders sc none
+loose.retail.input.bootloaders cd size=0x2 sha1=5edfc4f2f7677ab117d9629ccedc5f3f4d313cb5
+loose.retail.input.bootloaders ce none
+loose.retail.input.bootloaders cf0 none
+loose.retail.input.bootloaders cg0 none
+loose.retail.input.bootloaders cf1 none
+loose.retail.input.bootloaders cg1 none
+loose.retail.input.bootloaders extra_cb none
+loose.retail.input.bootloaders extra_cd none
+loose.retail.input.mobiles 0x31 size=0x2 sha1=85a816df1ac806aff60f0728f1d9e2601d08fafa
+loose.retail.input.mobiles 0x32 none
+loose.retail.input.mobiles 0x33 none
+loose.retail.input.mobiles 0x34 none
+loose.retail.input.mobiles 0x35 none
+loose.retail.input.mobiles 0x36 none
+loose.retail.input.mobiles 0x37 none
+loose.retail.input.mobiles 0x38 none
+loose.retail.input.mobiles 0x39 none
+loose.retail.input.patches none
+loose.retail.input.payloads none
+loose.retail.input.flashfs_sec files=2
+loose.retail.input.flashfs_sec "launch.ini" size=0x1 sha1=32096c2e0eff33d844ee6d675407ace18289357d
+loose.retail.input.flashfs_sec "secdata.bin" size=0x20 sha1=76925f71b6427093117906a37ce42eb68e1d71a6
+loose.retail.input.raw_patches=0
+loose.retail.input.sb_private_key none
+loose.jtag output_path=working/result.bin
+loose.jtag.input build_type=jtag image_type=SmallBlock console=Falcon
+loose.jtag.input options cbldv="2" pairing_data="010203" cfldv="3" xellbutton=unset xellbutton2=unset cygnos=unset demon=unset olddvd=unset nodvd=unset dualboot=unset
+loose.jtag.input options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
+loose.jtag.input options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
+loose.jtag.input.metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
+loose.jtag.input.metadata nand_image none
+loose.jtag.input.metadata keyvault size=0x4000 sha1=a8b415fe31dcbbae87338e0fb9b45671dd0fff00
+loose.jtag.input.metadata smc size=0x300 sha1=473191a3317ca0ad5e1872e4d37bbc4f5047b289
+loose.jtag.input.metadata cb_ldv=2 pairing=010203 cf_ldv=3 cf_pairing=none
+loose.jtag.input.metadata console_type=0x0 console_sequence=0x0 console_sequence_allow=0x0
+loose.jtag.input.metadata donor_nonces none
+loose.jtag.input.metadata smc_config none
+loose.jtag.input.metadata statistics none
+loose.jtag.input.metadata manufacturing none
+loose.jtag.input.metadata console_secured_files=0
+loose.jtag.input.bootloaders cb_or_a size=0x2 sha1=2aa415cf035c9871d20b38a18376ffcc36bf631c
+loose.jtag.input.bootloaders cb_x none
+loose.jtag.input.bootloaders cb_b none
+loose.jtag.input.bootloaders sc none
+loose.jtag.input.bootloaders cd size=0x2 sha1=5edfc4f2f7677ab117d9629ccedc5f3f4d313cb5
+loose.jtag.input.bootloaders ce none
+loose.jtag.input.bootloaders cf0 none
+loose.jtag.input.bootloaders cg0 none
+loose.jtag.input.bootloaders cf1 none
+loose.jtag.input.bootloaders cg1 none
+loose.jtag.input.bootloaders extra_cb size=0x400 sha1=9c90b9abd9dbc29f1843ca1650632f9fa2fffda9
+loose.jtag.input.bootloaders extra_cd none
+loose.jtag.input.mobiles 0x31 none
+loose.jtag.input.mobiles 0x32 none
+loose.jtag.input.mobiles 0x33 none
+loose.jtag.input.mobiles 0x34 none
+loose.jtag.input.mobiles 0x35 none
+loose.jtag.input.mobiles 0x36 none
+loose.jtag.input.mobiles 0x37 none
+loose.jtag.input.mobiles 0x38 none
+loose.jtag.input.mobiles 0x39 none
+loose.jtag.input.patches automatic "patches_falcon_test.bin" size=0x21 sha1=8e37d374e4bda7c7be88372173108281d0a3d6a1 addons=0
+loose.jtag.input.payloads xell size=0x40000 sha1=c3b94fc51065004560a99515e76b623a7141e3ef
+loose.jtag.input.payloads rebooter size=0xd40 sha1=35f97373b1cc816241ad454dc65af1eedfc5bc13
+loose.jtag.input.payloads fuses size=0x60 sha1=2a5e8e97095541d63d9309df52046646a36d65e4
+loose.jtag.input.payloads patches none
+loose.jtag.input.payloads payload size=0x200 sha1=0f22adcd938108d7640cdbfffbe6dc3eb86627b2
+loose.jtag.input.flashfs_sec files=0
+loose.jtag.input.raw_patches=0
+loose.jtag.input.sb_private_key none
+loose.devgl output_path=working/result.bin
+loose.devgl.input build_type=devgl image_type=SmallBlock console=Falcon
+loose.devgl.input options cbldv="2" pairing_data="010203" cfldv="3" xellbutton=unset xellbutton2=unset cygnos=unset demon=unset olddvd=unset nodvd=unset dualboot=unset
+loose.devgl.input options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
+loose.devgl.input options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
+loose.devgl.input.metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
+loose.devgl.input.metadata nand_image none
+loose.devgl.input.metadata keyvault size=0x4000 sha1=a8b415fe31dcbbae87338e0fb9b45671dd0fff00
+loose.devgl.input.metadata smc size=0x300 sha1=473191a3317ca0ad5e1872e4d37bbc4f5047b289
+loose.devgl.input.metadata cb_ldv=2 pairing=010203 cf_ldv=3 cf_pairing=none
+loose.devgl.input.metadata console_type=0x0 console_sequence=0x0 console_sequence_allow=0x0
+loose.devgl.input.metadata donor_nonces none
+loose.devgl.input.metadata smc_config none
+loose.devgl.input.metadata statistics none
+loose.devgl.input.metadata manufacturing none
+loose.devgl.input.metadata console_secured_files=0
+loose.devgl.input.bootloaders cb_or_a size=0x2 sha1=2aa415cf035c9871d20b38a18376ffcc36bf631c
+loose.devgl.input.bootloaders cb_x none
+loose.devgl.input.bootloaders cb_b none
+loose.devgl.input.bootloaders sc none
+loose.devgl.input.bootloaders cd size=0x2 sha1=5edfc4f2f7677ab117d9629ccedc5f3f4d313cb5
+loose.devgl.input.bootloaders ce none
+loose.devgl.input.bootloaders cf0 none
+loose.devgl.input.bootloaders cg0 none
+loose.devgl.input.bootloaders cf1 none
+loose.devgl.input.bootloaders cg1 none
+loose.devgl.input.bootloaders extra_cb none
+loose.devgl.input.bootloaders extra_cd none
+loose.devgl.input.mobiles 0x31 none
+loose.devgl.input.mobiles 0x32 none
+loose.devgl.input.mobiles 0x33 none
+loose.devgl.input.mobiles 0x34 none
+loose.devgl.input.mobiles 0x35 none
+loose.devgl.input.mobiles 0x36 none
+loose.devgl.input.mobiles 0x37 none
+loose.devgl.input.mobiles 0x38 none
+loose.devgl.input.mobiles 0x39 none
+loose.devgl.input.patches automatic "patches_g2mfalcon_test.bin" size=0x21 sha1=8e37d374e4bda7c7be88372173108281d0a3d6a1 addons=0
+loose.devgl.input.payloads xell none
+loose.devgl.input.payloads rebooter none
+loose.devgl.input.payloads fuses size=0x60 sha1=927a41e4398e266eb48769cf537a292bb46e20a3
+loose.devgl.input.payloads patches none
+loose.devgl.input.payloads payload none
+loose.devgl.input.flashfs_sec files=0
+loose.devgl.input.raw_patches=0
+loose.devgl.input.sb_private_key size=0x390
+donor-glitch2.retail output_path=working/result.bin
+donor-glitch2.retail.input build_type=retail image_type=SmallBlock console=none
+donor-glitch2.retail.input options cbldv=unset pairing_data=unset cfldv=unset xellbutton=unset xellbutton2=unset cygnos=unset demon=unset olddvd=unset nodvd=unset dualboot=unset
+donor-glitch2.retail.input options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
+donor-glitch2.retail.input options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
+donor-glitch2.retail.input.metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
+donor-glitch2.retail.input.metadata nand_image size=0x1080000 sha1=65b70465b4112d8439ab83bca9a06c801cd74bad
+donor-glitch2.retail.input.metadata keyvault size=0x4000 sha1=c0ad35b92eb66ed5b3c7b5cb06f8177136d43262
+donor-glitch2.retail.input.metadata smc size=0x300 sha1=5d222da93ef6439b5448a73957644e94216404ac
+donor-glitch2.retail.input.metadata cb_ldv=0 pairing=000000 cf_ldv=none cf_pairing=none
+donor-glitch2.retail.input.metadata console_type=0x0 console_sequence=0x0 console_sequence_allow=0x0
+donor-glitch2.retail.input.metadata donor_nonces none
+donor-glitch2.retail.input.metadata smc_config none
+donor-glitch2.retail.input.metadata statistics size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+donor-glitch2.retail.input.metadata manufacturing size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+donor-glitch2.retail.input.metadata console_secured_files=0
+donor-glitch2.retail.input.bootloaders cb_or_a size=0x1 sha1=12bdd00fd4038756cbcf8ecdad1b0cd862603cd8
+donor-glitch2.retail.input.bootloaders cb_x none
+donor-glitch2.retail.input.bootloaders cb_b none
+donor-glitch2.retail.input.bootloaders sc none
+donor-glitch2.retail.input.bootloaders cd size=0x1 sha1=126fe40d9e64df223c05078f44bf57cb794dd3e7
+donor-glitch2.retail.input.bootloaders ce none
+donor-glitch2.retail.input.bootloaders cf0 none
+donor-glitch2.retail.input.bootloaders cg0 none
+donor-glitch2.retail.input.bootloaders cf1 none
+donor-glitch2.retail.input.bootloaders cg1 none
+donor-glitch2.retail.input.bootloaders extra_cb none
+donor-glitch2.retail.input.bootloaders extra_cd none
+donor-glitch2.retail.input.mobiles 0x31 none
+donor-glitch2.retail.input.mobiles 0x32 none
+donor-glitch2.retail.input.mobiles 0x33 none
+donor-glitch2.retail.input.mobiles 0x34 none
+donor-glitch2.retail.input.mobiles 0x35 none
+donor-glitch2.retail.input.mobiles 0x36 none
+donor-glitch2.retail.input.mobiles 0x37 none
+donor-glitch2.retail.input.mobiles 0x38 none
+donor-glitch2.retail.input.mobiles 0x39 none
+donor-glitch2.retail.input.patches none
+donor-glitch2.retail.input.payloads xell size=0x40000 sha1=15a23045d1bed2bc8f12d8a483c20125f51ca187
+donor-glitch2.retail.input.payloads rebooter none
+donor-glitch2.retail.input.payloads fuses none
+donor-glitch2.retail.input.payloads patches none
+donor-glitch2.retail.input.payloads payload none
+donor-glitch2.retail.input.flashfs_sec files=0
+donor-glitch2.retail.input.raw_patches=0
+donor-glitch2.retail.input.sb_private_key none

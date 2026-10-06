@@ -1,0 +1,295 @@
+small.glitch2.extract_some_info header magic=0xff4f version=0x760 flags=0x0 size=0xb0000
+small.glitch2.extract_some_info copyright=""
+small.glitch2.extract_some_info block_type=SmallBlock
+small.glitch2.extract_some_info bl.cb_a name="CB_A" present=1 decrypted=0 version=0x1 size=0x390 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_some_info bl.cb_b name="CB_B" present=1 decrypted=0 version=0x1 size=0x390 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_some_info bl.cb_x none
+small.glitch2.extract_some_info bl.sc name="SC" present=1 decrypted=0 version=0x1 size=0x140 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_some_info bl.cd name="CD" present=1 decrypted=0 version=0x1 size=0x280 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_some_info bl.ce name="CE" present=1 decrypted=0 version=0x1 size=0x50 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_some_info bl.cf_0 name="CF_0" present=1 decrypted=0 version=0x1 size=0x370 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_some_info bl.cg_0 name="CG_0" present=1 decrypted=0 version=0x1 size=0x90 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_some_info bl.cf_1 none
+small.glitch2.extract_some_info bl.cg_1 none
+small.glitch2.extract_some_info chain cb_ldv=0 cb_pairing=000000 cf0_ldv=none cf0_pairing=none cf1_ldv=none cf1_pairing=none
+small.glitch2.extract_some_info smc present=1 decrypted=0 size=0x300 version="1.0.17" motherboard="Xenon" type="Unknown"
+small.glitch2.extract_some_info flashfs present=0 files=0
+small.glitch2.extract_some_info keyvault present=0 decrypted=0 kv_type=0 fcrt_required=0 region_raw=0x0 region_name=""
+small.glitch2.extract_some_info keyvault.identity serial=empty console_id_raw=empty console_id_friendly=empty osig=empty mfr_date=empty dvd_key=empty
+small.glitch2.extract_some_info cpu_key none
+small.glitch2.extract_some_info raw_keyvault none
+small.glitch2.extract_metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
+small.glitch2.extract_metadata nand_image size=0x1080000 sha1=20b04ecf917bb8468e38f0be1644c455a36b9d92
+small.glitch2.extract_metadata keyvault size=0x4000 sha1=7b619465eb670ec45032f7a3725cc9c0be886518
+small.glitch2.extract_metadata smc none
+small.glitch2.extract_metadata cb_ldv=0 pairing=000000 cf_ldv=212 cf_pairing=000000
+small.glitch2.extract_metadata console_type=0x0 console_sequence=0x0 console_sequence_allow=0x0
+small.glitch2.extract_metadata donor_nonces.stage0=a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
+small.glitch2.extract_metadata donor_nonces.stage1=a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2
+small.glitch2.extract_metadata donor_nonces.stage2=a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3
+small.glitch2.extract_metadata donor_nonces.stage3=a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4
+small.glitch2.extract_metadata donor_nonces.cf=b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1
+small.glitch2.extract_metadata donor_nonces.cg=c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1
+small.glitch2.extract_metadata smc_config none
+small.glitch2.extract_metadata statistics size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+small.glitch2.extract_metadata manufacturing size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+small.glitch2.extract_metadata console_secured_files=0
+small.glitch2.extract_all_info header magic=0xff4f version=0x760 flags=0x0 size=0xb0000
+small.glitch2.extract_all_info copyright=""
+small.glitch2.extract_all_info block_type=SmallBlock
+small.glitch2.extract_all_info bl.cb_a name="CB_A" present=1 decrypted=1 version=0x1 size=0x390 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_all_info bl.cb_b name="CB_B" present=1 decrypted=1 version=0x1 size=0x390 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_all_info bl.cb_x none
+small.glitch2.extract_all_info bl.sc name="SC" present=1 decrypted=1 version=0x1 size=0x140 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_all_info bl.cd name="CD" present=1 decrypted=1 version=0x1 size=0x280 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_all_info bl.ce name="CE" present=1 decrypted=1 version=0x1 size=0x50 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_all_info bl.cf_0 name="CF_0" present=1 decrypted=1 version=0x1 size=0x370 flags=0x0 entrypoint=0x0 ldv=212 pairing=000000
+small.glitch2.extract_all_info bl.cg_0 name="CG_0" present=1 decrypted=1 version=0x1 size=0x90 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+small.glitch2.extract_all_info bl.cf_1 none
+small.glitch2.extract_all_info bl.cg_1 none
+small.glitch2.extract_all_info chain cb_ldv=0 cb_pairing=000000 cf0_ldv=212 cf0_pairing=000000 cf1_ldv=none cf1_pairing=none
+small.glitch2.extract_all_info smc present=1 decrypted=1 size=0x300 version="1.0.17" motherboard="Xenon" type="Unknown"
+small.glitch2.extract_all_info flashfs present=0 files=0
+small.glitch2.extract_all_info keyvault present=1 decrypted=1 kv_type=2 fcrt_required=1 region_raw=0x2222 region_name="Unknown"
+small.glitch2.extract_all_info keyvault.identity serial=len=12,sha1=8090628bad685ad9d426159b65e967d860d07dae console_id_raw=len=10,sha1=b1017ab1177d72528be39841a24e2f9f459b2b36 console_id_friendly=len=12,sha1=4d52977cecb6e2aa90d82d16f561d1fef62b0bc1 osig=len=28,sha1=69e3f7aa3f7a2a5faba98677ad00700f6971b085 mfr_date=len=8,sha1=3a6a759692d69ed5931fcf8e4b587f23881c557a dvd_key=len=32,sha1=90675d733405acb85f6f82f5fb976c073bbe8a2a
+small.glitch2.extract_all_info cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
+small.glitch2.extract_all_info raw_keyvault size=0x4000 sha1=7b619465eb670ec45032f7a3725cc9c0be886518
+small.glitch2.extract_all build_type=retail image_type=SmallBlock console=none
+small.glitch2.extract_all options cbldv=unset pairing_data=unset cfldv=unset xellbutton=unset xellbutton2=unset cygnos=unset demon=unset olddvd=unset nodvd=unset dualboot=unset
+small.glitch2.extract_all options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
+small.glitch2.extract_all options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
+small.glitch2.extract_all.metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
+small.glitch2.extract_all.metadata nand_image size=0x1080000 sha1=20b04ecf917bb8468e38f0be1644c455a36b9d92
+small.glitch2.extract_all.metadata keyvault size=0x4000 sha1=7b619465eb670ec45032f7a3725cc9c0be886518
+small.glitch2.extract_all.metadata smc size=0x300 sha1=b9bfae0ea64300ef88d7bc90da4f07604b544c51
+small.glitch2.extract_all.metadata cb_ldv=0 pairing=000000 cf_ldv=212 cf_pairing=000000
+small.glitch2.extract_all.metadata console_type=0x0 console_sequence=0x0 console_sequence_allow=0x0
+small.glitch2.extract_all.metadata donor_nonces.stage0=a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
+small.glitch2.extract_all.metadata donor_nonces.stage1=a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2
+small.glitch2.extract_all.metadata donor_nonces.stage2=a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3
+small.glitch2.extract_all.metadata donor_nonces.stage3=a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4
+small.glitch2.extract_all.metadata donor_nonces.cf=b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1
+small.glitch2.extract_all.metadata donor_nonces.cg=c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1
+small.glitch2.extract_all.metadata smc_config none
+small.glitch2.extract_all.metadata statistics size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+small.glitch2.extract_all.metadata manufacturing size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+small.glitch2.extract_all.metadata console_secured_files=0
+small.glitch2.extract_all.bootloaders cb_or_a size=0x390 sha1=eaab7f1b7c90b54ef63a886c17e617341b00dd31
+small.glitch2.extract_all.bootloaders cb_x none
+small.glitch2.extract_all.bootloaders cb_b size=0x390 sha1=7de83ec44e46cf6b3d99351820a63e09fbb6bbfb
+small.glitch2.extract_all.bootloaders sc size=0x140 sha1=158e207696a4631ee4f138c0897b5fcf2f782e4c
+small.glitch2.extract_all.bootloaders cd size=0x280 sha1=a05266e6cb323f2e202c223da4c9db4544eaf628
+small.glitch2.extract_all.bootloaders ce size=0x50 sha1=1b0ec99b4fb98997b6ea2098ce48f2112187c7e1
+small.glitch2.extract_all.bootloaders cf0 size=0x370 sha1=d7062ea929ecdca0fb16d3fdd2d540c7b0c63446
+small.glitch2.extract_all.bootloaders cg0 size=0x90 sha1=f5fb8fc7a0e74c06968b371e9e7919137772d86e
+small.glitch2.extract_all.bootloaders cf1 none
+small.glitch2.extract_all.bootloaders cg1 none
+small.glitch2.extract_all.bootloaders extra_cb none
+small.glitch2.extract_all.bootloaders extra_cd none
+small.glitch2.extract_all.mobiles 0x31 none
+small.glitch2.extract_all.mobiles 0x32 none
+small.glitch2.extract_all.mobiles 0x33 none
+small.glitch2.extract_all.mobiles 0x34 none
+small.glitch2.extract_all.mobiles 0x35 none
+small.glitch2.extract_all.mobiles 0x36 none
+small.glitch2.extract_all.mobiles 0x37 none
+small.glitch2.extract_all.mobiles 0x38 none
+small.glitch2.extract_all.mobiles 0x39 none
+small.glitch2.extract_all.patches none
+small.glitch2.extract_all.payloads xell size=0x40000 sha1=b498fe0b01e0115860d97ae13227db789848b013
+small.glitch2.extract_all.payloads rebooter none
+small.glitch2.extract_all.payloads fuses none
+small.glitch2.extract_all.payloads patches none
+small.glitch2.extract_all.payloads payload none
+small.glitch2.extract_all.flashfs_sec none
+small.glitch2.extract_all.raw_patches=0
+small.glitch2.extract_all.sb_private_key none
+newsmall.devkit.extract_some_info header magic=0xff4f version=0x4451 flags=0x0 size=0xc000
+newsmall.devkit.extract_some_info copyright="\xa9 2004-2010 Microsoft Corporation. All rights reserved."
+newsmall.devkit.extract_some_info block_type=NewSmallBlock
+newsmall.devkit.extract_some_info bl.cb_a name="CB_A" present=1 decrypted=0 version=0x2887 size=0x410 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.extract_some_info bl.cb_b none
+newsmall.devkit.extract_some_info bl.cb_x none
+newsmall.devkit.extract_some_info bl.sc name="SC" present=1 decrypted=0 version=0x4451 size=0x168 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.extract_some_info bl.cd name="CD" present=1 decrypted=0 version=0x4451 size=0x290 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.extract_some_info bl.ce name="CE" present=1 decrypted=0 version=0x4451 size=0x72 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.extract_some_info bl.cf_0 none
+newsmall.devkit.extract_some_info bl.cg_0 none
+newsmall.devkit.extract_some_info bl.cf_1 none
+newsmall.devkit.extract_some_info bl.cg_1 none
+newsmall.devkit.extract_some_info chain cb_ldv=0 cb_pairing=000000 cf0_ldv=none cf0_pairing=none cf1_ldv=none cf1_pairing=none
+newsmall.devkit.extract_some_info smc present=1 decrypted=0 size=0x300 version="1.0.17" motherboard="Xenon" type="Unknown"
+newsmall.devkit.extract_some_info flashfs present=0 files=0
+newsmall.devkit.extract_some_info keyvault present=0 decrypted=0 kv_type=0 fcrt_required=0 region_raw=0x0 region_name=""
+newsmall.devkit.extract_some_info keyvault.identity serial=empty console_id_raw=empty console_id_friendly=empty osig=empty mfr_date=empty dvd_key=empty
+newsmall.devkit.extract_some_info cpu_key none
+newsmall.devkit.extract_some_info raw_keyvault none
+newsmall.devkit.extract_metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
+newsmall.devkit.extract_metadata nand_image size=0x4200000 sha1=fab55f91a6669be82c9eff3a53f19ed6bf4e46f0
+newsmall.devkit.extract_metadata keyvault size=0x4000 sha1=7b619465eb670ec45032f7a3725cc9c0be886518
+newsmall.devkit.extract_metadata smc none
+newsmall.devkit.extract_metadata cb_ldv=0 pairing=123456 cf_ldv=none cf_pairing=none
+newsmall.devkit.extract_metadata console_type=0x5b console_sequence=0x5b console_sequence_allow=0x0
+newsmall.devkit.extract_metadata donor_nonces.stage0=a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
+newsmall.devkit.extract_metadata donor_nonces.stage1=a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2
+newsmall.devkit.extract_metadata donor_nonces.stage2=a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3
+newsmall.devkit.extract_metadata donor_nonces.stage3=a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4
+newsmall.devkit.extract_metadata donor_nonces.cf=none
+newsmall.devkit.extract_metadata donor_nonces.cg=none
+newsmall.devkit.extract_metadata smc_config none
+newsmall.devkit.extract_metadata statistics size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+newsmall.devkit.extract_metadata manufacturing size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+newsmall.devkit.extract_metadata console_secured_files=0
+newsmall.devkit.extract_all_info header magic=0xff4f version=0x4451 flags=0x0 size=0xc000
+newsmall.devkit.extract_all_info copyright="\xa9 2004-2010 Microsoft Corporation. All rights reserved."
+newsmall.devkit.extract_all_info block_type=NewSmallBlock
+newsmall.devkit.extract_all_info bl.cb_a name="CB_A" present=1 decrypted=1 version=0x2887 size=0x410 flags=0x0 entrypoint=0x0 ldv=0 pairing=123456
+newsmall.devkit.extract_all_info bl.cb_b none
+newsmall.devkit.extract_all_info bl.cb_x none
+newsmall.devkit.extract_all_info bl.sc name="SC" present=1 decrypted=1 version=0x4451 size=0x168 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.extract_all_info bl.cd name="CD" present=1 decrypted=1 version=0x4451 size=0x290 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.extract_all_info bl.ce name="CE" present=1 decrypted=1 version=0x4451 size=0x72 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.extract_all_info bl.cf_0 none
+newsmall.devkit.extract_all_info bl.cg_0 none
+newsmall.devkit.extract_all_info bl.cf_1 none
+newsmall.devkit.extract_all_info bl.cg_1 none
+newsmall.devkit.extract_all_info chain cb_ldv=0 cb_pairing=123456 cf0_ldv=none cf0_pairing=none cf1_ldv=none cf1_pairing=none
+newsmall.devkit.extract_all_info smc present=1 decrypted=1 size=0x300 version="1.0.17" motherboard="Xenon" type="Unknown"
+newsmall.devkit.extract_all_info flashfs present=0 files=0
+newsmall.devkit.extract_all_info keyvault present=1 decrypted=1 kv_type=2 fcrt_required=1 region_raw=0x2222 region_name="Unknown"
+newsmall.devkit.extract_all_info keyvault.identity serial=len=12,sha1=8090628bad685ad9d426159b65e967d860d07dae console_id_raw=len=10,sha1=b1017ab1177d72528be39841a24e2f9f459b2b36 console_id_friendly=len=12,sha1=4d52977cecb6e2aa90d82d16f561d1fef62b0bc1 osig=len=28,sha1=69e3f7aa3f7a2a5faba98677ad00700f6971b085 mfr_date=len=8,sha1=3a6a759692d69ed5931fcf8e4b587f23881c557a dvd_key=len=32,sha1=90675d733405acb85f6f82f5fb976c073bbe8a2a
+newsmall.devkit.extract_all_info cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
+newsmall.devkit.extract_all_info raw_keyvault size=0x4000 sha1=7b619465eb670ec45032f7a3725cc9c0be886518
+newsmall.devkit.extract_all build_type=devkit image_type=NewSmallBlock console=none
+newsmall.devkit.extract_all options cbldv=unset pairing_data=unset cfldv=unset xellbutton=unset xellbutton2=unset cygnos=unset demon=unset olddvd=unset nodvd=unset dualboot=unset
+newsmall.devkit.extract_all options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
+newsmall.devkit.extract_all options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
+newsmall.devkit.extract_all.metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
+newsmall.devkit.extract_all.metadata nand_image size=0x4200000 sha1=fab55f91a6669be82c9eff3a53f19ed6bf4e46f0
+newsmall.devkit.extract_all.metadata keyvault size=0x4000 sha1=7b619465eb670ec45032f7a3725cc9c0be886518
+newsmall.devkit.extract_all.metadata smc size=0x300 sha1=b9bfae0ea64300ef88d7bc90da4f07604b544c51
+newsmall.devkit.extract_all.metadata cb_ldv=0 pairing=123456 cf_ldv=none cf_pairing=none
+newsmall.devkit.extract_all.metadata console_type=0x5b console_sequence=0x5b console_sequence_allow=0x0
+newsmall.devkit.extract_all.metadata donor_nonces.stage0=a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
+newsmall.devkit.extract_all.metadata donor_nonces.stage1=a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2
+newsmall.devkit.extract_all.metadata donor_nonces.stage2=a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3
+newsmall.devkit.extract_all.metadata donor_nonces.stage3=a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4
+newsmall.devkit.extract_all.metadata donor_nonces.cf=none
+newsmall.devkit.extract_all.metadata donor_nonces.cg=none
+newsmall.devkit.extract_all.metadata smc_config none
+newsmall.devkit.extract_all.metadata statistics size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+newsmall.devkit.extract_all.metadata manufacturing size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+newsmall.devkit.extract_all.metadata console_secured_files=0
+newsmall.devkit.extract_all.bootloaders cb_or_a size=0x410 sha1=30315a0b8ef33d47710933fd24fcb7c60c83abe2
+newsmall.devkit.extract_all.bootloaders cb_x none
+newsmall.devkit.extract_all.bootloaders cb_b none
+newsmall.devkit.extract_all.bootloaders sc size=0x170 sha1=912f262f26e32fcf02055df73423cab0881b5d5f
+newsmall.devkit.extract_all.bootloaders cd size=0x290 sha1=d9cf16843763d35e304893bf8af5edf650f5ee6d
+newsmall.devkit.extract_all.bootloaders ce size=0x80 sha1=cbeec917468958cdf5eaf882a95e3cdae0f7bc57
+newsmall.devkit.extract_all.bootloaders cf0 none
+newsmall.devkit.extract_all.bootloaders cg0 none
+newsmall.devkit.extract_all.bootloaders cf1 none
+newsmall.devkit.extract_all.bootloaders cg1 none
+newsmall.devkit.extract_all.bootloaders extra_cb none
+newsmall.devkit.extract_all.bootloaders extra_cd none
+newsmall.devkit.extract_all.mobiles 0x31 none
+newsmall.devkit.extract_all.mobiles 0x32 none
+newsmall.devkit.extract_all.mobiles 0x33 none
+newsmall.devkit.extract_all.mobiles 0x34 none
+newsmall.devkit.extract_all.mobiles 0x35 none
+newsmall.devkit.extract_all.mobiles 0x36 none
+newsmall.devkit.extract_all.mobiles 0x37 none
+newsmall.devkit.extract_all.mobiles 0x38 none
+newsmall.devkit.extract_all.mobiles 0x39 none
+newsmall.devkit.extract_all.patches none
+newsmall.devkit.extract_all.payloads none
+newsmall.devkit.extract_all.flashfs_sec none
+newsmall.devkit.extract_all.raw_patches=0
+newsmall.devkit.extract_all.sb_private_key none
+newsmall.devkit.zero-key.extract_some_info header magic=0xff4f version=0x4451 flags=0x0 size=0xc000
+newsmall.devkit.zero-key.extract_some_info copyright="\xa9 2004-2010 Microsoft Corporation. All rights reserved."
+newsmall.devkit.zero-key.extract_some_info block_type=NewSmallBlock
+newsmall.devkit.zero-key.extract_some_info bl.cb_a name="CB_A" present=1 decrypted=0 version=0x2887 size=0x410 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.zero-key.extract_some_info bl.cb_b none
+newsmall.devkit.zero-key.extract_some_info bl.cb_x none
+newsmall.devkit.zero-key.extract_some_info bl.sc name="SC" present=1 decrypted=0 version=0x4451 size=0x168 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.zero-key.extract_some_info bl.cd name="CD" present=1 decrypted=0 version=0x4451 size=0x290 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.zero-key.extract_some_info bl.ce name="CE" present=1 decrypted=0 version=0x4451 size=0x72 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.zero-key.extract_some_info bl.cf_0 none
+newsmall.devkit.zero-key.extract_some_info bl.cg_0 none
+newsmall.devkit.zero-key.extract_some_info bl.cf_1 none
+newsmall.devkit.zero-key.extract_some_info bl.cg_1 none
+newsmall.devkit.zero-key.extract_some_info chain cb_ldv=0 cb_pairing=000000 cf0_ldv=none cf0_pairing=none cf1_ldv=none cf1_pairing=none
+newsmall.devkit.zero-key.extract_some_info smc present=1 decrypted=0 size=0x300 version="1.0.17" motherboard="Xenon" type="Unknown"
+newsmall.devkit.zero-key.extract_some_info flashfs present=0 files=0
+newsmall.devkit.zero-key.extract_some_info keyvault present=0 decrypted=0 kv_type=0 fcrt_required=0 region_raw=0x0 region_name=""
+newsmall.devkit.zero-key.extract_some_info keyvault.identity serial=empty console_id_raw=empty console_id_friendly=empty osig=empty mfr_date=empty dvd_key=empty
+newsmall.devkit.zero-key.extract_some_info cpu_key none
+newsmall.devkit.zero-key.extract_some_info raw_keyvault none
+newsmall.devkit.zero-key.extract_metadata error the keyvault does not open under the CPU key
+newsmall.devkit.zero-key.extract_all_info header magic=0xff4f version=0x4451 flags=0x0 size=0xc000
+newsmall.devkit.zero-key.extract_all_info copyright="\xa9 2004-2010 Microsoft Corporation. All rights reserved."
+newsmall.devkit.zero-key.extract_all_info block_type=NewSmallBlock
+newsmall.devkit.zero-key.extract_all_info bl.cb_a name="CB_A" present=1 decrypted=1 version=0x2887 size=0x410 flags=0x0 entrypoint=0x0 ldv=0 pairing=123456
+newsmall.devkit.zero-key.extract_all_info bl.cb_b none
+newsmall.devkit.zero-key.extract_all_info bl.cb_x none
+newsmall.devkit.zero-key.extract_all_info bl.sc name="SC" present=1 decrypted=1 version=0x4451 size=0x168 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.zero-key.extract_all_info bl.cd name="CD" present=1 decrypted=1 version=0x4451 size=0x290 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.zero-key.extract_all_info bl.ce name="CE" present=1 decrypted=1 version=0x4451 size=0x72 flags=0x0 entrypoint=0x0 ldv=none pairing=none
+newsmall.devkit.zero-key.extract_all_info bl.cf_0 none
+newsmall.devkit.zero-key.extract_all_info bl.cg_0 none
+newsmall.devkit.zero-key.extract_all_info bl.cf_1 none
+newsmall.devkit.zero-key.extract_all_info bl.cg_1 none
+newsmall.devkit.zero-key.extract_all_info chain cb_ldv=0 cb_pairing=123456 cf0_ldv=none cf0_pairing=none cf1_ldv=none cf1_pairing=none
+newsmall.devkit.zero-key.extract_all_info smc present=1 decrypted=1 size=0x300 version="1.0.17" motherboard="Xenon" type="Unknown"
+newsmall.devkit.zero-key.extract_all_info flashfs present=0 files=0
+newsmall.devkit.zero-key.extract_all_info keyvault present=1 decrypted=0 kv_type=2 fcrt_required=1 region_raw=0x16b9 region_name="Unknown"
+newsmall.devkit.zero-key.extract_all_info keyvault.identity serial=len=12,sha1=e966ee2687d51a97c2b39c3a30f19d0f055d162d console_id_raw=len=10,sha1=ee090b316d6724b2469e28dfca7161d24207cfff console_id_friendly=len=13,sha1=367021eebbc8761cf43874b2a142a5a49ba101bb osig=len=28,sha1=64c3376ce07fee691dc2a780c0bf66b8eac9ffb2 mfr_date=len=8,sha1=b588dc00f8ed1303f490cbe9753894d50dac393a dvd_key=len=32,sha1=c0bb6866c1645a791a697ab7bb8af7738d8b286b
+newsmall.devkit.zero-key.extract_all_info cpu_key size=0x10 sha1=e129f27c5103bc5cc44bcdf0a15e160d445066ff
+newsmall.devkit.zero-key.extract_all_info raw_keyvault size=0x4000 sha1=7f77c8a35d3a2aacab169eb2ea146000b407fa3a
+newsmall.devkit.zero-key.extract_all build_type=devkit image_type=NewSmallBlock console=none
+newsmall.devkit.zero-key.extract_all options cbldv=unset pairing_data=unset cfldv=unset xellbutton=unset xellbutton2=unset cygnos=unset demon=unset olddvd=unset nodvd=unset dualboot=unset
+newsmall.devkit.zero-key.extract_all options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
+newsmall.devkit.zero-key.extract_all options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
+newsmall.devkit.zero-key.extract_all.metadata cpu_key size=0x10 sha1=e129f27c5103bc5cc44bcdf0a15e160d445066ff
+newsmall.devkit.zero-key.extract_all.metadata nand_image size=0x4200000 sha1=fab55f91a6669be82c9eff3a53f19ed6bf4e46f0
+newsmall.devkit.zero-key.extract_all.metadata keyvault none
+newsmall.devkit.zero-key.extract_all.metadata smc size=0x300 sha1=b9bfae0ea64300ef88d7bc90da4f07604b544c51
+newsmall.devkit.zero-key.extract_all.metadata cb_ldv=0 pairing=123456 cf_ldv=none cf_pairing=none
+newsmall.devkit.zero-key.extract_all.metadata console_type=0x5b console_sequence=0x5b console_sequence_allow=0x0
+newsmall.devkit.zero-key.extract_all.metadata donor_nonces.stage0=a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
+newsmall.devkit.zero-key.extract_all.metadata donor_nonces.stage1=a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2
+newsmall.devkit.zero-key.extract_all.metadata donor_nonces.stage2=a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3
+newsmall.devkit.zero-key.extract_all.metadata donor_nonces.stage3=a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4
+newsmall.devkit.zero-key.extract_all.metadata donor_nonces.cf=none
+newsmall.devkit.zero-key.extract_all.metadata donor_nonces.cg=none
+newsmall.devkit.zero-key.extract_all.metadata smc_config none
+newsmall.devkit.zero-key.extract_all.metadata statistics size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+newsmall.devkit.zero-key.extract_all.metadata manufacturing size=0x1000 sha1=e0c66649d1434eca3435033a32634cb90cef0f31
+newsmall.devkit.zero-key.extract_all.metadata console_secured_files=0
+newsmall.devkit.zero-key.extract_all.bootloaders cb_or_a size=0x410 sha1=30315a0b8ef33d47710933fd24fcb7c60c83abe2
+newsmall.devkit.zero-key.extract_all.bootloaders cb_x none
+newsmall.devkit.zero-key.extract_all.bootloaders cb_b none
+newsmall.devkit.zero-key.extract_all.bootloaders sc size=0x170 sha1=912f262f26e32fcf02055df73423cab0881b5d5f
+newsmall.devkit.zero-key.extract_all.bootloaders cd size=0x290 sha1=d9cf16843763d35e304893bf8af5edf650f5ee6d
+newsmall.devkit.zero-key.extract_all.bootloaders ce size=0x80 sha1=cbeec917468958cdf5eaf882a95e3cdae0f7bc57
+newsmall.devkit.zero-key.extract_all.bootloaders cf0 none
+newsmall.devkit.zero-key.extract_all.bootloaders cg0 none
+newsmall.devkit.zero-key.extract_all.bootloaders cf1 none
+newsmall.devkit.zero-key.extract_all.bootloaders cg1 none
+newsmall.devkit.zero-key.extract_all.bootloaders extra_cb none
+newsmall.devkit.zero-key.extract_all.bootloaders extra_cd none
+newsmall.devkit.zero-key.extract_all.mobiles 0x31 none
+newsmall.devkit.zero-key.extract_all.mobiles 0x32 none
+newsmall.devkit.zero-key.extract_all.mobiles 0x33 none
+newsmall.devkit.zero-key.extract_all.mobiles 0x34 none
+newsmall.devkit.zero-key.extract_all.mobiles 0x35 none
+newsmall.devkit.zero-key.extract_all.mobiles 0x36 none
+newsmall.devkit.zero-key.extract_all.mobiles 0x37 none
+newsmall.devkit.zero-key.extract_all.mobiles 0x38 none
+newsmall.devkit.zero-key.extract_all.mobiles 0x39 none
+newsmall.devkit.zero-key.extract_all.patches none
+newsmall.devkit.zero-key.extract_all.payloads none
+newsmall.devkit.zero-key.extract_all.flashfs_sec none
+newsmall.devkit.zero-key.extract_all.raw_patches=0
+newsmall.devkit.zero-key.extract_all.sb_private_key none

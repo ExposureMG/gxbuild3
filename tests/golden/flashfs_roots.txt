@@ -1,0 +1,61 @@
+# FlashFileSystem root codec, save()+driver.serialize() and load pins (FlashFileSystemTests.cpp)
+[small] mode=Small base=0x0 ratio=1 blocks=0x400 clusters=0x400 root_block=0x5C version=0x7 big_fs_size=0x2006
+[small] entry a.bin block=0x50 length=0x4001 ts=0x5D444AC2 chain=50,51
+[small] entry b.bin block=0x56 length=0x10 ts=0x11223344 chain=56
+[small] entry c.bin block=0x57 length=0x9000 ts=0x5D444AC2 chain=57,58,59
+[small] entry empty.bin block=0x5A length=0x0 ts=0x5D444AC2 chain=5A
+[small] entry abcdefghijklmnopq.bin block=0x5B length=0x200 ts=0x01020304 chain=5B
+[small] link 0x57 -> 0x8058
+[small] root size=0x4000 sha1=e4cbb77bec19b15f822ea24e49c101a64f4360f5
+[small] image size=0x1080000 sha1=df23714203267e59e67a33203e4ff02aa49df035
+[small] reload mode=Small load=ok version=0x7 entries=5 files_equal=yes root_identity=yes
+[newsmall] mode=NewSmall base=0x0 ratio=1 blocks=0x400 clusters=0x400 root_block=0x5C version=0x9 big_fs_size=0x2006
+[newsmall] entry a.bin block=0x50 length=0x4001 ts=0x5D444AC2 chain=50,51
+[newsmall] entry b.bin block=0x56 length=0x10 ts=0x11223344 chain=56
+[newsmall] entry c.bin block=0x57 length=0x9000 ts=0x5D444AC2 chain=57,58,59
+[newsmall] entry empty.bin block=0x5A length=0x0 ts=0x5D444AC2 chain=5A
+[newsmall] entry abcdefghijklmnopq.bin block=0x5B length=0x200 ts=0x01020304 chain=5B
+[newsmall] link 0x57 -> 0x8058
+[newsmall] root size=0x4000 sha1=e4cbb77bec19b15f822ea24e49c101a64f4360f5
+[newsmall] image size=0x1080000 sha1=ee1933e83e323fba55bb6d000223b0a76d1a029b
+[newsmall] reload mode=NewSmall load=ok version=0x9 entries=5 files_equal=yes root_identity=yes
+[big] mode=Big base=0xAE0 ratio=8 blocks=0x200 clusters=0x1000 root_block=0x15F version=0x125 big_fs_size=0x2006
+[big] entry a.bin block=0xAE0 length=0x4001 ts=0x5D444AC2 chain=AE0,AE1
+[big] entry b.bin block=0xAE5 length=0x10 ts=0x11223344 chain=AE5
+[big] entry c.bin block=0xAE6 length=0x9000 ts=0x5D444AC2 chain=AE6,AE7,AF0
+[big] entry empty.bin block=0xAF1 length=0x0 ts=0x5D444AC2 chain=AF1
+[big] entry abcdefghijklmnopq.bin block=0xAF2 length=0x200 ts=0x01020304 chain=AF2
+[big] link 0xAE6 -> 0x8AE7
+[big] root size=0x4000 sha1=924405ca84c6b7bf1502b27c04bda58604c538ea
+[big] image size=0x4200000 sha1=93a4a5e4f4f1f13dde489b00f6452c04d3ff599d
+[big] reload mode=Big load=ok version=0x125 entries=5 files_equal=yes root_identity=yes
+[big_larger] mode=Big base=0x2E0 ratio=8 blocks=0x200 clusters=0x1000 root_block=0x5F version=0x126 big_fs_size=0x6010
+[big_larger] entry a.bin block=0x2E0 length=0x4001 ts=0x5D444AC2 chain=2E0,2E1
+[big_larger] entry b.bin block=0x2E5 length=0x10 ts=0x11223344 chain=2E5
+[big_larger] entry c.bin block=0x2E6 length=0x9000 ts=0x5D444AC2 chain=2E6,2E7,2F0
+[big_larger] entry empty.bin block=0x2F1 length=0x0 ts=0x5D444AC2 chain=2F1
+[big_larger] entry abcdefghijklmnopq.bin block=0x2F2 length=0x200 ts=0x01020304 chain=2F2
+[big_larger] link 0x2E6 -> 0x82E7
+[big_larger] root size=0x4000 sha1=39ee0b12bb03af1a3d4027e125267e338bb4908f
+[big_larger] image size=0x4200000 sha1=0afdcaad99c8e87b16dcd2f5d451987b2f8099f7
+[big_larger] reload mode=Big load=ok version=0x126 entries=5 files_equal=yes root_identity=yes
+[emmc] mode=Emmc base=0x0 ratio=1 blocks=0xC00 clusters=0xC00 root_block=0x5C version=0x3 big_fs_size=0x2006
+[emmc] entry a.bin block=0x50 length=0x4001 ts=0x5D444AC2 chain=50,51
+[emmc] entry b.bin block=0x56 length=0x10 ts=0x11223344 chain=56
+[emmc] entry c.bin block=0x57 length=0x9000 ts=0x5D444AC2 chain=57,58,59
+[emmc] entry empty.bin block=0x5A length=0x0 ts=0x5D444AC2 chain=5A
+[emmc] entry abcdefghijklmnopq.bin block=0x5B length=0x200 ts=0x01020304 chain=5B
+[emmc] link 0x57 -> 0x8058
+[emmc] root size=0x4000 sha1=f82637ac38d37aacf131e8aae4246de3c5cce270
+[emmc] image size=0x3000000 sha1=5a6ad58c0928fc31aca133b1133ff5133c2b613d
+[emmc] reload mode=Emmc load=ok version=0x0 entries=5 files_equal=yes root_identity=yes
+[load skip_ffff] ok entries=a.bin@0x60,c.bin@0x62
+[load drop_compact] ok entries=a.bin@0x60,d.bin@0x63
+[load drop_compact] reserialized slots: 0=a.bin 1=d.bin rest_zero=yes
+[load big_relative_zero] ok entries=zero.bin@0xAE0
+[load link_past_map] err=malformed
+[load flagged_link_past_map] err=malformed
+[load file_past_map] err=malformed
+[load dropped_past_map] ok entries=
+[load short_root] err=truncated
+[load short_emmc_root] mode=Emmc err=truncated
