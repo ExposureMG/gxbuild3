@@ -59,7 +59,6 @@ set(pragma_pack_allowlist
 set(byte_swap_allowlist
     src/Endian.hpp
     src/Wire.hpp
-    src/stfs/MetadataParser.cpp
 )
 
 set(rule_shim_name_regex "[A-Za-z0-9_]_or_throw[^A-Za-z0-9_]")

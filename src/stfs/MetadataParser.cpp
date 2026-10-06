@@ -1,13 +1,17 @@
 #include "stfs/MetadataParser.hpp"
 
-#include "Endian.hpp"
+#include "Wire.hpp"
 #include "stfs/Commons.hpp"
 #include "stfs/Layout.hpp"
 
 #include <algorithm>
 #include <array>
 #include <bit>
-#include <cstring>
+#include <cstddef>
+#include <cstdint>
+#include <span>
+#include <utility>
+#include <vector>
 
 namespace gxbuild3::stfs {
 
@@ -31,14 +35,14 @@ namespace gxbuild3::stfs {
             }
         }
 
-        // Decodes a NUL-terminated UTF-16BE string of at most `max_bytes` bytes to UTF-8.
+        // Decodes a NUL-terminated UTF-16BE string held in `bytes` to UTF-8.
         // Unpaired surrogates become U+FFFD; a trailing odd byte is ignored.
-        std::u8string read_locale_string(const std::byte* ptr, std::size_t max_bytes) {
+        std::u8string read_locale_string(std::span<const std::uint8_t> bytes) {
             constexpr char32_t kReplacement = 0xFFFD;
-            const std::size_t units = max_bytes / 2;
-            const auto unit = [ptr](std::size_t i) -> char32_t {
-                return (static_cast<char32_t>(ptr[2 * i]) << 8) |
-                       static_cast<char32_t>(ptr[2 * i + 1]);
+            const std::size_t units = bytes.size() / 2;
+            const auto unit = [bytes](std::size_t i) -> char32_t {
+                return (static_cast<char32_t>(bytes[2 * i]) << 8) |
+                       static_cast<char32_t>(bytes[2 * i + 1]);
             };
 
             std::u8string out;
@@ -69,51 +73,75 @@ namespace gxbuild3::stfs {
             return size <= 0 ? 0 : static_cast<std::size_t>(std::min(size, kMaxThumbnailSize));
         }
 
-        StfsVolumeDescriptor parse_stfs_volume_descriptor(const std::byte* ptr) {
+        // Copies an on-disk byte field into the model's std::byte array of the same size.
+        template <std::size_t N>
+        [[nodiscard]] std::array<std::byte, N> to_array(const std::uint8_t (&field)[N]) {
+            return std::bit_cast<std::array<std::byte, N>>(field);
+        }
+
+        [[nodiscard]] Result<StfsVolumeDescriptor>
+        parse_stfs_volume_descriptor(std::span<const std::uint8_t> bytes) {
+            auto disk = wire::read<stfs_volume_descriptor_disk>(bytes, 0, "STFS volume descriptor");
+            if (!disk) {
+                return std::unexpected(std::move(disk.error()));
+            }
+
             StfsVolumeDescriptor vd;
-            vd.size = static_cast<std::uint8_t>(ptr[0x00]);
-            vd.block_separation = static_cast<std::uint8_t>(ptr[0x02]);
-            vd.file_table_block_count = static_cast<std::int16_t>(read_le16(ptr + 0x03));
-            vd.file_table_block_number = static_cast<std::int32_t>(read_le24(ptr + 0x05));
-            std::memcpy(vd.top_hash_table_hash.data(), ptr + 0x08, 0x14);
-            vd.total_allocated_block_count = static_cast<std::int32_t>(read_be32(ptr + 0x1C));
-            vd.total_unallocated_block_count = static_cast<std::int32_t>(read_be32(ptr + 0x20));
+            vd.size = disk->size;
+            vd.block_separation = disk->block_separation;
+            vd.file_table_block_count =
+                static_cast<std::int16_t>(disk->file_table_block_count.get());
+            vd.file_table_block_number =
+                static_cast<std::int32_t>(disk->file_table_block_number.get());
+            vd.top_hash_table_hash = to_array(disk->top_hash_table_hash);
+            vd.total_allocated_block_count =
+                static_cast<std::int32_t>(disk->total_allocated_block_count.get());
+            vd.total_unallocated_block_count =
+                static_cast<std::int32_t>(disk->total_unallocated_block_count.get());
             return vd;
         }
 
-        SvodVolumeDescriptor parse_svod_volume_descriptor(const std::byte* ptr) {
+        [[nodiscard]] Result<SvodVolumeDescriptor>
+        parse_svod_volume_descriptor(std::span<const std::uint8_t> bytes) {
+            auto disk = wire::read<svod_volume_descriptor_disk>(bytes, 0, "SVOD volume descriptor");
+            if (!disk) {
+                return std::unexpected(std::move(disk.error()));
+            }
+
             SvodVolumeDescriptor vd;
-            vd.size = static_cast<std::uint8_t>(ptr[0x00]);
-            vd.block_cache_element_count = static_cast<std::uint8_t>(ptr[0x01]);
-            vd.worker_thread_processor = static_cast<std::uint8_t>(ptr[0x02]);
-            vd.worker_thread_priority = static_cast<std::uint8_t>(ptr[0x03]);
-            std::memcpy(vd.hash.data(), ptr + 0x04, 0x14);
-            vd.device_features = static_cast<std::uint8_t>(ptr[0x18]);
-            vd.data_block_count = read_be24(ptr + 0x19);
-            vd.data_block_offset = read_be24(ptr + 0x1C);
+            vd.size = disk->size;
+            vd.block_cache_element_count = disk->block_cache_element_count;
+            vd.worker_thread_processor = disk->worker_thread_processor;
+            vd.worker_thread_priority = disk->worker_thread_priority;
+            vd.hash = to_array(disk->hash);
+            vd.device_features = disk->device_features;
+            vd.data_block_count = disk->data_block_count.get();
+            vd.data_block_offset = disk->data_block_offset.get();
             return vd;
         }
 
-        std::vector<LicenseEntry> parse_license_entries(const std::byte* ptr) {
+        [[nodiscard]] Result<VolumeDescriptor>
+        parse_volume_descriptor(DescriptorType type, std::span<const std::uint8_t> bytes) {
+            if (type == DescriptorType::Svod) {
+                return parse_svod_volume_descriptor(bytes);
+            }
+            return parse_stfs_volume_descriptor(bytes);
+        }
+
+        std::vector<LicenseEntry> parse_license_entries(const stfs_metadata_disk& md) {
             std::vector<LicenseEntry> entries;
-            constexpr std::size_t entry_size = 0x10;
-            constexpr std::size_t entry_count = 0x100 / entry_size;
-
-            for (std::size_t i = 0; i < entry_count; ++i) {
-                const auto* entry_ptr = ptr + i * entry_size;
-                std::uint64_t license_id = read_be64(entry_ptr + 0x0);
-
+            for (const stfs_license_entry& disk : md.license) {
+                const std::uint64_t license_id = disk.id;
                 if (license_id == 0) {
                     continue;
                 }
 
                 LicenseEntry entry;
                 entry.license_id = static_cast<std::int64_t>(license_id);
-                entry.license_bits = static_cast<std::int32_t>(read_be32(entry_ptr + 0x8));
-                entry.license_flags = static_cast<std::int32_t>(read_be32(entry_ptr + 0xC));
+                entry.license_bits = static_cast<std::int32_t>(disk.bits.get());
+                entry.license_flags = static_cast<std::int32_t>(disk.flags.get());
                 entries.push_back(entry);
             }
-
             return entries;
         }
     } // namespace
@@ -125,13 +153,15 @@ namespace gxbuild3::stfs {
                         kMinMetadataSize, data.size());
         }
 
-        const auto* base = data.data();
+        const auto disk =
+            wire::read<stfs_metadata_disk>(wire::as_u8(data), kMetadataOffset, "STFS metadata");
+        if (!disk) {
+            return std::unexpected(disk.error());
+        }
+        const stfs_metadata_disk& md = *disk;
+
         Metadata meta;
-
-        meta.license_entries = parse_license_entries(base + 0x022C);
-
-        std::memcpy(meta.header_sha1.data(), base + 0x032C, 0x14);
-        meta.header_size = read_be32(base + 0x0340);
+        meta.header_size = md.header_size;
         // Every header holds at least the v1 metadata parsed here (real packages use 0x971A or
         // 0xAD0E); a header approaching 1 MiB is not a real STFS header.
         constexpr std::uint32_t kMaxHeaderSize = 0xFFFF0;
@@ -139,59 +169,63 @@ namespace gxbuild3::stfs {
             return fail(ErrorCode::Malformed, "STFS header size 0x{:X} is out of range",
                         meta.header_size);
         }
-        meta.content_type = static_cast<ContentType>(read_be32(base + 0x0344));
-        meta.metadata_version = static_cast<std::int32_t>(read_be32(base + 0x0348));
-        meta.content_size = static_cast<std::int64_t>(read_be64(base + 0x034C));
-        meta.media_id = read_be32(base + 0x0354);
-        meta.version = static_cast<std::int32_t>(read_be32(base + 0x0358));
-        meta.base_version = static_cast<std::int32_t>(read_be32(base + 0x035C));
-        meta.title_id = read_be32(base + 0x0360);
-        meta.platform = static_cast<Platform>(static_cast<std::uint8_t>(base[0x0364]));
-        meta.executable_type = static_cast<std::uint8_t>(base[0x0365]);
-        meta.disc_number = static_cast<std::uint8_t>(base[0x0366]);
-        meta.disc_in_set = static_cast<std::uint8_t>(base[0x0367]);
-        meta.save_game_id = read_be32(base + 0x0368);
 
-        std::memcpy(meta.console_id.data(), base + 0x036C, 5);
-        std::memcpy(meta.profile_id.data(), base + 0x0371, 8);
+        meta.license_entries = parse_license_entries(md);
+        meta.header_sha1 = to_array(md.header_sha1);
+        meta.content_type = static_cast<ContentType>(md.content_type.get());
+        meta.metadata_version = static_cast<std::int32_t>(md.metadata_version.get());
+        meta.content_size = static_cast<std::int64_t>(md.content_size.get());
+        meta.media_id = md.media_id;
+        meta.version = static_cast<std::int32_t>(md.version.get());
+        meta.base_version = static_cast<std::int32_t>(md.base_version.get());
+        meta.title_id = md.title_id;
+        meta.platform = static_cast<Platform>(md.platform);
+        meta.executable_type = md.executable_type;
+        meta.disc_number = md.disc_number;
+        meta.disc_in_set = md.disc_in_set;
+        meta.save_game_id = md.save_game_id;
+        meta.console_id = to_array(md.console_id);
+        meta.profile_id = to_array(md.profile_id);
 
-        auto descriptor_type_raw = read_be32(base + 0x03A9);
-        meta.descriptor_type = static_cast<DescriptorType>(descriptor_type_raw);
-
-        if (meta.descriptor_type == DescriptorType::Svod) {
-            meta.volume_descriptor = parse_svod_volume_descriptor(base + 0x0379);
-        } else {
-            meta.volume_descriptor = parse_stfs_volume_descriptor(base + 0x0379);
+        meta.descriptor_type = static_cast<DescriptorType>(md.descriptor_type.get());
+        auto volume_descriptor =
+            parse_volume_descriptor(meta.descriptor_type, std::span(md.volume_descriptor));
+        if (!volume_descriptor) {
+            return std::unexpected(std::move(volume_descriptor.error()));
         }
+        meta.volume_descriptor = std::move(*volume_descriptor);
 
-        meta.data_file_count = static_cast<std::int32_t>(read_be32(base + 0x039D));
-        meta.data_file_combined_size = static_cast<std::int64_t>(read_be64(base + 0x03A1));
+        meta.data_file_count = static_cast<std::int32_t>(md.data_file_count.get());
+        meta.data_file_combined_size = static_cast<std::int64_t>(md.data_file_combined_size.get());
 
         if (meta.metadata_version == 2) {
             MetadataV2Extra extra;
-            std::memcpy(extra.series_id.data(), base + 0x03B1, 0x10);
-            std::memcpy(extra.season_id.data(), base + 0x03C1, 0x10);
-            extra.season_number = static_cast<std::int16_t>(read_be16(base + 0x03D1));
-            extra.episode_number = static_cast<std::int16_t>(read_be16(base + 0x03D3));
+            extra.series_id = to_array(md.series_id);
+            extra.season_id = to_array(md.season_id);
+            extra.season_number = static_cast<std::int16_t>(md.season_number.get());
+            extra.episode_number = static_cast<std::int16_t>(md.episode_number.get());
             meta.v2_extra = extra;
         }
 
-        std::memcpy(meta.device_id.data(), base + 0x03FD, 0x14);
+        meta.device_id = to_array(md.device_id);
 
-        meta.display_name = read_locale_string(base + 0x0411, 0x900);
-        meta.display_description = read_locale_string(base + 0x0D11, 0x900);
-        meta.publisher_name = read_locale_string(base + 0x1611, 0x80);
-        meta.title_name = read_locale_string(base + 0x1691, 0x80);
+        meta.display_name = read_locale_string(md.display_name);
+        meta.display_description = read_locale_string(md.display_description);
+        meta.publisher_name = read_locale_string(md.publisher_name);
+        meta.title_name = read_locale_string(md.title_name);
 
-        meta.transfer_flags = static_cast<std::uint8_t>(base[0x1711]);
-        meta.thumbnail_image_size = static_cast<std::int32_t>(read_be32(base + 0x1712));
-        meta.title_thumbnail_image_size = static_cast<std::int32_t>(read_be32(base + 0x1716));
+        meta.transfer_flags = md.transfer_flags;
+        meta.thumbnail_image_size = static_cast<std::int32_t>(md.thumbnail_image_size.get());
+        meta.title_thumbnail_image_size =
+            static_cast<std::int32_t>(md.title_thumbnail_image_size.get());
 
-        const auto thumb_size = thumbnail_size(meta.thumbnail_image_size);
-        meta.thumbnail_image.assign(base + 0x171A, base + 0x171A + thumb_size);
+        const auto thumbnail =
+            data.subspan(kThumbnailOffset, thumbnail_size(meta.thumbnail_image_size));
+        meta.thumbnail_image.assign(thumbnail.begin(), thumbnail.end());
 
-        const auto title_thumb_size = thumbnail_size(meta.title_thumbnail_image_size);
-        meta.title_thumbnail_image.assign(base + 0x571A, base + 0x571A + title_thumb_size);
+        const auto title_thumbnail =
+            data.subspan(kTitleThumbnailOffset, thumbnail_size(meta.title_thumbnail_image_size));
+        meta.title_thumbnail_image.assign(title_thumbnail.begin(), title_thumbnail.end());
 
         return meta;
     }
