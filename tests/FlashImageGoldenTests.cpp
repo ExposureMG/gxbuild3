@@ -32,6 +32,7 @@
 // stages from, for mutation checks against scratch copies only.
 
 #include "BuildRunner.hpp"
+#include "Endian.hpp"
 #include "GoldenSnapshot.hpp"
 #include "Sha256.hpp"
 #include "excrypt.h"

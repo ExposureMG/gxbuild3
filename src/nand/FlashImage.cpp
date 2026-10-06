@@ -465,9 +465,9 @@ namespace gxbuild3::nand {
             generic_header bldr_hdr{};
             std::memcpy(&bldr_hdr, bldr_hdr_bytes.data(), sizeof(generic_header));
 
-            uint16_t magic = bswap16(bldr_hdr.magic);
-            uint16_t version = bswap16(bldr_hdr.version);
-            uint32_t bldr_size = bswap32(bldr_hdr.size);
+            const uint16_t magic = bldr_hdr.magic;
+            const uint16_t version = bldr_hdr.version;
+            const uint32_t bldr_size = bldr_hdr.size;
 
             if (bldr_size == 0 || bldr_size > 0x100000 || cursor + bldr_size > image_bytes.size()) {
                 break;
@@ -537,8 +537,8 @@ namespace gxbuild3::nand {
 
             generic_header slot_hdr{};
             std::memcpy(&slot_hdr, slot_hdr_bytes.data(), sizeof(generic_header));
-            if (bswap16(slot_hdr.magic) == 0x4346) {
-                uint32_t cf_size = bswap32(slot_hdr.size);
+            if (const uint16_t cf_magic = slot_hdr.magic; cf_magic == 0x4346) {
+                const uint32_t cf_size = slot_hdr.size;
                 if (cf_size > 0 && base_offset + cf_size <= image_bytes.size()) {
                     auto cf_data = flash_driver.read_clean(base_offset, cf_size);
                     if (auto parsed = parse_stage(slot.cf, cf_data, "CF", base_offset); !parsed) {
@@ -552,8 +552,8 @@ namespace gxbuild3::nand {
                         if (cg_hdr_bytes.size() == sizeof(generic_header)) {
                             generic_header cg_hdr{};
                             std::memcpy(&cg_hdr, cg_hdr_bytes.data(), sizeof(generic_header));
-                            if (bswap16(cg_hdr.magic) == 0x4347) {
-                                uint32_t cg_size = bswap32(cg_hdr.size);
+                            if (const uint16_t cg_magic = cg_hdr.magic; cg_magic == 0x4347) {
+                                const uint32_t cg_size = cg_hdr.size;
                                 if (cg_size > 0 && cg_offset + cg_size <= image_bytes.size()) {
                                     auto cg_data = flash_driver.read_clean(cg_offset, cg_size);
                                     const size_t prefix = std::min<size_t>(

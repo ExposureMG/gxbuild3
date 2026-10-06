@@ -29,7 +29,6 @@ namespace gxbuild3::nand {
 
         std::memcpy(&cb.header, bytes.data(), sizeof(generic_header));
 
-        byteswap_generic_header(cb.header.header);
         if (auto size = aligned_stage_size(cb.header.header.size, sizeof(generic_header), "CB");
             !size)
             return std::unexpected(std::move(size.error()));
@@ -135,16 +134,13 @@ namespace gxbuild3::nand {
     Result<void> BootloaderCb::decrypt_v2(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
                                           const uint8_t cpu_key[16]) {
         uint8_t digest[20];
-        uint8_t cb_a_hdr_copy[16];
 
         auto payload_len = prepare_payload();
         if (!payload_len)
             return std::unexpected(std::move(payload_len.error()));
 
-        generic_header be_hdr = cb_a_hdr.header;
-        byteswap_generic_header(be_hdr);
-
-        std::memcpy(cb_a_hdr_copy, &be_hdr, 16);
+        // The CB_A generic header with its flags cleared.
+        auto cb_a_hdr_copy = wire::encode(cb_a_hdr.header);
         cb_a_hdr_copy[6] = 0;
         cb_a_hdr_copy[7] = 0;
 
@@ -152,7 +148,7 @@ namespace gxbuild3::nand {
         ExCryptHmacShaInit(&state, cb_a_key, 16);
         ExCryptHmacShaUpdate(&state, data.data(), 0x10);
         ExCryptHmacShaUpdate(&state, cpu_key, 16);
-        ExCryptHmacShaUpdate(&state, cb_a_hdr_copy, 16);
+        ExCryptHmacShaUpdate(&state, cb_a_hdr_copy.data(), cb_a_hdr_copy.size());
         ExCryptHmacShaFinal(&state, digest, 20);
 
         apply_derived_key(digest, *payload_len);
@@ -191,10 +187,10 @@ namespace gxbuild3::nand {
         if (cb_a_header) {
             ExCryptHmacShaUpdate(&state, cpu_key.data(), 16);
             if ((cb_a_header->header.flags & 0x1000) != 0) {
-                auto header = cb_a_header->header;
+                generic_header header = cb_a_header->header;
                 header.flags = 0;
-                byteswap_generic_header(header);
-                ExCryptHmacShaUpdate(&state, reinterpret_cast<const uint8_t*>(&header), 16);
+                const auto head = wire::encode(header);
+                ExCryptHmacShaUpdate(&state, head.data(), head.size());
             }
         }
         ExCryptHmacShaFinal(&state, rc4_key, 16);
@@ -292,7 +288,6 @@ namespace gxbuild3::nand {
 
         std::memcpy(reinterpret_cast<uint8_t*>(&header) + sizeof(generic_header), data.data(),
                     sizeof(cb_header) - sizeof(generic_header));
-        byteswap_cb_header_numeric_fields(header);
         // The size check above covers the per-box block, so this only degrades on an
         // inconsistent stage; `perbox` then keeps its previous value.
         if (auto parsed = parse_perbox(); !parsed)
@@ -329,31 +324,26 @@ namespace gxbuild3::nand {
         constexpr size_t console_sequence_allow_offset =
             offsetof(cb_header, console_seq_allow) +
             offsetof(ConsoleTypeSeqAllow, console_sequence_allow) - sizeof(generic_header);
-        if (data.size() < console_sequence_allow_offset + sizeof(uint16_t))
+        const auto& wire_value = header.console_seq_allow.console_sequence_allow.raw();
+        if (data.size() < console_sequence_allow_offset + wire_value.size())
             return;
 
-        const uint16_t wire_value = bswap16(header.console_seq_allow.console_sequence_allow);
-        std::memcpy(data.data() + console_sequence_allow_offset, &wire_value, sizeof(wire_value));
+        std::memcpy(data.data() + console_sequence_allow_offset, wire_value.data(),
+                    wire_value.size());
     }
 
     std::vector<uint8_t> BootloaderCb::serialize() const {
         std::vector<uint8_t> out(sizeof(generic_header));
-
-        generic_header temp_hdr = header.header;
-
-        byteswap_generic_header(temp_hdr);
-
-        std::memcpy(out.data(), &temp_hdr, sizeof(generic_header));
+        std::memcpy(out.data(), &header.header, sizeof(generic_header));
         auto serialized_data = data;
         if (decrypted) {
             constexpr size_t console_sequence_allow_offset =
                 offsetof(cb_header, console_seq_allow) +
                 offsetof(ConsoleTypeSeqAllow, console_sequence_allow) - sizeof(generic_header);
-            if (serialized_data.size() >= console_sequence_allow_offset + sizeof(uint16_t)) {
-                const uint16_t wire_value =
-                    bswap16(header.console_seq_allow.console_sequence_allow);
-                std::memcpy(serialized_data.data() + console_sequence_allow_offset, &wire_value,
-                            sizeof(wire_value));
+            const auto& wire_value = header.console_seq_allow.console_sequence_allow.raw();
+            if (serialized_data.size() >= console_sequence_allow_offset + wire_value.size()) {
+                std::memcpy(serialized_data.data() + console_sequence_allow_offset,
+                            wire_value.data(), wire_value.size());
             }
         }
         out.insert(out.end(), serialized_data.begin(), serialized_data.end());

@@ -1,4 +1,5 @@
 #include "BuildRunner.hpp"
+#include "Endian.hpp"
 #include "ExtractProjection.hpp"
 #include "GoldenSnapshot.hpp"
 #include "Library.hpp"

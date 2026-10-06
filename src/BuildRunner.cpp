@@ -1,6 +1,7 @@
 #include "BuildRunner.hpp"
 
 #include "InputValidator.hpp"
+#include "Wire.hpp"
 #include "nand/FlashDriver.hpp"
 #include "nand/FlashImage.hpp"
 #include "nand/bootloaders/2bl.hpp"
@@ -362,8 +363,13 @@ namespace gxbuild3 {
                 return fail(ErrorCode::Truncated, "{} patch target has no bootloader header",
                             stage_name);
             }
-            const uint32_t be_size = bswap32(static_cast<uint32_t>(bytes.size()));
-            std::memcpy(bytes.data() + offsetof(generic_header, size), &be_size, sizeof(be_size));
+            const auto patched_size = static_cast<uint32_t>(bytes.size());
+            if (auto patched = wire::patch<generic_header>(
+                    bytes, 0, "patched bootloader header",
+                    [patched_size](generic_header& header) { header.size = patched_size; });
+                !patched) {
+                return std::unexpected(std::move(patched.error()));
+            }
             return bytes;
         }
 

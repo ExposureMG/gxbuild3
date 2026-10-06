@@ -27,8 +27,6 @@ namespace gxbuild3::nand {
 
         std::memcpy(&cf.header, bytes.data(), sizeof(cf_header));
 
-        byteswap_generic_header(cf.header.header);
-        byteswap_cf_header_numeric_fields(cf.header);
         if (auto size = aligned_stage_size(cf.header.header.size, sizeof(cf_header), "CF/6BL");
             !size)
             return std::unexpected(std::move(size.error()));
@@ -62,8 +60,6 @@ namespace gxbuild3::nand {
             return with_context(std::move(crypted), "CF/6BL");
 
         std::memcpy(&header, buffer.data(), sizeof(cf_header));
-        byteswap_generic_header(header.header);
-        byteswap_cf_header_numeric_fields(header);
 
         data = std::vector<uint8_t>(buffer.begin() + sizeof(cf_header), buffer.end());
 
@@ -98,10 +94,7 @@ namespace gxbuild3::nand {
         std::memcpy(cur_key, onebl_key, 16);
 
         std::vector<uint8_t> buffer(sizeof(cf_header) + data.size());
-        cf_header temp_hdr = header;
-        byteswap_generic_header(temp_hdr.header);
-        byteswap_cf_header_numeric_fields(temp_hdr);
-        std::memcpy(buffer.data(), &temp_hdr, sizeof(cf_header));
+        std::memcpy(buffer.data(), &header, sizeof(cf_header));
         std::memcpy(buffer.data() + sizeof(cf_header), data.data(), data.size());
 
         if (auto crypted =
@@ -110,8 +103,6 @@ namespace gxbuild3::nand {
             return with_context(std::move(crypted), "CF/6BL");
 
         std::memcpy(&header, buffer.data(), sizeof(cf_header));
-        byteswap_generic_header(header.header);
-        byteswap_cf_header_numeric_fields(header);
         std::memcpy(data.data(), buffer.data() + sizeof(cf_header), data.size());
 
         decrypted = false;
@@ -188,11 +179,7 @@ namespace gxbuild3::nand {
 
     std::vector<uint8_t> BootloaderCf::serialize() const {
         std::vector<uint8_t> out(sizeof(cf_header));
-        cf_header temp_hdr = header;
-        byteswap_generic_header(temp_hdr.header);
-        byteswap_cf_header_numeric_fields(temp_hdr);
-
-        std::memcpy(out.data(), &temp_hdr, sizeof(cf_header));
+        std::memcpy(out.data(), &header, sizeof(cf_header));
         out.insert(out.end(), data.begin(), data.end());
         return out;
     }

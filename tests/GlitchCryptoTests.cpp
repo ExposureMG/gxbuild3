@@ -23,6 +23,19 @@ namespace {
         return condition;
     }
 
+    // A generic stage header from host values (wire fields assign one at a time).
+    generic_header stage_header(uint16_t magic, uint16_t version, uint16_t pairing, uint16_t flags,
+                                uint32_t entrypoint, size_t size) {
+        generic_header header{};
+        header.magic = magic;
+        header.version = version;
+        header.pairing = pairing;
+        header.flags = flags;
+        header.entrypoint = entrypoint;
+        header.size = static_cast<uint32_t>(size);
+        return header;
+    }
+
     // Independent wire-format oracle: the HMAC/RC4 operations used by the reference
     // Python builders, without calling gxbuild3's bootloader crypto helpers.
     Key hmac(const Key& parent, const Bytes& message) {
@@ -42,7 +55,8 @@ namespace {
 
     Bytes cb(uint16_t version, uint16_t flags, uint8_t nonce) {
         BootloaderCb loader{};
-        loader.header.header = {NANDBootloaderMagic::CB, version, 0, flags, 0x400, 0x600};
+        loader.header.header =
+            stage_header(NANDBootloaderMagic::CB, version, 0, flags, 0x400, 0x600);
         loader.data.assign(0x600 - sizeof(generic_header), 0);
         std::fill_n(loader.data.begin(), 16, nonce);
         loader.data[0x400] = 0x42;
@@ -76,7 +90,8 @@ namespace {
         }
 
         BootloaderCd cd{};
-        cd.header.header = {NANDBootloaderMagic::CD, 9452, 0, 0, 0, sizeof(cd_header) + 0x20};
+        cd.header.header =
+            stage_header(NANDBootloaderMagic::CD, 9452, 0, 0, 0, sizeof(cd_header) + 0x20);
         std::fill_n(cd.header.key, 16, 0x44);
         cd.header.ce_hash[0] = 1;
         cd.data.assign(0x20, 0xCD);
@@ -84,7 +99,8 @@ namespace {
         input.bootloaders.cd = cd.serialize();
 
         BootloaderCe ce{};
-        ce.header.header = {NANDBootloaderMagic::CE, 1888, 0, 0, 0, sizeof(ce_header) + 0x20};
+        ce.header.header =
+            stage_header(NANDBootloaderMagic::CE, 1888, 0, 0, 0, sizeof(ce_header) + 0x20);
         std::fill_n(ce.header.key, 16, 0x55);
         ce.data.assign(0x20, 0xCE);
         ce.decrypted = true;
@@ -573,7 +589,8 @@ namespace {
         std::fill(input.bootloaders.cb_or_a.begin() + 0x20,
                   input.bootloaders.cb_or_a.begin() + 0x40, 0xCC);
         BootloaderCf cf{};
-        cf.header.header = {NANDBootloaderMagic::CF, 17559, 0, 0, 0, sizeof(cf_header) + 0x340};
+        cf.header.header =
+            stage_header(NANDBootloaderMagic::CF, 17559, 0, 0, 0, sizeof(cf_header) + 0x340);
         cf.data.assign(0x340, 0);
         cf.decrypted = true;
         input.bootloaders.cf0 = cf.serialize();
@@ -668,7 +685,8 @@ namespace {
 
         const Bytes extra_cb = cb(6750, 0, 0x66);
         BootloaderCd cd{};
-        cd.header.header = {NANDBootloaderMagic::CD, 8453, 0, 0, 0, sizeof(cd_header) + 0x20};
+        cd.header.header =
+            stage_header(NANDBootloaderMagic::CD, 8453, 0, 0, 0, sizeof(cd_header) + 0x20);
         std::fill_n(cd.header.key, 16, 0x88);
         cd.header.ce_hash[0] = 1;
         cd.data.assign(0x20, 0xDC);
@@ -744,7 +762,8 @@ namespace {
         // Decrypted CF whose 7BL nonce (payload +0x300 == serialized +0x330) is
         // 0xA0..0xAF, deliberately different from the zeroed header fixpoint at +0x20.
         BootloaderCf cf{};
-        cf.header.header = {NANDBootloaderMagic::CF, 17559, 0, 0, 0, sizeof(cf_header) + 0x340};
+        cf.header.header =
+            stage_header(NANDBootloaderMagic::CF, 17559, 0, 0, 0, sizeof(cf_header) + 0x340);
         cf.data.assign(0x340, 0);
         for (size_t i = 0; i < 16; ++i)
             cf.data[0x300 + i] = static_cast<uint8_t>(0xA0 + i);
@@ -754,7 +773,8 @@ namespace {
         // Decrypted CG: a non-zero header key survives encryption unchanged, and a
         // 0x1000-aligned source_size makes the CG plaintext heuristic recognise it.
         BootloaderCg cg{};
-        cg.header.header = {NANDBootloaderMagic::CG, 17559, 0, 0, 0, sizeof(cg_header) + 0x40};
+        cg.header.header =
+            stage_header(NANDBootloaderMagic::CG, 17559, 0, 0, 0, sizeof(cg_header) + 0x40);
         std::fill_n(cg.header.key, 16, 0x77);
         cg.header.source_size = 0x1000;
         cg.data.assign(0x40, 0xEE);

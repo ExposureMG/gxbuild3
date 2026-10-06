@@ -18,7 +18,6 @@ namespace gxbuild3::nand {
 
         std::memcpy(&sc.header, bytes.data(), sizeof(sc_header));
 
-        byteswap_generic_header(sc.header.header);
         if (auto size = aligned_stage_size(sc.header.header.size, sizeof(sc_header), "SC/3BL");
             !size)
             return std::unexpected(std::move(size.error()));
@@ -46,9 +45,7 @@ namespace gxbuild3::nand {
         std::memcpy(cur_key, secret, 16);
 
         std::vector<uint8_t> buffer(sizeof(sc_header) + data.size());
-        sc_header temp_hdr = header;
-        byteswap_generic_header(temp_hdr.header);
-        std::memcpy(buffer.data(), &temp_hdr, sizeof(sc_header));
+        std::memcpy(buffer.data(), &header, sizeof(sc_header));
         std::memcpy(buffer.data() + sizeof(sc_header), data.data(), data.size());
 
         // Same layout as CB/CD/CE: nonce at 0x10, cipher from 0x20 over signature and body.
@@ -106,10 +103,7 @@ namespace gxbuild3::nand {
 
     std::vector<uint8_t> BootloaderSc::serialize() const {
         std::vector<uint8_t> out(sizeof(sc_header));
-        sc_header temp_hdr = header;
-        byteswap_generic_header(temp_hdr.header);
-
-        std::memcpy(out.data(), &temp_hdr, sizeof(sc_header));
+        std::memcpy(out.data(), &header, sizeof(sc_header));
         out.insert(out.end(), data.begin(), data.end());
         return out;
     }

@@ -18,8 +18,6 @@ namespace gxbuild3::nand {
 
         std::memcpy(&cd.header, bytes.data(), sizeof(cd_header));
 
-        byteswap_generic_header(cd.header.header);
-        byteswap_cd_header_numeric_fields(cd.header);
         if (auto size = aligned_stage_size(cd.header.header.size, sizeof(cd_header), "CD/4BL");
             !size)
             return std::unexpected(std::move(size.error()));
@@ -44,10 +42,7 @@ namespace gxbuild3::nand {
         std::memcpy(cur_key, parent_key, 16);
 
         std::vector<uint8_t> buffer(sizeof(cd_header) + data.size());
-        cd_header temp_hdr = header;
-        byteswap_generic_header(temp_hdr.header);
-        byteswap_cd_header_numeric_fields(temp_hdr);
-        std::memcpy(buffer.data(), &temp_hdr, sizeof(cd_header));
+        std::memcpy(buffer.data(), &header, sizeof(cd_header));
         std::memcpy(buffer.data() + sizeof(cd_header), data.data(), data.size());
 
         const auto hmac_type = cpu_key ? HmacType::Hmac1920 : HmacType::Default;
@@ -59,7 +54,6 @@ namespace gxbuild3::nand {
 
         std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
                     sizeof(cd_header) - 0x20);
-        byteswap_cd_header_numeric_fields(header);
         std::memcpy(data.data(), buffer.data() + sizeof(cd_header), data.size());
         return {};
     }
@@ -117,11 +111,7 @@ namespace gxbuild3::nand {
 
     std::vector<uint8_t> BootloaderCd::serialize() const {
         std::vector<uint8_t> out(sizeof(cd_header));
-        cd_header temp_hdr = header;
-        byteswap_generic_header(temp_hdr.header);
-        byteswap_cd_header_numeric_fields(temp_hdr);
-
-        std::memcpy(out.data(), &temp_hdr, sizeof(cd_header));
+        std::memcpy(out.data(), &header, sizeof(cd_header));
         out.insert(out.end(), data.begin(), data.end());
         return out;
     }
