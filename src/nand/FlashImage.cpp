@@ -2609,112 +2609,152 @@ namespace gxbuild3::nand {
         return open_smc_kv(smc, keyvault, cpu_key);
     }
 
-    Result<void> FlashImage::encrypt_all(std::span<const uint8_t> cpu_key, BuildType build_type) {
-        const bool plaintext_cb_b = build_type == BuildType::Glitch3;
-        if (plaintext_cb_b && (!cb_section.cb_x || cb_section.cb_x->data.empty() ||
-                               !cb_section.cb_B || !cb_section.cb_B->decrypted)) {
-            return fail(ErrorCode::InvalidArgument, "Glitch3 requires CB_X and a plaintext CB_B");
-        }
-        const bool devkit = devkit_chain();
-        if (devkit && (!cb_section.sc || cb_section.sc->data.empty())) {
-            return fail(ErrorCode::InvalidArgument, "A devkit chain needs an SC to key its SD");
-        }
-        const bool cd_requires_cpu_key =
-            !devkit && !cb_section.cb_B.has_value() && cb_section.cb_or_A.requires_cpu_key_for_cd();
+    namespace {
 
-        if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted() &&
-            cd_requires_cpu_key && cpu_key.size() < 16) {
-            return fail(ErrorCode::InvalidArgument,
-                        "Cannot encrypt CD: single-CB chain requires a CPU key");
-        }
+        // What encrypt_all seals and binds for the type being sealed. The flags read the sealed
+        // type, never the member build type.
+        struct SealPolicy {
+            bool plaintext_cb_b;
+            bool devkit;
+            bool cd_requires_cpu_key;
+            bool bind_cb_b;
+            bool bind_single_cb;
+            bool bind_extra_cb;
+        };
 
-        // CB_B binds the final encrypted SMC on every split chain, whatever the image
-        // type (xerunner build.py `chain`); a retail single CB binds it as well.
-        // Glitch3 emits CB_B plaintext, so it binds nothing here.
-        const bool bind_cb_b = cb_section.cb_B.has_value() && !plaintext_cb_b;
-        // A devkit SB carries the console's block bound to the SMC, as a retail single CB
-        // does (xeBuild 1.21 devkit); a devgl SB is zero-paired and binds nothing.
-        const bool bind_single_cb =
-            (build_type == BuildType::Retail && cd_requires_cpu_key) ||
-            (devkit && build_type != BuildType::Devgl && cb_section.cb_or_A.decrypted);
-        // A JTAG image's second CB carries the console's block itself, bound to the SMC
-        // under its own 1BL-derived key (xerunner build.py `_wears_console`).
-        const bool bind_extra_cb = payloads.extra_cb.has_value() &&
-                                   !payloads.extra_cb->data.empty() && payloads.extra_cb->decrypted;
-        if (bind_cb_b || bind_single_cb || bind_extra_cb) {
-            if (cpu_key.size() != 16 || !smc || smc->data.empty() || smc->data.size() % 4 != 0) {
+        // Decides the seal policy, refusing in this order: a Glitch3 chain without CB_X and a
+        // plaintext CB_B, a devkit chain without an SC, a plaintext CD a single CB keys from an
+        // absent CPU key, then an SMC binding without a CPU key and an aligned SMC.
+        [[nodiscard]] Result<SealPolicy> seal_policy(const FlashImage& image,
+                                                     std::span<const uint8_t> cpu_key,
+                                                     BuildType seal_type) {
+            const auto& cb_section = image.cb_section;
+            const auto& kernel_section = image.kernel_section;
+            const auto& smc = image.smc;
+            const auto& payloads = image.payloads;
+
+            const bool plaintext_cb_b = seal_type == BuildType::Glitch3;
+            if (plaintext_cb_b && (!cb_section.cb_x || cb_section.cb_x->data.empty() ||
+                                   !cb_section.cb_B || !cb_section.cb_B->decrypted)) {
                 return fail(ErrorCode::InvalidArgument,
-                            "CB authentication requires a CPU key and an aligned SMC");
+                            "Glitch3 requires CB_X and a plaintext CB_B");
             }
-            // Authentication covers the exact SMC ciphertext written to NAND.
-            if (!smc->encrypted)
-                smc->encrypt();
+            const bool devkit = image.devkit_chain();
+            if (devkit && (!cb_section.sc || cb_section.sc->data.empty())) {
+                return fail(ErrorCode::InvalidArgument, "A devkit chain needs an SC to key its SD");
+            }
+            const bool cd_requires_cpu_key = !devkit && !cb_section.cb_B.has_value() &&
+                                             cb_section.cb_or_A.requires_cpu_key_for_cd();
+
+            if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted() &&
+                cd_requires_cpu_key && cpu_key.size() < 16) {
+                return fail(ErrorCode::InvalidArgument,
+                            "Cannot encrypt CD: single-CB chain requires a CPU key");
+            }
+
+            // CB_B binds the final encrypted SMC on every split chain, whatever the image
+            // type (xerunner build.py `chain`); a retail single CB binds it as well.
+            // Glitch3 emits CB_B plaintext, so it binds nothing here.
+            const bool bind_cb_b = cb_section.cb_B.has_value() && !plaintext_cb_b;
+            // A devkit SB carries the console's block bound to the SMC, as a retail single CB
+            // does (xeBuild 1.21 devkit); a devgl SB is zero-paired and binds nothing.
+            const bool bind_single_cb =
+                (seal_type == BuildType::Retail && cd_requires_cpu_key) ||
+                (devkit && seal_type != BuildType::Devgl && cb_section.cb_or_A.decrypted);
+            // A JTAG image's second CB carries the console's block itself, bound to the SMC
+            // under its own 1BL-derived key (xerunner build.py `_wears_console`).
+            const bool bind_extra_cb = payloads.extra_cb.has_value() &&
+                                       !payloads.extra_cb->data.empty() &&
+                                       payloads.extra_cb->decrypted;
+            if (bind_cb_b || bind_single_cb || bind_extra_cb) {
+                if (cpu_key.size() != 16 || !smc || smc->data.empty() ||
+                    smc->data.size() % 4 != 0) {
+                    return fail(ErrorCode::InvalidArgument,
+                                "CB authentication requires a CPU key and an aligned SMC");
+                }
+            }
+            return SealPolicy{
+                .plaintext_cb_b = plaintext_cb_b,
+                .devkit = devkit,
+                .cd_requires_cpu_key = cd_requires_cpu_key,
+                .bind_cb_b = bind_cb_b,
+                .bind_single_cb = bind_single_cb,
+                .bind_extra_cb = bind_extra_cb,
+            };
         }
 
-        if (!cb_section.cb_or_A.data.empty() && cb_section.cb_or_A.decrypted) {
-            auto sealed = bind_single_cb
-                              ? cb_section.cb_or_A.encrypt_retail(key_1bl, cpu_key, smc->data)
-                              : cb_section.cb_or_A.encrypt(key_1bl);
-            if (!sealed) {
-                return with_context(std::move(sealed), "encrypting CB_A");
+        // Seals CB_A (bound to the SMC when the policy says so), then a Glitch3 CB_X, then
+        // gives a plaintext CB_B its handoff key, then seals a split chain's CB_B under CB_A's
+        // regime. The SMC is already sealed whenever a CB binds it.
+        [[nodiscard]] Result<void> seal_cb_chain(CbSection& cb_section, const SealPolicy& policy,
+                                                 std::span<const uint8_t> cpu_key,
+                                                 const std::optional<Smc>& smc) {
+            if (!cb_section.cb_or_A.data.empty() && cb_section.cb_or_A.decrypted) {
+                auto sealed = policy.bind_single_cb
+                                  ? cb_section.cb_or_A.encrypt_retail(key_1bl, cpu_key, smc->data)
+                                  : cb_section.cb_or_A.encrypt(key_1bl);
+                if (!sealed) {
+                    return with_context(std::move(sealed), "encrypting CB_A");
+                }
             }
-        }
 
-        if (plaintext_cb_b && cb_section.cb_x->decrypted) {
-            if (!cb_section.cb_or_A.derived_key) {
-                return fail(ErrorCode::Malformed,
-                            "Cannot encrypt CB_X: CB_A derived key is missing");
+            if (policy.plaintext_cb_b && cb_section.cb_x->decrypted) {
+                if (!cb_section.cb_or_A.derived_key) {
+                    return fail(ErrorCode::Malformed,
+                                "Cannot encrypt CB_X: CB_A derived key is missing");
+                }
+                const std::array<uint8_t, 16> zero_cpu_key{};
+                auto sealed =
+                    (cb_section.cb_or_A.header.header.flags & 0x1000) != 0
+                        ? cb_section.cb_x->encrypt_v2(cb_section.cb_or_A.header,
+                                                      cb_section.cb_or_A.derived_key->data(),
+                                                      zero_cpu_key.data())
+                        : cb_section.cb_x->encrypt_v1(cb_section.cb_or_A.derived_key->data(),
+                                                      zero_cpu_key.data());
+                if (!sealed) {
+                    return with_context(std::move(sealed), "encrypting CB_X");
+                }
             }
-            const std::array<uint8_t, 16> zero_cpu_key{};
-            auto sealed = (cb_section.cb_or_A.header.header.flags & 0x1000) != 0
-                              ? cb_section.cb_x->encrypt_v2(cb_section.cb_or_A.header,
-                                                            cb_section.cb_or_A.derived_key->data(),
-                                                            zero_cpu_key.data())
-                              : cb_section.cb_x->encrypt_v1(cb_section.cb_or_A.derived_key->data(),
-                                                            zero_cpu_key.data());
-            if (!sealed) {
-                return with_context(std::move(sealed), "encrypting CB_X");
-            }
-        }
 
-        if (plaintext_cb_b) {
-            if (cb_section.cb_B->data.size() < 16) {
-                return fail(ErrorCode::Malformed, "Plaintext CB_B has no handoff key");
+            if (policy.plaintext_cb_b) {
+                if (cb_section.cb_B->data.size() < 16) {
+                    return fail(ErrorCode::Malformed, "Plaintext CB_B has no handoff key");
+                }
+                if (cb_section.cb_B->derived_key) {
+                    // An encrypted replacement CB_B may have been decrypted for metadata.
+                    // Preserve its derived handoff key when emitting it in plaintext.
+                    std::copy(cb_section.cb_B->derived_key->begin(),
+                              cb_section.cb_B->derived_key->end(), cb_section.cb_B->data.begin());
+                } else {
+                    // Plaintext CB_B already carries its runtime key, as in RGH2to3.
+                    // CD is encrypted with this key, not the CB_X key or a new HMAC.
+                    cb_section.cb_B->derived_key.emplace();
+                    std::copy_n(cb_section.cb_B->data.begin(), 16,
+                                cb_section.cb_B->derived_key->begin());
+                }
             }
-            if (cb_section.cb_B->derived_key) {
-                // An encrypted replacement CB_B may have been decrypted for metadata.
-                // Preserve its derived handoff key when emitting it in plaintext.
-                std::copy(cb_section.cb_B->derived_key->begin(),
-                          cb_section.cb_B->derived_key->end(), cb_section.cb_B->data.begin());
-            } else {
-                // Plaintext CB_B already carries its runtime key, as in RGH2to3.
-                // CD is encrypted with this key, not the CB_X key or a new HMAC.
-                cb_section.cb_B->derived_key.emplace();
-                std::copy_n(cb_section.cb_B->data.begin(), 16,
-                            cb_section.cb_B->derived_key->begin());
-            }
-        }
 
-        if (!plaintext_cb_b && cb_section.cb_B.has_value() && !cb_section.cb_B->data.empty() &&
-            cb_section.cb_B->decrypted) {
-            if (!cb_section.cb_or_A.derived_key.has_value()) {
-                return fail(ErrorCode::Malformed,
-                            "Cannot encrypt CB_B: CB_A derived key is missing");
+            if (!policy.plaintext_cb_b && cb_section.cb_B.has_value() &&
+                !cb_section.cb_B->data.empty() && cb_section.cb_B->decrypted) {
+                if (!cb_section.cb_or_A.derived_key.has_value()) {
+                    return fail(ErrorCode::Malformed,
+                                "Cannot encrypt CB_B: CB_A derived key is missing");
+                }
+                // Computes the digest, or zeros it for a manufacturing chain or a zero
+                // CPU key, then seals under CB_A's regime.
+                if (auto sealed = cb_section.cb_B->encrypt_retail(
+                        cb_section.cb_or_A.derived_key->data(), cpu_key, smc->data,
+                        &cb_section.cb_or_A.header);
+                    !sealed) {
+                    return with_context(std::move(sealed), "encrypting CB_B");
+                }
             }
-            // Computes the digest, or zeros it for a manufacturing chain or a zero
-            // CPU key, then seals under CB_A's regime.
-            if (auto sealed =
-                    cb_section.cb_B->encrypt_retail(cb_section.cb_or_A.derived_key->data(), cpu_key,
-                                                    smc->data, &cb_section.cb_or_A.header);
-                !sealed) {
-                return with_context(std::move(sealed), "encrypting CB_B");
-            }
+            return {};
         }
 
         // A devkit SC is sealed under the zero secret; its key seals SD. A sealed SC is
         // opened first, so its key is known.
-        if (devkit) {
-            auto& sc = *cb_section.sc;
+        [[nodiscard]] Result<void> seal_devkit_sc(BootloaderSc& sc) {
             if (!sc.decrypted) {
                 if (auto opened = sc.decrypt(BootloaderSc::kZeroSecret); !opened) {
                     return with_context(std::move(opened), "opening the devkit SC");
@@ -2723,66 +2763,89 @@ namespace gxbuild3::nand {
             if (auto sealed = sc.encrypt(BootloaderSc::kZeroSecret); !sealed) {
                 return with_context(std::move(sealed), "encrypting SC");
             }
+            return {};
         }
 
-        // xeBuild's CB_B patches keep CD decryption enabled. Plaintext CD is
-        // specific to separate XeLL ECC payloads, not these dashboard builds.
-        if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted()) {
-            Result<void> sealed{};
-            if (devkit) {
-                sealed = kernel_section.cd.encrypt(cb_section.sc->derived_key->data());
-            } else if (cb_section.cb_B.has_value()) {
-                if (!cb_section.cb_B->derived_key.has_value()) {
+        // Seals CD under its parent's key (the devkit SC, CB_B or CB_A, with the CPU key when a
+        // single CB requires it), then CE under CD's.
+        [[nodiscard]] Result<void> seal_kernel(KernelSection& kernel_section,
+                                               const CbSection& cb_section,
+                                               const SealPolicy& policy,
+                                               std::span<const uint8_t> cpu_key) {
+            // xeBuild's CB_B patches keep CD decryption enabled. Plaintext CD is
+            // specific to separate XeLL ECC payloads, not these dashboard builds.
+            if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted()) {
+                Result<void> sealed{};
+                if (policy.devkit) {
+                    sealed = kernel_section.cd.encrypt(cb_section.sc->derived_key->data());
+                } else if (cb_section.cb_B.has_value()) {
+                    if (!cb_section.cb_B->derived_key.has_value()) {
+                        return fail(ErrorCode::Malformed,
+                                    "Cannot encrypt CD: CB_B derived key is missing");
+                    }
+                    sealed = kernel_section.cd.encrypt(cb_section.cb_B->derived_key->data());
+                } else if (cb_section.cb_or_A.derived_key.has_value()) {
+                    sealed = kernel_section.cd.encrypt(cb_section.cb_or_A.derived_key->data(),
+                                                       policy.cd_requires_cpu_key ? cpu_key.data()
+                                                                                  : nullptr);
+                } else {
                     return fail(ErrorCode::Malformed,
-                                "Cannot encrypt CD: CB_B derived key is missing");
+                                "Cannot encrypt CD: parent derived key is missing");
                 }
-                sealed = kernel_section.cd.encrypt(cb_section.cb_B->derived_key->data());
-            } else if (cb_section.cb_or_A.derived_key.has_value()) {
-                sealed = kernel_section.cd.encrypt(cb_section.cb_or_A.derived_key->data(),
-                                                   cd_requires_cpu_key ? cpu_key.data() : nullptr);
-            } else {
-                return fail(ErrorCode::Malformed,
-                            "Cannot encrypt CD: parent derived key is missing");
+                if (!sealed) {
+                    return with_context(std::move(sealed), "encrypting CD");
+                }
             }
-            if (!sealed) {
-                return with_context(std::move(sealed), "encrypting CD");
-            }
-        }
 
-        if (kernel_section.ce.has_value() && !kernel_section.ce->data.empty() &&
-            kernel_section.ce->is_decrypted()) {
-            if (!kernel_section.cd.derived_key) {
-                return fail(ErrorCode::Malformed, "Cannot encrypt CE: CD derived key is missing");
+            if (kernel_section.ce.has_value() && !kernel_section.ce->data.empty() &&
+                kernel_section.ce->is_decrypted()) {
+                if (!kernel_section.cd.derived_key) {
+                    return fail(ErrorCode::Malformed,
+                                "Cannot encrypt CE: CD derived key is missing");
+                }
+                if (auto sealed = kernel_section.ce->encrypt(kernel_section.cd.derived_key->data());
+                    !sealed) {
+                    return with_context(std::move(sealed), "encrypting CE");
+                }
             }
-            if (auto sealed = kernel_section.ce->encrypt(kernel_section.cd.derived_key->data());
-                !sealed) {
-                return with_context(std::move(sealed), "encrypting CE");
-            }
+            return {};
         }
 
         // The JTAG second chain: its CB sealed under HMAC(1BL key, nonce) with the
         // console's block bound to the SMC, and its CD under HMAC(CB key, nonce) with no
         // CPU-key pass, which only a retail single-CB chain takes.
-        if (bind_extra_cb) {
-            if (auto sealed = payloads.extra_cb->encrypt_retail(key_1bl, cpu_key, smc->data);
-                !sealed) {
-                return with_context(std::move(sealed), "encrypting the JTAG second CB");
+        [[nodiscard]] Result<void> seal_jtag_extra(Payloads& payloads, const SealPolicy& policy,
+                                                   std::span<const uint8_t> cpu_key,
+                                                   const std::optional<Smc>& smc) {
+            if (policy.bind_extra_cb) {
+                if (auto sealed = payloads.extra_cb->encrypt_retail(key_1bl, cpu_key, smc->data);
+                    !sealed) {
+                    return with_context(std::move(sealed), "encrypting the JTAG second CB");
+                }
             }
-        }
-        if (payloads.extra_cd && !payloads.extra_cd->data.empty() &&
-            payloads.extra_cd->is_decrypted()) {
-            if (!payloads.extra_cb || !payloads.extra_cb->derived_key) {
-                return fail(ErrorCode::Malformed,
-                            "Cannot encrypt the JTAG second CD: its CB key is missing");
+            if (payloads.extra_cd && !payloads.extra_cd->data.empty() &&
+                payloads.extra_cd->is_decrypted()) {
+                if (!payloads.extra_cb || !payloads.extra_cb->derived_key) {
+                    return fail(ErrorCode::Malformed,
+                                "Cannot encrypt the JTAG second CD: its CB key is missing");
+                }
+                if (auto sealed =
+                        payloads.extra_cd->encrypt(payloads.extra_cb->derived_key->data());
+                    !sealed) {
+                    return with_context(std::move(sealed), "encrypting the JTAG second CD");
+                }
             }
-            if (auto sealed = payloads.extra_cd->encrypt(payloads.extra_cb->derived_key->data());
-                !sealed) {
-                return with_context(std::move(sealed), "encrypting the JTAG second CD");
-            }
+            return {};
         }
 
-        const size_t stride = slot_size(*this);
-        auto prepare_update = [&](SystemUpdate& slot, const char* filename) -> Result<void> {
+        // Seals a slot's plaintext CG under its CF's key and fits the CG into the slot behind
+        // its CF. A CG that fits clears the CF's continuation table and any stale tail file; a
+        // longer one lays its tail in the filesystem (payload blocks and both update slots
+        // reserved first, the slots where `seal_plan` puts them) and names the tail's clusters
+        // in the CF's continuation table.
+        [[nodiscard]] Result<void> prepare_cg_tail(FlashImage& image, SystemUpdate& slot,
+                                                   std::string_view filename,
+                                                   const LayoutPlan& seal_plan) {
             if (!slot.cf || !slot.cg)
                 return {};
             if (slot.cg->decrypted) {
@@ -2798,6 +2861,8 @@ namespace gxbuild3::nand {
                     return with_context(std::move(sealed), "encrypting CG");
                 }
             }
+            const size_t stride = seal_plan.slot_stride;
+            auto& filesystem = image.filesystem;
             const auto cg = slot.cg->serialize();
             const size_t cf_size = align_16(slot.cf->serialize().size());
             if (cf_size + sizeof(cg_header) > stride) {
@@ -2817,7 +2882,7 @@ namespace gxbuild3::nand {
                 }
                 slot.cg_spill_blocks.clear();
                 if (filesystem) {
-                    filesystem->set_driver(&flash_driver);
+                    filesystem->set_driver(&image.flash_driver);
                     if (filesystem->exists(filename)) {
                         if (auto deleted = filesystem->delete_file(filename); !deleted) {
                             return with_context(std::move(deleted), "deleting a stale CG tail");
@@ -2829,8 +2894,8 @@ namespace gxbuild3::nand {
             if (!filesystem) {
                 return fail(ErrorCode::Unsupported, "CG continuation requires a Flash File System");
             }
-            filesystem->set_driver(&flash_driver);
-            for (auto range : active_payload_block_ranges()) {
+            filesystem->set_driver(&image.flash_driver);
+            for (auto range : image.active_payload_block_ranges()) {
                 if (auto reserved =
                         filesystem->reserve_blocks(range.start_block, range.block_count);
                     !reserved) {
@@ -2839,8 +2904,9 @@ namespace gxbuild3::nand {
                 }
             }
             // plan_for_seal, not plan_layout: the slots are reserved by the type being sealed.
-            const size_t base = plan_for_seal(*this, build_type).update_base;
-            if (const auto range = flash_driver.block_range_for_byte_interval(base, 2 * stride)) {
+            const size_t base = seal_plan.update_base;
+            if (const auto range =
+                    image.flash_driver.block_range_for_byte_interval(base, 2 * stride)) {
                 if (auto reserved =
                         filesystem->reserve_blocks(range->start_block, range->block_count);
                     !reserved) {
@@ -2856,7 +2922,7 @@ namespace gxbuild3::nand {
             // A built image lists each CG tail first, in slot order, and lays it on the
             // filesystem's first free blocks, directly past the slots (xeBuild 1.21).
             // A parsed image keeps its other files where they are.
-            auto added = preserve_layout
+            auto added = image.preserve_layout
                              ? filesystem->add_file(filename, std::span(cg).subspan(prefix))
                              : filesystem->insert_file(leading_cg_tails(*filesystem), filename,
                                                        std::span(cg).subspan(prefix));
@@ -2897,54 +2963,100 @@ namespace gxbuild3::nand {
             }
             slot.cg_spill_blocks = std::move(chain);
             return {};
-        };
-        if (auto prepared = prepare_update(system_update_0, "sysupdate.xexp1"); !prepared) {
-            return with_context(std::move(prepared), "update slot 0");
-        }
-        if (auto prepared = prepare_update(system_update_1, "sysupdate.xexp2"); !prepared) {
-            return with_context(std::move(prepared), "update slot 1");
         }
 
-        // Writes a plaintext CF's per-box data back and, when its slot binds the console,
-        // re-MACs it over what it now states.
-        const auto bind_cf = [&](BootloaderCf& cf, size_t slot_index) -> Result<void> {
+        // Writes a plaintext CF's per-box data back and, when its slot binds the console under
+        // the sealed type, re-MACs it over what it now states.
+        [[nodiscard]] Result<void> bind_cf(BootloaderCf& cf, size_t slot_index,
+                                           std::span<const uint8_t> cpu_key, BuildType seal_type) {
             if (cf.perbox.has_value()) {
                 if (auto stored = cf.serialize_perbox(); !stored)
                     return stored;
             }
-            if (!cpu_key.empty() && update_slot_binds_console(build_type, slot_index))
+            if (!cpu_key.empty() && update_slot_binds_console(seal_type, slot_index))
                 return cf.calc_mac(key_1bl, cpu_key.data());
             return {};
-        };
-        if (system_update_0.cf.has_value() && system_update_0.cf->is_decrypted()) {
-            if (auto bound = bind_cf(*system_update_0.cf, 0); !bound) {
-                return with_context(std::move(bound), "binding CF0");
-            }
-            if (auto sealed = system_update_0.cf->encrypt(key_1bl); !sealed) {
-                return with_context(std::move(sealed), "encrypting CF0");
-            }
-        }
-        if (system_update_1.cf.has_value() && system_update_1.cf->is_decrypted()) {
-            if (auto bound = bind_cf(*system_update_1.cf, 1); !bound) {
-                return with_context(std::move(bound), "binding CF1");
-            }
-            if (auto sealed = system_update_1.cf->encrypt(key_1bl); !sealed) {
-                return with_context(std::move(sealed), "encrypting CF1");
-            }
         }
 
-        if (smc.has_value() && !smc->encrypted) {
-            smc->encrypt();
+        // Binds and seals update slot `slot_index`'s CF when it is plaintext.
+        [[nodiscard]] Result<void> bind_and_seal_cf(SystemUpdate& slot, size_t slot_index,
+                                                    std::span<const uint8_t> cpu_key,
+                                                    BuildType seal_type) {
+            if (slot.cf.has_value() && slot.cf->is_decrypted()) {
+                if (auto bound = bind_cf(*slot.cf, slot_index, cpu_key, seal_type); !bound) {
+                    return with_context(std::move(bound), std::format("binding CF{}", slot_index));
+                }
+                if (auto sealed = slot.cf->encrypt(key_1bl); !sealed) {
+                    return with_context(std::move(sealed),
+                                        std::format("encrypting CF{}", slot_index));
+                }
+            }
+            return {};
         }
 
-        if (keyvault.has_value() && !keyvault->encrypted && !cpu_key.empty()) {
-            if (auto encrypted = keyvault->encrypt(cpu_key); !encrypted) {
-                return with_context(std::move(encrypted),
-                                    "encrypting the Keyvault with the provided CPU key");
+        // Seals the SMC, if no CB binding sealed it already, and the keyvault under a CPU key.
+        [[nodiscard]] Result<void> seal_smc_kv(std::optional<Smc>& smc,
+                                               std::optional<Keyvault>& keyvault,
+                                               std::span<const uint8_t> cpu_key) {
+            if (smc.has_value() && !smc->encrypted) {
+                smc->encrypt();
+            }
+
+            if (keyvault.has_value() && !keyvault->encrypted && !cpu_key.empty()) {
+                if (auto encrypted = keyvault->encrypt(cpu_key); !encrypted) {
+                    return with_context(std::move(encrypted),
+                                        "encrypting the Keyvault with the provided CPU key");
+                }
+            }
+            return {};
+        }
+
+    } // namespace
+
+    Result<void> FlashImage::encrypt_all(std::span<const uint8_t> cpu_key, BuildType seal_type) {
+        const auto policy = seal_policy(*this, cpu_key, seal_type);
+        if (!policy) {
+            return std::unexpected(policy.error());
+        }
+        if (policy->bind_cb_b || policy->bind_single_cb || policy->bind_extra_cb) {
+            // Authentication covers the exact SMC ciphertext written to NAND.
+            if (!smc->encrypted)
+                smc->encrypt();
+        }
+
+        if (auto sealed = seal_cb_chain(cb_section, *policy, cpu_key, smc); !sealed) {
+            return sealed;
+        }
+        if (policy->devkit) {
+            if (auto sealed = seal_devkit_sc(*cb_section.sc); !sealed) {
+                return sealed;
             }
         }
+        if (auto sealed = seal_kernel(kernel_section, cb_section, *policy, cpu_key); !sealed) {
+            return sealed;
+        }
+        if (auto sealed = seal_jtag_extra(payloads, *policy, cpu_key, smc); !sealed) {
+            return sealed;
+        }
 
-        return {};
+        const LayoutPlan seal_plan = plan_for_seal(*this, seal_type);
+        if (auto prepared = prepare_cg_tail(*this, system_update_0, "sysupdate.xexp1", seal_plan);
+            !prepared) {
+            return with_context(std::move(prepared), "update slot 0");
+        }
+        if (auto prepared = prepare_cg_tail(*this, system_update_1, "sysupdate.xexp2", seal_plan);
+            !prepared) {
+            return with_context(std::move(prepared), "update slot 1");
+        }
+
+        if (auto bound = bind_and_seal_cf(system_update_0, 0, cpu_key, seal_type); !bound) {
+            return bound;
+        }
+        if (auto bound = bind_and_seal_cf(system_update_1, 1, cpu_key, seal_type); !bound) {
+            return bound;
+        }
+
+        return seal_smc_kv(smc, keyvault, cpu_key);
     }
 
 } // namespace gxbuild3::nand

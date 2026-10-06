@@ -113,12 +113,14 @@ namespace gxbuild3::nand {
         // Opens every sealed stage, the SMC and, under a usable CPU key, the keyvault. Stages
         // opened before a failure stay open.
         [[nodiscard]] Result<void> decrypt_all(std::span<const uint8_t> cpu_key);
-        // Seals every stage for `build_type`, binding the SMC and laying CG tails in the
+        // Seals every stage for `seal_type`, binding the SMC and laying CG tails in the
         // filesystem. Hacked chains may deliberately leave stages plaintext for their patched
-        // parent. After a failure the object is unspecified: stages sealed before the failing one
-        // stay sealed and nothing is rolled back, so the image must not be written.
+        // parent. The seal policy and the update-slot reservation read `seal_type`; the layout
+        // helpers still read the member build_type, which may be unset or differ. After a failure
+        // the object is unspecified: stages sealed before the failing one stay sealed and nothing
+        // is rolled back, so the image must not be written.
         [[nodiscard]] Result<void> encrypt_all(std::span<const uint8_t> cpu_key,
-                                               BuildType build_type = BuildType::Retail);
+                                               BuildType seal_type = BuildType::Retail);
 
         // Remove serialized bootloader records inherited from a donor before replacing the chain:
         // the chain is zeroed and the CF/CG records in the update slots are erased (0xFF). This
