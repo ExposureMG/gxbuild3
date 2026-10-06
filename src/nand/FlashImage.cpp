@@ -19,6 +19,7 @@
 #include <cstring>
 #include <format>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -312,7 +313,48 @@ namespace gxbuild3::nand {
                 sum += block[i];
             }
             const uint16_t expected = static_cast<uint16_t>(~sum);
-            return (block[0] | (block[1] << 8)) == expected;
+            const auto stored = wire::read<wire::le16>(block, 0, "SMC config checksum");
+            return stored && stored->get() == expected;
+        }
+
+        // A KHV patch stream: records of a 4-aligned big-endian address and a non-zero
+        // big-endian word count followed by that many words, closed by 0xFFFFFFFF. Reads
+        // `length` bytes at `offset` and returns the stream through its terminator when at
+        // least one record precedes it and every record fits; nothing otherwise.
+        std::optional<std::vector<uint8_t>> find_khv_stream(const Driver& driver, size_t offset,
+                                                            size_t length) {
+            const std::vector<uint8_t> bytes = driver.read_clean(offset, length);
+            wire::Cursor cursor(bytes, offset);
+            size_t records = 0;
+            while (true) {
+                const auto address = cursor.take<wire::be32>("KHV patch address");
+                if (!address) {
+                    return std::nullopt;
+                }
+                const uint32_t target = address->get();
+                if (target == 0xFFFFFFFF) {
+                    if (records == 0) {
+                        return std::nullopt;
+                    }
+                    const auto stream = cursor.consumed();
+                    return std::vector<uint8_t>(stream.begin(), stream.end());
+                }
+                if ((target & 3) != 0) {
+                    return std::nullopt;
+                }
+                const auto count = cursor.take<wire::be32>("KHV patch word count");
+                if (!count) {
+                    return std::nullopt;
+                }
+                const uint32_t words = count->get();
+                if (words == 0 || words > cursor.remaining() / 4) {
+                    return std::nullopt;
+                }
+                if (!cursor.skip(size_t(words) * 4, "KHV patch words")) {
+                    return std::nullopt;
+                }
+                ++records;
+            }
         }
 
         // Lays one of the console's 0x1000-byte blocks (settings, statistics, manufacturing) at
@@ -636,45 +678,24 @@ namespace gxbuild3::nand {
             return with_context(std::move(slot), "update slot 1");
         }
 
-        std::vector<uint8_t> inferred_khv;
-        const auto valid_khv_at = [&](size_t offset, size_t prefix) {
-            const auto bytes =
-                flash_driver.read_clean(offset, slot_stride > prefix ? slot_stride - prefix : 0);
-            size_t cursor = 0, records = 0;
-            const auto word = [&](size_t at) {
-                return (uint32_t(bytes[at]) << 24) | (uint32_t(bytes[at + 1]) << 16) |
-                       (uint32_t(bytes[at + 2]) << 8) | bytes[at + 3];
-            };
-            while (cursor + 4 <= bytes.size()) {
-                const uint32_t address = word(cursor);
-                cursor += 4;
-                if (address == 0xFFFFFFFF) {
-                    if (records)
-                        inferred_khv.assign(bytes.begin(), bytes.begin() + cursor);
-                    return records != 0;
-                }
-                if ((address & 3) || cursor + 4 > bytes.size())
-                    return false;
-                const uint32_t count = word(cursor);
-                cursor += 4;
-                if (!count || count > (bytes.size() - cursor) / 4)
-                    return false;
-                cursor += size_t(count) * 4;
-                ++records;
-            }
-            return false;
-        };
         const size_t overlay = size_t(patchslot_base) + slot_stride;
+        // The KHV stream after a prefix of the second slot, read up to the slot's end.
+        const auto khv_after = [&](size_t prefix) {
+            return find_khv_stream(flash_driver, overlay + prefix,
+                                   slot_stride > prefix ? slot_stride - prefix : 0);
+        };
         // A development chain names its type: devkit when the header states 0x8000 at 0x04,
         // as a devkit image does, or the second slot holds no glitch2m fuses and KHV patches;
-        // devgl otherwise.
+        // devgl otherwise. Each probe runs only when the ones before it found nothing.
+        std::optional<std::vector<uint8_t>> inferred_khv;
         if (devkit_chain()) {
-            build_type = header.pairing != 0x8000 && valid_khv_at(overlay + 0x60, 0x60)
-                             ? BuildType::Devgl
-                             : BuildType::Devkit;
-        } else if (valid_khv_at(overlay + 0x10, 0x10)) {
+            if (header.pairing != 0x8000) {
+                inferred_khv = khv_after(0x60);
+            }
+            build_type = inferred_khv ? BuildType::Devgl : BuildType::Devkit;
+        } else if ((inferred_khv = khv_after(0x10))) {
             build_type = BuildType::Glitch2;
-        } else if (valid_khv_at(overlay + 0x60, 0x60)) {
+        } else if ((inferred_khv = khv_after(0x60))) {
             build_type = BuildType::Glitch2m;
         }
 
@@ -842,7 +863,7 @@ namespace gxbuild3::nand {
             return std::move(*parsed);
         };
 
-        if (!inferred_khv.empty()) {
+        if (inferred_khv) {
             if (build_type != BuildType::Glitch2m && build_type != BuildType::Devgl)
                 build_type = cb_section.cb_x   ? BuildType::Glitch3
                              : cb_section.cb_B ? BuildType::Glitch2
@@ -850,7 +871,7 @@ namespace gxbuild3::nand {
             // The NAND contains already-patched CB/CD. Rebuild with empty bootloader
             // sections and the recovered runtime stream, avoiding double application.
             std::vector<uint8_t> automatic(8, 0xFF);
-            automatic.insert(automatic.end(), inferred_khv.begin(), inferred_khv.end());
+            automatic.insert(automatic.end(), inferred_khv->begin(), inferred_khv->end());
             auto recovered = parse_patch_set(automatic, *build_type);
             if (recovered) {
                 payloads.patchset = std::move(*recovered);
