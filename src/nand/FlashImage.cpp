@@ -697,6 +697,127 @@ namespace gxbuild3::nand {
             return {};
         }
 
+        // Reads a CG that runs past its update slot: the prefix inside the slot, then the 16 KiB
+        // clusters the CF's continuation table names, in table order. Each cluster read is
+        // recorded in `spill` as it is read. When the table does not describe the CG (no count,
+        // a count over the cap or a payload too short for it) the CG is read contiguously.
+        [[nodiscard]] Result<std::vector<uint8_t>>
+        read_cg_continuation(const Driver& driver, const BootloaderCf& cf, uint32_t base_offset,
+                             size_t cg_offset, uint32_t cg_size, size_t prefix,
+                             std::vector<uint16_t>& spill) {
+            auto decoded_cf = cf;
+            if (auto opened = decoded_cf.decrypt(key_1bl); !opened) {
+                auto error = with_context(
+                    std::move(opened),
+                    std::format("opening the CF at 0x{:X} for its CG continuation table",
+                                base_offset));
+                return std::unexpected(std::move(error.error()));
+            }
+            const auto& payload = decoded_cf.data;
+            // A payload shorter than the table reads zero-padded: under 2 bytes the count is 0,
+            // and the size guard below keeps every cluster read inside the payload.
+            std::array<uint8_t, kCfTableSize> table_bytes{};
+            std::copy_n(payload.begin(), std::min(payload.size(), table_bytes.size()),
+                        table_bytes.begin());
+            const auto table =
+                wire::read<cf_continuation_table>(table_bytes, 0, "CF continuation table");
+            if (!table) {
+                return std::unexpected(table.error());
+            }
+            const size_t count = table->count.get();
+            const size_t needed = (cg_size - prefix + kCgClusterSize - 1) / kCgClusterSize;
+            if (count > 0 && count <= kMaxCgClusters && count != needed) {
+                return fail(ErrorCode::Malformed,
+                            "the CF at 0x{:X} names {} CG continuation clusters; the CG needs {}",
+                            base_offset, count, needed);
+            }
+            if (count != needed || count > kMaxCgClusters || payload.size() < 2 + count * 2) {
+                return driver.read_clean(cg_offset, cg_size);
+            }
+
+            auto cg_data = driver.read_clean(cg_offset, prefix);
+            const size_t data_area = driver.data_block_limit() * driver.block_size_clean();
+            for (size_t i = 0; i < count; ++i) {
+                const uint16_t block = table->clusters[i].get();
+                if (size_t(block) * kCgClusterSize >= data_area ||
+                    std::find(spill.begin(), spill.end(), block) != spill.end()) {
+                    return fail(ErrorCode::Malformed,
+                                "the CF at 0x{:X} names CG continuation cluster 0x{:X} outside "
+                                "the data area or twice",
+                                base_offset, block);
+                }
+                const size_t length = std::min<size_t>(kCgClusterSize, cg_size - cg_data.size());
+                auto part = driver.read_clean(size_t(block) * kCgClusterSize, length);
+                if (part.size() != length) {
+                    return fail(ErrorCode::Truncated,
+                                "CG continuation cluster 0x{:X} could not be read", block);
+                }
+                cg_data.insert(cg_data.end(), part.begin(), part.end());
+                spill.push_back(block);
+            }
+            return cg_data;
+        }
+
+        // Parses the update slot at `base_offset` into `slot`. The slot is reset first and filled
+        // as each record parses, so a failure leaves the records parsed before it in place. A
+        // slot without a CF header, or a CF without a CG behind it, is not an error: it is
+        // left empty or CF-only.
+        [[nodiscard]] Result<void> parse_update_slot(const Driver& driver, size_t image_size,
+                                                     uint32_t base_offset, uint32_t slot_stride,
+                                                     SystemUpdate& slot) {
+            slot = SystemUpdate{};
+            if (base_offset + sizeof(generic_header) > image_size) {
+                return {};
+            }
+            const auto slot_hdr_bytes = driver.read_clean(base_offset, sizeof(generic_header));
+            const auto slot_hdr =
+                wire::read<generic_header>(slot_hdr_bytes, 0, "patch slot CF header");
+            if (!slot_hdr || slot_hdr->magic.get() != NANDBootloaderMagic::CF) {
+                return {};
+            }
+
+            const uint32_t cf_size = slot_hdr->size.get();
+            if (cf_size == 0 || base_offset + cf_size > image_size) {
+                return {};
+            }
+            auto cf_data = driver.read_clean(base_offset, cf_size);
+            if (auto parsed = parse_section(slot.cf, cf_data, "CF", base_offset); !parsed) {
+                return parsed;
+            }
+
+            const size_t cg_offset = base_offset + align_16(cf_size);
+            if (cg_offset + sizeof(generic_header) > image_size) {
+                return {};
+            }
+            const auto cg_hdr_bytes = driver.read_clean(cg_offset, sizeof(generic_header));
+            // read_clean returns the full length or nothing, so this read fails exactly when the
+            // CG header is cut short.
+            const auto cg_hdr = wire::read<generic_header>(cg_hdr_bytes, 0, "patch slot CG header");
+            if (!cg_hdr || cg_hdr->magic.get() != NANDBootloaderMagic::CG) {
+                return {};
+            }
+
+            const uint32_t cg_size = cg_hdr->size.get();
+            if (cg_size == 0 || cg_offset + cg_size > image_size) {
+                return {};
+            }
+            const uint32_t slot_end = base_offset + slot_stride;
+            const size_t prefix =
+                std::min<size_t>(cg_size, slot_end > cg_offset ? slot_end - cg_offset : 0);
+            std::vector<uint8_t> cg_data;
+            if (prefix < cg_size) {
+                auto continued = read_cg_continuation(driver, *slot.cf, base_offset, cg_offset,
+                                                      cg_size, prefix, slot.cg_spill_blocks);
+                if (!continued) {
+                    return std::unexpected(std::move(continued.error()));
+                }
+                cg_data = std::move(*continued);
+            } else {
+                cg_data = driver.read_clean(cg_offset, cg_size);
+            }
+            return parse_section(slot.cg, cg_data, "CG", cg_offset);
+        }
+
     } // namespace
 
     std::optional<FlashImage> FlashImage::read(std::vector<uint8_t> raw_image) {
@@ -735,130 +856,15 @@ namespace gxbuild3::nand {
         const uint32_t slot_stride = header_slot_stride(header);
         const uint32_t patchslot_base = donor_update_base(header, slot_mode);
 
-        auto parse_patchslot = [&](uint32_t base_offset, SystemUpdate& slot) -> Result<void> {
-            slot = SystemUpdate{};
-            if (base_offset + sizeof(generic_header) > image_bytes.size()) {
-                return {};
-            }
-            const auto slot_hdr_bytes =
-                flash_driver.read_clean(base_offset, sizeof(generic_header));
-            const auto slot_hdr =
-                wire::read<generic_header>(slot_hdr_bytes, 0, "patch slot CF header");
-            if (!slot_hdr) {
-                return {};
-            }
-
-            if (const uint16_t cf_magic = slot_hdr->magic.get();
-                cf_magic == NANDBootloaderMagic::CF) {
-                const uint32_t cf_size = slot_hdr->size.get();
-                if (cf_size > 0 && base_offset + cf_size <= image_bytes.size()) {
-                    auto cf_data = flash_driver.read_clean(base_offset, cf_size);
-                    if (auto parsed = parse_section(slot.cf, cf_data, "CF", base_offset); !parsed) {
-                        return parsed;
-                    }
-
-                    size_t cg_offset = base_offset + align_16(cf_size);
-                    if (cg_offset + sizeof(generic_header) <= image_bytes.size()) {
-                        const auto cg_hdr_bytes =
-                            flash_driver.read_clean(cg_offset, sizeof(generic_header));
-                        // read_clean returns the full length or nothing, so this read
-                        // fails exactly when the CG header is cut short.
-                        if (const auto cg_hdr = wire::read<generic_header>(
-                                cg_hdr_bytes, 0, "patch slot CG header")) {
-                            if (const uint16_t cg_magic = cg_hdr->magic.get();
-                                cg_magic == NANDBootloaderMagic::CG) {
-                                const uint32_t cg_size = cg_hdr->size.get();
-                                if (cg_size > 0 && cg_offset + cg_size <= image_bytes.size()) {
-                                    auto cg_data = flash_driver.read_clean(cg_offset, cg_size);
-                                    const size_t prefix = std::min<size_t>(
-                                        cg_size, base_offset + slot_stride > cg_offset
-                                                     ? base_offset + slot_stride - cg_offset
-                                                     : 0);
-                                    if (prefix < cg_size) {
-                                        auto decoded_cf = *slot.cf;
-                                        if (auto opened = decoded_cf.decrypt(key_1bl); !opened) {
-                                            return with_context(
-                                                std::move(opened),
-                                                std::format("opening the CF at 0x{:X} for its "
-                                                            "CG continuation table",
-                                                            base_offset));
-                                        }
-                                        const auto& payload = decoded_cf.data;
-                                        // A payload shorter than the table reads zero-padded:
-                                        // under 2 bytes the count is 0, and the size guard
-                                        // below keeps every cluster read inside the payload.
-                                        std::array<uint8_t, kCfTableSize> table_bytes{};
-                                        std::copy_n(payload.begin(),
-                                                    std::min(payload.size(), table_bytes.size()),
-                                                    table_bytes.begin());
-                                        const auto table = wire::read<cf_continuation_table>(
-                                            table_bytes, 0, "CF continuation table");
-                                        if (!table) {
-                                            return std::unexpected(table.error());
-                                        }
-                                        const size_t count = table->count.get();
-                                        const size_t needed =
-                                            (cg_size - prefix + kCgClusterSize - 1) /
-                                            kCgClusterSize;
-                                        if (count > 0 && count <= kMaxCgClusters &&
-                                            count != needed) {
-                                            return fail(ErrorCode::Malformed,
-                                                        "the CF at 0x{:X} names {} CG continuation "
-                                                        "clusters; the CG needs {}",
-                                                        base_offset, count, needed);
-                                        }
-                                        if (count == needed && count <= kMaxCgClusters &&
-                                            payload.size() >= 2 + count * 2) {
-                                            cg_data = flash_driver.read_clean(cg_offset, prefix);
-                                            for (size_t i = 0; i < count; ++i) {
-                                                const uint16_t block = table->clusters[i].get();
-                                                if (size_t(block) * kCgClusterSize >=
-                                                        flash_driver.data_block_limit() *
-                                                            flash_driver.block_size_clean() ||
-                                                    std::find(slot.cg_spill_blocks.begin(),
-                                                              slot.cg_spill_blocks.end(), block) !=
-                                                        slot.cg_spill_blocks.end()) {
-                                                    return fail(
-                                                        ErrorCode::Malformed,
-                                                        "the CF at 0x{:X} names CG continuation "
-                                                        "cluster 0x{:X} outside the data area or "
-                                                        "twice",
-                                                        base_offset, block);
-                                                }
-                                                const size_t length = std::min<size_t>(
-                                                    kCgClusterSize, cg_size - cg_data.size());
-                                                auto part = flash_driver.read_clean(
-                                                    size_t(block) * kCgClusterSize, length);
-                                                if (part.size() != length) {
-                                                    return fail(ErrorCode::Truncated,
-                                                                "CG continuation cluster 0x{:X} "
-                                                                "could not be read",
-                                                                block);
-                                                }
-                                                cg_data.insert(cg_data.end(), part.begin(),
-                                                               part.end());
-                                                slot.cg_spill_blocks.push_back(block);
-                                            }
-                                        }
-                                    }
-                                    if (auto parsed =
-                                            parse_section(slot.cg, cg_data, "CG", cg_offset);
-                                        !parsed) {
-                                        return parsed;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            return {};
-        };
-
-        if (auto slot = parse_patchslot(patchslot_base, system_update_0); !slot) {
+        if (auto slot = parse_update_slot(flash_driver, image_bytes.size(), patchslot_base,
+                                          slot_stride, system_update_0);
+            !slot) {
             return with_context(std::move(slot), "update slot 0");
         }
-        if (auto slot = parse_patchslot(patchslot_base + slot_stride, system_update_1); !slot) {
+        if (auto slot =
+                parse_update_slot(flash_driver, image_bytes.size(), patchslot_base + slot_stride,
+                                  slot_stride, system_update_1);
+            !slot) {
             return with_context(std::move(slot), "update slot 1");
         }
 
