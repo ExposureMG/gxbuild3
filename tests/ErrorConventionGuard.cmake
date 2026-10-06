@@ -64,7 +64,6 @@ set(byte_swap_allowlist
     src/stfs/HeaderParser.cpp
     src/stfs/MetadataParser.cpp
     src/utils/FusesetGenerator.cpp
-    src/utils/XeRsa.cpp
 )
 
 set(rule_shim_name_regex "[A-Za-z0-9_]_or_throw[^A-Za-z0-9_]")

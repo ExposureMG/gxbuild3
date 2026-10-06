@@ -1,5 +1,6 @@
 #include "utils/XeRsa.hpp"
 
+#include "Wire.hpp"
 #include "excrypt.h"
 
 #include <algorithm>
@@ -18,11 +19,6 @@ namespace gxbuild3::utils {
         // An SD's signature sits at 0x20 and its hash resumes at 0x120.
         constexpr size_t kSdSignatureOffset = 0x20;
         constexpr size_t kSdHashResume = kSdSignatureOffset + kXeRsa2048SignatureSize;
-
-        uint32_t read_be32(std::span<const uint8_t> bytes, size_t offset) {
-            return (uint32_t{bytes[offset]} << 24) | (uint32_t{bytes[offset + 1]} << 16) |
-                   (uint32_t{bytes[offset + 2]} << 8) | uint32_t{bytes[offset + 3]};
-        }
 
         std::array<uint8_t, 20> sd_hash(std::span<const uint8_t> sd) {
             std::vector<uint8_t> covered(sd.begin(), sd.begin() + 0x10);
@@ -51,12 +47,21 @@ namespace gxbuild3::utils {
             return fail(ErrorCode::Malformed, "RSA private key is 0x{:X} bytes, expected 0x{:X}",
                         bytes.size(), kXeRsa2048PrivateKeySize);
         }
-        if (const uint32_t digits = read_be32(bytes, 0); digits != kDigitCount) {
+        // The size check above guarantees both header words fit.
+        const auto digit_word = wire::read<wire::be32>(bytes, 0, "RSA private key digit count");
+        if (!digit_word) {
+            return std::unexpected(digit_word.error());
+        }
+        if (const uint32_t digits = digit_word->get(); digits != kDigitCount) {
             return fail(ErrorCode::Unsupported,
                         "RSA private key has 0x{:X} digits; only RSA-2048 (0x{:X}) is supported",
                         digits, kDigitCount);
         }
-        const uint32_t exponent = read_be32(bytes, 4);
+        const auto exponent_word = wire::read<wire::be32>(bytes, 4, "RSA public exponent");
+        if (!exponent_word) {
+            return std::unexpected(exponent_word.error());
+        }
+        const uint32_t exponent = exponent_word->get();
         if (exponent < 3 || (exponent & 1) == 0) {
             return fail(ErrorCode::Malformed, "RSA public exponent {} is not an odd number >= 3",
                         exponent);
