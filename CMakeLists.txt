@@ -60,7 +60,6 @@ set(GXBUILD3_LIB_SOURCES
     src/stfs/HashVerifier.cpp
     src/stfs/HeaderParser.cpp
     src/stfs/MetadataParser.cpp
-    src/stfs/Package.cpp
     src/stfs/PackageCommon.cpp
     src/stfs/StfsContainer.cpp
     src/utils/BigUint.cpp

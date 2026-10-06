@@ -1,6 +1,6 @@
 #pragma once
 
-// Internal helpers shared by stfs::Package and stfs::StfsContainer.
+// Internal helpers used by stfs::StfsContainer.
 
 #include "Error.hpp"
 #include "stfs/Commons.hpp"
@@ -41,8 +41,7 @@ namespace gxbuild3::stfs::detail {
     plan_destinations(const std::vector<FileEntry>& entries,
                       const std::filesystem::path& target_dir);
 
-    // TODO(parsing): Package still reports failures by throwing. It unwraps the
-    // Result-returning helpers through this shim until the parsing phase converts it.
+    // TODO(parsing): this throwing shim no longer has a caller; the parsing phase deletes it.
     // tests/ErrorConventionGuard.cmake keeps it out of the rest of src/.
     template <class T> [[nodiscard]] T value_or_throw(Result<T>&& result) {
         if (!result) {
