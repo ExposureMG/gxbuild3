@@ -115,10 +115,12 @@ namespace gxbuild3::nand {
             Key file_key{};
         };
 
-        std::optional<OpenedCrl> open_crl(std::span<const uint8_t> blob,
-                                          std::span<const uint8_t> cpu_key) {
+        Result<OpenedCrl> open_crl(std::span<const uint8_t> blob,
+                                   std::span<const uint8_t> cpu_key) {
             if (!sealable_body(blob, kCrlBodyOffset)) {
-                return std::nullopt;
+                return fail(ErrorCode::Malformed,
+                            "crl.bin of 0x{:X} bytes is not a record with a whole-block body",
+                            blob.size());
             }
             const auto sealed = blob.subspan(kCrlBodyOffset);
             if (vouched(blob, sealed, kCrlBodyOffset)) {
@@ -133,7 +135,7 @@ namespace gxbuild3::nand {
                     return OpenedCrl{std::move(body), index, file_key};
                 }
             }
-            return std::nullopt;
+            return fail(ErrorCode::AuthFailed, "crl.bin opens under no key it is tried under");
         }
 
         struct DaeRecord {
@@ -142,23 +144,25 @@ namespace gxbuild3::nand {
             std::optional<size_t> master;
         };
 
-        // The records of a dae.bin, each opened, walked by the length each states. Nothing when
-        // any record opens under no key or the records do not cover the file.
-        std::optional<std::vector<DaeRecord>> open_dae(std::span<const uint8_t> blob,
-                                                       std::span<const uint8_t> cpu_key) {
+        // The records of a dae.bin, each opened, walked by the length each states. AuthFailed
+        // when any record opens under no key, Malformed when the records do not cover the file.
+        Result<std::vector<DaeRecord>> open_dae(std::span<const uint8_t> blob,
+                                                std::span<const uint8_t> cpu_key) {
             const auto masters = master_keys(cpu_key);
             std::vector<DaeRecord> records;
             size_t at = 0;
             while (at < blob.size()) {
                 if (blob.size() - at < kRecordHashedFrom ||
                     !std::equal(kDaeMagic.begin(), kDaeMagic.end(), blob.begin() + at)) {
-                    return std::nullopt;
+                    return fail(ErrorCode::Malformed, "dae.bin has no DAEP record at 0x{:X}", at);
                 }
                 const size_t length = (static_cast<size_t>(blob[at + kRecordLengthOffset]) << 8) |
                                       blob[at + kRecordLengthOffset + 1];
                 if (length < kRecordHashedFrom || length > blob.size() - at ||
                     (length - kDaeBodyOffset) % 16 != 0) {
-                    return std::nullopt;
+                    return fail(ErrorCode::Malformed,
+                                "dae.bin record at 0x{:X} states an unusable length 0x{:X}", at,
+                                length);
                 }
                 const auto record = blob.subspan(at, length);
                 const auto sealed = record.subspan(kDaeBodyOffset);
@@ -174,14 +178,16 @@ namespace gxbuild3::nand {
                         }
                     }
                     if (opened.body.empty()) {
-                        return std::nullopt;
+                        return fail(ErrorCode::AuthFailed,
+                                    "dae.bin record at 0x{:X} opens under no key it is tried under",
+                                    at);
                     }
                 }
                 records.push_back(std::move(opened));
                 at += length;
             }
             if (records.empty()) {
-                return std::nullopt;
+                return fail(ErrorCode::Truncated, "dae.bin is empty");
             }
             return records;
         }
@@ -207,24 +213,32 @@ namespace gxbuild3::nand {
             return cpu_key.size() == 16;
         }
 
+        std::unexpected<Error> invalid_cpu_key(std::span<const uint8_t> cpu_key) {
+            return fail(ErrorCode::InvalidArgument, "CPU key is {} bytes, not 16", cpu_key.size());
+        }
+
         Key derived_nonce(std::span<const uint8_t> plain, std::span<const uint8_t> cpu_key,
                           bool extended) {
             return extended ? hmac_sha(cpu_key, plain, kExtendedNonceTail)
                             : hmac_sha(cpu_key, plain);
         }
 
-        std::optional<std::vector<uint8_t>>
-        open_loose(std::span<const uint8_t> blob, std::span<const uint8_t> cpu_key, bool extended) {
-            if (!valid_cpu_key(cpu_key) || blob.size() < kNonceSize) {
-                return std::nullopt;
+        Result<std::vector<uint8_t>> open_loose(std::span<const uint8_t> blob,
+                                                std::span<const uint8_t> cpu_key, bool extended) {
+            if (!valid_cpu_key(cpu_key)) {
+                return invalid_cpu_key(cpu_key);
+            }
+            if (blob.size() < kNonceSize) {
+                return fail(ErrorCode::Truncated, "File of 0x{:X} bytes is shorter than its nonce",
+                            blob.size());
             }
             const auto opened_under = [&](std::span<const uint8_t> clear) {
                 const auto nonce = derived_nonce(clear.subspan(kNonceSize), cpu_key, extended);
                 return std::equal(nonce.begin(), nonce.end(), clear.begin());
             };
             std::vector<uint8_t> opened(blob.begin(), blob.end());
-            if (!crypt_secfile(cpu_key, opened)) {
-                return std::nullopt;
+            if (auto crypted = crypt_secfile(cpu_key, opened); !crypted) {
+                return std::unexpected(std::move(crypted.error()));
             }
             if (opened_under(opened)) {
                 return opened;
@@ -277,14 +291,16 @@ namespace gxbuild3::nand {
         return out;
     }
 
-    std::optional<CrlSealing> crl_sealing(std::span<const uint8_t> own,
-                                          std::span<const uint8_t> cpu_key) {
+    Result<CrlSealing> crl_sealing(std::span<const uint8_t> own, std::span<const uint8_t> cpu_key) {
         if (!valid_cpu_key(cpu_key)) {
-            return std::nullopt;
+            return invalid_cpu_key(cpu_key);
         }
         const auto opened = open_crl(own, cpu_key);
-        if (!opened || opened->master != size_t{0}) {
-            return std::nullopt;
+        if (!opened) {
+            return std::unexpected(opened.error());
+        }
+        if (opened->master != size_t{0}) {
+            return fail(ErrorCode::AuthFailed, "crl.bin is not sealed under the CPU key");
         }
         CrlSealing sealing{};
         std::copy_n(own.begin() + kCrlIvOffset, sealing.iv.size(), sealing.iv.begin());
@@ -292,14 +308,16 @@ namespace gxbuild3::nand {
         return sealing;
     }
 
-    std::optional<DaeSealing> dae_sealing(std::span<const uint8_t> own,
-                                          std::span<const uint8_t> cpu_key) {
+    Result<DaeSealing> dae_sealing(std::span<const uint8_t> own, std::span<const uint8_t> cpu_key) {
         if (!valid_cpu_key(cpu_key)) {
-            return std::nullopt;
+            return invalid_cpu_key(cpu_key);
         }
         const auto records = open_dae(own, cpu_key);
-        if (!records || records->front().master != size_t{0}) {
-            return std::nullopt;
+        if (!records) {
+            return std::unexpected(records.error());
+        }
+        if (records->front().master != size_t{0}) {
+            return fail(ErrorCode::AuthFailed, "dae.bin is not sealed under the CPU key");
         }
         const auto& first = records->front();
         DaeSealing sealing{};
@@ -323,16 +341,16 @@ namespace gxbuild3::nand {
         return sealing;
     }
 
-    std::optional<std::vector<uint8_t>> reseal_crl(std::span<const uint8_t> content,
-                                                   std::span<const uint8_t> cpu_key,
-                                                   const CrlSealing& sealing,
-                                                   const SecuredFileBuild& build) {
+    Result<std::vector<uint8_t>> reseal_crl(std::span<const uint8_t> content,
+                                            std::span<const uint8_t> cpu_key,
+                                            const CrlSealing& sealing,
+                                            const SecuredFileBuild& build) {
         if (!valid_cpu_key(cpu_key)) {
-            return std::nullopt;
+            return invalid_cpu_key(cpu_key);
         }
         auto opened = open_crl(content, cpu_key);
         if (!opened) {
-            return std::nullopt;
+            return std::unexpected(std::move(opened.error()));
         }
         auto& plain = opened->body;
         put_stamp(plain, build.build_seconds);
@@ -347,16 +365,16 @@ namespace gxbuild3::nand {
         return out;
     }
 
-    std::optional<std::vector<uint8_t>> reseal_dae(std::span<const uint8_t> content,
-                                                   std::span<const uint8_t> cpu_key,
-                                                   const DaeSealing& sealing,
-                                                   const SecuredFileBuild& build) {
+    Result<std::vector<uint8_t>> reseal_dae(std::span<const uint8_t> content,
+                                            std::span<const uint8_t> cpu_key,
+                                            const DaeSealing& sealing,
+                                            const SecuredFileBuild& build) {
         if (!valid_cpu_key(cpu_key)) {
-            return std::nullopt;
+            return invalid_cpu_key(cpu_key);
         }
         auto records = open_dae(content, cpu_key);
         if (!records) {
-            return std::nullopt;
+            return std::unexpected(std::move(records.error()));
         }
         auto field = sealing.field;
         field[1] |= 0x01;
@@ -393,11 +411,15 @@ namespace gxbuild3::nand {
         return std::equal(nonce.begin(), nonce.end(), clear.begin());
     }
 
-    std::optional<std::vector<uint8_t>> reseal_extended(std::span<const uint8_t> clear,
-                                                        std::span<const uint8_t> cpu_key,
-                                                        std::span<const uint8_t, 8> keyvault_head) {
-        if (!valid_cpu_key(cpu_key) || clear.size() < kNonceSize + keyvault_head.size()) {
-            return std::nullopt;
+    Result<std::vector<uint8_t>> reseal_extended(std::span<const uint8_t> clear,
+                                                 std::span<const uint8_t> cpu_key,
+                                                 std::span<const uint8_t, 8> keyvault_head) {
+        if (!valid_cpu_key(cpu_key)) {
+            return invalid_cpu_key(cpu_key);
+        }
+        if (clear.size() < kNonceSize + keyvault_head.size()) {
+            return fail(ErrorCode::Truncated, "extended.bin of 0x{:X} bytes holds no head",
+                        clear.size());
         }
         std::vector<uint8_t> plain(clear.begin() + kNonceSize, clear.end());
         std::copy(keyvault_head.begin(), keyvault_head.end(), plain.begin());
@@ -405,12 +427,16 @@ namespace gxbuild3::nand {
         return seal_under_nonce(nonce, std::move(plain), cpu_key);
     }
 
-    std::optional<std::vector<uint8_t>> reseal_secdata(std::span<const uint8_t> clear,
-                                                       std::span<const uint8_t> cpu_key,
-                                                       std::optional<std::array<uint8_t, 8>> head,
-                                                       const SecuredFileBuild& build) {
-        if (!valid_cpu_key(cpu_key) || clear.size() < kNonceSize + 0x18) {
-            return std::nullopt;
+    Result<std::vector<uint8_t>> reseal_secdata(std::span<const uint8_t> clear,
+                                                std::span<const uint8_t> cpu_key,
+                                                std::optional<std::array<uint8_t, 8>> head,
+                                                const SecuredFileBuild& build) {
+        if (!valid_cpu_key(cpu_key)) {
+            return invalid_cpu_key(cpu_key);
+        }
+        if (clear.size() < kNonceSize + 0x18) {
+            return fail(ErrorCode::Truncated, "secdata.bin of 0x{:X} bytes holds no stamp",
+                        clear.size());
         }
         std::vector<uint8_t> plain(clear.begin() + kNonceSize, clear.end());
         if (head) {
@@ -423,14 +449,14 @@ namespace gxbuild3::nand {
         return seal_under_nonce(nonce, std::move(plain), cpu_key);
     }
 
-    std::optional<std::vector<uint8_t>> clean_extended(std::span<const uint8_t> cpu_key,
-                                                       std::span<const uint8_t, 8> keyvault_head) {
+    Result<std::vector<uint8_t>> clean_extended(std::span<const uint8_t> cpu_key,
+                                                std::span<const uint8_t, 8> keyvault_head) {
         return reseal_extended(std::vector<uint8_t>(kExtendedSize), cpu_key, keyvault_head);
     }
 
-    std::optional<std::vector<uint8_t>> clean_secdata(std::span<const uint8_t> cpu_key,
-                                                      std::span<const uint8_t, 8> head,
-                                                      const SecuredFileBuild& build) {
+    Result<std::vector<uint8_t>> clean_secdata(std::span<const uint8_t> cpu_key,
+                                               std::span<const uint8_t, 8> head,
+                                               const SecuredFileBuild& build) {
         std::array<uint8_t, 8> own_head{};
         std::copy(head.begin(), head.end(), own_head.begin());
         return reseal_secdata(std::vector<uint8_t>(kSecdataSize), cpu_key, own_head, build);
@@ -442,13 +468,13 @@ namespace gxbuild3::nand {
         return head;
     }
 
-    std::optional<std::vector<uint8_t>> open_loose_extended(std::span<const uint8_t> blob,
-                                                            std::span<const uint8_t> cpu_key) {
+    Result<std::vector<uint8_t>> open_loose_extended(std::span<const uint8_t> blob,
+                                                     std::span<const uint8_t> cpu_key) {
         return open_loose(blob, cpu_key, true);
     }
 
-    std::optional<std::vector<uint8_t>> open_loose_secdata(std::span<const uint8_t> blob,
-                                                           std::span<const uint8_t> cpu_key) {
+    Result<std::vector<uint8_t>> open_loose_secdata(std::span<const uint8_t> blob,
+                                                    std::span<const uint8_t> cpu_key) {
         return open_loose(blob, cpu_key, false);
     }
 
@@ -500,10 +526,11 @@ namespace gxbuild3::nand {
         return FcrtRequirement::NotRequired;
     }
 
-    std::optional<std::array<uint8_t, 8>> secdata_head(std::span<const uint8_t> clear) {
+    Result<std::array<uint8_t, 8>> secdata_head(std::span<const uint8_t> clear) {
         std::array<uint8_t, 8> head{};
         if (clear.size() < kNonceSize + head.size()) {
-            return std::nullopt;
+            return fail(ErrorCode::Truncated, "secdata.bin of 0x{:X} bytes holds no head",
+                        clear.size());
         }
         std::copy_n(clear.begin() + kNonceSize, head.size(), head.begin());
         return head;

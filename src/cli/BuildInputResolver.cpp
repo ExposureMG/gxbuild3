@@ -914,10 +914,9 @@ namespace gxbuild3::cli {
                 auto opened =
                     gxbuild3::nand::open_loose_keyvault(foundations->cpu_key, (**keyvault).data);
                 if (!opened) {
-                    return std::unexpected(
-                        error(ResolutionErrorCode::InvalidInput,
-                              "kv.bin is not 0x4000 bytes, nor 0x3FF0 without its nonce",
-                              (**keyvault).source_path, "kv.bin"));
+                    return std::unexpected(error(ResolutionErrorCode::InvalidInput,
+                                                 opened.error().describe(),
+                                                 (**keyvault).source_path, "kv.bin"));
                 }
                 using Form = gxbuild3::nand::LooseKeyvault::Form;
                 if (opened->form == Form::StaleNonce) {
@@ -992,7 +991,8 @@ namespace gxbuild3::cli {
                     if (!opened) {
                         return std::unexpected(
                             error(ResolutionErrorCode::InvalidInput,
-                                  "Could not decrypt secure INI file at the Input boundary",
+                                  "Could not decrypt secure INI file at the Input boundary: " +
+                                      opened.error().describe(),
                                   ini_path, file.first));
                     }
                     file.second = std::move(*opened);

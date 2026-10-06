@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <iostream>
-#include <stdexcept>
 #include <string_view>
 #include <vector>
 
@@ -73,22 +72,23 @@ namespace {
         }
         // A keyvault's reserved bytes, 0x38-0x8F, are zero.
         std::fill(plain.begin() + 0x38, plain.begin() + 0x90, 0);
-        const auto sealed = keyvault_encrypt(cpu_key, plain);
-        const auto canonical = keyvault_decrypt(cpu_key, sealed);
+        const auto sealed = keyvault_encrypt(cpu_key, plain).value();
+        const auto canonical = keyvault_decrypt(cpu_key, sealed).value();
         const auto opened = open_loose_keyvault(cpu_key, sealed);
         const auto stale = open_loose_keyvault(cpu_key, plain);
         const auto own_nonce = open_loose_keyvault(cpu_key, canonical);
         const std::vector<uint8_t> body(plain.begin() + 0x10, plain.end());
         const auto bare = open_loose_keyvault(cpu_key, body);
         const std::array<uint8_t, 16> zero{};
-        const auto under_zero = open_loose_keyvault(zero, keyvault_encrypt(zero, plain));
-        const auto other = keyvault_encrypt(zero, plain);
+        const auto under_zero = open_loose_keyvault(zero, keyvault_encrypt(zero, plain).value());
+        const auto other = keyvault_encrypt(zero, plain).value();
         const auto foreign = open_loose_keyvault(cpu_key, other);
         std::vector<uint8_t> unnonced = sealed;
         std::fill(unnonced.begin(), unnonced.begin() + 0x10, 0);
         const auto sealed_bare = open_loose_keyvault(cpu_key, unnonced);
         std::vector<uint8_t> zero_nonce = plain;
         std::fill(zero_nonce.begin(), zero_nonce.begin() + 0x10, 0);
+        const auto keyless = open_loose_keyvault(std::vector<uint8_t>(8), sealed);
         return require(opened && opened->form == Form::Sealed && opened->plain == canonical,
                        "a sealed kv.bin is opened") &&
                require(stale && stale->form == Form::StaleNonce && stale->plain == plain,
@@ -105,7 +105,9 @@ namespace {
                            sealed_bare->plain == unnonced,
                        "so is a sealed body behind a zero nonce") &&
                require(!open_loose_keyvault(cpu_key, std::vector<uint8_t>(0x100)),
-                       "a kv.bin of another length is refused");
+                       "a kv.bin of another length is refused") &&
+               require(!keyless && keyless.error().code == gxbuild3::ErrorCode::InvalidArgument,
+                       "an unusable CPU key is an error, not an unopened kv.bin");
     }
 
 } // namespace
@@ -118,28 +120,20 @@ int main() {
         for (uint8_t byte = 0; byte < 16; ++byte) {
             plaintext.push_back(byte);
         }
-        try {
-            const auto encrypted = keyvault_encrypt(cpu_key, plaintext, vector.version);
-            if (!std::equal(encrypted.begin(), encrypted.end(), vector.encrypted.begin(),
-                            vector.encrypted.end())) {
-                std::cerr << "FAIL: encryption must include the big-endian version\n";
-                passed = false;
-            }
-            if (keyvault_decrypt(cpu_key, vector.encrypted, vector.version) != plaintext) {
-                std::cerr << "FAIL: decryption differs from independent plaintext\n";
-                passed = false;
-            }
-            try {
-                (void) keyvault_decrypt(cpu_key, vector.encrypted, vector.version ^ 1);
-                std::cerr << "FAIL: wrong version must fail authentication\n";
-                passed = false;
-            } catch (const std::runtime_error& error) {
-                if (std::string_view(error.what()) != "Keyvault authentication failed") {
-                    throw;
-                }
-            }
-        } catch (const std::exception& error) {
-            std::cerr << "FAIL: version vector: " << error.what() << '\n';
+        const auto encrypted = keyvault_encrypt(cpu_key, plaintext, vector.version);
+        if (!encrypted || !std::equal(encrypted->begin(), encrypted->end(),
+                                      vector.encrypted.begin(), vector.encrypted.end())) {
+            std::cerr << "FAIL: encryption must include the big-endian version\n";
+            passed = false;
+        }
+        if (keyvault_decrypt(cpu_key, vector.encrypted, vector.version) != plaintext) {
+            std::cerr << "FAIL: decryption differs from independent plaintext\n";
+            passed = false;
+        }
+        const auto wrong_version = keyvault_decrypt(cpu_key, vector.encrypted, vector.version ^ 1);
+        if (wrong_version || wrong_version.error().code != gxbuild3::ErrorCode::AuthFailed ||
+            wrong_version.error().message != "Keyvault authentication failed") {
+            std::cerr << "FAIL: wrong version must fail authentication\n";
             passed = false;
         }
     }

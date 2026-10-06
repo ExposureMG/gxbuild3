@@ -103,11 +103,12 @@ namespace {
     }
 
     Bytes canonical_keyvault(std::span<const uint8_t> key, uint8_t marker) {
-        return keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, marker)));
+        return keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, marker)).value())
+            .value();
     }
 
     Bytes encrypted_keyvault(std::span<const uint8_t> key, uint8_t marker) {
-        return keyvault_encrypt(key, canonical_keyvault(key, marker));
+        return keyvault_encrypt(key, canonical_keyvault(key, marker)).value();
     }
 
     Bytes valid_glitch_patchset(uint8_t marker = 0xA0) {
@@ -166,7 +167,8 @@ namespace {
         input.metadata.cpu_key.assign(key.begin(), key.end());
         input.metadata.smc = make_smc(0x61);
         input.metadata.keyvault =
-            keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)));
+            keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)).value())
+                .value();
         input.bootloaders = valid_bootloaders();
         const auto built = run_build(input);
         if (!built) {
@@ -181,7 +183,8 @@ namespace {
         input.metadata.cpu_key.assign(key.begin(), key.end());
         input.metadata.smc = make_smc(0x61);
         input.metadata.keyvault =
-            keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)));
+            keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)).value())
+                .value();
         input.bootloaders = valid_bootloaders();
 
         auto cb = BootloaderCb::parse_or_throw(input.bootloaders.cb_or_a);
@@ -1075,7 +1078,7 @@ namespace {
                     for (const bool nofcrt : {false, true}) {
                         ResolverFixture fixture;
                         auto args = fixture.complete_loose_args();
-                        fixture.write_binary("first/kv.bin", keyvault_encrypt(key, plain));
+                        fixture.write_binary("first/kv.bin", keyvault_encrypt(key, plain).value());
                         fixture.write_text(
                             "working/build.ini",
                             std::string("[falconbl]\ncb_1.bin\ncd.bin\n[security]\n") +

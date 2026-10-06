@@ -61,7 +61,7 @@ namespace {
         input.metadata.cpu_key.assign(cpu.begin(), cpu.end());
         input.metadata.smc = Bytes(0x300, 0);
         input.metadata.keyvault =
-            keyvault_decrypt(cpu, keyvault_encrypt(cpu, Bytes(Keyvault::kSize, 0)));
+            keyvault_decrypt(cpu, keyvault_encrypt(cpu, Bytes(Keyvault::kSize, 0)).value()).value();
         const bool split = type != BuildType::Glitch;
         input.bootloaders.cb_or_a = cb(split ? 9188 : 6750, split ? flags : 0, 0x11);
         if (split)
@@ -190,9 +190,11 @@ namespace {
             input.metadata.cpu_key[0] ^= 1;
             input.metadata.cpu_key[8] ^= 1;
             XeCryptUidEccEncode(input.metadata.cpu_key.data());
-            input.metadata.keyvault = keyvault_decrypt(
-                input.metadata.cpu_key,
-                keyvault_encrypt(input.metadata.cpu_key, Bytes(Keyvault::kSize, 0)));
+            input.metadata.keyvault =
+                keyvault_decrypt(
+                    input.metadata.cpu_key,
+                    keyvault_encrypt(input.metadata.cpu_key, Bytes(Keyvault::kSize, 0)).value())
+                    .value();
         }
         if (change == 4)
             (*input.metadata.smc)[7] = 0xAB;

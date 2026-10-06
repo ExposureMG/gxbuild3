@@ -416,8 +416,13 @@ namespace gxbuild3::nand {
 
         auto kv_bytes = flash_driver.read_clean(kKeyvaultOffset, Keyvault::kSize);
         if (!kv_bytes.empty()) {
-            keyvault = Keyvault::parse(kv_bytes);
-            Log::Debug("Extracted Keyvault from NAND (0x{:X} bytes)", kv_bytes.size());
+            if (auto parsed = Keyvault::parse(kv_bytes)) {
+                keyvault = std::move(*parsed);
+                Log::Debug("Extracted Keyvault from NAND (0x{:X} bytes)", kv_bytes.size());
+            } else {
+                keyvault.reset();
+                Log::Error("Failed to parse the NAND's Keyvault: {}", parsed.error().describe());
+            }
         }
 
         size_t cursor = kEntryOffset;
@@ -1940,8 +1945,9 @@ namespace gxbuild3::nand {
                         Log::Warn("The keyvault does not open under the all-zero CPU key; it is "
                                   "left sealed");
                     }
-                } else if (!keyvault->decrypt(cpu_key)) {
-                    Log::Error("Failed to decrypt Keyvault with provided CPU key");
+                } else if (const auto decrypted = keyvault->decrypt(cpu_key); !decrypted) {
+                    Log::Error("Failed to decrypt Keyvault with provided CPU key: {}",
+                               decrypted.error().describe());
                     return false;
                 }
             }
@@ -2235,8 +2241,9 @@ namespace gxbuild3::nand {
             }
 
             if (keyvault.has_value() && !keyvault->encrypted && !cpu_key.empty()) {
-                if (!keyvault->encrypt(cpu_key)) {
-                    Log::Error("Failed to encrypt Keyvault with provided CPU key");
+                if (const auto encrypted = keyvault->encrypt(cpu_key); !encrypted) {
+                    Log::Error("Failed to encrypt Keyvault with provided CPU key: {}",
+                               encrypted.error().describe());
                     return false;
                 }
             }

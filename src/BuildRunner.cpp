@@ -119,11 +119,11 @@ namespace gxbuild3 {
         // open are replaced by a clean one, as xeBuild makes one up. fcrt.bin is sealed under the
         // CPU key when it is in the clear, written as its failed opening when it opens under no key
         // (the console's own copy is then carried as it stands) and otherwise written as supplied.
-        // Every other file is written as supplied. Nothing when a file cannot be sealed at all.
-        std::optional<std::vector<uint8_t>> sealed_flashfs_file(std::string_view name,
-                                                                const std::vector<uint8_t>& data,
-                                                                const Input& input,
-                                                                const SecuredFileBuild& build) {
+        // Every other file is written as supplied. An Error when a file cannot be sealed at all.
+        Result<std::vector<uint8_t>> sealed_flashfs_file(std::string_view name,
+                                                         const std::vector<uint8_t>& data,
+                                                         const Input& input,
+                                                         const SecuredFileBuild& build) {
             const auto& cpu_key = input.metadata.cpu_key;
             const auto lower = lowercase_name(name);
             if (cpu_key.size() < 16) {
@@ -131,45 +131,63 @@ namespace gxbuild3 {
             }
             const auto* own = console_secured_file(input.metadata, lower);
             if (lower == "crl.bin") {
-                auto sealing = own ? crl_sealing(*own, cpu_key) : std::nullopt;
-                if (own && !sealing) {
-                    Log::Warn(
-                        "The console's crl.bin does not open under its CPU key; its sealing is "
-                        "not used");
+                std::optional<CrlSealing> sealing;
+                if (own) {
+                    if (auto own_sealing = crl_sealing(*own, cpu_key)) {
+                        sealing = *own_sealing;
+                    } else {
+                        Log::Warn(
+                            "The console's crl.bin does not open under its CPU key; its sealing is "
+                            "not used");
+                        Log::Debug("crl.bin sealing: {}", own_sealing.error().describe());
+                    }
                 }
                 if (!sealing) {
-                    sealing = crl_sealing(data, cpu_key);
+                    if (auto supplied_sealing = crl_sealing(data, cpu_key)) {
+                        sealing = *supplied_sealing;
+                    }
                 }
                 if (!sealing) {
                     Log::Info("crl.bin is sealed under a drawn vector and file key");
                     sealing = random_crl_sealing();
                 }
-                if (auto sealed = reseal_crl(data, cpu_key, *sealing, build)) {
+                auto sealed = reseal_crl(data, cpu_key, *sealing, build);
+                if (sealed) {
                     return std::move(*sealed);
                 }
                 Log::Warn(
                     "crl.bin opens under no key it is tried under; it is written as supplied");
+                Log::Debug("crl.bin not resealed: {}", sealed.error().describe());
                 return data;
             }
             if (lower == "dae.bin") {
-                auto sealing = own ? dae_sealing(*own, cpu_key) : std::nullopt;
-                if (own && !sealing) {
-                    Log::Warn(
-                        "The console's dae.bin does not open under its CPU key; its sealing is "
-                        "not used");
+                std::optional<DaeSealing> sealing;
+                if (own) {
+                    if (auto own_sealing = dae_sealing(*own, cpu_key)) {
+                        sealing = *own_sealing;
+                    } else {
+                        Log::Warn(
+                            "The console's dae.bin does not open under its CPU key; its sealing is "
+                            "not used");
+                        Log::Debug("dae.bin sealing: {}", own_sealing.error().describe());
+                    }
                 }
                 if (!sealing) {
-                    sealing = dae_sealing(data, cpu_key);
+                    if (auto supplied_sealing = dae_sealing(data, cpu_key)) {
+                        sealing = *supplied_sealing;
+                    }
                 }
                 if (!sealing) {
                     Log::Info("dae.bin is sealed under a drawn head and field");
                     sealing = random_dae_sealing();
                 }
-                if (auto sealed = reseal_dae(data, cpu_key, *sealing, build)) {
+                auto sealed = reseal_dae(data, cpu_key, *sealing, build);
+                if (sealed) {
                     return std::move(*sealed);
                 }
                 Log::Warn(
                     "dae.bin opens under no key it is tried under; it is written as supplied");
+                Log::Debug("dae.bin not resealed: {}", sealed.error().describe());
                 return data;
             }
             if (lower == "extended.bin") {
@@ -199,8 +217,12 @@ namespace gxbuild3 {
             if (lower == "secdata.bin") {
                 // Its head is the console's own copy's; with none, a copy that opens keeps its own
                 // and a clean one takes a drawn head.
-                const auto own_head =
-                    own && secdata_opened(*own, cpu_key) ? secdata_head(*own) : std::nullopt;
+                std::optional<std::array<uint8_t, 8>> own_head;
+                if (own && secdata_opened(*own, cpu_key)) {
+                    if (auto head = secdata_head(*own)) {
+                        own_head = *head;
+                    }
+                }
                 if (data.size() == kSecdataSize && secdata_opened(data, cpu_key)) {
                     return reseal_secdata(data, cpu_key, own_head, build);
                 }
@@ -212,8 +234,8 @@ namespace gxbuild3 {
                         "secdata.bin did not open under the CPU key; it is sealed again under "
                         "the nonce it carries");
                     std::vector<uint8_t> file_data = data;
-                    if (!crypt_secfile(cpu_key, file_data)) {
-                        return std::nullopt;
+                    if (auto crypted = crypt_secfile(cpu_key, file_data); !crypted) {
+                        return std::unexpected(std::move(crypted.error()));
                     }
                     return file_data;
                 }
@@ -923,7 +945,8 @@ namespace gxbuild3 {
 
         const auto keyvault = Keyvault::parse(*input.metadata.keyvault);
         if (!keyvault) {
-            return build_error(BuildErrorCode::InvalidKeyvault, "Failed to parse input keyvault");
+            return build_error(BuildErrorCode::InvalidKeyvault,
+                               "Failed to parse input keyvault: " + keyvault.error().describe());
         }
         flash_image.keyvault = *keyvault;
         flash_image.keyvault->encrypted = false;
@@ -1450,7 +1473,8 @@ namespace gxbuild3 {
                 const auto file_data = sealed_flashfs_file(name, data, input, secured_build);
                 if (!file_data) {
                     return build_error(BuildErrorCode::EncryptionFailure,
-                                       "Failed to encrypt secure FlashFS file");
+                                       "Failed to encrypt secure FlashFS file '" + name +
+                                           "': " + file_data.error().describe());
                 }
                 Log::Debug("Adding FlashFS file: '{}' ({} bytes)", name, file_data->size());
                 if (const auto added = flash_image.filesystem->add_file(name, *file_data); !added) {
@@ -2142,9 +2166,12 @@ namespace gxbuild3 {
             for (const auto& filename : file_list) {
                 auto file_data = img.filesystem->get_file(filename);
                 if (file_data.has_value()) {
-                    if (is_cpu_keyed_secfile(filename) && !crypt_secfile(cpu_key, *file_data)) {
-                        Log::Error("Failed to decrypt secure FlashFS file '{}'", filename);
-                        return std::nullopt;
+                    if (is_cpu_keyed_secfile(filename)) {
+                        if (auto crypted = crypt_secfile(cpu_key, *file_data); !crypted) {
+                            Log::Error("Failed to decrypt secure FlashFS file '{}': {}", filename,
+                                       crypted.error().describe());
+                            return std::nullopt;
+                        }
                     }
                     if (is_console_secured_file(filename)) {
                         out.metadata.console_secured_files.emplace_back(filename, *file_data);

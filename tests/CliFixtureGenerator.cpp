@@ -134,7 +134,9 @@ namespace {
         input.metadata.smc = Bytes(0x300, 0x61);
         (*input.metadata.smc)[0x100] = 0x10;
         input.metadata.keyvault =
-            keyvault_decrypt(kCpuKey, keyvault_encrypt(kCpuKey, Bytes(Keyvault::kSize, 0x72)));
+            keyvault_decrypt(kCpuKey,
+                             keyvault_encrypt(kCpuKey, Bytes(Keyvault::kSize, 0x72)).value())
+                .value();
         input.bootloaders = bootloaders;
 
         const auto built = run_build(input);

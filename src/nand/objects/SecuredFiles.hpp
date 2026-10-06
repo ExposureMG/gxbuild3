@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Error.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -55,10 +57,12 @@ namespace gxbuild3::nand {
     [[nodiscard]] std::array<uint8_t, 8> secured_file_stamp(int64_t build_seconds);
 
     // The sealing a console's own crl.bin or dae.bin carries, when it opens under the CPU key.
-    [[nodiscard]] std::optional<CrlSealing> crl_sealing(std::span<const uint8_t> own,
-                                                        std::span<const uint8_t> cpu_key);
-    [[nodiscard]] std::optional<DaeSealing> dae_sealing(std::span<const uint8_t> own,
-                                                        std::span<const uint8_t> cpu_key);
+    // InvalidArgument for a CPU key that is not 16 bytes, Malformed for a file whose layout is not
+    // a sealable record (or chain of them) and AuthFailed for one not sealed under the CPU key.
+    [[nodiscard]] Result<CrlSealing> crl_sealing(std::span<const uint8_t> own,
+                                                 std::span<const uint8_t> cpu_key);
+    [[nodiscard]] Result<DaeSealing> dae_sealing(std::span<const uint8_t> own,
+                                                 std::span<const uint8_t> cpu_key);
 
     // Sealing drawn from the system's cryptographic random source, for a build with no console
     // copy to take it from.
@@ -67,22 +71,22 @@ namespace gxbuild3::nand {
 
     // crl.bin sealed for the console: the content's body, in the clear or opened under the CPU key
     // or an XEX key, takes the stamp at 0x00 and the lockdown value at 0x0F and is sealed under the
-    // CPU key with `sealing`. The header up to 0x120 is the content's. Nothing when the content
-    // opens under no key.
-    [[nodiscard]] std::optional<std::vector<uint8_t>> reseal_crl(std::span<const uint8_t> content,
-                                                                 std::span<const uint8_t> cpu_key,
-                                                                 const CrlSealing& sealing,
-                                                                 const SecuredFileBuild& build);
+    // CPU key with `sealing`. The header up to 0x120 is the content's. AuthFailed when the content
+    // opens under no key, Malformed when it is no sealable record.
+    [[nodiscard]] Result<std::vector<uint8_t>> reseal_crl(std::span<const uint8_t> content,
+                                                          std::span<const uint8_t> cpu_key,
+                                                          const CrlSealing& sealing,
+                                                          const SecuredFileBuild& build);
 
     // dae.bin sealed for the console, record by record: each body, in the clear or opened under
     // the CPU key or an XEX key, takes the stamp at 0x00, the head at 0x08, the lockdown value at
     // 0x0F and HMAC-SHA(CPU key, field + body[0..0x10]) at 0x10; its header takes the field, with
-    // bit 0 of its second byte set, at 0x120. Nothing when any record opens under no key or the
-    // records do not cover the file.
-    [[nodiscard]] std::optional<std::vector<uint8_t>> reseal_dae(std::span<const uint8_t> content,
-                                                                 std::span<const uint8_t> cpu_key,
-                                                                 const DaeSealing& sealing,
-                                                                 const SecuredFileBuild& build);
+    // bit 0 of its second byte set, at 0x120. AuthFailed when any record opens under no key,
+    // Malformed (or Truncated, for an empty file) when the records do not cover the file.
+    [[nodiscard]] Result<std::vector<uint8_t>> reseal_dae(std::span<const uint8_t> content,
+                                                          std::span<const uint8_t> cpu_key,
+                                                          const DaeSealing& sealing,
+                                                          const SecuredFileBuild& build);
 
     // Whether an extended.bin or secdata.bin in the clear is the plaintext of the nonce it
     // carries, that is, whether it was opened under this CPU key.
@@ -93,14 +97,17 @@ namespace gxbuild3::nand {
 
     // extended.bin sealed for the console: its plaintext with the keyvault's eight-byte head at
     // 0x00, under the nonce that plaintext derives. `clear` is the nonce and the plaintext.
-    [[nodiscard]] std::optional<std::vector<uint8_t>>
+    // InvalidArgument for a CPU key that is not 16 bytes, Truncated for a file too short to hold
+    // the head.
+    [[nodiscard]] Result<std::vector<uint8_t>>
     reseal_extended(std::span<const uint8_t> clear, std::span<const uint8_t> cpu_key,
                     std::span<const uint8_t, 8> keyvault_head);
 
     // secdata.bin sealed for the console: its plaintext with `head` at 0x00 when one is given, 1
     // at 0x08, the lockdown value at 0x09 and the stamp at 0x10, under the nonce that plaintext
-    // derives. `clear` is the nonce and the plaintext.
-    [[nodiscard]] std::optional<std::vector<uint8_t>>
+    // derives. `clear` is the nonce and the plaintext. InvalidArgument for a CPU key that is not 16
+    // bytes, Truncated for a file too short to hold the stamp.
+    [[nodiscard]] Result<std::vector<uint8_t>>
     reseal_secdata(std::span<const uint8_t> clear, std::span<const uint8_t> cpu_key,
                    std::optional<std::array<uint8_t, 8>> head, const SecuredFileBuild& build);
 
@@ -110,16 +117,16 @@ namespace gxbuild3::nand {
 
     // A clean extended.bin, as xeBuild 1.21 makes one up: kExtendedSize bytes whose plaintext is
     // zero but for the keyvault's eight-byte head at 0x00, under the nonce that plaintext derives.
-    // Nothing for a CPU key that is not 16 bytes.
-    [[nodiscard]] std::optional<std::vector<uint8_t>>
+    // InvalidArgument for a CPU key that is not 16 bytes.
+    [[nodiscard]] Result<std::vector<uint8_t>>
     clean_extended(std::span<const uint8_t> cpu_key, std::span<const uint8_t, 8> keyvault_head);
 
     // A clean secdata.bin, as xeBuild 1.21 makes one up: kSecdataSize bytes whose plaintext is zero
     // but for `head` at 0x00, 1 at 0x08, the lockdown value at 0x09 and the stamp at 0x10, under
-    // the nonce that plaintext derives. Nothing for a CPU key that is not 16 bytes.
-    [[nodiscard]] std::optional<std::vector<uint8_t>>
-    clean_secdata(std::span<const uint8_t> cpu_key, std::span<const uint8_t, 8> head,
-                  const SecuredFileBuild& build);
+    // the nonce that plaintext derives. InvalidArgument for a CPU key that is not 16 bytes.
+    [[nodiscard]] Result<std::vector<uint8_t>> clean_secdata(std::span<const uint8_t> cpu_key,
+                                                             std::span<const uint8_t, 8> head,
+                                                             const SecuredFileBuild& build);
 
     // A secdata.bin head drawn from the system's cryptographic random source, for a clean
     // secdata.bin with no console copy to take it from.
@@ -129,12 +136,12 @@ namespace gxbuild3::nand {
     // under the CPU key is opened. A copy in the clear, as xeBuild takes one (an all-zero nonce,
     // or the nonce its plaintext derives), gets the nonce its plaintext derives. Anything else is
     // opened under the nonce it carries; it then does not verify, and run_build makes up a clean
-    // extended.bin for it and writes a secdata.bin back as supplied. Nothing for a CPU key that is
-    // not 16 bytes or a file shorter than its nonce.
-    [[nodiscard]] std::optional<std::vector<uint8_t>>
+    // extended.bin for it and writes a secdata.bin back as supplied. InvalidArgument for a CPU key
+    // that is not 16 bytes, Truncated for a file shorter than its nonce.
+    [[nodiscard]] Result<std::vector<uint8_t>>
     open_loose_extended(std::span<const uint8_t> blob, std::span<const uint8_t> cpu_key);
-    [[nodiscard]] std::optional<std::vector<uint8_t>>
-    open_loose_secdata(std::span<const uint8_t> blob, std::span<const uint8_t> cpu_key);
+    [[nodiscard]] Result<std::vector<uint8_t>> open_loose_secdata(std::span<const uint8_t> blob,
+                                                                  std::span<const uint8_t> cpu_key);
 
     // What a build makes of the fcrt.bin it is handed, as xeBuild 1.21 makes it.
     enum class FcrtSealing {
@@ -181,7 +188,7 @@ namespace gxbuild3::nand {
     [[nodiscard]] FcrtRequirement fcrt_requirement(std::span<const uint8_t> clear_keyvault);
 
     // The eight-byte head of an opened secdata.bin (`clear` is the nonce and the plaintext).
-    [[nodiscard]] std::optional<std::array<uint8_t, 8>>
-    secdata_head(std::span<const uint8_t> clear);
+    // Truncated for a file too short to hold it.
+    [[nodiscard]] Result<std::array<uint8_t, 8>> secdata_head(std::span<const uint8_t> clear);
 
 } // namespace gxbuild3::nand

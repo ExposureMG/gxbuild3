@@ -7,7 +7,6 @@
 #include <bit>
 #include <cstring>
 #include <random>
-#include <stdexcept>
 
 namespace gxbuild3::nand {
 
@@ -142,13 +141,15 @@ namespace gxbuild3::nand {
         }
     }
 
-    std::vector<uint8_t> keyvault_decrypt(std::span<const uint8_t> cpu_key,
-                                          std::span<const uint8_t> data, uint16_t kv_version) {
+    Result<std::vector<uint8_t>> keyvault_decrypt(std::span<const uint8_t> cpu_key,
+                                                  std::span<const uint8_t> data,
+                                                  uint16_t kv_version) {
         if (!cpukey_valid(cpu_key)) {
-            throw std::runtime_error("Invalid CPU key");
+            return fail(ErrorCode::InvalidArgument, "Invalid CPU key");
         }
         if (data.size() < 0x10) {
-            throw std::runtime_error("Invalid data size");
+            return fail(ErrorCode::InvalidArgument, "Invalid keyvault data size 0x{:X}",
+                        data.size());
         }
 
         std::vector<uint8_t> out_data(data.begin(), data.end());
@@ -174,19 +175,21 @@ namespace gxbuild3::nand {
             difference |= static_cast<uint8_t>(out_data[i] ^ kv_digest[i]);
         }
         if (difference != 0) {
-            throw std::runtime_error("Keyvault authentication failed");
+            return fail(ErrorCode::AuthFailed, "Keyvault authentication failed");
         }
 
         return out_data;
     }
 
-    std::vector<uint8_t> keyvault_encrypt(std::span<const uint8_t> cpu_key,
-                                          std::span<const uint8_t> data, uint16_t kv_version) {
+    Result<std::vector<uint8_t>> keyvault_encrypt(std::span<const uint8_t> cpu_key,
+                                                  std::span<const uint8_t> data,
+                                                  uint16_t kv_version) {
         if (!cpukey_valid(cpu_key)) {
-            throw std::runtime_error("Invalid CPU key");
+            return fail(ErrorCode::InvalidArgument, "Invalid CPU key");
         }
         if (data.size() < 0x10) {
-            throw std::runtime_error("Invalid data size");
+            return fail(ErrorCode::InvalidArgument, "Invalid keyvault data size 0x{:X}",
+                        data.size());
         }
 
         std::vector<uint8_t> out_data(data.begin(), data.end());
@@ -212,18 +215,27 @@ namespace gxbuild3::nand {
         return out_data;
     }
 
-    std::optional<LooseKeyvault> open_loose_keyvault(std::span<const uint8_t> cpu_key,
-                                                     std::span<const uint8_t> data) {
+    Result<LooseKeyvault> open_loose_keyvault(std::span<const uint8_t> cpu_key,
+                                              std::span<const uint8_t> data) {
         std::vector<uint8_t> whole(data.begin(), data.end());
         if (whole.size() == Keyvault::kSize - 0x10) {
             whole.insert(whole.begin(), 0x10, 0);
         }
-        if (whole.size() != Keyvault::kSize || !cpukey_valid(cpu_key)) {
-            return std::nullopt;
+        if (whole.size() != Keyvault::kSize) {
+            return fail(ErrorCode::Malformed,
+                        "kv.bin is 0x{:X} bytes, not 0x4000 nor 0x3FF0 without its nonce",
+                        data.size());
         }
-        try {
-            return LooseKeyvault{keyvault_decrypt(cpu_key, whole), LooseKeyvault::Form::Sealed};
-        } catch (const std::exception&) {
+        if (!cpukey_valid(cpu_key)) {
+            return fail(ErrorCode::InvalidArgument, "Invalid CPU key");
+        }
+        // Only an authentication failure means the copy is not sealed under this key.
+        auto opened = keyvault_decrypt(cpu_key, whole);
+        if (opened) {
+            return LooseKeyvault{std::move(*opened), LooseKeyvault::Form::Sealed};
+        }
+        if (opened.error().code != ErrorCode::AuthFailed) {
+            return std::unexpected(std::move(opened.error()));
         }
         const auto zero = [&whole](size_t from, size_t to) {
             return std::all_of(whole.begin() + static_cast<std::ptrdiff_t>(from),
@@ -233,10 +245,13 @@ namespace gxbuild3::nand {
         // xeBuild's tests, in its order. A zero nonce is in the clear unless 0x58-0x5F say it is
         // not; a nonce is the plaintext's own when sealing derives it again.
         const auto derived = keyvault_encrypt(cpu_key, whole);
+        if (!derived) {
+            return std::unexpected(derived.error());
+        }
         auto form = LooseKeyvault::Form::Unopened;
         if (zero(0, 0x10)) {
             form = zero(0x58, 0x60) ? LooseKeyvault::Form::Clear : LooseKeyvault::Form::Unopened;
-        } else if (std::equal(whole.begin(), whole.begin() + 0x10, derived.begin())) {
+        } else if (std::equal(whole.begin(), whole.begin() + 0x10, derived->begin())) {
             form = LooseKeyvault::Form::Clear;
         } else if (zero(0x38, 0x90)) {
             form = LooseKeyvault::Form::StaleNonce;
@@ -244,20 +259,25 @@ namespace gxbuild3::nand {
         return LooseKeyvault{std::move(whole), form};
     }
 
-    bool crypt_secfile(std::span<const uint8_t> cpu_key, std::span<uint8_t> data) {
-        if (cpu_key.size() != 16 || data.size() < 0x10) {
-            return false;
+    Result<> crypt_secfile(std::span<const uint8_t> cpu_key, std::span<uint8_t> data) {
+        if (cpu_key.size() != 16) {
+            return fail(ErrorCode::InvalidArgument, "CPU key is {} bytes, not 16", cpu_key.size());
+        }
+        if (data.size() < 0x10) {
+            return fail(ErrorCode::InvalidArgument,
+                        "Secured file is 0x{:X} bytes, shorter than its nonce", data.size());
         }
         uint8_t key[20] = {0};
         ExCryptHmacSha(cpu_key.data(), 16, data.data(), 0x10, nullptr, 0, nullptr, 0, key, 20);
         ExCryptRc4(key, 16, data.data() + 0x10, static_cast<uint32_t>(data.size() - 0x10));
-        return true;
+        return {};
     }
 
-    std::optional<Keyvault> Keyvault::parse(std::span<const uint8_t> bytes) {
+    Result<Keyvault> Keyvault::parse(std::span<const uint8_t> bytes) {
         if (bytes.size() != kSize) {
-            Log::Error("Invalid Keyvault size: expected {} bytes, got {}", kSize, bytes.size());
-            return std::nullopt;
+            return fail(bytes.size() < kSize ? ErrorCode::Truncated : ErrorCode::Malformed,
+                        "Invalid Keyvault size: expected 0x{:X} bytes, got 0x{:X}", kSize,
+                        bytes.size());
         }
 
         Keyvault kv;
@@ -268,48 +288,48 @@ namespace gxbuild3::nand {
         return kv;
     }
 
-    std::optional<Keyvault> Keyvault::parse(const std::vector<uint8_t>& bytes) {
+    Result<Keyvault> Keyvault::parse(const std::vector<uint8_t>& bytes) {
         return parse(std::span<const uint8_t>(bytes.data(), bytes.size()));
     }
 
-    bool Keyvault::decrypt(std::span<const uint8_t> cpu_key) {
+    Result<> Keyvault::decrypt(std::span<const uint8_t> cpu_key) {
         if (!encrypted) {
-            return true;
+            return {};
         }
-        if (!cpukey_valid(cpu_key)) {
-            Log::Error("Cannot decrypt Keyvault: invalid CPU key");
-            return false;
+        auto crypted = keyvault_decrypt(cpu_key, raw_data);
+        if (!crypted) {
+            return std::unexpected(
+                std::move(crypted.error()).add_context("decrypting the keyvault"));
         }
-        try {
-            raw_data = keyvault_decrypt(cpu_key, raw_data);
-            std::memcpy(&data, raw_data.data(), sizeof(XE_KEYVAULT_DATA));
-            encrypted = false;
-            Log::Debug("Keyvault decrypted successfully");
-            return true;
-        } catch (const std::exception& e) {
-            Log::Error("Keyvault decryption failed: {}", e.what());
-            return false;
+        if (crypted->size() < sizeof(XE_KEYVAULT_DATA)) {
+            return fail(ErrorCode::Truncated, "Keyvault is 0x{:X} bytes, not 0x{:X}",
+                        crypted->size(), sizeof(XE_KEYVAULT_DATA));
         }
+        raw_data = std::move(*crypted);
+        std::memcpy(&data, raw_data.data(), sizeof(XE_KEYVAULT_DATA));
+        encrypted = false;
+        Log::Debug("Keyvault decrypted successfully");
+        return {};
     }
 
-    bool Keyvault::encrypt(std::span<const uint8_t> cpu_key) {
+    Result<> Keyvault::encrypt(std::span<const uint8_t> cpu_key) {
         if (encrypted) {
-            return true;
+            return {};
         }
-        if (!cpukey_valid(cpu_key)) {
-            Log::Error("Cannot encrypt Keyvault: invalid CPU key");
-            return false;
+        auto crypted = keyvault_encrypt(cpu_key, raw_data);
+        if (!crypted) {
+            return std::unexpected(
+                std::move(crypted.error()).add_context("encrypting the keyvault"));
         }
-        try {
-            raw_data = keyvault_encrypt(cpu_key, raw_data);
-            std::memcpy(&data, raw_data.data(), sizeof(XE_KEYVAULT_DATA));
-            encrypted = true;
-            Log::Debug("Keyvault encrypted successfully");
-            return true;
-        } catch (const std::exception& e) {
-            Log::Error("Keyvault encryption failed: {}", e.what());
-            return false;
+        if (crypted->size() < sizeof(XE_KEYVAULT_DATA)) {
+            return fail(ErrorCode::Truncated, "Keyvault is 0x{:X} bytes, not 0x{:X}",
+                        crypted->size(), sizeof(XE_KEYVAULT_DATA));
         }
+        raw_data = std::move(*crypted);
+        std::memcpy(&data, raw_data.data(), sizeof(XE_KEYVAULT_DATA));
+        encrypted = true;
+        Log::Debug("Keyvault encrypted successfully");
+        return {};
     }
 
     std::vector<uint8_t> Keyvault::serialize() const {

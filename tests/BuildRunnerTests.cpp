@@ -93,7 +93,7 @@ namespace {
     }
 
     Bytes canonical_keyvault(std::span<const uint8_t> cpu_key, Bytes plaintext) {
-        return keyvault_decrypt(cpu_key, keyvault_encrypt(cpu_key, plaintext));
+        return keyvault_decrypt(cpu_key, keyvault_encrypt(cpu_key, plaintext).value()).value();
     }
 
     InputBootloaders valid_bootloaders() {
@@ -1266,7 +1266,7 @@ namespace {
         FlashImage donor{};
         donor.flash_driver = Driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
         donor.smc = Smc::parse(*source.metadata.smc);
-        donor.keyvault = Keyvault::parse(*source.metadata.keyvault);
+        donor.keyvault = Keyvault::parse(*source.metadata.keyvault).value();
         donor.keyvault->encrypted = false;
         if (!donor.keyvault->encrypt(source.metadata.cpu_key)) {
             std::abort();

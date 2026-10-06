@@ -128,17 +128,17 @@ namespace {
         const auto shipped = reseal_crl(clear, kRetailXexKey, kCrlSealing, {0, 0});
         const auto from_clear = reseal_crl(clear, kCpuKey, kCrlSealing, kBuild);
         const auto from_shipped =
-            shipped ? reseal_crl(*shipped, kCpuKey, kCrlSealing, kBuild) : std::nullopt;
+            shipped ? reseal_crl(*shipped, kCpuKey, kCrlSealing, kBuild) : shipped;
         const auto devkit = reseal_crl(clear, Key{}, kCrlSealing, {0, 0});
         const auto from_devkit =
-            devkit ? reseal_crl(*devkit, kCpuKey, kCrlSealing, kBuild) : std::nullopt;
+            devkit ? reseal_crl(*devkit, kCpuKey, kCrlSealing, kBuild) : devkit;
         auto damaged = clear;
         damaged[0x200] ^= 1;
-        return check(from_shipped && from_shipped == from_clear,
+        return check(from_shipped && from_clear && *from_shipped == *from_clear,
                      "a copy under the retail XEX key opens and seals as the clear one") &&
                check(!crl_sealing(*shipped, kCpuKey),
                      "a shipped copy carries no console sealing") &&
-               check(from_devkit && from_devkit == from_clear,
+               check(from_devkit && from_clear && *from_devkit == *from_clear,
                      "a copy under the all-zero development XEX key opens too") &&
                check(!reseal_crl(damaged, kCpuKey, kCrlSealing, kBuild),
                      "a copy whose hash does not hold opens under no key");
@@ -177,7 +177,7 @@ namespace {
         return records_hold &&
                check(own && own->head == kDaeSealing.head && own->field == field,
                      "the head and field are read back under the CPU key") &&
-               check(reseal_dae(*sealed, kCpuKey, *own, kBuild) == sealed,
+               check(reseal_dae(*sealed, kCpuKey, *own, kBuild) == *sealed,
                      "a sealed dae.bin seals again to the same bytes") &&
                check(!dae_sealing(*sealed, kOtherKey), "another console's key does not open it");
     }
@@ -214,7 +214,7 @@ namespace {
             return false;
         }
         auto opened = *sealed;
-        crypt_secfile(kCpuKey, opened);
+        (void) crypt_secfile(kCpuKey, opened);
         return check(extended_opened(clear, kCpuKey), "an opened extended.bin is recognised") &&
                check(!extended_opened(clear, kOtherKey), "under its own key only") &&
                check(extended_opened(opened, kCpuKey),
@@ -234,9 +234,9 @@ namespace {
             return false;
         }
         auto opened = *sealed;
-        crypt_secfile(kCpuKey, opened);
+        (void) crypt_secfile(kCpuKey, opened);
         auto opened_kept = *kept;
-        crypt_secfile(kCpuKey, opened_kept);
+        (void) crypt_secfile(kCpuKey, opened_kept);
         const auto stamp = secured_file_stamp(kBuild.build_seconds);
         return check(secdata_opened(clear, kCpuKey) && !extended_opened(clear, kCpuKey),
                      "secdata.bin's nonce takes nothing behind the plaintext") &&
@@ -244,7 +244,7 @@ namespace {
                      "its nonce is the one its plaintext derives") &&
                check(std::equal(head.begin(), head.end(), opened.begin() + 0x10),
                      "a given head is written") &&
-               check(secdata_head(opened_kept) == secdata_head(clear), "else its own is kept") &&
+               check(secdata_head(opened_kept) == *secdata_head(clear), "else its own is kept") &&
                check(opened[0x18] == 0x01 && opened[0x19] == kBuild.lockdown_value,
                      "it states 1 and the lockdown value at 0x08") &&
                check(std::equal(stamp.begin(), stamp.end(), opened.begin() + 0x20),
@@ -262,7 +262,7 @@ namespace {
             return false;
         }
         auto opened = *sealed;
-        crypt_secfile(kCpuKey, opened);
+        (void) crypt_secfile(kCpuKey, opened);
         Bytes plain(kExtendedSize - 0x10);
         std::copy(head.begin(), head.end(), plain.begin());
         static constexpr uint8_t kTail[2] = {0x07, 0x12};
@@ -272,7 +272,7 @@ namespace {
                check(std::equal(plain.begin(), plain.end(), opened.begin() + 0x10),
                      "its plaintext is zero but the keyvault's head") &&
                check(extended_opened(opened, kCpuKey), "it opens under the CPU key") &&
-               check(clean_extended(kCpuKey, head) == sealed, "it is deterministic") &&
+               check(clean_extended(kCpuKey, head) == *sealed, "it is deterministic") &&
                check(!clean_extended(Bytes(8), head), "a CPU key that is not 16 bytes fails");
     }
 
@@ -285,7 +285,7 @@ namespace {
             return false;
         }
         auto opened = *sealed;
-        crypt_secfile(kCpuKey, opened);
+        (void) crypt_secfile(kCpuKey, opened);
         Bytes plain(kSecdataSize - 0x10);
         std::copy(head.begin(), head.end(), plain.begin());
         plain[0x08] = 0x01;
@@ -306,13 +306,13 @@ namespace {
     bool test_loose_copies_reach_the_input_boundary_in_the_clear() {
         const auto clear = clear_keyvault_style(0x400, 9, false);
         auto sealed = clear;
-        crypt_secfile(kCpuKey, sealed);
+        (void) crypt_secfile(kCpuKey, sealed);
         auto zero_nonce = clear;
         std::fill(zero_nonce.begin(), zero_nonce.begin() + 0x10, uint8_t{0});
         auto stale = sealed;
         std::fill(stale.begin(), stale.begin() + 0x10, uint8_t{0x51});
         auto stale_opened = stale;
-        crypt_secfile(kCpuKey, stale_opened);
+        (void) crypt_secfile(kCpuKey, stale_opened);
         const auto extended = clear_keyvault_style(0x4000, 5, true);
         auto zero_extended = extended;
         std::fill(zero_extended.begin(), zero_extended.begin() + 0x10, uint8_t{0});
