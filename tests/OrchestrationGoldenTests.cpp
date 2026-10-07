@@ -22,8 +22,9 @@
 
 #include "BuildRunner.hpp"
 #include "GoldenSnapshot.hpp"
-#include "excrypt.h"
+#include "support/Bytes.hpp"
 #include "support/Env.hpp"
+#include "support/Keys.hpp"
 #include "support/render/ExtractProjection.hpp"
 
 #include <array>
@@ -48,8 +49,7 @@ namespace {
     using Bytes = std::vector<uint8_t>;
 
     // The CPU key of the tracked mydata/image.bin, public in build_all.sh (-p ...).
-    constexpr std::array<uint8_t, 16> kCpuKey = {0x93, 0xFB, 0x9D, 0x01, 0x19, 0x30, 0xAF, 0xC4,
-                                                 0x53, 0xAA, 0x75, 0xB1, 0x83, 0xEF, 0xAC, 0x09};
+    constexpr auto kCpuKey = test::kBuildAllCpuKey;
     constexpr const char* kSourceDateEpoch = "1791105724";
 
     int g_checks = 0;
@@ -83,18 +83,7 @@ namespace {
         return Bytes{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
     }
 
-    std::string sha1_hex(std::span<const uint8_t> bytes) {
-        std::array<uint8_t, 20> digest{};
-        ExCryptSha(bytes.data(), static_cast<uint32_t>(bytes.size()), nullptr, 0, nullptr, 0,
-                   digest.data(), static_cast<uint32_t>(digest.size()));
-        static constexpr char digits[] = "0123456789abcdef";
-        std::string out;
-        for (const uint8_t byte : digest) {
-            out.push_back(digits[byte >> 4]);
-            out.push_back(digits[byte & 0x0F]);
-        }
-        return out;
-    }
+    using test::sha1_hex;
 
     void set_source_date_epoch(const char* value) {
 #ifdef _WIN32

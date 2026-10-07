@@ -2,7 +2,6 @@
 #include "GoldenSnapshot.hpp"
 #include "TestResult.hpp"
 #include "cli/BuildInputResolver.hpp"
-#include "excrypt.h"
 #include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
 #include "nand/bootloaders/4bl.hpp"
@@ -11,8 +10,13 @@
 #include "nand/objects/Freeboot.hpp"
 #include "nand/objects/Keyvault.hpp"
 #include "nand/objects/Patchset.hpp"
+#include "support/Bytes.hpp"
 #include "support/Env.hpp"
+#include "support/Keys.hpp"
 #include "support/XeRsaTestKey.hpp"
+#include "support/builders/Patchsets.hpp"
+#include "support/builders/ResolverTree.hpp"
+#include "support/builders/Stages.hpp"
 #include "support/render/ExtractProjection.hpp"
 
 #include <algorithm>
@@ -61,41 +65,6 @@ namespace {
         return require(result.has_value(), message);
     }
 
-    // xerunner test_build.py: a retail slim CB_B word, type 3 and allow bit 0.
-    constexpr uint32_t kFuseCbWord = 0x03010001;
-
-    Bytes cb_with_word(uint32_t word) {
-        Bytes cb(0x400, 0x00);
-        cb[0] = 0x43;
-        cb[1] = 0x42;
-        cb[0x3B0] = static_cast<uint8_t>(word >> 24);
-        cb[0x3B1] = static_cast<uint8_t>(word >> 16);
-        cb[0x3B2] = static_cast<uint8_t>(word >> 8);
-        cb[0x3B3] = static_cast<uint8_t>(word);
-        return cb;
-    }
-
-    Bytes valid_cpu_key(bool alternate = false) {
-        std::array<uint8_t, 16> key{};
-        const size_t first_bit = alternate ? 53 : 0;
-        for (size_t bit = first_bit; bit < first_bit + 53; ++bit) {
-            key[bit / 8] |= static_cast<uint8_t>(1U << (bit % 8));
-        }
-        XeCryptUidEccEncode(key.data());
-        return Bytes(key.begin(), key.end());
-    }
-
-    std::string key_hex(std::span<const uint8_t> key) {
-        constexpr char digits[] = "0123456789abcdef";
-        std::string result;
-        result.reserve(key.size() * 2);
-        for (const uint8_t byte : key) {
-            result.push_back(digits[byte >> 4]);
-            result.push_back(digits[byte & 0x0F]);
-        }
-        return result;
-    }
-
     std::string uppercase(std::string value) {
         std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
             return static_cast<char>(std::toupper(character));
@@ -103,242 +72,82 @@ namespace {
         return value;
     }
 
-    Bytes make_smc(uint8_t marker) {
-        Bytes smc(0x300, marker);
-        smc[0x100] = 0x10;
-        return smc;
+    // The shared builders (tests/support/builders/), byte for byte what this file defined.
+    using gxbuild3::test::canonical_keyvault_filled;
+    using gxbuild3::test::cb_with_word;
+    using gxbuild3::test::encrypted_keyvault;
+    using gxbuild3::test::glitch2_donor_input;
+    using gxbuild3::test::hex;
+    using gxbuild3::test::kFuseCbWord;
+    using gxbuild3::test::make_smc;
+    using gxbuild3::test::malformed_supported_size_nand;
+    using gxbuild3::test::valid_bootloaders;
+    using gxbuild3::test::valid_glitch_patchset;
+
+    // The resolver's two test keys as bytes: valid_cpu_key() (bits 0..52 ECC-encoded) and, as
+    // the alternate, different_valid_cpu_key() (bits 53..105), pinned by core.Keys.
+    Bytes valid_cpu_key(bool alternate = false) {
+        const auto key =
+            alternate ? gxbuild3::test::different_valid_cpu_key() : gxbuild3::test::valid_cpu_key();
+        return Bytes(key.begin(), key.end());
     }
 
-    Bytes canonical_keyvault(std::span<const uint8_t> key, uint8_t marker) {
-        return keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, marker)).value())
-            .value();
-    }
-
-    Bytes encrypted_keyvault(std::span<const uint8_t> key, uint8_t marker) {
-        return keyvault_encrypt(key, canonical_keyvault(key, marker)).value();
-    }
-
-    Bytes valid_glitch_patchset(uint8_t marker = 0xA0) {
-        auto append_be32 = [](Bytes& bytes, uint32_t value) {
-            bytes.push_back(static_cast<uint8_t>(value >> 24));
-            bytes.push_back(static_cast<uint8_t>(value >> 16));
-            bytes.push_back(static_cast<uint8_t>(value >> 8));
-            bytes.push_back(static_cast<uint8_t>(value));
-        };
-        Bytes bytes;
-        append_be32(bytes, 0x20);
-        append_be32(bytes, 1);
-        append_be32(bytes, 0x11223344);
-        append_be32(bytes, 0xFFFFFFFF);
-        append_be32(bytes, 0x30);
-        append_be32(bytes, 1);
-        append_be32(bytes, 0x55667788);
-        append_be32(bytes, 0xFFFFFFFF);
-        bytes.push_back(marker);
-        return bytes;
-    }
-
-    InputBootloaders valid_bootloaders() {
-        BootloaderCb cb{};
-        cb.header.header.magic = NANDBootloaderMagic::CB;
-        cb.header.header.version = 1;
-        cb.data.resize(0x380, 0);
-        cb.header.header.size = static_cast<uint32_t>(sizeof(generic_header) + cb.data.size());
-        cb.decrypted = true;
-
-        BootloaderSc sc{};
-        sc.header.header.magic = NANDBootloaderMagic::SC;
-        sc.header.header.version = 1;
-        sc.header.header.size = static_cast<uint32_t>(sizeof(sc_header) + 0x20);
-        sc.data.assign(0x20, 0x53);
-        sc.decrypted = true;
-
-        BootloaderCd cd{};
-        cd.header.header.magic = NANDBootloaderMagic::CD;
-        cd.header.header.version = 1;
-        cd.header.header.size = static_cast<uint32_t>(sizeof(cd_header) + 0x20);
-        cd.header.ce_hash[0] = 1;
-        cd.data.resize(0x20, 0x42);
-        cd.decrypted = true;
-
-        InputBootloaders result{};
-        result.cb_or_a = cb.serialize();
-        result.sc = sc.serialize();
-        result.cd = cd.serialize();
-        return result;
-    }
-
+    // The Result-returning builders, unwrapped as before: a failure aborts the binary with its
+    // description. These go as their callers are ported.
     Bytes donor_image(ImageType type, std::span<const uint8_t> key) {
-        Input input{};
-        input.image_type = type;
-        input.metadata.cpu_key.assign(key.begin(), key.end());
-        input.metadata.smc = make_smc(0x61);
-        input.metadata.keyvault =
-            keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)).value())
-                .value();
-        input.bootloaders = valid_bootloaders();
-        const auto built = run_build(input);
-        if (!built) {
-            std::abort();
-        }
-        return *built;
+        return test::must(gxbuild3::test::donor_image(type, key));
     }
 
     Input donor_input_with_metadata(ImageType type, std::span<const uint8_t> key) {
-        Input input{};
-        input.image_type = type;
-        input.metadata.cpu_key.assign(key.begin(), key.end());
-        input.metadata.smc = make_smc(0x61);
-        input.metadata.keyvault =
-            keyvault_decrypt(key, keyvault_encrypt(key, Bytes(Keyvault::kSize, 0x72)).value())
-                .value();
-        input.bootloaders = valid_bootloaders();
-
-        auto cb = test::must(BootloaderCb::parse(input.bootloaders.cb_or_a));
-        cb.data.resize(sizeof(cb_header) - sizeof(generic_header), 0);
-        cb.header.header.size = static_cast<uint32_t>(sizeof(generic_header) + cb.data.size());
-        if (!cb.parse_perbox()) {
-            std::abort();
-        }
-        cb.perbox->lockdown_value = 7;
-        cb.perbox->pairing_data[0] = 0xA1;
-        cb.perbox->pairing_data[1] = 0xB2;
-        cb.perbox->pairing_data[2] = 0xC3;
-        if (!cb.serialize_perbox()) {
-            std::abort();
-        }
-        input.bootloaders.cb_or_a = cb.serialize();
-
-        BootloaderCf cf{};
-        cf.header.header.magic = NANDBootloaderMagic::CF;
-        cf.header.header.version = 1;
-        cf.data.assign(0x340, 0);
-        cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
-        cf.decrypted = true;
-        if (!cf.parse_perbox()) {
-            std::abort();
-        }
-        cf.perbox->lockdown_value = 8;
-        if (!cf.serialize_perbox()) {
-            std::abort();
-        }
-        input.bootloaders.cf0 = cf.serialize();
-        BootloaderCg cg{};
-        cg.header.header.magic = NANDBootloaderMagic::CG;
-        cg.header.header.version = 1;
-        cg.data.assign(0x40, 0);
-        cg.header.header.size = static_cast<uint32_t>(sizeof(cg_header) + cg.data.size());
-        input.bootloaders.cg0 = cg.serialize();
-        input.metadata.cb_ldv = 7;
-        input.metadata.cf_ldv = 8;
-        input.metadata.pairing_data = {0xA1, 0xB2, 0xC3};
-        return input;
+        return test::must(gxbuild3::test::donor_input_with_metadata(type, key));
     }
 
     Bytes donor_image_with_metadata(ImageType type, std::span<const uint8_t> key) {
-        const auto built = run_build(donor_input_with_metadata(type, key));
-        if (!built) {
-            std::abort();
-        }
-        return *built;
+        return test::must(gxbuild3::test::donor_image_with_metadata(type, key));
     }
 
-    Bytes malformed_supported_size_nand() {
-        Bytes nand(17'301'504, 0);
-        constexpr size_t logical_bootloader_offset = 0x8000;
-        constexpr size_t raw_bootloader_offset =
-            (logical_bootloader_offset / 512) * 528 + logical_bootloader_offset % 512;
-        nand[raw_bootloader_offset] = 0x43;
-        nand[raw_bootloader_offset + 1] = 0x44;
-        nand[raw_bootloader_offset + 15] = 0x10;
-        return nand;
+    // A donor image built twice under the pinned build time with every donor nonce pinned;
+    // nullopt unless both builds succeed and are byte-identical.
+    std::optional<Bytes> pinned_donor_image(Input input, std::string_view label) {
+        auto donor = gxbuild3::test::pinned_donor_image(std::move(input), label);
+        if (!donor) {
+            std::cerr << "DONOR BUILD ERROR: " << donor.error().describe() << '\n';
+            return std::nullopt;
+        }
+        return std::move(*donor);
     }
 
-    struct ResolverFixture {
-        std::filesystem::path root;
-        std::filesystem::path working_directory;
-
-        ResolverFixture() {
-            const auto unique =
-                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-            root = std::filesystem::temp_directory_path() / ("gxbuild3-resolver-" + unique);
-            working_directory = root / "working";
-            std::filesystem::create_directories(working_directory);
-            std::filesystem::create_directories(root / "first");
-            std::filesystem::create_directories(root / "second");
-        }
+    // ResolverTree (tests/support/builders/ResolverTree.hpp) rooted at a fresh directory under
+    // the temporary directory, removed again at scope end. A write that fails aborts the binary.
+    struct ResolverFixture : gxbuild3::test::ResolverTree {
+        ResolverFixture() : ResolverTree(test::must(ResolverTree::make(fresh_root()))) {}
 
         ~ResolverFixture() {
             std::error_code error;
-            std::filesystem::remove_all(root, error);
+            std::filesystem::remove_all(root(), error);
         }
 
-        std::filesystem::path path(std::string_view relative) const {
-            return root / std::filesystem::path(relative);
-        }
+        ResolverFixture(const ResolverFixture&) = delete;
+        ResolverFixture& operator=(const ResolverFixture&) = delete;
 
         void write_text(std::string_view relative, std::string_view content) const {
-            const auto destination = path(relative);
-            std::filesystem::create_directories(destination.parent_path());
-            std::ofstream output(destination, std::ios::binary);
-            output << content;
+            test::must(ResolverTree::write_text(relative, content));
         }
 
         void write_binary(std::string_view relative, std::span<const uint8_t> content) const {
-            const auto destination = path(relative);
-            std::filesystem::create_directories(destination.parent_path());
-            std::ofstream output(destination, std::ios::binary);
-            output.write(reinterpret_cast<const char*>(content.data()),
-                         static_cast<std::streamsize>(content.size()));
-        }
-
-        BuildArgs minimum_args() const {
-            BuildArgs args{};
-            args.source_dirs = {path("first")};
-            args.cpu_key = key_hex(valid_cpu_key());
-            args.image_type = ImageType::SmallBlock;
-            args.output_path = "result.bin";
-            return args;
+            test::must(ResolverTree::write_binary(relative, content));
         }
 
         BuildArgs complete_loose_args(BuildType build_type = BuildType::Retail,
                                       ImageType image_type = ImageType::SmallBlock) const {
-            const auto key = valid_cpu_key();
-            write_binary("first/kv.bin", encrypted_keyvault(key, 0x72));
-            write_binary("first/smc.bin", make_smc(0x61));
-            write_binary("first/cb_1.bin", Bytes{0xCB, 0x01});
-            write_binary("first/cd.bin", Bytes{0xCD, 0x01});
-            // Virtual fuses read their CB's word at 0x3B0: CB_B for glitch2m, the second CB
-            // for JTAG.
-            std::string ini = build_type == BuildType::Jtag ? "[version]\n17559\n\n" : "";
-            ini += "[falconbl]\ncb_1.bin\n";
-            if (build_type == BuildType::Glitch2m) {
-                write_binary("first/cbb_1.bin", cb_with_word(kFuseCbWord));
-                ini += "cbb_1.bin\n";
-            }
-            ini += "cd.bin\n";
-            if (build_type == BuildType::Jtag) {
-                write_binary("first/cb_2.bin", cb_with_word(kFuseCbWord));
-                ini += "cb_2.bin\n";
-            }
-            write_text("working/build.ini", ini);
-            write_text("working/options.ini", "cbldv=2\ncfldv=3\npairing_data=010203\n");
-
-            auto args = minimum_args();
-            args.build_ini = "build.ini";
-            args.section = "falcon";
-            args.console = ConsoleType::Falcon;
-            args.build_type = build_type;
-            args.image_type = image_type;
-            return args;
+            return test::must(ResolverTree::complete_loose_args(build_type, image_type));
         }
 
-        auto resolve(const BuildArgs& args) const {
-            return BuildInputResolver(working_directory).resolve(args);
-        }
-
-        auto resolve_foundations(const BuildArgs& args) const {
-            return BuildInputResolver(working_directory).resolve_foundations(args);
+      private:
+        static std::filesystem::path fresh_root() {
+            const auto unique =
+                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+            return std::filesystem::temp_directory_path() / ("gxbuild3-resolver-" + unique);
         }
     };
 
@@ -655,8 +464,8 @@ namespace {
         ResolverFixture fixture;
         const auto first_key = valid_cpu_key();
         const auto second_key = valid_cpu_key(true);
-        fixture.write_text("first/cpukey.txt", " \r\n" + key_hex(first_key) + "\t\n");
-        fixture.write_text("second/cpukey.txt", key_hex(second_key));
+        fixture.write_text("first/cpukey.txt", " \r\n" + hex(first_key) + "\t\n");
+        fixture.write_text("second/cpukey.txt", hex(second_key));
         auto args = fixture.minimum_args();
         args.source_dirs = {fixture.path("first"), fixture.path("second")};
         args.cpu_key.reset();
@@ -666,7 +475,7 @@ namespace {
             return false;
         }
 
-        args.cpu_key = "  " + key_hex(second_key) + "\r\n";
+        args.cpu_key = "  " + hex(second_key) + "\r\n";
         const auto explicit_key = fixture.resolve_foundations(args);
         return require(explicit_key && explicit_key->cpu_key == second_key,
                        "an explicit trimmed CPU key overrides every source root");
@@ -675,7 +484,7 @@ namespace {
     bool test_relative_source_root_is_anchored_to_working_directory() {
         ResolverFixture fixture;
         const auto key = valid_cpu_key();
-        fixture.write_text("first/cpukey.txt", key_hex(key));
+        fixture.write_text("first/cpukey.txt", hex(key));
         auto args = fixture.minimum_args();
         args.cpu_key.reset();
         args.source_dirs = {"../first"};
@@ -688,7 +497,7 @@ namespace {
         ResolverFixture fixture;
         const auto key = valid_cpu_key();
         auto args = fixture.minimum_args();
-        args.cpu_key = uppercase(key_hex(key));
+        args.cpu_key = uppercase(hex(key));
         const auto uppercase_result = fixture.resolve_foundations(args);
         if (!require(uppercase_result && uppercase_result->cpu_key == key,
                      "uppercase hexadecimal CPU keys are accepted")) {
@@ -697,7 +506,7 @@ namespace {
 
         auto correctable = key;
         correctable.front() ^= 0x01;
-        args.cpu_key = key_hex(correctable);
+        args.cpu_key = hex(correctable);
         const auto corrected_result = fixture.resolve_foundations(args);
         return require(corrected_result && corrected_result->cpu_key == key,
                        "correctable CPU-key ECC errors return the corrected 16-byte key");
@@ -733,7 +542,7 @@ namespace {
     bool test_cpu_key_lookup_failure_does_not_fall_through() {
         ResolverFixture fixture;
         std::filesystem::create_directory(fixture.path("first/cpukey.txt"));
-        fixture.write_text("second/cpukey.txt", key_hex(valid_cpu_key()));
+        fixture.write_text("second/cpukey.txt", hex(valid_cpu_key()));
         auto args = fixture.minimum_args();
         args.cpu_key.reset();
         args.source_dirs = {fixture.path("first"), fixture.path("second")};
@@ -756,7 +565,7 @@ namespace {
         fixture.write_binary("first/nanddump.bin", donor_image(ImageType::SmallBlock, key));
         fixture.write_binary("second/nanddump.bin", Bytes{0x00, 0x01});
         auto args = fixture.minimum_args();
-        args.cpu_key = key_hex(key);
+        args.cpu_key = hex(key);
         args.image_type.reset();
         args.source_dirs = {fixture.path("first"), fixture.path("second")};
         const auto discovered = fixture.resolve_foundations(args);
@@ -782,7 +591,7 @@ namespace {
         fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
         fixture.write_binary("first/cd.bin", Bytes{0xCD});
         fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
-        const auto absolute = BuildInputResolver(fixture.working_directory).resolve(args);
+        const auto absolute = BuildInputResolver(fixture.working_directory()).resolve(args);
         return require(absolute && absolute->input.image_type == ImageType::BigBlock &&
                            absolute->output_path == fixture.path("absolute-output.bin"),
                        "absolute explicit NAND and output paths remain absolute");
@@ -846,7 +655,7 @@ namespace {
         const auto key = valid_cpu_key();
         fixture.write_binary("first/nanddump.bin", donor_image(ImageType::SmallBlock, key));
         auto args = fixture.minimum_args();
-        args.cpu_key = key_hex(key);
+        args.cpu_key = hex(key);
         args.image_type = ImageType::BigBlock;
         const auto result = fixture.resolve_foundations(args);
         return require(result && result->donor && result->image_type == ImageType::BigBlock &&
@@ -865,7 +674,7 @@ namespace {
         const auto key = valid_cpu_key();
         fixture.write_binary("first/nanddump.bin", donor_image(ImageType::SmallBlock, key));
         auto args = fixture.minimum_args();
-        args.cpu_key = key_hex(key);
+        args.cpu_key = hex(key);
         args.image_type = ImageType::SmallBlock;
         const auto matching = fixture.resolve_foundations(args);
         if (!require(matching && matching->donor && matching->donor->metadata.nand_image,
@@ -900,7 +709,7 @@ namespace {
         ResolverFixture fixture;
         auto args = fixture.minimum_args();
         args.cpu_key.reset();
-        const auto result = BuildInputResolver(fixture.working_directory).resolve(args);
+        const auto result = BuildInputResolver(fixture.working_directory()).resolve(args);
         return require(!result && result.error().code == ResolutionErrorCode::CpuKeyNotFound,
                        "Resolve exposes foundation failures before Task 7 phases");
     }
@@ -909,7 +718,7 @@ namespace {
         ResolverFixture fixture;
         auto args = fixture.complete_loose_args();
         args.output_path = "nested/result.bin";
-        const auto result = BuildInputResolver(fixture.working_directory).resolve(args);
+        const auto result = BuildInputResolver(fixture.working_directory()).resolve(args);
         return require_resolved(result, "complete output-path fixture resolves") &&
                require(result->output_path == fixture.path("working/nested/result.bin"),
                        "Resolve anchors a relative output path to its working directory");
@@ -996,7 +805,7 @@ namespace {
         }
 
         const auto key = valid_cpu_key();
-        const auto expected_keyvault = canonical_keyvault(key, 0x48);
+        const auto expected_keyvault = canonical_keyvault_filled(key, 0x48);
         fixture.write_binary("first/kv.bin", encrypted_keyvault(key, 0x48));
         fixture.write_binary("first/smc.bin", make_smc(0x49));
         fixture.write_text("working/options.ini", "cbldv=0x0a\ncfldv=11\npairing_data=a1b2c3\n");
@@ -1023,7 +832,7 @@ namespace {
         ResolverFixture fixture;
         auto args = fixture.complete_loose_args();
         const auto key = valid_cpu_key();
-        const auto clear = canonical_keyvault(key, 0x5A);
+        const auto clear = canonical_keyvault_filled(key, 0x5A);
         fixture.write_binary("first/kv.bin", clear);
         const auto whole = fixture.resolve(args);
         if (!require_resolved(whole, "a kv.bin in the clear resolves") ||
@@ -1083,7 +892,7 @@ namespace {
             return false;
         }
 
-        const auto clear = canonical_keyvault(key, 0x72);
+        const auto clear = canonical_keyvault_filled(key, 0x72);
         fixture.write_binary("first/kv.bin", clear);
         const auto with = fixture.resolve(args);
         return require_resolved(with, "a zero-key donor with kv.bin resolves") &&
@@ -1124,7 +933,7 @@ namespace {
         args.config = {"cbldv=4", "cfldv=5", "pairing_data=0a0b0c", "nofcrt=false"};
         const auto result = fixture.resolve(args);
         return require_resolved(result, "donor plus user overlays resolves") &&
-               require(result->input.metadata.keyvault == canonical_keyvault(key, 0x44) &&
+               require(result->input.metadata.keyvault == canonical_keyvault_filled(key, 0x44) &&
                            result->input.metadata.smc == make_smc(0x45),
                        "user KV and SMC replace donor values") &&
                require(*result->input.mobiles.slot(0x31) == Bytes{0xA1} &&
@@ -1145,7 +954,7 @@ namespace {
         donor.image_type = ImageType::SmallBlock;
         donor.metadata.cpu_key = key;
         donor.metadata.smc = make_smc(0x61);
-        donor.metadata.keyvault = canonical_keyvault(key, 0x62);
+        donor.metadata.keyvault = canonical_keyvault_filled(key, 0x62);
         donor.bootloaders = valid_bootloaders();
         donor.flashfs_sec = std::vector<std::pair<std::string, Bytes>>{
             {"Launch.ini", Bytes{0x10}},        {"launch.INI", Bytes{0x11}},
@@ -1402,7 +1211,7 @@ namespace {
         file_fixture.write_text("working/options.ini", "cbldv=bad\ncfldv=3\npairing_data=010203\n");
         const auto file = file_fixture.resolve(file_args);
         if (!require(!file && file.error().code == ResolutionErrorCode::InvalidInput &&
-                         file.error().path == file_fixture.working_directory / "options.ini" &&
+                         file.error().path == file_fixture.working_directory() / "options.ini" &&
                          file.error().item == "cbldv",
                      "options.ini winning metadata error retains options.ini provenance")) {
             return false;
@@ -1469,7 +1278,7 @@ namespace {
         donor.image_type = ImageType::SmallBlock;
         donor.metadata.cpu_key = key;
         donor.metadata.smc = make_smc(0x61);
-        donor.metadata.keyvault = canonical_keyvault(key, 0x62);
+        donor.metadata.keyvault = canonical_keyvault_filled(key, 0x62);
         donor.bootloaders = valid_bootloaders();
         donor.flashfs_sec =
             std::vector<std::pair<std::string, Bytes>>{{"DONOR-ONLY.BIN", Bytes{0x44}}};
@@ -1942,7 +1751,7 @@ namespace {
         donor.build_type = BuildType::Glitch;
         donor.metadata.cpu_key = key;
         donor.metadata.smc = make_smc(0x63);
-        donor.metadata.keyvault = canonical_keyvault(key, 0x64);
+        donor.metadata.keyvault = canonical_keyvault_filled(key, 0x64);
         donor.bootloaders = valid_bootloaders();
         InputPatches patches{};
         patches.automatic = InputPatchFile{"automatic", valid_glitch_patchset(0xC4)};
@@ -1981,93 +1790,6 @@ namespace {
                        "validate_input failure becomes a structured InvalidInput error");
     }
 
-    // Holds SOURCE_DATE_EPOCH to a value for a scope and gives back the value the process had.
-    class ScopedSourceDateEpoch {
-      public:
-        explicit ScopedSourceDateEpoch(const char* value) {
-            if (const char* previous = std::getenv("SOURCE_DATE_EPOCH")) {
-                previous_ = previous;
-            }
-            set(value);
-        }
-
-        ~ScopedSourceDateEpoch() { set(previous_ ? previous_->c_str() : nullptr); }
-
-        ScopedSourceDateEpoch(const ScopedSourceDateEpoch&) = delete;
-        ScopedSourceDateEpoch& operator=(const ScopedSourceDateEpoch&) = delete;
-
-      private:
-        static void set(const char* value) {
-#ifdef _WIN32
-            _putenv_s("SOURCE_DATE_EPOCH", value ? value : "");
-#else
-            if (value) {
-                setenv("SOURCE_DATE_EPOCH", value, 1);
-            } else {
-                unsetenv("SOURCE_DATE_EPOCH");
-            }
-#endif
-        }
-
-        std::optional<std::string> previous_;
-    };
-
-    // A donor image built twice under the pinned build time (SOURCE_DATE_EPOCH=1791105724 in
-    // UTC) with every donor nonce filled, so no nonce is drawn; nullopt unless both builds succeed
-    // and are byte-identical.
-    std::optional<Bytes> pinned_donor_image(Input input, std::string_view label) {
-        const auto filled = [](uint8_t value) {
-            BootloaderNonce nonce{};
-            nonce.fill(value);
-            return nonce;
-        };
-        DonorNonces nonces{};
-        nonces.stages = {filled(0xA1), filled(0xA2), filled(0xA3), filled(0xA4)};
-        nonces.cf = filled(0xB1);
-        nonces.cg = filled(0xC1);
-        input.metadata.donor_nonces = nonces;
-
-        const gxbuild3::test::ScopedTimeZone utc{"UTC0"};
-        const ScopedSourceDateEpoch epoch{"1791105724"};
-        const auto first = run_build(input);
-        const auto second = run_build(input);
-        if (!first || !second) {
-            std::cerr << "DONOR BUILD ERROR: " << label << ": "
-                      << (first ? second.error().message : first.error().message) << '\n';
-            return std::nullopt;
-        }
-        if (!require(*first == *second, std::string(label) + " donor builds byte-identically")) {
-            return std::nullopt;
-        }
-        return *first;
-    }
-
-    // A small-block glitch2 donor whose image carries a XeLL, so extract_all hands back
-    // payloads: CB_A and CB_B, SC, CD, a patch file and an ELF-headed 0x40000-byte XeLL.
-    Input glitch2_donor_input(std::span<const uint8_t> key) {
-        Input input{};
-        input.image_type = ImageType::SmallBlock;
-        input.build_type = BuildType::Glitch2;
-        input.metadata.cpu_key.assign(key.begin(), key.end());
-        input.metadata.smc = make_smc(0x65);
-        input.metadata.keyvault = canonical_keyvault(key, 0x66);
-        input.bootloaders = valid_bootloaders();
-        input.bootloaders.cb_b = input.bootloaders.cb_or_a;
-        InputPatches patches{};
-        patches.automatic = InputPatchFile{"automatic", valid_glitch_patchset(0xC5)};
-        input.patches = std::move(patches);
-        Bytes xell(0x40000, 0x00);
-        xell[0] = 0x7F;
-        xell[1] = 'E';
-        xell[2] = 'L';
-        xell[3] = 'F';
-        xell[0x100] = 0x58;
-        InputPayloads payloads{};
-        payloads.xell = std::move(xell);
-        input.payloads = std::move(payloads);
-        return input;
-    }
-
     // One BuildRequest as golden lines: the output path relative to the fixture root (the root is
     // a fresh temporary directory), then every Input field through
     // tests/support/render/ExtractProjection.hpp: options, metadata scalars, the size and SHA-1 of
@@ -2076,7 +1798,7 @@ namespace {
     std::string render_request(const std::string& label, const ResolverFixture& fixture,
                                const gxbuild3::cli::BuildRequest& request) {
         return label + " output_path=" +
-               request.output_path.lexically_relative(fixture.root).generic_string() + '\n' +
+               request.output_path.lexically_relative(fixture.root()).generic_string() + '\n' +
                gxbuild3::test::projection::render(label + ".input", request.input);
     }
 

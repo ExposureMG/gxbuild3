@@ -15,8 +15,13 @@
 #include "nand/objects/Patchset.hpp"
 #include "nand/objects/SMC.hpp"
 #include "nand/objects/SecuredFiles.hpp"
+#include "support/Bytes.hpp"
 #include "support/Env.hpp"
+#include "support/Keys.hpp"
 #include "support/XeRsaTestKey.hpp"
+#include "support/builders/Inputs.hpp"
+#include "support/builders/Patchsets.hpp"
+#include "support/builders/Stages.hpp"
 #include "support/render/ExtractProjection.hpp"
 #include "utils/XeRsa.hpp"
 
@@ -63,183 +68,60 @@ namespace {
         return true;
     }
 
-    // A console's key: the all-zero key, which binds an image to no console, does not count.
-    std::array<uint8_t, 16> valid_cpu_key() {
-        for (size_t bit_count = 0; bit_count <= 106; ++bit_count) {
-            std::array<uint8_t, 16> candidate{};
-            for (size_t bit = 0; bit < bit_count; ++bit) {
-                candidate[bit / 8] |= static_cast<uint8_t>(1U << (bit % 8));
-            }
-            XeCryptUidEccEncode(candidate.data());
-            if (!gxbuild3::nand::is_zero_cpu_key(candidate) &&
-                gxbuild3::nand::cpukey_valid(candidate)) {
-                return candidate;
-            }
-        }
-        std::abort();
-    }
+    // The shared builders (tests/support/builders/), byte for byte what this file defined.
+    using gxbuild3::test::append_be32;
+    using gxbuild3::test::append_patch_entry;
+    using gxbuild3::test::canonical_keyvault;
+    using gxbuild3::test::clean_retail_smc;
+    using gxbuild3::test::devgl_input;
+    using gxbuild3::test::devgl_khv;
+    using gxbuild3::test::devgl_sd_patch_address;
+    using gxbuild3::test::devkit_bootloaders;
+    using gxbuild3::test::devkit_input;
+    using gxbuild3::test::different_valid_cpu_key;
+    using gxbuild3::test::digest_input;
+    using gxbuild3::test::filled_nonce;
+    using gxbuild3::test::fresh_input;
+    using gxbuild3::test::glitch_input;
+    using gxbuild3::test::glitch_patchset;
+    using gxbuild3::test::invalid_cpu_key;
+    using gxbuild3::test::jtag_input;
+    using gxbuild3::test::jtag_patchset;
+    using gxbuild3::test::kSmcRebootSite;
+    using gxbuild3::test::make_jtag_smc;
+    using gxbuild3::test::make_smc;
+    using gxbuild3::test::mark_jtag_smc;
+    using gxbuild3::test::nonce_bytes;
+    using gxbuild3::test::pinned_donor_nonces;
+    using gxbuild3::test::sha1_hex;
+    using gxbuild3::test::valid_bootloaders;
+    using gxbuild3::test::valid_ce;
+    using gxbuild3::test::valid_cpu_key;
+    using gxbuild3::test::valid_system_update;
+    using gxbuild3::test::valid_xell;
 
-    std::array<uint8_t, 16> different_valid_cpu_key(std::span<const uint8_t> reference) {
-        std::array<uint8_t, 16> candidate{};
-        for (size_t bit = 53; bit < 106; ++bit) {
-            candidate[bit / 8] |= static_cast<uint8_t>(1U << (bit % 8));
-        }
-        XeCryptUidEccEncode(candidate.data());
-        if (gxbuild3::nand::cpukey_valid(candidate) &&
-            !std::equal(candidate.begin(), candidate.end(), reference.begin(), reference.end())) {
-            return candidate;
-        }
-        std::abort();
-    }
-
-    Bytes make_smc(uint8_t marker) {
-        Bytes smc(0x300, marker);
-        smc[0x100] = 0x10;
-        return smc;
-    }
-
-    // The JTAG hack mark D0 00 00 1B, which a JTAG image requires of its SMC.
-    void mark_jtag_smc(Bytes& smc) {
-        const Bytes mark{0xD0, 0x00, 0x00, 0x1B};
-        std::copy(mark.begin(), mark.end(), smc.begin() + 0x200);
-    }
-
-    Bytes make_jtag_smc(uint8_t marker) {
-        auto smc = make_smc(marker);
-        mark_jtag_smc(smc);
-        return smc;
-    }
-
-    Bytes canonical_keyvault(std::span<const uint8_t> cpu_key, Bytes plaintext) {
-        return keyvault_decrypt(cpu_key, keyvault_encrypt(cpu_key, plaintext).value()).value();
-    }
-
-    InputBootloaders valid_bootloaders() {
-        BootloaderCb cb{};
-        cb.header.header.magic = NANDBootloaderMagic::CB;
-        cb.header.header.version = 1;
-        cb.data.resize(0x380, 0);
-        cb.header.header.size = static_cast<uint32_t>(sizeof(generic_header) + cb.data.size());
-        cb.decrypted = true;
-
-        BootloaderCd cd{};
-        cd.header.header.magic = NANDBootloaderMagic::CD;
-        cd.header.header.version = 1;
-        cd.header.header.size = static_cast<uint32_t>(sizeof(cd_header) + 0x20);
-        cd.header.ce_hash[0] = 1;
-        cd.data.resize(0x20, 0x42);
-        cd.decrypted = true;
-
-        InputBootloaders bootloaders{};
-        bootloaders.cb_or_a = cb.serialize();
-        bootloaders.cd = cd.serialize();
-        BootloaderSc sc{};
-        sc.header.header.magic = NANDBootloaderMagic::SC;
-        sc.header.header.version = 1;
-        sc.header.header.size = static_cast<uint32_t>(sizeof(sc_header) + 0x20);
-        sc.data.assign(0x20, 0x53);
-        sc.decrypted = true;
-        bootloaders.sc = sc.serialize();
-        return bootloaders;
-    }
-
-    Input fresh_input(ImageType image_type) {
-        Input input{};
-        const auto cpu_key = valid_cpu_key();
-        input.image_type = image_type;
-        input.metadata.cpu_key.assign(cpu_key.begin(), cpu_key.end());
-        input.metadata.smc = make_smc(0x11);
-        input.metadata.keyvault =
-            canonical_keyvault(input.metadata.cpu_key, Bytes(Keyvault::kSize, 0x22));
-        input.bootloaders = valid_bootloaders();
-        return input;
-    }
-
-    Bytes valid_xell() {
-        Bytes bytes(0x40000, 0);
-        bytes[0] = 0x7F;
-        bytes[1] = 'E';
-        bytes[2] = 'L';
-        bytes[3] = 'F';
-        return bytes;
-    }
-
-    std::pair<Bytes, Bytes> valid_system_update(uint8_t marker) {
-        BootloaderCf cf{};
-        cf.header.header.magic = NANDBootloaderMagic::CF;
-        cf.header.header.version = 1;
-        cf.data.assign(0x340, marker);
-        cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
-        cf.decrypted = false;
-        std::fill(std::begin(cf.header.fixpoint_nonce), std::end(cf.header.fixpoint_nonce),
-                  static_cast<uint8_t>(marker + 1));
-
-        BootloaderCg cg{};
-        cg.header.header.magic = NANDBootloaderMagic::CG;
-        cg.header.header.version = 1;
-        cg.header.source_size = 0;
-        cg.data.assign(0x40, marker);
-        cg.header.header.size = static_cast<uint32_t>(sizeof(cg_header) + cg.data.size());
-        cg.decrypted = false;
-        return {cf.serialize(), cg.serialize()};
-    }
-
-    // run_build opens a supplied sealed CG and seals it again under a new nonce, so a CG is
-    // compared by what it carries: its plaintext, with the nonce at +0x10 cleared.
+    // The Result-returning builders, unwrapped as before: a failure aborts the binary with its
+    // description. These go as their callers are ported.
     std::optional<Bytes> opened_cg(const Bytes& cf_bytes, const Bytes& cg_bytes) {
-        auto cf = test::must(BootloaderCf::parse(cf_bytes));
-        if (!cf.is_decrypted()) {
-            test::must(cf.decrypt(key_1bl));
-        }
-        const auto key = cf.cg_key();
-        if (!key || cg_bytes.size() < sizeof(cg_header)) {
-            return std::nullopt;
-        }
-        auto cg = test::must(BootloaderCg::parse(cg_bytes));
-        if (!cg.decrypted) {
-            test::must(cg.decrypt(key->data()));
-        }
-        auto opened = cg.serialize();
-        std::fill(opened.begin() + 0x10, opened.begin() + 0x20, 0);
-        return opened;
+        return test::must(gxbuild3::test::opened_cg(cf_bytes, cg_bytes));
     }
 
     Bytes decrypted_cf(uint8_t lockdown_value, std::array<uint8_t, 3> pairing_data,
                        uint16_t source_version = 0, uint16_t source_qfe = 0,
                        uint16_t target_version = 0, uint16_t target_qfe = 0, uint32_t reserved = 0,
                        uint32_t cg_size = 0) {
-        BootloaderCf cf{};
-        cf.header.header.magic = NANDBootloaderMagic::CF;
-        cf.header.header.version = 1;
-        cf.header.source_version = source_version;
-        cf.header.source_qfe = source_qfe;
-        cf.header.target_version = target_version;
-        cf.header.target_qfe = target_qfe;
-        cf.header.reserved = reserved;
-        cf.header.cg_size = cg_size;
-        cf.data.assign(0x340, 0);
-        cf.header.header.size = static_cast<uint32_t>(sizeof(cf_header) + cf.data.size());
-        cf.decrypted = true;
-        if (!cf.parse_perbox()) {
-            std::abort();
-        }
-        cf.perbox->lockdown_value = lockdown_value;
-        std::copy(pairing_data.begin(), pairing_data.end(), cf.perbox->pairing_data);
-        if (!cf.serialize_perbox()) {
-            std::abort();
-        }
-        return cf.serialize();
+        return test::must(gxbuild3::test::decrypted_cf(lockdown_value, pairing_data, source_version,
+                                                       source_qfe, target_version, target_qfe,
+                                                       reserved, cg_size));
+    }
+
+    Bytes make_donor(const Input& source,
+                     std::initializer_list<std::pair<uint8_t, Bytes>> mobiles) {
+        return test::must(gxbuild3::test::make_donor(source, mobiles));
     }
 
     bool has_big_endian_pairing(std::span<const uint8_t> bytes) {
         return bytes.size() >= sizeof(generic_header) && bytes[4] == 0x12 && bytes[5] == 0x34;
-    }
-
-    void append_be32(Bytes& bytes, uint32_t value) {
-        bytes.push_back(static_cast<uint8_t>(value >> 24));
-        bytes.push_back(static_cast<uint8_t>(value >> 16));
-        bytes.push_back(static_cast<uint8_t>(value >> 8));
-        bytes.push_back(static_cast<uint8_t>(value));
     }
 
     uint32_t read_be32(std::span<const uint8_t> bytes, size_t offset) {
@@ -274,32 +156,6 @@ namespace {
                (static_cast<uint64_t>(bytes[offset + 5]) << 16) |
                (static_cast<uint64_t>(bytes[offset + 6]) << 8) |
                static_cast<uint64_t>(bytes[offset + 7]);
-    }
-
-    Bytes glitch_patchset(uint32_t first_address, uint32_t first_word, uint32_t cd_address,
-                          uint32_t cd_word, std::span<const uint8_t> khv) {
-        Bytes bytes;
-        append_be32(bytes, first_address);
-        append_be32(bytes, 1);
-        append_be32(bytes, first_word);
-        append_be32(bytes, 0xFFFFFFFF);
-        append_be32(bytes, cd_address);
-        append_be32(bytes, 1);
-        append_be32(bytes, cd_word);
-        append_be32(bytes, 0xFFFFFFFF);
-        bytes.insert(bytes.end(), khv.begin(), khv.end());
-        return bytes;
-    }
-
-    Bytes jtag_patchset(std::span<const uint8_t> section4) {
-        Bytes bytes(4, 0x10);
-        append_be32(bytes, 0xFFFFFFFF);
-        bytes.insert(bytes.end(), 4, 0x11);
-        append_be32(bytes, 0xFFFFFFFF);
-        bytes.insert(bytes.end(), 4, 0x12);
-        append_be32(bytes, 0xFFFFFFFF);
-        bytes.insert(bytes.end(), section4.begin(), section4.end());
-        return bytes;
     }
 
     std::optional<Bytes> read_logical(std::span<const uint8_t> image, size_t offset,
@@ -401,19 +257,6 @@ namespace {
                require(read_be32(*extracted->bootloaders.cb_b, 0x0C) ==
                            align_16(cbb_patch_address + 4),
                        "CBB declared size is the patched end rounded up to 0x10");
-    }
-
-    // A clean retail SMC: motherboard nibble at 0x100, the reboot site "05 ?? E5 ?? B4 05"
-    // at 0x180, and the four zero bytes every plaintext SMC ends in.
-    constexpr size_t kSmcRebootSite = 0x180;
-
-    Bytes clean_retail_smc() {
-        Bytes smc(0x300, 0x11);
-        smc[0x100] = 0x40;
-        const std::array<uint8_t, 6> site{0x05, 0x6C, 0xE5, 0x2A, 0xB4, 0x05};
-        std::copy(site.begin(), site.end(), smc.begin() + kSmcRebootSite);
-        std::fill(smc.end() - 4, smc.end(), uint8_t{0});
-        return smc;
     }
 
     // Glitch, glitch2 and glitch2m take the reboot patch on a clean retail SMC: the two bytes
@@ -1280,29 +1123,6 @@ namespace {
                        "near-UINT32_MAX patch end is rejected without allocation");
     }
 
-    Bytes make_donor(const Input& source,
-                     std::initializer_list<std::pair<uint8_t, Bytes>> mobiles) {
-        FlashImage donor{};
-        donor.flash_driver = Driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
-        donor.smc = Smc::parse(*source.metadata.smc).value();
-        donor.keyvault = Keyvault::parse(*source.metadata.keyvault).value();
-        donor.keyvault->encrypted = false;
-        if (!donor.keyvault->encrypt(source.metadata.cpu_key)) {
-            std::abort();
-        }
-        donor.cb_section.cb_or_A = test::must(BootloaderCb::parse(source.bootloaders.cb_or_a));
-        donor.cb_section.sc = test::must(BootloaderSc::parse(*source.bootloaders.sc));
-        donor.kernel_section.cd = test::must(BootloaderCd::parse(source.bootloaders.cd));
-        if (!donor.encrypt_all(source.metadata.cpu_key)) {
-            std::abort();
-        }
-        donor.mobile_data = MobileData{};
-        for (const auto& [block_type, bytes] : mobiles) {
-            *donor.mobile_data->get_slot(block_type) = bytes;
-        }
-        return donor.write().value_or(Bytes{});
-    }
-
     std::optional<FlashImage> parse_image(std::span<const uint8_t> bytes) {
         auto image = FlashImage::read(Bytes(bytes.begin(), bytes.end()));
         if (!image || !image->parse()) {
@@ -1489,7 +1309,7 @@ namespace {
         const auto donor = make_donor(source, {});
 
         auto input = source;
-        const auto wrong_key = different_valid_cpu_key(source.metadata.cpu_key);
+        const auto wrong_key = different_valid_cpu_key();
         input.metadata.cpu_key.assign(wrong_key.begin(), wrong_key.end());
         input.metadata.nand_image = donor;
         const auto built = run_build(input);
@@ -3716,27 +3536,6 @@ namespace {
                        "both replacement CF/CG slots parse from the advertised two-slot layout");
     }
 
-    Bytes valid_ce() {
-        BootloaderCe ce{};
-        ce.header.header.magic = NANDBootloaderMagic::CE;
-        ce.header.header.version = 1;
-        ce.header.header.size = static_cast<uint32_t>(sizeof(ce_header) + 0x20);
-        std::fill(std::begin(ce.header.key), std::end(ce.header.key), uint8_t{0x55});
-        ce.data.assign(0x20, 0xCE);
-        ce.decrypted = true;
-        return ce.serialize();
-    }
-
-    BootloaderNonce filled_nonce(uint8_t value) {
-        BootloaderNonce nonce{};
-        nonce.fill(value);
-        return nonce;
-    }
-
-    Bytes nonce_bytes(std::span<const uint8_t> bytes) {
-        return Bytes(bytes.begin(), bytes.begin() + 0x10);
-    }
-
     bool test_fresh_build_seals_stages_under_random_nonces() {
         auto input = fresh_input(ImageType::SmallBlock);
         input.bootloaders.ce = valid_ce();
@@ -4262,56 +4061,6 @@ namespace {
                require(rest_erased, "the rest of the file's big block stays erased");
     }
 
-    // A plaintext devkit chain as a release ships it: SB, SC, SD and SE with zero nonces and
-    // a recognizable body each. SE states build 17489.
-    InputBootloaders devkit_bootloaders() {
-        BootloaderCb sb{};
-        sb.header.header.magic = NANDBootloaderMagic::SB;
-        sb.header.header.version = 10375;
-        // Long enough to hold a whole CB header, so its per-box block reads back.
-        sb.data.assign(0x400, 0);
-        std::fill(sb.data.begin() + 0x100, sb.data.end(), 0x5B);
-        sb.header.header.size = static_cast<uint32_t>(sizeof(generic_header) + sb.data.size());
-        sb.decrypted = true;
-
-        BootloaderSc sc{};
-        sc.header.header.magic = NANDBootloaderMagic::SC;
-        sc.header.header.version = 17489;
-        sc.data.assign(0x48, 0x5C);
-        sc.header.header.size = static_cast<uint32_t>(sizeof(sc_header) + sc.data.size());
-        sc.decrypted = true;
-
-        BootloaderCd sd{};
-        sd.header.header.magic = NANDBootloaderMagic::SD;
-        sd.header.header.version = 17489;
-        sd.data.assign(0x30, 0x5D);
-        sd.header.header.size = static_cast<uint32_t>(sizeof(cd_header) + sd.data.size());
-        sd.decrypted = true;
-
-        BootloaderCe se{};
-        se.header.header.magic = NANDBootloaderMagic::SE;
-        se.header.header.version = 17489;
-        se.data.assign(0x42, 0x5E);
-        se.header.header.size = static_cast<uint32_t>(sizeof(ce_header) + se.data.size());
-        se.decrypted = true;
-
-        InputBootloaders bootloaders{};
-        bootloaders.cb_or_a = sb.serialize();
-        bootloaders.sc = sc.serialize();
-        bootloaders.cd = sd.serialize();
-        bootloaders.ce = se.serialize();
-        return bootloaders;
-    }
-
-    Input devkit_input(ImageType image_type) {
-        auto input = fresh_input(image_type);
-        input.build_type = BuildType::Devkit;
-        input.console = ConsoleType::Jasper;
-        input.bootloaders = devkit_bootloaders();
-        input.metadata.pairing_data = {0x12, 0x34, 0x56};
-        return input;
-    }
-
     std::array<uint8_t, 16> hmac_key(std::span<const uint8_t> parent,
                                      std::span<const uint8_t> nonce) {
         uint8_t digest[20];
@@ -4521,37 +4270,6 @@ namespace {
                        "a raw patch running past the image is refused");
     }
 
-    // A devgl image: the devkit chain with the glitch2m patch file's CD section on its SD, the SD
-    // signed again with a throwaway SB key, and fuses and KHV patches in the second slot.
-    Bytes devgl_khv() {
-        Bytes khv;
-        append_be32(khv, 0x00001000);
-        append_be32(khv, 2);
-        append_be32(khv, 0x60000000);
-        append_be32(khv, 0x4E800020);
-        return khv;
-    }
-
-    uint32_t devgl_sd_patch_address(const Input& input) {
-        return static_cast<uint32_t>(input.bootloaders.cd.size() + 0x10);
-    }
-
-    Input devgl_input(ImageType image_type) {
-        auto input = devkit_input(image_type);
-        input.build_type = BuildType::Devgl;
-        InputPatches patches{};
-        patches.automatic =
-            InputPatchFile{"patches_g2mjasper.bin",
-                           glitch_patchset(0x20, 0xA1B2C3D4, devgl_sd_patch_address(input),
-                                           0x10203040, devgl_khv())};
-        input.patches = std::move(patches);
-        InputPayloads payloads{};
-        payloads.fuses = Bytes(0x60, 0xF5);
-        input.payloads = std::move(payloads);
-        input.sb_private_key = gxbuild3::test::xe_rsa::shared_private_key();
-        return input;
-    }
-
     bool test_devgl_image_patches_and_signs_its_sd() {
         const auto input = devgl_input(ImageType::NewSmallBlock);
         const auto built = run_build(input);
@@ -4640,71 +4358,6 @@ namespace {
                require(!refused_malformed &&
                            refused_malformed.error().code == BuildErrorCode::InvalidInput,
                        "a devgl build with a malformed key is refused");
-    }
-
-    std::string sha1_hex(std::span<const uint8_t> bytes) {
-        std::array<uint8_t, 20> digest{};
-        ExCryptSha(bytes.data(), static_cast<uint32_t>(bytes.size()), nullptr, 0, nullptr, 0,
-                   digest.data(), static_cast<uint32_t>(digest.size()));
-        static constexpr char digits[] = "0123456789abcdef";
-        std::string out;
-        for (const uint8_t byte : digest) {
-            out.push_back(digits[byte >> 4]);
-            out.push_back(digits[byte & 0x0F]);
-        }
-        return out;
-    }
-
-    // Every nonce run_build would otherwise draw: the four boot-chain positions, CF and CG.
-    DonorNonces pinned_donor_nonces() {
-        DonorNonces nonces{};
-        nonces.stages = {filled_nonce(0xA1), filled_nonce(0xA2), filled_nonce(0xA3),
-                         filled_nonce(0xA4)};
-        nonces.cf = filled_nonce(0xB1);
-        nonces.cg = filled_nonce(0xC1);
-        return nonces;
-    }
-
-    // The synthetic input of one run_build digest. Retail and glitch2 carry a CE and a CF/CG
-    // slot; glitch2 also a CB_B, a patch file and a XeLL. Devkit and devgl are the devkit chain.
-    Input digest_input(ImageType image_type, BuildType build_type) {
-        Input input{};
-        switch (build_type) {
-            case BuildType::Devkit:
-                input = devkit_input(image_type);
-                break;
-            case BuildType::Devgl:
-                input = devgl_input(image_type);
-                break;
-            case BuildType::Glitch2: {
-                input = fresh_input(image_type);
-                input.build_type = BuildType::Glitch2;
-                input.bootloaders.cb_b = input.bootloaders.cb_or_a;
-                input.bootloaders.ce = valid_ce();
-                const auto [cf, cg] = valid_system_update(0x61);
-                input.bootloaders.cf0 = cf;
-                input.bootloaders.cg0 = cg;
-                InputPatches patches{};
-                patches.automatic = InputPatchFile{
-                    "automatic", glitch_patchset(0x20, 0xA1B2C3D4, 0x30, 0x10203040, Bytes{0xA5})};
-                input.patches = std::move(patches);
-                InputPayloads payloads{};
-                payloads.xell = valid_xell();
-                input.payloads = std::move(payloads);
-                break;
-            }
-            default: {
-                input = fresh_input(image_type);
-                input.build_type = build_type;
-                input.bootloaders.ce = valid_ce();
-                const auto [cf, cg] = valid_system_update(0x51);
-                input.bootloaders.cf0 = cf;
-                input.bootloaders.cg0 = cg;
-                break;
-            }
-        }
-        input.metadata.donor_nonces = pinned_donor_nonces();
-        return input;
     }
 
     // run_build output digests (tests/golden/run_build_digests.txt): SmallBlock, NewSmallBlock,
@@ -4868,39 +4521,6 @@ namespace {
         return "unknown";
     }
 
-    // A 16-byte CPU key that fails the fuse ECC check, so only the steps that seal under the key
-    // refuse it.
-    Bytes invalid_cpu_key() {
-        return Bytes(16, 0xFF);
-    }
-
-    Input glitch_input(BuildType build_type, Bytes patchset) {
-        auto input = fresh_input(ImageType::SmallBlock);
-        input.build_type = build_type;
-        InputPatches patches{};
-        patches.automatic = InputPatchFile{"automatic", std::move(patchset)};
-        input.patches = std::move(patches);
-        return input;
-    }
-
-    Input jtag_input(Bytes section4) {
-        auto input = fresh_input(ImageType::SmallBlock);
-        input.build_type = BuildType::Jtag;
-        input.metadata.smc = make_jtag_smc(0x11);
-        InputPatches patches{};
-        patches.automatic = InputPatchFile{"automatic", jtag_patchset(section4)};
-        input.patches = std::move(patches);
-        return input;
-    }
-
-    // One glitch patch file section of a single entry, then the delimiter.
-    void append_patch_entry(Bytes& bytes, uint32_t address, uint32_t word) {
-        append_be32(bytes, address);
-        append_be32(bytes, 1);
-        append_be32(bytes, word);
-        append_be32(bytes, 0xFFFFFFFF);
-    }
-
     // run_build failure exits (tests/golden/run_build_failures.txt): one input per exit that an
     // Input can reach, in run_build's stage order (validation, signing key, donor, SMC, keyvault,
     // boot chain, patch file, SD signing, extra stages, metadata and nonces, patch slots,
@@ -4943,7 +4563,7 @@ namespace {
                  [] {
                      auto input = fresh_input(ImageType::SmallBlock);
                      input.metadata.nand_image = make_donor(input, {});
-                     const auto wrong_key = different_valid_cpu_key(input.metadata.cpu_key);
+                     const auto wrong_key = different_valid_cpu_key();
                      input.metadata.cpu_key.assign(wrong_key.begin(), wrong_key.end());
                      return input;
                  }},

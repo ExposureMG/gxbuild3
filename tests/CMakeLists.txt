@@ -52,16 +52,22 @@ file(MAKE_DIRECTORY ${GXBUILD3_TEST_SCRATCH_ROOT})
 
 # gxbuild3::test support library: Result-aware assertions, scratch directories, scoped
 # environment, byte helpers, the test CPU keys and the shared builders (support/builders/).
-# Tests include it as "support/<Name>.hpp" and "support/builders/<Name>.hpp".
+# Tests include it as "support/<Name>.hpp" and "support/builders/<Name>.hpp". The builders are
+# GoogleTest-free and return a Result where they can fail, so the pre-GoogleTest binaries link
+# them too. gxbuild3_cli is public for ResolverTree (the resolver's source tree).
 add_library(gxbuild3_test_support STATIC
     support/Bytes.cpp
     support/Expect.cpp
     support/Keys.cpp
     support/Scratch.cpp
     support/builders/FlashFsRoots.cpp
-    support/builders/FlashImageCells.cpp)
+    support/builders/FlashImageCells.cpp
+    support/builders/Inputs.cpp
+    support/builders/Patchsets.cpp
+    support/builders/ResolverTree.cpp
+    support/builders/Stages.cpp)
 target_include_directories(gxbuild3_test_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(gxbuild3_test_support PUBLIC gxbuild3_internal GTest::gtest)
+target_link_libraries(gxbuild3_test_support PUBLIC gxbuild3_internal gxbuild3_cli GTest::gtest)
 target_compile_definitions(gxbuild3_test_support PUBLIC
     GXBUILD3_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
     GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files"
@@ -217,6 +223,13 @@ add_gxbuild3_test(gxbuild3_orchestration_golden_tests OrchestrationGoldenTests.c
 target_compile_definitions(gxbuild3_orchestration_golden_tests PRIVATE
     GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
 set_tests_properties(gxbuild3_orchestration_golden_tests PROPERTIES TIMEOUT 300)
+# The orchestration and resolver builders (support/builders/Stages, Inputs, Patchsets,
+# ResolverTree) and the support byte helpers and keys; no gtest_main, so the old mains run as
+# before.
+foreach(builder_test gxbuild3_buildrunner_tests gxbuild3_resolver_tests
+        gxbuild3_orchestration_golden_tests)
+    target_link_libraries(${builder_test} PRIVATE gxbuild3_test_support)
+endforeach()
 
 # The byte oracle's snapshot tool: --snapshot <image> [--expect <file>], exit 0/1/2.
 add_executable(gxbuild3_flashimage_snapshot tools/FlashImageSnapshot.cpp)
