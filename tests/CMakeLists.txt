@@ -180,6 +180,7 @@ endfunction()
 include(core/Tests.cmake)
 include(utils/Tests.cmake)
 include(stfs/Tests.cmake)
+include(bootloaders/Tests.cmake)
 include(snapshots/Tests.cmake)
 include(private/Tests.cmake)
 
@@ -198,9 +199,6 @@ add_gxbuild3_test(gxbuild3_resolver_tests BuildInputResolverTests.cpp)
 add_gxbuild3_test(gxbuild3_buildcommand_tests BuildCommandTests.cpp)
 add_gxbuild3_test(gxbuild3_keyvault_version_tests KeyvaultVersionTests.cpp)
 add_gxbuild3_test(gxbuild3_crypto_reference_tests CryptoReferenceTests.cpp)
-# Compile-time sizeof/offsetof pins of every bootloader record in Common.hpp, taken from
-# the on-disk layout; the run prints how many records and fields the build pinned.
-add_gxbuild3_test(gxbuild3_bootloader_layout_tests BootloaderLayoutTests.cpp)
 # src/nand/bootloaders/Stage.hpp: the shared stage parse, padding, serialize and record crypt
 # checked against a plain crypt_single_bl, plus the paths the bootloader corpus never reaches.
 add_gxbuild3_test(gxbuild3_stage_tests StageTests.cpp)
