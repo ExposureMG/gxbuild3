@@ -14,7 +14,7 @@
 // A result is anything with has_value() and error(): Result<T>, the public BuildResult,
 // cli::ParseError and cli::ResolutionError results and utils::FileLookupResult. The description
 // of an error is describe() when it has one (gxbuild3::Error and FileLookupError), else its
-// message member.
+// message member; EXPECT_OK and ASSERT_OK also print a ResolutionError's path and item.
 //
 // Table rows: declare GX_PRINT_ROW_AS_NAME(Row) next to the row struct and instantiate with
 // test::RowName{}, so a row prints and lists as its name and never as raw bytes.
@@ -60,13 +60,29 @@ namespace gxbuild3::test {
         }
     }
 
-    // The error code printed for a failure message: to_string for ErrorCode, gtest's own
-    // printer (the enumerator's value) for the other code enums.
+    // The error code printed for a failure message: to_string for ErrorCode, the enumerator's
+    // value for the other code enums (gtest itself prints a scoped enum as raw bytes), gtest's
+    // own printer for anything else.
     template <class Code> [[nodiscard]] std::string code_text(const Code& code) {
         if constexpr (std::same_as<Code, ErrorCode>) {
             return std::string{to_string(code)};
+        } else if constexpr (std::is_enum_v<Code>) {
+            return std::to_string(std::to_underlying(code));
         } else {
             return ::testing::PrintToString(code);
+        }
+    }
+
+    // " (path '<path>', item '<item>')" for an error that names where it came from (a
+    // cli::ResolutionError), else nothing.
+    template <class E> [[nodiscard]] std::string provenance_text(const E& error) {
+        if constexpr (requires {
+                          error.path.string();
+                          error.item;
+                      }) {
+            return " (path '" + error.path.string() + "', item '" + std::string{error.item} + "')";
+        } else {
+            return {};
         }
     }
 
@@ -78,7 +94,7 @@ namespace gxbuild3::test {
             }
             return ::testing::AssertionFailure()
                    << expression << " failed with [" << code_text(result.error().code) << "] "
-                   << describe_error(result.error());
+                   << describe_error(result.error()) << provenance_text(result.error());
         }
 
         enum class MessageMatch : uint8_t {
