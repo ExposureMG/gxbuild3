@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Args.hpp"
 #include "Error.hpp"
 #include "Wire.hpp"
 
@@ -156,6 +157,11 @@ namespace gxbuild3::nand {
         [[nodiscard]] Result<> encrypt(std::span<const uint8_t> cpu_key);
         [[nodiscard]] std::vector<uint8_t> serialize() const;
     };
+
+    // What ExtractAllInfo reports of a keyvault: its serial, DVD key, console ID (raw and as the
+    // dashboard shows it), OSIG, manufacturing date, region, type and whether it needs an
+    // fcrt.bin. Read from the keyvault as it stands, sealed or not; never fails.
+    [[nodiscard]] KeyvaultSummaryInfo summarize_keyvault(const Keyvault& kv);
 
     // InvalidArgument for an unusable CPU key or data shorter than the nonce; keyvault_decrypt
     // fails with AuthFailed when the nonce is not the HMAC of the opened body.
