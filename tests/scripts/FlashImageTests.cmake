@@ -26,7 +26,7 @@ cmake_minimum_required(VERSION 3.29)
 # where the per-console fixture directories are absent) the test exits 77 so CTest
 # reports a skip.
 #
-# Parse snapshots: the snapshot tool (gxbuild3_flashimage_golden_tests --snapshot <image>)
+# Parse snapshots: the snapshot tool (gxbuild3_flashimage_snapshot --snapshot <image>)
 # prints the parse, decrypt and round-trip summary of one image. It runs over every image
 # the first run wrote, and each output is compared with that image's `== <image>` section of
 # the tracked tests/golden/build_all.parse.txt. A differing or missing section fails and
@@ -45,7 +45,7 @@ cmake_minimum_required(VERSION 3.29)
 #   GXBUILD3_SUPPORT_DIR  absolute path to tests/gxBuild-support-files
 #   GXBUILD3_BASH         absolute path to bash, or a *-NOTFOUND placeholder
 #   GXBUILD3_GOLDEN       absolute path to tests/golden/build_all.sha256
-#   GXBUILD3_SNAPSHOT_TOOL  absolute path to the built gxbuild3_flashimage_golden_tests
+#   GXBUILD3_SNAPSHOT_TOOL  absolute path to the built gxbuild3_flashimage_snapshot
 #   GXBUILD3_PARSE_GOLDEN   absolute path to tests/golden/build_all.parse.txt
 #   GXBUILD3_SCRATCH_DIR  absolute scratch directory in the build tree
 #   GXBUILD3_UPDATE_GOLDEN  optional; true selects capture mode
