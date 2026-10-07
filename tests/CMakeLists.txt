@@ -179,6 +179,7 @@ endfunction()
 # One fragment per area: its gxbuild3_add_gtest call with the area's BUNDLE and PER_ROW lists.
 include(core/Tests.cmake)
 include(utils/Tests.cmake)
+include(stfs/Tests.cmake)
 include(snapshots/Tests.cmake)
 include(private/Tests.cmake)
 
@@ -197,7 +198,9 @@ add_gxbuild3_test(gxbuild3_resolver_tests BuildInputResolverTests.cpp)
 add_gxbuild3_test(gxbuild3_buildcommand_tests BuildCommandTests.cpp)
 add_gxbuild3_test(gxbuild3_keyvault_version_tests KeyvaultVersionTests.cpp)
 add_gxbuild3_test(gxbuild3_crypto_reference_tests CryptoReferenceTests.cpp)
-add_gxbuild3_test(gxbuild3_stfs_tests StfsTests.cpp)
+# The two su20076000 golden snapshots (stfs_su20076000_entries/_metadata.txt), until the golden
+# binary owns them; the rest of the old StfsTests.cpp is gxbuild3_stfs_tests (stfs/Tests.cmake).
+add_gxbuild3_test(gxbuild3_stfs_golden_legacy_tests StfsTests.cpp LABELS golden)
 # Compile-time sizeof/offsetof pins of every bootloader record in Common.hpp, taken from
 # the on-disk layout; the run prints how many records and fields the build pinned.
 add_gxbuild3_test(gxbuild3_bootloader_layout_tests BootloaderLayoutTests.cpp)
@@ -217,9 +220,9 @@ foreach(cli_test gxbuild3_commandline_tests gxbuild3_resolver_tests
         gxbuild3_buildcommand_tests)
     target_link_libraries(${cli_test} PRIVATE gxbuild3_cli)
 endforeach()
-target_compile_definitions(gxbuild3_stfs_tests PRIVATE
+target_compile_definitions(gxbuild3_stfs_golden_legacy_tests PRIVATE
     GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
-set_tests_properties(gxbuild3_stfs_tests PROPERTIES TIMEOUT 60)
+set_tests_properties(gxbuild3_stfs_golden_legacy_tests PROPERTIES TIMEOUT 60)
 target_compile_definitions(gxbuild3_crypto_reference_tests PRIVATE
     GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
 # In-process goldens over the tracked mydata/image.bin (tests/golden/flashimage_golden.txt),
