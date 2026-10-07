@@ -179,6 +179,7 @@ endfunction()
 # One fragment per area: its gxbuild3_add_gtest call with the area's BUNDLE and PER_ROW lists.
 include(core/Tests.cmake)
 include(snapshots/Tests.cmake)
+include(private/Tests.cmake)
 
 # ---- Pre-GoogleTest test executables (ported area by area, then deleted) --------------------
 
@@ -259,21 +260,6 @@ add_gxbuild3_test(gxbuild3_orchestration_golden_tests OrchestrationGoldenTests.c
 target_compile_definitions(gxbuild3_orchestration_golden_tests PRIVATE
     GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
 set_tests_properties(gxbuild3_orchestration_golden_tests PROPERTIES TIMEOUT 300)
-
-add_executable(gxbuild3_keyvault_crypto_tests KeyvaultCryptoTests.cpp)
-gxbuild3_test_target(gxbuild3_keyvault_crypto_tests)
-set(GXBUILD3_KEYVAULT_CPU_KEY_FILE "${PROJECT_SOURCE_DIR}/_temp/cpukey.txt"
-    CACHE FILEPATH "Private CPU key fixture (32 hex characters)")
-set(GXBUILD3_KEYVAULT_ENCRYPTED_FILE "${PROJECT_SOURCE_DIR}/_temp/KV_en.bin"
-    CACHE FILEPATH "Private encrypted keyvault fixture")
-set(GXBUILD3_KEYVAULT_DECRYPTED_FILE "${PROJECT_SOURCE_DIR}/_temp/KV_dec.bin"
-    CACHE FILEPATH "Private independently decrypted keyvault fixture")
-add_test(NAME gxbuild3_keyvault_crypto_tests COMMAND gxbuild3_keyvault_crypto_tests
-    "${GXBUILD3_KEYVAULT_CPU_KEY_FILE}"
-    "${GXBUILD3_KEYVAULT_ENCRYPTED_FILE}"
-    "${GXBUILD3_KEYVAULT_DECRYPTED_FILE}"
-    --skip-if-missing)
-set_tests_properties(gxbuild3_keyvault_crypto_tests PROPERTIES SKIP_RETURN_CODE 77 LABELS private)
 
 # The byte oracle's snapshot tool: --snapshot <image> [--expect <file>], exit 0/1/2.
 add_executable(gxbuild3_flashimage_snapshot tools/FlashImageSnapshot.cpp)
