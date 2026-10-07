@@ -547,10 +547,12 @@ namespace gxbuild3::nand {
 
     std::vector<uint8_t> FlashFileSystem::read_chain(const Driver& driver,
                                                      const FlashFileSystemEntry& entry) const {
+        const auto chain = get_chain(entry.block_number);
+        // A corrupt length cannot reserve more than the chain can hold.
         std::vector<uint8_t> data;
-        data.reserve(entry.length);
+        data.reserve(std::min<size_t>(entry.length, chain.size() * kCleanBlockSize));
 
-        for (uint16_t blk : get_chain(entry.block_number)) {
+        for (uint16_t blk : chain) {
             if (data.size() >= entry.length) {
                 break;
             }

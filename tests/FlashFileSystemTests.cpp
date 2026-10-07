@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <exception>
 #include <format>
 #include <iostream>
 #include <optional>
@@ -1045,6 +1046,41 @@ namespace {
         return ok;
     }
 
+    // A corrupt length far past what the file's chain holds reads the chain and fails as
+    // Truncated; the read reserves no more than the chain's clusters, so it cannot exhaust
+    // memory first. A failed load leaves the filesystem as it was.
+    bool test_corrupt_length_fails_truncated() {
+        bool ok = true;
+        constexpr uint16_t kRootBlock = 0x3E0;
+        Driver driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
+        Bytes root = small_root();
+        put_entry(root, 0, "a.bin", 0x60, 0x10);
+        put_entry(root, 1, "huge.bin", 0x61, 0xFFFFFFF0);
+        if (!driver.write_offset(0x60 * kCleanBlockSize, pattern(kCleanBlockSize, 1)) ||
+            !driver.write_offset(0x61 * kCleanBlockSize, pattern(kCleanBlockSize, 2)) ||
+            !driver.write_offset(kRootBlock * kCleanBlockSize, root)) {
+            return check(false, "corrupt-length fixture writes");
+        }
+
+        FlashFileSystem fs;
+        gxbuild3::Result<> result;
+        try {
+            result = fs.load(driver, kRootBlock);
+        } catch (const std::exception& e) {
+            return check(false, std::format("a corrupt length throws {}", e.what()).c_str());
+        }
+        ok = check(!result && result.error().code == gxbuild3::ErrorCode::Truncated &&
+                       result.error().message ==
+                           "FlashFS file 'huge.bin' is truncated: expected 4294967280 bytes, "
+                           "read 16384",
+                   "an entry with length 0xFFFFFFF0 fails as Truncated") &&
+             ok;
+        ok = check(fs.entries().empty() && fs.list_files().empty(),
+                   "the failed load leaves the filesystem empty") &&
+             ok;
+        return ok;
+    }
+
     bool test_flashfs_root_goldens(const gxbuild3::test::GoldenOptions& options) {
         const std::vector<RootCase> cases{
             {"small", Driver::ImageSize::Smallblock, Driver::DriverMode::Small, false, std::nullopt,
@@ -1088,6 +1124,7 @@ int main(int argc, char** argv) {
     passed = test_table_states_withheld_and_root_clusters() && passed;
     passed = test_big_block_single_cluster_padding_keeps_erased_fields() && passed;
     passed = test_unterminated_name_round_trips() && passed;
+    passed = test_corrupt_length_fails_truncated() && passed;
     passed = test_flashfs_root_goldens(*options) && passed;
     return passed ? 0 : 1;
 }
