@@ -1,6 +1,6 @@
 # gxbuild3 tests, registered only when GXBUILD3_BUILD_TESTS and BUILD_TESTING are on (see the
 # root CMakeLists.txt). Source paths are relative to tests/; the fixed scratch directories
-# (flashimage-tests, cli-integration-tests, golden-snapshot-tests) stay under CMAKE_BINARY_DIR.
+# (flashimage-tests, cli-integration-tests) stay under CMAKE_BINARY_DIR.
 # CMake -P tests live in scripts/, helper executables that are not tests in tools/.
 #
 # Labels: unit (plain test binaries), golden (text-golden binaries), oracle (the build_all.sh
@@ -32,7 +32,9 @@ function(add_gxbuild3_test name source)
     endif()
     add_executable(${name} ${source})
     gxbuild3_test_target(${name})
-    # Tracked text goldens for tests/GoldenSnapshot.hpp. CTest never passes --update.
+    # Tracked text goldens for support/golden/GoldenSnapshot.hpp, which the old binaries still
+    # include as "GoldenSnapshot.hpp". CTest never passes --update.
+    target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support/golden)
     target_compile_definitions(${name} PRIVATE
         GXBUILD3_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
     add_test(NAME ${name} COMMAND ${name})
@@ -176,6 +178,7 @@ endfunction()
 
 # One fragment per area: its gxbuild3_add_gtest call with the area's BUNDLE and PER_ROW lists.
 include(core/Tests.cmake)
+include(snapshots/Tests.cmake)
 
 # ---- Pre-GoogleTest test executables (ported area by area, then deleted) --------------------
 
@@ -208,12 +211,13 @@ add_gxbuild3_test(gxbuild3_bootloader_layout_tests BootloaderLayoutTests.cpp)
 # src/nand/bootloaders/Stage.hpp: the shared stage parse, padding, serialize and record crypt
 # checked against a plain crypt_single_bl, plus the paths the bootloader corpus never reaches.
 add_gxbuild3_test(gxbuild3_stage_tests StageTests.cpp)
-add_gxbuild3_test(gxbuild3_golden_snapshot_tests GoldenSnapshotTests.cpp LABELS golden)
-target_compile_definitions(gxbuild3_golden_snapshot_tests PRIVATE
-    GXBUILD3_TEST_SCRATCH_DIR="${CMAKE_BINARY_DIR}/golden-snapshot-tests")
+# tests/TestResult.hpp's must() aborts with Error::describe() and the call site; the demo tool
+# fails it on purpose (retired with must()).
+add_executable(gxbuild3_must_abort_demo tools/MustAbortDemo.cpp)
+gxbuild3_test_target(gxbuild3_must_abort_demo)
 add_test(NAME gxbuild3_must_abort_tests
     COMMAND ${CMAKE_COMMAND}
-        -DGXBUILD3_SELFTEST=$<TARGET_FILE:gxbuild3_golden_snapshot_tests>
+        -DGXBUILD3_SELFTEST=$<TARGET_FILE:gxbuild3_must_abort_demo>
         -P ${GXBUILD3_TEST_SCRIPTS}/MustAbortTest.cmake)
 set_tests_properties(gxbuild3_must_abort_tests PROPERTIES LABELS guard)
 foreach(cli_test gxbuild3_commandline_tests gxbuild3_resolver_tests

@@ -2,13 +2,13 @@
 # rows: 3 automatic, 6 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
 # Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
 # id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
-GoldenSnapshot.test_difference_renderer	test_difference_renderer@90	9	-	pending
-GoldenSnapshot.test_options	test_options@129	4	-	pending
-GoldenSnapshot.test_mutation_on_scratch_copy	test_mutation_on_scratch_copy@163	17	-	pending
+GoldenSnapshot.test_difference_renderer	test_difference_renderer@90	9	golden.GoldenDifference#ChangedLineNamesLineAndPrintsBothSides	ported;note:the 9 checks are split over the 6 GoldenDifference cases IdenticalTextsHaveNone, ChangedLineNamesLineAndPrintsBothSides, CapsAtMaxLinesAndCountsTheRest, ExtraActualLine, MissingActualLine and TrailingNewlineOnlyIsExplained (support/golden/GoldenSnapshot.hpp unchanged)
+GoldenSnapshot.test_options	test_options@129	4	-	merged:GoldenSnapshot.test_options.NoArgumentIsCompareOnly;note:its 4 checks are the four test_options hand rows; golden_options is superseded by parse_golden_args (GoldenArgs) in the golden binary
+GoldenSnapshot.test_mutation_on_scratch_copy	test_mutation_on_scratch_copy@163	17	golden.GoldenScratch.CompareNeverWritesAndUpdateWrites	ported
 # hand
-GoldenSnapshot.test_options.NoArgumentIsCompareOnly	test_options#NoArgumentIsCompareOnly@137	1	-	pending
-GoldenSnapshot.test_options.UpdateTurnsOnRewriting	test_options#UpdateTurnsOnRewriting@141	1	-	pending
-GoldenSnapshot.test_options.TypoIsRefused	test_options#TypoIsRefused@145	1	-	pending
-GoldenSnapshot.test_options.CmakeInjectsGoldenDir	test_options#CmakeInjectsGoldenDir@149	1	-	pending
-GoldenSnapshot.main.RenderIsDeterministic	main#RenderIsDeterministic@257	1	-	pending
-GoldenSnapshot.main.GoldenMatches	main#GoldenMatches@261	1	-	pending
+GoldenSnapshot.test_options.NoArgumentIsCompareOnly	test_options#NoArgumentIsCompareOnly@137	1	golden.GoldenArgs#NoArgumentsRunsTests	ported
+GoldenSnapshot.test_options.UpdateTurnsOnRewriting	test_options#UpdateTurnsOnRewriting@141	1	golden.GoldenArgs#UpdateTakesRegisteredNames	ported;note:--update now names the goldens to rewrite (parse_golden_args); the rewrite itself is pinned by the GoldenUpdate cases
+GoldenSnapshot.test_options.TypoIsRefused	test_options#TypoIsRefused@145	1	golden.GoldenArgs#UnknownArgumentIsAUsageError	ported
+GoldenSnapshot.test_options.CmakeInjectsGoldenDir	test_options#CmakeInjectsGoldenDir@149	1	golden.GoldenArgs#DefaultDirectoryIsInjected	ported
+GoldenSnapshot.main.RenderIsDeterministic	main#RenderIsDeterministic@257	1	golden.GoldenSnapshotSelfTest.RenderIsDeterministic	ported
+GoldenSnapshot.main.GoldenMatches	main#GoldenMatches@261	1	golden.GoldenSnapshotSelfTest.MatchesGolden	ported

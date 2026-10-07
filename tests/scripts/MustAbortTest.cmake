@@ -1,8 +1,8 @@
 # Checks that gxbuild3::test::must() (tests/TestResult.hpp) aborts on a failed Result and
-# reports Error::describe() with the call site. Runs the self-test binary in its
+# reports Error::describe() with the call site. Runs tools/MustAbortDemo.cpp in its
 # --must-abort-demo mode once per overload.
 #
-# Required: -DGXBUILD3_SELFTEST=<path to gxbuild3_golden_snapshot_tests>
+# Required: -DGXBUILD3_SELFTEST=<path to gxbuild3_must_abort_demo>
 
 if(NOT GXBUILD3_SELFTEST)
     message(FATAL_ERROR "GXBUILD3_SELFTEST is not set")
@@ -27,7 +27,7 @@ foreach(overload value void)
     if(result STREQUAL "0")
         message(FATAL_ERROR "must() ${overload} overload: the demo exited 0; it must abort\n${err}")
     endif()
-    if(NOT err MATCHES "must\\(\\) failed at [^\n]*GoldenSnapshotTests\\.cpp:[0-9]+ in ")
+    if(NOT err MATCHES "must\\(\\) failed at [^\n]*MustAbortDemo\\.cpp:[0-9]+ in ")
         message(FATAL_ERROR "must() ${overload} overload: no call site on stderr\n${err}")
     endif()
     string(FIND "${err}" ": ${expected_message}" found)

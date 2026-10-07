@@ -11,7 +11,7 @@
 // and TZ=UTC as for build_all.sh. This was FlashImageGoldenTests --snapshot; its output is
 // byte-identical.
 
-#include "GoldenSnapshot.hpp"
+#include "support/golden/GoldenSnapshot.hpp"
 #include "support/render/FlashImageRender.hpp"
 
 #include <cstdlib>
