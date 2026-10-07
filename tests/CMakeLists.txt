@@ -216,12 +216,6 @@ target_link_libraries(gxbuild3_flashimage_golden_tests PRIVATE gxbuild3_flashima
 target_compile_definitions(gxbuild3_flashimage_golden_tests PRIVATE
     GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
 set_tests_properties(gxbuild3_flashimage_golden_tests PROPERTIES TIMEOUT 600)
-# Snapshot of every tracked bootloader stage fixture in common/*.bin
-# (tests/golden/wire_corpus_bootloaders.txt): parse fields, serialize identity, per-box
-# bytes and seals under fixed keys, with all-zero nonces pinned inside the test.
-add_gxbuild3_test(gxbuild3_wire_corpus_tests WireCorpusTests.cpp LABELS golden)
-target_compile_definitions(gxbuild3_wire_corpus_tests PRIVATE
-    GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
 # Snapshot of the NAND-object codecs over tracked fixtures (tests/golden/objects_corpus.txt):
 # every patches_*.bin x build type with and without add-ons, XeLL, the mydata secured files,
 # xboxupd.bin from su20076000, CoronaConfig, freeBOOT, XConfig and the SMC classifier.

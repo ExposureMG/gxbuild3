@@ -4,7 +4,8 @@
 # --update <name>... re-renders them (twice, written only when both renders agree). CTest only
 # compares. The helper suites of 5 or more cheap cases run as one bundled entry each, and so does
 # StfsSystemUpdateGolden, whose four cases share the 11.8 MB su20076000 package read once per
-# process; the other goldens and the single-case suites are one entry per TEST.
+# process; the other goldens (WireCorpusGolden's three cases included: its 145 stage fixtures
+# load and render in about 0.2 s) and the single-case suites are one entry per TEST.
 gxbuild3_add_gtest(gxbuild3_golden_tests
     PREFIX golden
     LABELS golden slow
@@ -19,6 +20,8 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
         ${CMAKE_CURRENT_LIST_DIR}/GoldenUpdateTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/GoldenSnapshotSelfTestGolden.cpp
         ${CMAKE_CURRENT_LIST_DIR}/StfsSystemUpdateGoldenTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/WireCorpusRender.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/WireCorpusGoldenTests.cpp
     BUNDLE
         GoldenDifference
         GoldenArgs
@@ -32,7 +35,8 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
 set(GXBUILD3_TEXT_GOLDENS
     golden_snapshot_selftest
     stfs_su20076000_entries
-    stfs_su20076000_metadata)
+    stfs_su20076000_metadata
+    wire_corpus_bootloaders)
 foreach(golden IN LISTS GXBUILD3_TEXT_GOLDENS)
     add_custom_target(gxbuild3_golden_update_${golden}
         COMMAND gxbuild3_golden_tests --update ${golden}
