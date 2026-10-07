@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -27,6 +28,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -462,6 +464,179 @@ namespace {
                        "an unreadable options.ini has a distinct error") &&
                require(result.error().path == fixture.path("working/options.ini"),
                        "options read error identifies working-directory options.ini");
+    }
+
+    // The options.ini decode, edge by edge: each case is the file's text and either the options
+    // it yields or the InvalidOption message and item it is refused with.
+    struct OptionsTextCase {
+        std::string_view name;
+        std::string_view text;
+        std::optional<OptionsArgs> options;
+        std::string_view message;
+        std::string_view item;
+    };
+
+    auto options_fields(const OptionsArgs& o) {
+        return std::tie(o.cbldv, o.pairing_data, o.cfldv, o.xellbutton, o.xellbutton2, o.cygnos,
+                        o.demon, o.olddvd, o.nodvd, o.dualboot, o.nomobile, o.nofcrt, o.noremap,
+                        o.noecdremap, o.nandmu, o.nosecurity, o.nosusecurity, o.smcnocheck,
+                        o.noblpatch, o.nopatch, o.cputemp, o.gputemp, o.edramtemp, o.overcputemp,
+                        o.overgputemp, o.overedramtemp, o.cpufan, o.gpufan, o.dvdkey, o.avregion,
+                        o.gameregion, o.dvdregion, o.macid);
+    }
+
+    template <class Set> OptionsArgs options_with(Set set) {
+        OptionsArgs options{};
+        set(options);
+        return options;
+    }
+
+    std::vector<OptionsTextCase> options_text_cases() {
+        const auto error_case = [](std::string_view name, std::string_view text,
+                                   std::string_view message, std::string_view item) {
+            return OptionsTextCase{name, text, std::nullopt, message, item};
+        };
+        const auto ok_case = [](std::string_view name, std::string_view text, OptionsArgs options) {
+            return OptionsTextCase{name, text, std::move(options), {}, {}};
+        };
+        return {
+            ok_case("empty text", "", {}),
+            ok_case("blank and comment lines only",
+                    "\n   \n; semi\n# hash\n   ; indented semi\n\t# indented hash\n#cbldv=1\n", {}),
+            ok_case("key and value are trimmed", "  nofcrt   =   false  \n\tcbldv\t=\t5\t\n",
+                    options_with([](OptionsArgs& o) {
+                        o.nofcrt = false;
+                        o.cbldv = "5";
+                    })),
+            ok_case("keys are case-insensitive, values keep their case",
+                    "NoFcrt = TRUE\nCFLDV = Ab\n", options_with([](OptionsArgs& o) {
+                        o.nofcrt = true;
+                        o.cfldv = "Ab";
+                    })),
+            ok_case("leading dashes are stripped from the key", "--cbldv = 4\n",
+                    options_with([](OptionsArgs& o) { o.cbldv = "4"; })),
+            ok_case("a dash then a space still names the option through OptionsManager",
+                    "- cfldv = 6\n", options_with([](OptionsArgs& o) { o.cfldv = "6"; })),
+            error_case("a dash then a space keeps the inner space in an unknown key",
+                       "- bogus = 1\n", "Invalid option ' bogus' in options.ini (line 1)",
+                       " bogus"),
+            error_case("a space inside the key is kept", "no fcrt = 1\n",
+                       "Invalid option 'no fcrt' in options.ini (line 1)", "no fcrt"),
+            ok_case("the first '=' splits key from value", "pairing_data = a=b\n",
+                    options_with([](OptionsArgs& o) { o.pairing_data = "a=b"; })),
+            ok_case("an inline ';' comment is cut and the value re-trimmed", "cfldv = 7 ; seven\n",
+                    options_with([](OptionsArgs& o) { o.cfldv = "7"; })),
+            ok_case("an inline '#' is not a comment", "cfldv = 7 # seven\n",
+                    options_with([](OptionsArgs& o) { o.cfldv = "7 # seven"; })),
+            ok_case("a ';' right after '=' leaves an empty string value", "cbldv = ; nothing\n",
+                    options_with([](OptionsArgs& o) { o.cbldv = ""; })),
+            ok_case("a string option with an empty value is stored empty", "cbldv=\n",
+                    options_with([](OptionsArgs& o) { o.cbldv = ""; })),
+            ok_case("an empty boolean value is true", "nofcrt =\ndemon = ; c\n",
+                    options_with([](OptionsArgs& o) {
+                        o.nofcrt = true;
+                        o.demon = true;
+                    })),
+            ok_case("an empty button value clears it", "xellbutton = power\nxellbutton =\n", {}),
+            ok_case("a later line wins", "cfldv = 1\ncfldv = 2\n",
+                    options_with([](OptionsArgs& o) { o.cfldv = "2"; })),
+            ok_case("nopatch stages accumulate", "nopatch = khv\nnopatch = cb\n",
+                    options_with([](OptionsArgs& o) { o.nopatch = "cb+khv"; })),
+            ok_case("aliases reach their option", "pd = 0a0b0c\nnochecksmc = yes\n",
+                    options_with([](OptionsArgs& o) {
+                        o.pairing_data = "0a0b0c";
+                        o.smcnocheck = true;
+                    })),
+            ok_case("legacy keys are skipped whatever their value",
+                    "type = falcon\nrev = \n1blkey=zz\ncpukey = 00\naddon = x;y\n", {}),
+            ok_case("legacy keys match after normalization", "--TYPE = x\n", {}),
+            error_case("a legacy key without '=' is still refused", "type\n",
+                       "Expected key=value in options.ini (line 1)", "type"),
+            error_case("a bare boolean without '=' is refused", "cbldv = 1\nnofcrt\n",
+                       "Expected key=value in options.ini (line 2)", "nofcrt"),
+            error_case("a bare string option without '=' is refused", "  cbldv  \n",
+                       "Expected key=value in options.ini (line 1)", "cbldv"),
+            error_case("a section header is refused with its line",
+                       "nofcrt = true\n\n  [falconbl]  \n",
+                       "Sections are not valid in options.ini (line 3)", "[falconbl]"),
+            ok_case("a '[' after the key is part of the value", "cfldv = [1]\n",
+                    options_with([](OptionsArgs& o) { o.cfldv = "[1]"; })),
+            error_case("an empty key is refused", " = 5\n",
+                       "Invalid option '' in options.ini (line 1)", ""),
+            error_case("line numbers count blank and comment lines", "\n; c\n\nbogus = 1\n",
+                       "Invalid option 'bogus' in options.ini (line 4)", "bogus"),
+            error_case("an invalid boolean value is refused", "nofcrt = maybe\n",
+                       "Invalid option 'nofcrt' in options.ini (line 1)", "nofcrt"),
+            error_case("an invalid nopatch stage is refused", "nopatch = sc\n",
+                       "Invalid option 'nopatch' in options.ini (line 1)", "nopatch"),
+            error_case("the first bad line stops the decode", "bogus = 1\n[x]\n",
+                       "Invalid option 'bogus' in options.ini (line 1)", "bogus"),
+            ok_case("CRLF line endings are accepted", "cbldv = 1\r\n\r\n; c\r\ncfldv = 2 ; x\r\n",
+                    options_with([](OptionsArgs& o) {
+                        o.cbldv = "1";
+                        o.cfldv = "2";
+                    })),
+            error_case("CRLF lines are counted once", "cbldv = 1\r\n\r\nbogus\r\n",
+                       "Expected key=value in options.ini (line 3)", "bogus"),
+            ok_case("a lone CR is not a line break", "cbldv = 1\rcfldv = 2\n",
+                    options_with([](OptionsArgs& o) { o.cbldv = "1\rcfldv = 2"; })),
+            ok_case("the last line needs no newline", "cfldv = 9",
+                    options_with([](OptionsArgs& o) { o.cfldv = "9"; })),
+            error_case("a UTF-8 BOM stays part of the first key",
+                       "\xEF\xBB\xBF"
+                       "cbldv = 1\n",
+                       "Invalid option '\xEF\xBB\xBF"
+                       "cbldv' in options.ini (line 1)",
+                       "\xEF\xBB\xBF"
+                       "cbldv"),
+        };
+    }
+
+    bool
+    check_options_case(const OptionsTextCase& expected,
+                       const std::expected<OptionsArgs, gxbuild3::cli::ResolutionError>& result,
+                       const std::filesystem::path& source, std::string_view via) {
+        const std::string label = std::string(via) + ": " + std::string(expected.name);
+        if (expected.options) {
+            if (!result) {
+                std::cerr << "  error: '" << result.error().message << "' item '"
+                          << result.error().item << "'\n";
+                return require(false, label);
+            }
+            return require(options_fields(*result) == options_fields(*expected.options), label);
+        }
+        if (result) {
+            return require(false, label + " (decoded without an error)");
+        }
+        const auto& error = result.error();
+        const bool matches = error.code == ResolutionErrorCode::InvalidOption &&
+                             error.message == expected.message && error.item == expected.item &&
+                             error.path == source;
+        if (!matches) {
+            std::cerr << "  code=" << static_cast<int>(error.code) << " message='" << error.message
+                      << "' item='" << error.item << "' path='" << error.path.string() << "'\n";
+        }
+        return require(matches, label);
+    }
+
+    bool test_options_ini_edge_cases_through_the_file() {
+        ResolverFixture fixture;
+        const auto args = fixture.minimum_args();
+        bool passed = true;
+        for (const auto& options_case : options_text_cases()) {
+            fixture.write_text("working/options.ini", options_case.text);
+            const auto result = fixture.resolve_foundations(args);
+            std::expected<OptionsArgs, gxbuild3::cli::ResolutionError> decoded;
+            if (result) {
+                decoded = result->file_options;
+            } else {
+                decoded = std::unexpected(result.error());
+            }
+            passed = check_options_case(options_case, decoded, fixture.path("working/options.ini"),
+                                        "options.ini") &&
+                     passed;
+        }
+        return passed;
     }
 
     bool test_cpu_key_precedence_and_discovery_order() {
@@ -2082,6 +2257,7 @@ int main(int argc, char** argv) {
     passed = test_invalid_options_are_precise() && passed;
     passed = test_empty_cli_option_is_rejected() && passed;
     passed = test_options_read_failure_is_distinct() && passed;
+    passed = test_options_ini_edge_cases_through_the_file() && passed;
     passed = test_cpu_key_precedence_and_discovery_order() && passed;
     passed = test_relative_source_root_is_anchored_to_working_directory() && passed;
     passed = test_uppercase_and_corrected_cpu_keys_are_accepted() && passed;
