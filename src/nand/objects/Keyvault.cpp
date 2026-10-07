@@ -1,27 +1,21 @@
 #include "nand/objects/Keyvault.hpp"
 
 #include "excrypt.h"
+#include "nand/objects/SecuredFiles.hpp"
 #include "utils/Log.hpp"
+#include "utils/Utils.hpp"
 
 #include <algorithm>
 #include <bit>
+#include <cstdio>
 #include <cstring>
 #include <random>
+#include <span>
+#include <string>
 
 namespace gxbuild3::nand {
 
     namespace {
-
-        std::string bytes_to_hex(std::span<const uint8_t> bytes) {
-            static constexpr char hex_chars[] = "0123456789ABCDEF";
-            std::string hex;
-            hex.reserve(bytes.size() * 2);
-            for (uint8_t b : bytes) {
-                hex.push_back(hex_chars[(b >> 4) & 0x0F]);
-                hex.push_back(hex_chars[b & 0x0F]);
-            }
-            return hex;
-        }
 
         uint32_t cpu_key_hamming_weight(const uint8_t cpu_key[16]) {
             static constexpr uint8_t wght_mask[16] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -78,7 +72,7 @@ namespace gxbuild3::nand {
             result.status = CpuKeyStatus::Corrected;
             result.message =
                 "Invalid CPU key (" + std::to_string(res) +
-                " bit error(s) corrected). Corrected CPU key: " + bytes_to_hex(result.key);
+                " bit error(s) corrected). Corrected CPU key: " + utils::bytes_to_hex(result.key);
         }
 
         return result;
@@ -350,6 +344,84 @@ namespace gxbuild3::nand {
         }
         const auto image = wire::encode(data);
         return std::vector<uint8_t>(image.begin(), image.end());
+    }
+
+    KeyvaultSummaryInfo summarize_keyvault(const Keyvault& kv) {
+        KeyvaultSummaryInfo summary{};
+        summary.present = true;
+        summary.decrypted = !kv.encrypted;
+
+        summary.serial_number = std::string(
+            kv.data.sz14ConsoleSerialNumber,
+            strnlen(kv.data.sz14ConsoleSerialNumber, sizeof(kv.data.sz14ConsoleSerialNumber)));
+        summary.dvd_key = utils::bytes_to_hex(kv.data.b1ADvdKey);
+        summary.console_id_raw = utils::bytes_to_hex(kv.data.b36ConsoleCertificate.ConsoleId);
+
+        const auto& console_id = kv.data.b36ConsoleCertificate.ConsoleId;
+        const uint64_t cid_val = (static_cast<uint64_t>(console_id[0]) << 28) |
+                                 (static_cast<uint64_t>(console_id[1]) << 20) |
+                                 (static_cast<uint64_t>(console_id[2]) << 12) |
+                                 (static_cast<uint64_t>(console_id[3]) << 4) |
+                                 (static_cast<uint64_t>(console_id[4]) >> 4);
+        const uint8_t last_digit = console_id[4] & 0x0F;
+        char cid_buf[32];
+        std::snprintf(cid_buf, sizeof(cid_buf), "%011llu%u",
+                      static_cast<unsigned long long>(cid_val), last_digit);
+        summary.console_id_friendly = cid_buf;
+
+        if (kv.raw_data.size() >= Keyvault::kOsigOffset + Keyvault::kOsigLength) {
+            const auto osig = std::span<const uint8_t>(kv.raw_data)
+                                  .subspan(Keyvault::kOsigOffset, Keyvault::kOsigLength);
+            const auto end = std::ranges::find(osig, uint8_t{0});
+            summary.osig = std::string(osig.begin(), end);
+        }
+        summary.mfr_date =
+            std::string(kv.data.b36ConsoleCertificate.ManufacturingDate,
+                        strnlen(kv.data.b36ConsoleCertificate.ManufacturingDate,
+                                sizeof(kv.data.b36ConsoleCertificate.ManufacturingDate)));
+
+        summary.region_raw = kv.data.w16GameRegion.get();
+        switch (summary.region_raw) {
+            case 0x00FF:
+                summary.region_name = "NTSC/US";
+                break;
+            case 0x01FE:
+                summary.region_name = "NTSC/JAP";
+                break;
+            case 0x01FF:
+                summary.region_name = "NTSC/JAP";
+                break;
+            case 0x02FE:
+                summary.region_name = "PAL/EU";
+                break;
+            case 0x02FF:
+                summary.region_name = "PAL/AUS";
+                break;
+            case 0x01FC:
+                summary.region_name = "NTSC/KOR";
+                break;
+            case 0x01FA:
+                summary.region_name = "NTSC/HK";
+                break;
+            case 0x0101:
+                summary.region_name = "NTSC/CHINA";
+                break;
+            case 0xFFFF:
+                summary.region_name = "Devkit";
+                break;
+            default:
+                summary.region_name = "Unknown";
+                break;
+        }
+
+        // A type-1 keyvault's special signature ends in eight bytes of 0x00 or 0xFF.
+        const bool is_type1 = std::ranges::all_of(
+            std::span<const uint8_t>(kv.data.b39SpecialKeyVaultSignature).last(8),
+            [](uint8_t b) { return b == 0x00 || b == 0xFF; });
+        summary.kv_type = is_type1 ? 1 : 2;
+        // xeBuild's test, on the big-endian word: the build reads the same flag.
+        summary.fcrt_required = fcrt_requirement(kv.serialize()) != FcrtRequirement::NotRequired;
+        return summary;
     }
 
 } // namespace gxbuild3::nand

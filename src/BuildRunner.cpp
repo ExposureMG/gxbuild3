@@ -31,11 +31,13 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstddef>
 #include <cstring>
 #include <exception>
 #include <expected>
 #include <format>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -617,6 +619,61 @@ namespace gxbuild3 {
             std::array<uint8_t, 3> pairing{};
             std::memcpy(pairing.data(), perbox.pairing_data, pairing.size());
             metadata.cf_pairing_data = pairing;
+        }
+
+        // The CB fields a donor's build metadata carries: the console type, sequence and allow
+        // word from CB_A's header, and the LDV and pairing from CB_A's per-box block, which CB_B's
+        // per-box block overrides when CB_B is present (whether or not CB_A parsed).
+        struct CbMetadata {
+            uint8_t ldv = 0;
+            std::array<uint8_t, 3> pairing{};
+            uint8_t console_type = 0;
+            uint8_t console_sequence = 0;
+            uint16_t console_sequence_allow = 0;
+        };
+
+        CbMetadata read_cb_metadata(const CbSection& cb) {
+            CbMetadata metadata{};
+            const auto& cb_a = cb.cb_or_A;
+            if (!cb_a.data.empty()) {
+                if (cb_a.perbox.has_value()) {
+                    metadata.ldv = cb_a.perbox->lockdown_value;
+                    std::memcpy(metadata.pairing.data(), cb_a.perbox->pairing_data,
+                                metadata.pairing.size());
+                }
+                metadata.console_type = cb_a.header.console_seq_allow.console_type;
+                metadata.console_sequence = cb_a.header.console_seq_allow.console_sequence;
+                metadata.console_sequence_allow =
+                    cb_a.header.console_seq_allow.console_sequence_allow.get();
+            }
+            if (cb.cb_B.has_value() && !cb.cb_B->data.empty() && cb.cb_B->perbox.has_value()) {
+                // Build metadata keeps the per-box LDV; the byte cb_b_display_ldv shows is for
+                // display only and is never written into per-box data.
+                metadata.ldv = cb.cb_B->perbox->lockdown_value;
+                std::memcpy(metadata.pairing.data(), cb.cb_B->perbox->pairing_data,
+                            metadata.pairing.size());
+            }
+            return metadata;
+        }
+
+        // The CB_B console-sequence byte (header 0x3B1), as an offset into the stage data, which
+        // starts after the generic header.
+        constexpr std::size_t kCbConsoleSequenceInData =
+            offsetof(cb_header, console_seq_allow) +
+            offsetof(ConsoleTypeSeqAllow, console_sequence) - sizeof(generic_header);
+        static_assert(kCbConsoleSequenceInData == 0x3A1);
+
+        // extract_all_info shows CB_B's LDV as its console-sequence byte when that byte reads as
+        // an LDV (16 or less), else the per-box LDV. Pinned quirk: the shown value can disagree
+        // with the per-box LDV that extract_metadata and extract_all report. Requires the per-box
+        // block.
+        uint8_t cb_b_display_ldv(const BootloaderCb& cb_b) {
+            const auto sequence =
+                wire::read<uint8_t>(cb_b.data, kCbConsoleSequenceInData, "CB_B console sequence");
+            if (sequence && *sequence <= 16) {
+                return *sequence;
+            }
+            return cb_b.perbox->lockdown_value;
         }
 
         BootloaderNonce donor_or_random(const std::optional<BootloaderNonce>& donor) {
@@ -1637,8 +1694,8 @@ namespace gxbuild3 {
 
     namespace {
 
-        // Reads and parses a NAND image into `image`. The image is parsed where it stays: its
-        // FlashFS keeps a pointer to the image's driver, so a parsed image must not be moved.
+        // Reads and parses a NAND image into `image`. Its FlashFS keeps a pointer to the image's
+        // driver; copying or moving a FlashImage rebinds that pointer to the new object's driver.
         [[nodiscard]] Result<void> parse_nand(FlashImage& image,
                                               std::span<const uint8_t> nand_image) {
             auto read =
@@ -1676,6 +1733,50 @@ namespace gxbuild3 {
             return decrypt_nand(image, cpu_key);
         }
 
+        // The text of a fixed-size, NUL-padded on-disk string field: its bytes up to the first
+        // NUL, or all of them when there is none.
+        std::string fixed_string(std::span<const uint8_t> bytes) {
+            const auto end = std::ranges::find(bytes, uint8_t{0});
+            return std::string(bytes.begin(), end);
+        }
+
+        // The NAND header fields the extract cores show.
+        void project_header(const nand_header& header, AllNandInfo& info) {
+            info.header_magic = header.magic.get();
+            info.header_version = header.version.get();
+            info.header_flags = header.flags.get();
+            info.header_size = header.size.get();
+            info.copyright = fixed_string(header.copyright);
+        }
+
+        // One stage's line in the extracted bootloader chain: its header fields and whether it is
+        // decrypted, which `decrypted_override` replaces when set (extract_all_info shows SC as
+        // decrypted whatever its state). The caller decides presence and adds any per-box values.
+        template <class Stage>
+        BootloaderEntryInfo summarize_stage(std::string_view name, const Stage& stage,
+                                            std::optional<bool> decrypted_override = {}) {
+            BootloaderEntryInfo entry{};
+            entry.name = name;
+            entry.version = stage.header.header.version.get();
+            entry.size = stage.header.header.size.get();
+            entry.flags = stage.header.header.flags.get();
+            entry.entrypoint = stage.header.header.entrypoint.get();
+            entry.present = true;
+            entry.decrypted = decrypted_override ? *decrypted_override : stage.is_decrypted();
+            return entry;
+        }
+
+        SmcSummaryInfo summarize_smc(const Smc& smc) {
+            SmcSummaryInfo summary{};
+            summary.present = true;
+            summary.version = smc.version;
+            summary.motherboard_name = std::string(smc_motherboard_name(smc.motherboard));
+            summary.type_name = std::string(smc_type_name(smc.variant));
+            summary.size = static_cast<uint32_t>(smc.data.size());
+            summary.decrypted = !smc.encrypted;
+            return summary;
+        }
+
     } // namespace
 
     Result<AllNandInfo> extract_some_info(std::span<const uint8_t> nand_image) {
@@ -1685,65 +1786,42 @@ namespace gxbuild3 {
         }
 
         AllNandInfo info{};
-        info.header_magic = img.header.magic;
-        info.header_version = img.header.version;
-        info.header_flags = img.header.flags;
-        info.header_size = img.header.size;
-        info.copyright = std::string(reinterpret_cast<const char*>(img.header.copyright),
-                                     strnlen(reinterpret_cast<const char*>(img.header.copyright),
-                                             sizeof(img.header.copyright)));
+        project_header(img.header, info);
         info.block_type = image_type_from_driver(img.flash_driver.driver_mode());
 
-        const auto summarize = [](const auto& bootloader, std::string_view name) {
-            BootloaderEntryInfo entry{};
-            entry.name = name;
-            entry.version = bootloader.header.header.version;
-            entry.size = bootloader.header.header.size;
-            entry.flags = bootloader.header.header.flags;
-            entry.entrypoint = bootloader.header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = bootloader.is_decrypted();
-            return entry;
-        };
-
         if (!img.cb_section.cb_or_A.data.empty()) {
-            info.bootloaders.cb_a = summarize(img.cb_section.cb_or_A, "CB_A");
+            info.bootloaders.cb_a = summarize_stage("CB_A", img.cb_section.cb_or_A);
         }
         if (img.cb_section.cb_x && !img.cb_section.cb_x->data.empty()) {
-            info.bootloaders.cb_x = summarize(*img.cb_section.cb_x, "CB_X");
+            info.bootloaders.cb_x = summarize_stage("CB_X", *img.cb_section.cb_x);
         }
         if (img.cb_section.cb_B && !img.cb_section.cb_B->data.empty()) {
-            info.bootloaders.cb_b = summarize(*img.cb_section.cb_B, "CB_B");
+            info.bootloaders.cb_b = summarize_stage("CB_B", *img.cb_section.cb_B);
         }
         if (img.cb_section.sc && !img.cb_section.sc->data.empty()) {
-            info.bootloaders.sc = summarize(*img.cb_section.sc, "SC");
+            info.bootloaders.sc = summarize_stage("SC", *img.cb_section.sc);
         }
         if (!img.kernel_section.cd.data.empty()) {
-            info.bootloaders.cd = summarize(img.kernel_section.cd, "CD");
+            info.bootloaders.cd = summarize_stage("CD", img.kernel_section.cd);
         }
         if (img.kernel_section.ce && !img.kernel_section.ce->data.empty()) {
-            info.bootloaders.ce = summarize(*img.kernel_section.ce, "CE");
+            info.bootloaders.ce = summarize_stage("CE", *img.kernel_section.ce);
         }
         if (img.system_update_0.cf && !img.system_update_0.cf->data.empty()) {
-            info.bootloaders.cf_0 = summarize(*img.system_update_0.cf, "CF_0");
+            info.bootloaders.cf_0 = summarize_stage("CF_0", *img.system_update_0.cf);
         }
         if (img.system_update_0.cg && !img.system_update_0.cg->data.empty()) {
-            info.bootloaders.cg_0 = summarize(*img.system_update_0.cg, "CG_0");
+            info.bootloaders.cg_0 = summarize_stage("CG_0", *img.system_update_0.cg);
         }
         if (img.system_update_1.cf && !img.system_update_1.cf->data.empty()) {
-            info.bootloaders.cf_1 = summarize(*img.system_update_1.cf, "CF_1");
+            info.bootloaders.cf_1 = summarize_stage("CF_1", *img.system_update_1.cf);
         }
         if (img.system_update_1.cg && !img.system_update_1.cg->data.empty()) {
-            info.bootloaders.cg_1 = summarize(*img.system_update_1.cg, "CG_1");
+            info.bootloaders.cg_1 = summarize_stage("CG_1", *img.system_update_1.cg);
         }
 
         if (img.smc) {
-            info.smc.present = true;
-            info.smc.version = img.smc->version;
-            info.smc.motherboard_name = std::string(smc_motherboard_name(img.smc->motherboard));
-            info.smc.type_name = std::string(smc_type_name(img.smc->variant));
-            info.smc.size = static_cast<uint32_t>(img.smc->data.size());
-            info.smc.decrypted = !img.smc->encrypted;
+            info.smc = summarize_smc(*img.smc);
         }
 
         return info;
@@ -1778,41 +1856,12 @@ namespace gxbuild3 {
         meta.nand_image = std::vector<uint8_t>(nand_image.begin(), nand_image.end());
         meta.keyvault = kv.serialize();
 
-        uint8_t cb_ldv = 0;
-        uint8_t pairing_data[3] = {};
-        uint8_t console_type = 0;
-        uint8_t console_sequence = 0;
-        uint16_t console_sequence_allow = 0;
-
-        auto& cb_a = img.cb_section.cb_or_A;
-        if (!cb_a.data.empty()) {
-            if (cb_a.perbox.has_value()) {
-                cb_ldv = cb_a.perbox->lockdown_value;
-                std::memcpy(pairing_data, cb_a.perbox->pairing_data, 3);
-            }
-
-            console_type = cb_a.header.console_seq_allow.console_type;
-            console_sequence = cb_a.header.console_seq_allow.console_sequence;
-            console_sequence_allow = cb_a.header.console_seq_allow.console_sequence_allow;
-        }
-
-        // CB_B, when present, overrides CB_A's LDV/pairing data - independent of
-        // whether CB_A itself parsed, matching extract_all()/extract_all_info().
-        if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
-            auto& cb_b = *img.cb_section.cb_B;
-            if (cb_b.perbox.has_value()) {
-                cb_ldv = cb_b.perbox->lockdown_value;
-                // Build metadata must preserve the per-box byte at +0x23. The value at
-                // +0x3B1 is used for display by extract_all_info, not written into per-box data.
-                std::memcpy(pairing_data, cb_b.perbox->pairing_data, 3);
-            }
-        }
-
-        meta.cb_ldv = cb_ldv;
-        std::memcpy(meta.pairing_data.data(), pairing_data, 3);
-        meta.console_type = console_type;
-        meta.console_sequence = console_sequence;
-        meta.console_sequence_allow = console_sequence_allow;
+        const auto cb = read_cb_metadata(img.cb_section);
+        meta.cb_ldv = cb.ldv;
+        meta.pairing_data = cb.pairing;
+        meta.console_type = cb.console_type;
+        meta.console_sequence = cb.console_sequence;
+        meta.console_sequence_allow = cb.console_sequence_allow;
 
         extract_cf_metadata(img, meta);
         meta.donor_nonces = collect_donor_nonces(img);
@@ -1843,52 +1892,29 @@ namespace gxbuild3 {
         info.cpu_key = std::vector<uint8_t>(cpu_key.begin(), cpu_key.end());
         info.block_type = image_type_from_driver(img.flash_driver.driver_mode());
 
-        info.header_magic = img.header.magic;
-        info.header_version = img.header.version;
-        info.header_flags = img.header.flags;
-        info.header_size = img.header.size;
-        info.copyright = std::string(reinterpret_cast<const char*>(img.header.copyright),
-                                     strnlen(reinterpret_cast<const char*>(img.header.copyright),
-                                             sizeof(img.header.copyright)));
+        project_header(img.header, info);
 
         if (!img.cb_section.cb_or_A.data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CB_A";
-            entry.version = img.cb_section.cb_or_A.header.header.version;
-            entry.size = img.cb_section.cb_or_A.header.header.size;
-            entry.flags = img.cb_section.cb_or_A.header.header.flags;
-            entry.entrypoint = img.cb_section.cb_or_A.header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.cb_section.cb_or_A.is_decrypted();
-            if (img.cb_section.cb_or_A.perbox.has_value()) {
-                entry.ldv = img.cb_section.cb_or_A.perbox->lockdown_value;
-                std::array<uint8_t, 3> pd{};
-                std::memcpy(pd.data(), img.cb_section.cb_or_A.perbox->pairing_data, 3);
+            const auto& cb_a = img.cb_section.cb_or_A;
+            auto entry = summarize_stage("CB_A", cb_a);
+            if (cb_a.perbox.has_value()) {
+                const auto pd = std::to_array(cb_a.perbox->pairing_data);
+                entry.ldv = cb_a.perbox->lockdown_value;
                 entry.pairing_data = pd;
-                info.bootloaders.cb_ldv = img.cb_section.cb_or_A.perbox->lockdown_value;
+                info.bootloaders.cb_ldv = cb_a.perbox->lockdown_value;
                 info.bootloaders.cb_pairing_data = pd;
             }
             info.bootloaders.cb_a = entry;
         }
 
+        // CB_B's LDV and pairing override CB_A's at the chain level.
         if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CB_B";
-            entry.version = img.cb_section.cb_B->header.header.version;
-            entry.size = img.cb_section.cb_B->header.header.size;
-            entry.flags = img.cb_section.cb_B->header.header.flags;
-            entry.entrypoint = img.cb_section.cb_B->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.cb_section.cb_B->is_decrypted();
-            if (img.cb_section.cb_B->perbox.has_value()) {
-                uint8_t ldv = img.cb_section.cb_B->perbox->lockdown_value;
-                if (img.cb_section.cb_B->data.size() > 0x3B1 - sizeof(generic_header) &&
-                    img.cb_section.cb_B->data[0x3B1 - sizeof(generic_header)] <= 16) {
-                    ldv = img.cb_section.cb_B->data[0x3B1 - sizeof(generic_header)];
-                }
+            const auto& cb_b = *img.cb_section.cb_B;
+            auto entry = summarize_stage("CB_B", cb_b);
+            if (cb_b.perbox.has_value()) {
+                const uint8_t ldv = cb_b_display_ldv(cb_b);
+                const auto pd = std::to_array(cb_b.perbox->pairing_data);
                 entry.ldv = ldv;
-                std::array<uint8_t, 3> pd{};
-                std::memcpy(pd.data(), img.cb_section.cb_B->perbox->pairing_data, 3);
                 entry.pairing_data = pd;
                 info.bootloaders.cb_ldv = ldv;
                 info.bootloaders.cb_pairing_data = pd;
@@ -1897,124 +1923,57 @@ namespace gxbuild3 {
         }
 
         if (img.cb_section.cb_x.has_value() && !img.cb_section.cb_x->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CB_X";
-            entry.version = img.cb_section.cb_x->header.header.version;
-            entry.size = img.cb_section.cb_x->header.header.size;
-            entry.flags = img.cb_section.cb_x->header.header.flags;
-            entry.entrypoint = img.cb_section.cb_x->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.cb_section.cb_x->is_decrypted();
-            info.bootloaders.cb_x = entry;
+            info.bootloaders.cb_x = summarize_stage("CB_X", *img.cb_section.cb_x);
         }
 
         if (img.cb_section.sc.has_value() && !img.cb_section.sc->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "SC";
-            entry.version = img.cb_section.sc->header.header.version;
-            entry.size = img.cb_section.sc->header.header.size;
-            entry.flags = img.cb_section.sc->header.header.flags;
-            entry.entrypoint = img.cb_section.sc->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = true;
-            info.bootloaders.sc = entry;
+            info.bootloaders.sc = summarize_stage("SC", *img.cb_section.sc, true);
         }
 
         if (!img.kernel_section.cd.data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CD";
-            entry.version = img.kernel_section.cd.header.header.version;
-            entry.size = img.kernel_section.cd.header.header.size;
-            entry.flags = img.kernel_section.cd.header.header.flags;
-            entry.entrypoint = img.kernel_section.cd.header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.kernel_section.cd.is_decrypted();
-            info.bootloaders.cd = entry;
+            info.bootloaders.cd = summarize_stage("CD", img.kernel_section.cd);
         }
 
         if (img.kernel_section.ce.has_value() && !img.kernel_section.ce->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CE";
-            entry.version = img.kernel_section.ce->header.header.version;
-            entry.size = img.kernel_section.ce->header.header.size;
-            entry.flags = img.kernel_section.ce->header.header.flags;
-            entry.entrypoint = img.kernel_section.ce->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.kernel_section.ce->is_decrypted();
-            info.bootloaders.ce = entry;
+            info.bootloaders.ce = summarize_stage("CE", *img.kernel_section.ce);
         }
 
         if (img.system_update_0.cf.has_value() && !img.system_update_0.cf->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CF_0";
-            entry.version = img.system_update_0.cf->header.header.version;
-            entry.size = img.system_update_0.cf->header.header.size;
-            entry.flags = img.system_update_0.cf->header.header.flags;
-            entry.entrypoint = img.system_update_0.cf->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.system_update_0.cf->is_decrypted();
-            if (img.system_update_0.cf->perbox.has_value()) {
-                entry.ldv = img.system_update_0.cf->perbox->lockdown_value;
-                std::array<uint8_t, 3> pd{};
-                std::memcpy(pd.data(), img.system_update_0.cf->perbox->pairing_data, 3);
+            const auto& cf_0 = *img.system_update_0.cf;
+            auto entry = summarize_stage("CF_0", cf_0);
+            if (cf_0.perbox.has_value()) {
+                const auto pd = std::to_array(cf_0.perbox->pairing_data);
+                entry.ldv = cf_0.perbox->lockdown_value;
                 entry.pairing_data = pd;
-                info.bootloaders.cf0_ldv = img.system_update_0.cf->perbox->lockdown_value;
+                info.bootloaders.cf0_ldv = cf_0.perbox->lockdown_value;
                 info.bootloaders.cf0_pairing_data = pd;
             }
             info.bootloaders.cf_0 = entry;
         }
 
         if (img.system_update_0.cg.has_value() && !img.system_update_0.cg->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CG_0";
-            entry.version = img.system_update_0.cg->header.header.version;
-            entry.size = img.system_update_0.cg->header.header.size;
-            entry.flags = img.system_update_0.cg->header.header.flags;
-            entry.entrypoint = img.system_update_0.cg->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.system_update_0.cg->is_decrypted();
-            info.bootloaders.cg_0 = entry;
+            info.bootloaders.cg_0 = summarize_stage("CG_0", *img.system_update_0.cg);
         }
 
         if (img.system_update_1.cf.has_value() && !img.system_update_1.cf->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CF_1";
-            entry.version = img.system_update_1.cf->header.header.version;
-            entry.size = img.system_update_1.cf->header.header.size;
-            entry.flags = img.system_update_1.cf->header.header.flags;
-            entry.entrypoint = img.system_update_1.cf->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.system_update_1.cf->is_decrypted();
-            if (img.system_update_1.cf->perbox.has_value()) {
-                entry.ldv = img.system_update_1.cf->perbox->lockdown_value;
-                std::array<uint8_t, 3> pd{};
-                std::memcpy(pd.data(), img.system_update_1.cf->perbox->pairing_data, 3);
+            const auto& cf_1 = *img.system_update_1.cf;
+            auto entry = summarize_stage("CF_1", cf_1);
+            if (cf_1.perbox.has_value()) {
+                const auto pd = std::to_array(cf_1.perbox->pairing_data);
+                entry.ldv = cf_1.perbox->lockdown_value;
                 entry.pairing_data = pd;
-                info.bootloaders.cf1_ldv = img.system_update_1.cf->perbox->lockdown_value;
+                info.bootloaders.cf1_ldv = cf_1.perbox->lockdown_value;
                 info.bootloaders.cf1_pairing_data = pd;
             }
             info.bootloaders.cf_1 = entry;
         }
 
         if (img.system_update_1.cg.has_value() && !img.system_update_1.cg->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CG_1";
-            entry.version = img.system_update_1.cg->header.header.version;
-            entry.size = img.system_update_1.cg->header.header.size;
-            entry.flags = img.system_update_1.cg->header.header.flags;
-            entry.entrypoint = img.system_update_1.cg->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.system_update_1.cg->is_decrypted();
-            info.bootloaders.cg_1 = entry;
+            info.bootloaders.cg_1 = summarize_stage("CG_1", *img.system_update_1.cg);
         }
 
         if (img.smc.has_value()) {
-            info.smc.present = true;
-            info.smc.version = img.smc->version;
-            info.smc.motherboard_name = std::string(smc_motherboard_name(img.smc->motherboard));
-            info.smc.type_name = std::string(smc_type_name(img.smc->variant));
-            info.smc.size = static_cast<uint32_t>(img.smc->data.size());
-            info.smc.decrypted = !img.smc->encrypted;
+            info.smc = summarize_smc(*img.smc);
         }
 
         if (img.filesystem.has_value()) {
@@ -2034,89 +1993,8 @@ namespace gxbuild3 {
         }
 
         if (img.keyvault.has_value()) {
-            auto& kv = *img.keyvault;
-            info.keyvault.present = true;
-            info.keyvault.decrypted = !kv.encrypted;
-            info.raw_keyvault = kv.serialize();
-
-            info.keyvault.serial_number = std::string(
-                kv.data.sz14ConsoleSerialNumber,
-                strnlen(kv.data.sz14ConsoleSerialNumber, sizeof(kv.data.sz14ConsoleSerialNumber)));
-            info.keyvault.dvd_key = gxbuild3::utils::bytes_to_hex(kv.data.b1ADvdKey);
-            info.keyvault.console_id_raw =
-                gxbuild3::utils::bytes_to_hex(kv.data.b36ConsoleCertificate.ConsoleId);
-
-            uint64_t cid_val =
-                (static_cast<uint64_t>(kv.data.b36ConsoleCertificate.ConsoleId[0]) << 28) |
-                (static_cast<uint64_t>(kv.data.b36ConsoleCertificate.ConsoleId[1]) << 20) |
-                (static_cast<uint64_t>(kv.data.b36ConsoleCertificate.ConsoleId[2]) << 12) |
-                (static_cast<uint64_t>(kv.data.b36ConsoleCertificate.ConsoleId[3]) << 4) |
-                (static_cast<uint64_t>(kv.data.b36ConsoleCertificate.ConsoleId[4]) >> 4);
-            uint8_t last_digit = kv.data.b36ConsoleCertificate.ConsoleId[4] & 0x0F;
-            char cid_buf[32];
-            std::snprintf(cid_buf, sizeof(cid_buf), "%011llu%u",
-                          static_cast<unsigned long long>(cid_val), last_digit);
-            info.keyvault.console_id_friendly = cid_buf;
-
-            if (kv.raw_data.size() >= Keyvault::kOsigOffset + Keyvault::kOsigLength) {
-                const auto* osig =
-                    reinterpret_cast<const char*>(kv.raw_data.data() + Keyvault::kOsigOffset);
-                info.keyvault.osig = std::string(osig, strnlen(osig, Keyvault::kOsigLength));
-            }
-            info.keyvault.mfr_date =
-                std::string(kv.data.b36ConsoleCertificate.ManufacturingDate,
-                            strnlen(kv.data.b36ConsoleCertificate.ManufacturingDate,
-                                    sizeof(kv.data.b36ConsoleCertificate.ManufacturingDate)));
-
-            info.keyvault.region_raw = kv.data.w16GameRegion.get();
-            switch (info.keyvault.region_raw) {
-                case 0x00FF:
-                    info.keyvault.region_name = "NTSC/US";
-                    break;
-                case 0x01FE:
-                    info.keyvault.region_name = "NTSC/JAP";
-                    break;
-                case 0x01FF:
-                    info.keyvault.region_name = "NTSC/JAP";
-                    break;
-                case 0x02FE:
-                    info.keyvault.region_name = "PAL/EU";
-                    break;
-                case 0x02FF:
-                    info.keyvault.region_name = "PAL/AUS";
-                    break;
-                case 0x01FC:
-                    info.keyvault.region_name = "NTSC/KOR";
-                    break;
-                case 0x01FA:
-                    info.keyvault.region_name = "NTSC/HK";
-                    break;
-                case 0x0101:
-                    info.keyvault.region_name = "NTSC/CHINA";
-                    break;
-                case 0xFFFF:
-                    info.keyvault.region_name = "Devkit";
-                    break;
-                default:
-                    info.keyvault.region_name = "Unknown";
-                    break;
-            }
-
-            bool is_type1 = true;
-            for (size_t i = 0; i < 8; ++i) {
-                uint8_t b =
-                    kv.data
-                        .b39SpecialKeyVaultSignature[sizeof(kv.data.b39SpecialKeyVaultSignature) -
-                                                     8 + i];
-                if (b != 0x00 && b != 0xFF) {
-                    is_type1 = false;
-                    break;
-                }
-            }
-            info.keyvault.kv_type = is_type1 ? 1 : 2;
-            // xeBuild's test, on the big-endian word: the build reads the same flag.
-            info.keyvault.fcrt_required =
-                fcrt_requirement(*info.raw_keyvault) != FcrtRequirement::NotRequired;
+            info.raw_keyvault = img.keyvault->serialize();
+            info.keyvault = summarize_keyvault(*img.keyvault);
         }
 
         return info;
@@ -2147,45 +2025,14 @@ namespace gxbuild3 {
         }
         out.metadata.cpu_key = std::vector<uint8_t>(cpu_key.begin(), cpu_key.end());
         out.metadata.nand_image = std::vector<uint8_t>(nand_image.begin(), nand_image.end());
-        switch (img.flash_driver.driver_mode()) {
-            case Driver::DriverMode::Small:
-                out.image_type = ImageType::SmallBlock;
-                break;
-            case Driver::DriverMode::NewSmall:
-                out.image_type = ImageType::NewSmallBlock;
-                break;
-            case Driver::DriverMode::Big:
-                out.image_type = ImageType::BigBlock;
-                break;
-            case Driver::DriverMode::Emmc:
-                out.image_type = ImageType::Emmc;
-                break;
-        }
-
-        uint8_t cb_ldv = 0;
-        uint8_t pairing_data[3] = {0};
-        uint8_t console_type = 0;
-        uint8_t console_sequence = 0;
-        uint16_t console_sequence_allow = 0;
+        out.image_type = image_type_from_driver(img.flash_driver.driver_mode());
 
         if (!img.cb_section.cb_or_A.data.empty()) {
             out.bootloaders.cb_or_a = img.cb_section.cb_or_A.serialize();
-            console_type = img.cb_section.cb_or_A.header.console_seq_allow.console_type;
-            console_sequence = img.cb_section.cb_or_A.header.console_seq_allow.console_sequence;
-            console_sequence_allow =
-                img.cb_section.cb_or_A.header.console_seq_allow.console_sequence_allow;
-            if (img.cb_section.cb_or_A.perbox.has_value()) {
-                cb_ldv = img.cb_section.cb_or_A.perbox->lockdown_value;
-                std::memcpy(pairing_data, img.cb_section.cb_or_A.perbox->pairing_data, 3);
-            }
         }
 
         if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
             out.bootloaders.cb_b = img.cb_section.cb_B->serialize();
-            if (img.cb_section.cb_B->perbox.has_value()) {
-                cb_ldv = img.cb_section.cb_B->perbox->lockdown_value;
-                std::memcpy(pairing_data, img.cb_section.cb_B->perbox->pairing_data, 3);
-            }
         }
 
         if (img.cb_section.cb_x.has_value() && !img.cb_section.cb_x->data.empty()) {
@@ -2220,14 +2067,15 @@ namespace gxbuild3 {
             out.bootloaders.cg1 = img.system_update_1.cg->serialize();
         }
 
-        out.metadata.cb_ldv = cb_ldv;
-        std::memcpy(out.metadata.pairing_data.data(), pairing_data, 3);
+        const auto cb = read_cb_metadata(img.cb_section);
+        out.metadata.cb_ldv = cb.ldv;
+        out.metadata.pairing_data = cb.pairing;
+        out.metadata.console_type = cb.console_type;
+        out.metadata.console_sequence = cb.console_sequence;
+        out.metadata.console_sequence_allow = cb.console_sequence_allow;
         extract_cf_metadata(img, out.metadata);
         out.metadata.donor_nonces = collect_donor_nonces(img);
         extract_settings_blocks(img, out.metadata);
-        out.metadata.console_type = console_type;
-        out.metadata.console_sequence = console_sequence;
-        out.metadata.console_sequence_allow = console_sequence_allow;
 
         if (img.smc.has_value()) {
             out.metadata.smc = img.smc->data;

@@ -33,7 +33,10 @@ set(GXBUILD3_LIB_SOURCES
     src/Library.cpp
     src/ini/IniParser.cpp
     src/nand/FlashDriver.cpp
-    src/nand/FlashImage.cpp
+    src/nand/FlashImageCrypt.cpp
+    src/nand/FlashImageLayout.cpp
+    src/nand/FlashImageParse.cpp
+    src/nand/FlashImageWrite.cpp
     src/nand/bootloaders/2bl.cpp
     src/nand/bootloaders/3bl.cpp
     src/nand/bootloaders/4bl.cpp

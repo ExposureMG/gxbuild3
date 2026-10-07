@@ -24,6 +24,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace gxbuild3::nand {
@@ -56,7 +57,9 @@ namespace gxbuild3::nand {
         std::optional<BootloaderCd> extra_cd;
     };
 
-    struct FlashImage {
+    // Everything a FlashImage holds, kept apart from its operations so FlashImage can copy and
+    // move it as one piece and then rebind what points into it.
+    struct ImageState {
         nand_header header;
         bool preserve_layout = false; // Direct read/write retains header-defined update anchors.
         std::optional<BuildType>
@@ -83,6 +86,18 @@ namespace gxbuild3::nand {
         std::vector<InputRawPatch> raw_patches;
 
         Driver flash_driver;
+    };
+
+    // A copy or a move rebinds the filesystem to the new object's own driver, so the filesystem
+    // never writes into (or reads from) the image it was copied or moved from.
+    struct FlashImage : ImageState {
+        FlashImage() = default;
+        FlashImage(const FlashImage& other);
+        FlashImage(FlashImage&& other) noexcept(std::is_nothrow_move_constructible_v<ImageState>);
+        FlashImage& operator=(const FlashImage& other);
+        FlashImage&
+        operator=(FlashImage&& other) noexcept(std::is_nothrow_move_assignable_v<ImageState>);
+        ~FlashImage() = default;
 
         // Empty input is absent, not a failure.
         static std::optional<FlashImage> read(std::vector<uint8_t> raw_image);
@@ -98,12 +113,14 @@ namespace gxbuild3::nand {
         // Opens every sealed stage, the SMC and, under a usable CPU key, the keyvault. Stages
         // opened before a failure stay open.
         [[nodiscard]] Result<void> decrypt_all(std::span<const uint8_t> cpu_key);
-        // Seals every stage for `build_type`, binding the SMC and laying CG tails in the
+        // Seals every stage for `seal_type`, binding the SMC and laying CG tails in the
         // filesystem. Hacked chains may deliberately leave stages plaintext for their patched
-        // parent. After a failure the object is unspecified: stages sealed before the failing one
-        // stay sealed and nothing is rolled back, so the image must not be written.
+        // parent. The seal policy and the update-slot reservation read `seal_type`; the layout
+        // helpers still read the member build_type, which may be unset or differ. After a failure
+        // the object is unspecified: stages sealed before the failing one stay sealed and nothing
+        // is rolled back, so the image must not be written.
         [[nodiscard]] Result<void> encrypt_all(std::span<const uint8_t> cpu_key,
-                                               BuildType build_type = BuildType::Retail);
+                                               BuildType seal_type = BuildType::Retail);
 
         // Remove serialized bootloader records inherited from a donor before replacing the chain:
         // the chain is zeroed and the CF/CG records in the update slots are erased (0xFF). This
@@ -125,9 +142,9 @@ namespace gxbuild3::nand {
 
         // Lays the image into the driver. Unless preserve_layout is set (a parsed dump written
         // back), every good block is erased first, so what the writer does not lay stays erased.
-        [[nodiscard]] Result<void> write_to_driver() const;
+        [[nodiscard]] Result<void> write_to_driver();
         // Lays the image and returns the driver's raw bytes.
-        [[nodiscard]] Result<std::vector<uint8_t>> write() const;
+        [[nodiscard]] Result<std::vector<uint8_t>> write();
     };
 
     // Whether update slot `slot` carries the console: its slot number at 0x21B, pairing, LDV and
