@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstddef>
 #include <cstring>
 #include <exception>
 #include <expected>
@@ -617,6 +618,61 @@ namespace gxbuild3 {
             std::array<uint8_t, 3> pairing{};
             std::memcpy(pairing.data(), perbox.pairing_data, pairing.size());
             metadata.cf_pairing_data = pairing;
+        }
+
+        // The CB fields a donor's build metadata carries: the console type, sequence and allow
+        // word from CB_A's header, and the LDV and pairing from CB_A's per-box block, which CB_B's
+        // per-box block overrides when CB_B is present (whether or not CB_A parsed).
+        struct CbMetadata {
+            uint8_t ldv = 0;
+            std::array<uint8_t, 3> pairing{};
+            uint8_t console_type = 0;
+            uint8_t console_sequence = 0;
+            uint16_t console_sequence_allow = 0;
+        };
+
+        CbMetadata read_cb_metadata(const CbSection& cb) {
+            CbMetadata metadata{};
+            const auto& cb_a = cb.cb_or_A;
+            if (!cb_a.data.empty()) {
+                if (cb_a.perbox.has_value()) {
+                    metadata.ldv = cb_a.perbox->lockdown_value;
+                    std::memcpy(metadata.pairing.data(), cb_a.perbox->pairing_data,
+                                metadata.pairing.size());
+                }
+                metadata.console_type = cb_a.header.console_seq_allow.console_type;
+                metadata.console_sequence = cb_a.header.console_seq_allow.console_sequence;
+                metadata.console_sequence_allow =
+                    cb_a.header.console_seq_allow.console_sequence_allow.get();
+            }
+            if (cb.cb_B.has_value() && !cb.cb_B->data.empty() && cb.cb_B->perbox.has_value()) {
+                // Build metadata keeps the per-box LDV; the byte cb_b_display_ldv shows is for
+                // display only and is never written into per-box data.
+                metadata.ldv = cb.cb_B->perbox->lockdown_value;
+                std::memcpy(metadata.pairing.data(), cb.cb_B->perbox->pairing_data,
+                            metadata.pairing.size());
+            }
+            return metadata;
+        }
+
+        // The CB_B console-sequence byte (header 0x3B1), as an offset into the stage data, which
+        // starts after the generic header.
+        constexpr std::size_t kCbConsoleSequenceInData =
+            offsetof(cb_header, console_seq_allow) +
+            offsetof(ConsoleTypeSeqAllow, console_sequence) - sizeof(generic_header);
+        static_assert(kCbConsoleSequenceInData == 0x3A1);
+
+        // extract_all_info shows CB_B's LDV as its console-sequence byte when that byte reads as
+        // an LDV (16 or less), else the per-box LDV. Pinned quirk: the shown value can disagree
+        // with the per-box LDV that extract_metadata and extract_all report. Requires the per-box
+        // block.
+        uint8_t cb_b_display_ldv(const BootloaderCb& cb_b) {
+            const auto sequence =
+                wire::read<uint8_t>(cb_b.data, kCbConsoleSequenceInData, "CB_B console sequence");
+            if (sequence && *sequence <= 16) {
+                return *sequence;
+            }
+            return cb_b.perbox->lockdown_value;
         }
 
         BootloaderNonce donor_or_random(const std::optional<BootloaderNonce>& donor) {
@@ -1778,41 +1834,12 @@ namespace gxbuild3 {
         meta.nand_image = std::vector<uint8_t>(nand_image.begin(), nand_image.end());
         meta.keyvault = kv.serialize();
 
-        uint8_t cb_ldv = 0;
-        uint8_t pairing_data[3] = {};
-        uint8_t console_type = 0;
-        uint8_t console_sequence = 0;
-        uint16_t console_sequence_allow = 0;
-
-        auto& cb_a = img.cb_section.cb_or_A;
-        if (!cb_a.data.empty()) {
-            if (cb_a.perbox.has_value()) {
-                cb_ldv = cb_a.perbox->lockdown_value;
-                std::memcpy(pairing_data, cb_a.perbox->pairing_data, 3);
-            }
-
-            console_type = cb_a.header.console_seq_allow.console_type;
-            console_sequence = cb_a.header.console_seq_allow.console_sequence;
-            console_sequence_allow = cb_a.header.console_seq_allow.console_sequence_allow;
-        }
-
-        // CB_B, when present, overrides CB_A's LDV/pairing data - independent of
-        // whether CB_A itself parsed, matching extract_all()/extract_all_info().
-        if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
-            auto& cb_b = *img.cb_section.cb_B;
-            if (cb_b.perbox.has_value()) {
-                cb_ldv = cb_b.perbox->lockdown_value;
-                // Build metadata must preserve the per-box byte at +0x23. The value at
-                // +0x3B1 is used for display by extract_all_info, not written into per-box data.
-                std::memcpy(pairing_data, cb_b.perbox->pairing_data, 3);
-            }
-        }
-
-        meta.cb_ldv = cb_ldv;
-        std::memcpy(meta.pairing_data.data(), pairing_data, 3);
-        meta.console_type = console_type;
-        meta.console_sequence = console_sequence;
-        meta.console_sequence_allow = console_sequence_allow;
+        const auto cb = read_cb_metadata(img.cb_section);
+        meta.cb_ldv = cb.ldv;
+        meta.pairing_data = cb.pairing;
+        meta.console_type = cb.console_type;
+        meta.console_sequence = cb.console_sequence;
+        meta.console_sequence_allow = cb.console_sequence_allow;
 
         extract_cf_metadata(img, meta);
         meta.donor_nonces = collect_donor_nonces(img);
@@ -1881,11 +1908,7 @@ namespace gxbuild3 {
             entry.present = true;
             entry.decrypted = img.cb_section.cb_B->is_decrypted();
             if (img.cb_section.cb_B->perbox.has_value()) {
-                uint8_t ldv = img.cb_section.cb_B->perbox->lockdown_value;
-                if (img.cb_section.cb_B->data.size() > 0x3B1 - sizeof(generic_header) &&
-                    img.cb_section.cb_B->data[0x3B1 - sizeof(generic_header)] <= 16) {
-                    ldv = img.cb_section.cb_B->data[0x3B1 - sizeof(generic_header)];
-                }
+                const uint8_t ldv = cb_b_display_ldv(*img.cb_section.cb_B);
                 entry.ldv = ldv;
                 std::array<uint8_t, 3> pd{};
                 std::memcpy(pd.data(), img.cb_section.cb_B->perbox->pairing_data, 3);
@@ -2066,45 +2089,14 @@ namespace gxbuild3 {
         }
         out.metadata.cpu_key = std::vector<uint8_t>(cpu_key.begin(), cpu_key.end());
         out.metadata.nand_image = std::vector<uint8_t>(nand_image.begin(), nand_image.end());
-        switch (img.flash_driver.driver_mode()) {
-            case Driver::DriverMode::Small:
-                out.image_type = ImageType::SmallBlock;
-                break;
-            case Driver::DriverMode::NewSmall:
-                out.image_type = ImageType::NewSmallBlock;
-                break;
-            case Driver::DriverMode::Big:
-                out.image_type = ImageType::BigBlock;
-                break;
-            case Driver::DriverMode::Emmc:
-                out.image_type = ImageType::Emmc;
-                break;
-        }
-
-        uint8_t cb_ldv = 0;
-        uint8_t pairing_data[3] = {0};
-        uint8_t console_type = 0;
-        uint8_t console_sequence = 0;
-        uint16_t console_sequence_allow = 0;
+        out.image_type = image_type_from_driver(img.flash_driver.driver_mode());
 
         if (!img.cb_section.cb_or_A.data.empty()) {
             out.bootloaders.cb_or_a = img.cb_section.cb_or_A.serialize();
-            console_type = img.cb_section.cb_or_A.header.console_seq_allow.console_type;
-            console_sequence = img.cb_section.cb_or_A.header.console_seq_allow.console_sequence;
-            console_sequence_allow =
-                img.cb_section.cb_or_A.header.console_seq_allow.console_sequence_allow;
-            if (img.cb_section.cb_or_A.perbox.has_value()) {
-                cb_ldv = img.cb_section.cb_or_A.perbox->lockdown_value;
-                std::memcpy(pairing_data, img.cb_section.cb_or_A.perbox->pairing_data, 3);
-            }
         }
 
         if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
             out.bootloaders.cb_b = img.cb_section.cb_B->serialize();
-            if (img.cb_section.cb_B->perbox.has_value()) {
-                cb_ldv = img.cb_section.cb_B->perbox->lockdown_value;
-                std::memcpy(pairing_data, img.cb_section.cb_B->perbox->pairing_data, 3);
-            }
         }
 
         if (img.cb_section.cb_x.has_value() && !img.cb_section.cb_x->data.empty()) {
@@ -2139,14 +2131,15 @@ namespace gxbuild3 {
             out.bootloaders.cg1 = img.system_update_1.cg->serialize();
         }
 
-        out.metadata.cb_ldv = cb_ldv;
-        std::memcpy(out.metadata.pairing_data.data(), pairing_data, 3);
+        const auto cb = read_cb_metadata(img.cb_section);
+        out.metadata.cb_ldv = cb.ldv;
+        out.metadata.pairing_data = cb.pairing;
+        out.metadata.console_type = cb.console_type;
+        out.metadata.console_sequence = cb.console_sequence;
+        out.metadata.console_sequence_allow = cb.console_sequence_allow;
         extract_cf_metadata(img, out.metadata);
         out.metadata.donor_nonces = collect_donor_nonces(img);
         extract_settings_blocks(img, out.metadata);
-        out.metadata.console_type = console_type;
-        out.metadata.console_sequence = console_sequence;
-        out.metadata.console_sequence_allow = console_sequence_allow;
 
         if (img.smc.has_value()) {
             out.metadata.smc = img.smc->data;
