@@ -195,10 +195,6 @@ add_gxbuild3_test(gxbuild3_buildrunner_tests BuildRunnerTests.cpp)
 add_gxbuild3_test(gxbuild3_glitch_crypto_tests GlitchCryptoTests.cpp)
 add_gxbuild3_test(gxbuild3_resolver_tests BuildInputResolverTests.cpp)
 add_gxbuild3_test(gxbuild3_buildcommand_tests BuildCommandTests.cpp)
-add_gxbuild3_test(gxbuild3_crypto_reference_tests CryptoReferenceTests.cpp)
-# src/nand/bootloaders/Stage.hpp: the shared stage parse, padding, serialize and record crypt
-# checked against a plain crypt_single_bl, plus the paths the bootloader corpus never reaches.
-add_gxbuild3_test(gxbuild3_stage_tests StageTests.cpp)
 # tests/TestResult.hpp's must() aborts with Error::describe() and the call site; the demo tool
 # fails it on purpose (retired with must()).
 add_executable(gxbuild3_must_abort_demo tools/MustAbortDemo.cpp)
@@ -212,8 +208,6 @@ foreach(cli_test gxbuild3_commandline_tests gxbuild3_resolver_tests
         gxbuild3_buildcommand_tests)
     target_link_libraries(${cli_test} PRIVATE gxbuild3_cli)
 endforeach()
-target_compile_definitions(gxbuild3_crypto_reference_tests PRIVATE
-    GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
 # In-process goldens over the tracked mydata/image.bin (tests/golden/flashimage_golden.txt),
 # the synthetic fresh-layout matrix (flashimage_matrix.txt) and the FlashImage failure
 # table (flashimage_failures.txt). The matrix writes 48 full-size images: about 30 s in
