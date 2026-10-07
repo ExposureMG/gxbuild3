@@ -1,9 +1,6 @@
 #include "BuildRunner.hpp"
-#include "ExtractProjection.hpp"
 #include "GoldenSnapshot.hpp"
-#include "ScopedTimeZone.hpp"
 #include "TestResult.hpp"
-#include "XeRsaTestKey.hpp"
 #include "cli/BuildInputResolver.hpp"
 #include "excrypt.h"
 #include "nand/bootloaders/2bl.hpp"
@@ -14,6 +11,9 @@
 #include "nand/objects/Freeboot.hpp"
 #include "nand/objects/Keyvault.hpp"
 #include "nand/objects/Patchset.hpp"
+#include "support/Env.hpp"
+#include "support/XeRsaTestKey.hpp"
+#include "support/render/ExtractProjection.hpp"
 
 #include <algorithm>
 #include <array>
@@ -1674,8 +1674,8 @@ namespace {
 
     // A throwaway key whose file states the SB private key's CRC-32, so the resolver takes it.
     Bytes sb_key_stand_in() {
-        return xe_rsa_test::with_crc32(xe_rsa_test::shared_private_key(),
-                                       gxbuild3::utils::kSbPrivateKeyCrc32);
+        return gxbuild3::test::xe_rsa::with_crc32(gxbuild3::test::xe_rsa::shared_private_key(),
+                                                  gxbuild3::utils::kSbPrivateKeyCrc32);
     }
 
     bool test_devgl_resolve_finds_the_sb_key_and_builds_retail_fuses() {
@@ -1719,7 +1719,8 @@ namespace {
         args.patch_extension = "test";
         fixture.write_binary("first/bin/patches_g2mfalcon_test.bin", valid_glitch_patchset());
         const auto absent = fixture.resolve(args);
-        fixture.write_binary("first/keys/SB_priv.bin", xe_rsa_test::shared_private_key());
+        fixture.write_binary("first/keys/SB_priv.bin",
+                             gxbuild3::test::xe_rsa::shared_private_key());
         const auto wrong = fixture.resolve(args);
         return require(!absent && absent.error().code == ResolutionErrorCode::SigningKeyNotFound &&
                            absent.error().message.find("No SB_priv.bin") != std::string::npos,
@@ -2026,7 +2027,7 @@ namespace {
         nonces.cg = filled(0xC1);
         input.metadata.donor_nonces = nonces;
 
-        const ScopedTimeZone utc{"UTC0"};
+        const gxbuild3::test::ScopedTimeZone utc{"UTC0"};
         const ScopedSourceDateEpoch epoch{"1791105724"};
         const auto first = run_build(input);
         const auto second = run_build(input);
@@ -2068,9 +2069,10 @@ namespace {
     }
 
     // One BuildRequest as golden lines: the output path relative to the fixture root (the root is
-    // a fresh temporary directory), then every Input field through tests/ExtractProjection.hpp:
-    // options, metadata scalars, the size and SHA-1 of every byte vector, FlashFS names in order,
-    // patch file names, payloads, and only the size of an SB key.
+    // a fresh temporary directory), then every Input field through
+    // tests/support/render/ExtractProjection.hpp: options, metadata scalars, the size and SHA-1 of
+    // every byte vector, FlashFS names in order, patch file names, payloads, and only the size of
+    // an SB key.
     std::string render_request(const std::string& label, const ResolverFixture& fixture,
                                const gxbuild3::cli::BuildRequest& request) {
         return label + " output_path=" +

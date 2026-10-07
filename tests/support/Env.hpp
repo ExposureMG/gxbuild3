@@ -3,9 +3,8 @@
 // Scoped process-environment changes for tests. Every change is undone in a destructor, so a
 // binary passes under --gtest_shuffle in one process exactly as it does one case per process.
 
-#include "ScopedTimeZone.hpp"
-
 #include <cstdlib>
+#include <ctime>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -61,6 +60,35 @@ namespace gxbuild3::test {
         std::optional<std::string> previous_;
     };
 
+    // Holds the C library's local zone to a TZ value for a test's scope and gives back the zone
+    // the process had when the scope ends, so a test that reads local time passes in any zone.
+    class ScopedTimeZone {
+      public:
+        explicit ScopedTimeZone(const char* zone) : previous_(env_value("TZ")) { set(zone); }
+
+        ~ScopedTimeZone() { set(previous_ ? previous_->c_str() : nullptr); }
+
+        ScopedTimeZone(const ScopedTimeZone&) = delete;
+        ScopedTimeZone& operator=(const ScopedTimeZone&) = delete;
+
+      private:
+        static void set(const char* zone) {
+#ifdef _WIN32
+            _putenv_s("TZ", zone ? zone : "");
+            _tzset();
+#else
+            if (zone) {
+                setenv("TZ", zone, 1);
+            } else {
+                unsetenv("TZ");
+            }
+            tzset();
+#endif
+        }
+
+        std::optional<std::string> previous_;
+    };
+
     // The build time build_all.sh and the goldens pin (SOURCE_DATE_EPOCH, UTC seconds).
     inline constexpr std::string_view kPinnedSourceDateEpoch = "1791105724";
 
@@ -74,7 +102,7 @@ namespace gxbuild3::test {
 
       private:
         ScopedEnv epoch_;
-        ::ScopedTimeZone zone_;
+        ScopedTimeZone zone_;
     };
 
 } // namespace gxbuild3::test

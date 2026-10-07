@@ -1,5 +1,5 @@
-#include "ScopedTimeZone.hpp"
 #include "nand/objects/SecuredFiles.hpp"
+#include "support/Env.hpp"
 #include "utils/BuildTime.hpp"
 
 #include <array>
@@ -21,7 +21,7 @@ namespace {
     constexpr uint32_t kReferenceStamp = 0x5D444AC2;
 
     bool test_fat_timestamp_encoding() {
-        const ScopedTimeZone utc{"UTC0"};
+        const gxbuild3::test::ScopedTimeZone utc{"UTC0"};
         return check(fat_timestamp(kReferenceSeconds) == kReferenceStamp,
                      "a moment encodes as FAT date and time") &&
                check(fat_timestamp(kReferenceSeconds + 1) == kReferenceStamp,
@@ -35,7 +35,7 @@ namespace {
     }
 
     bool test_flashfs_build_timestamp_adds_two_seconds() {
-        const ScopedTimeZone utc{"UTC0"};
+        const gxbuild3::test::ScopedTimeZone utc{"UTC0"};
         return check(flashfs_build_timestamp(kReferenceSeconds - 2) == kReferenceStamp,
                      "an entry carries the build's time plus two seconds") &&
                check(flashfs_build_timestamp(kReferenceSeconds - 1) == kReferenceStamp,
@@ -51,12 +51,12 @@ namespace {
         std::array<uint8_t, 8> utc_filetime{};
         std::array<uint8_t, 8> tokyo_filetime{};
         {
-            const ScopedTimeZone zone{"UTC0"};
+            const gxbuild3::test::ScopedTimeZone zone{"UTC0"};
             utc_stamp = flashfs_build_timestamp(build);
             utc_filetime = gxbuild3::nand::secured_file_stamp(build);
         }
         {
-            const ScopedTimeZone zone{"JST-9"};
+            const gxbuild3::test::ScopedTimeZone zone{"JST-9"};
             tokyo_stamp = flashfs_build_timestamp(build);
             tokyo_filetime = gxbuild3::nand::secured_file_stamp(build);
         }
@@ -66,7 +66,7 @@ namespace {
             check(utc_filetime == tokyo_filetime, "the FILETIME does not depend on the zone");
         {
             // 1980-01-01 05:00 in UTC+9 is 1979-12-31 20:00 UTC: the local reading is in range.
-            const ScopedTimeZone zone{"JST-9"};
+            const gxbuild3::test::ScopedTimeZone zone{"JST-9"};
             passed = check(fat_timestamp(315532800 - 4 * 3600) == 0x00212800,
                            "the range is held on the local clock") &&
                      passed;
@@ -75,7 +75,7 @@ namespace {
         {
             // The reference image was built at 08:22:02 UTC in British summer time, so its entries
             // read an hour later; a month on, past the change back, they read UTC.
-            const ScopedTimeZone zone{"GMT0BST,M3.5.0/1,M10.5.0"};
+            const gxbuild3::test::ScopedTimeZone zone{"GMT0BST,M3.5.0/1,M10.5.0"};
             passed = check(flashfs_build_timestamp(build - 3600) == kReferenceStamp,
                            "summer-time entries take the summer offset") &&
                      check(flashfs_build_timestamp(build - 3600 + 30 * 86400) == 0x5D6342C2,

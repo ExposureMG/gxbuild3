@@ -13,9 +13,9 @@
 #include <random>
 #include <vector>
 
-namespace xe_rsa_test {
+namespace gxbuild3::test::xe_rsa {
 
-    using gxbuild3::utils::BigUint;
+    using utils::BigUint;
 
     inline BigUint random_odd_prime_candidate(std::mt19937_64& random, size_t bits) {
         std::vector<uint8_t> bytes(bits / 8);
@@ -187,4 +187,4 @@ namespace xe_rsa_test {
         return key;
     }
 
-} // namespace xe_rsa_test
+} // namespace gxbuild3::test::xe_rsa

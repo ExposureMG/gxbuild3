@@ -106,7 +106,7 @@ namespace gxbuild3::core {
 
         TEST(SupportEnv, PinnedBuildTimeSetsEpochAndZoneAndRestoresBoth) {
             const test::ScopedEnv epoch{"SOURCE_DATE_EPOCH", "12345"};
-            const ::ScopedTimeZone tokyo{"JST-9"};
+            const test::ScopedTimeZone tokyo{"JST-9"};
             const uint32_t tokyo_stamp = utils::flashfs_build_timestamp(1791105724);
             uint32_t pinned_stamp = 0;
             {
@@ -117,7 +117,7 @@ namespace gxbuild3::core {
                 pinned_stamp = utils::flashfs_build_timestamp(utils::build_epoch());
             }
             {
-                const ::ScopedTimeZone utc{"UTC0"};
+                const test::ScopedTimeZone utc{"UTC0"};
                 EXPECT_EQ(pinned_stamp, utils::flashfs_build_timestamp(1791105724));
             }
             EXPECT_NE(pinned_stamp, tokyo_stamp);

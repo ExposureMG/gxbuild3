@@ -1,6 +1,7 @@
 #include "GoldenSnapshot.hpp"
 #include "excrypt.h"
 #include "nand/objects/FlashFileSystem.hpp"
+#include "support/FlashFsAccess.hpp"
 
 #include <algorithm>
 #include <array>
@@ -17,16 +18,6 @@
 
 using namespace gxbuild3::nand;
 using Bytes = std::vector<uint8_t>;
-
-namespace gxbuild3::nand {
-
-    // The goldens below need a chain link carrying the 0x8000 bit, which only load() produces
-    // through the public API.
-    struct FlashFileSystemTestAccess {
-        static std::vector<uint16_t>& blockmap(FlashFileSystem& fs) { return fs.m_blockmap; }
-    };
-
-} // namespace gxbuild3::nand
 
 namespace {
     bool check(bool condition, const char* message) {

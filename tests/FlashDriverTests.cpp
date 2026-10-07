@@ -5,6 +5,7 @@
 #include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/4bl.hpp"
 #include "nand/objects/XConfig.hpp"
+#include "support/FlashFsAccess.hpp"
 
 #include <algorithm>
 #include <array>
@@ -20,17 +21,6 @@
 #include <vector>
 
 using namespace gxbuild3::nand;
-
-namespace gxbuild3::nand {
-
-    struct FlashFileSystemTestAccess {
-        static std::optional<size_t> checked_block_count(size_t bytes_needed,
-                                                         size_t clean_block_size) {
-            return FlashFileSystem::checked_block_count(bytes_needed, clean_block_size);
-        }
-    };
-
-} // namespace gxbuild3::nand
 
 static_assert(sizeof(cd_header) == 0x260);
 static_assert(offsetof(cd_header, nonce_6bl) == 0x230);

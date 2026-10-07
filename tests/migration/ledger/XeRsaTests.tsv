@@ -6,6 +6,6 @@ XeRsa.test_division_reconstructs_its_operands	test_division_reconstructs_its_ope
 XeRsa.test_pow_mod_and_digit_layout	test_pow_mod_and_digit_layout@52	4	-	pending
 XeRsa.test_crc32_matches_zlib	test_crc32_matches_zlib@66	1	-	pending
 XeRsa.test_sd_signature_round_trips_and_covers_the_body	test_sd_signature_round_trips_and_covers_the_body@86	11	-	pending
-XeRsa.test_signature_agrees_with_xecrypt_format	test_signature_agrees_with_xecrypt_format@129	6	-	pending
-XeRsa.test_inconsistent_keys_are_refused	test_inconsistent_keys_are_refused@163	4	-	pending
+XeRsa.test_signature_agrees_with_xecrypt_format	test_signature_agrees_with_xecrypt_format@130	6	-	pending
+XeRsa.test_inconsistent_keys_are_refused	test_inconsistent_keys_are_refused@165	4	-	pending
 # hand

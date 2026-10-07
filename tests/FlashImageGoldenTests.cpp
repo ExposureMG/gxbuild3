@@ -33,11 +33,11 @@
 
 #include "BuildRunner.hpp"
 #include "GoldenSnapshot.hpp"
-#include "Sha256.hpp"
 #include "excrypt.h"
 #include "nand/FlashImage.hpp"
 #include "nand/objects/Freeboot.hpp"
 #include "nand/objects/SecuredFiles.hpp"
+#include "support/Sha256.hpp"
 
 #include <algorithm>
 #include <array>
@@ -115,7 +115,7 @@ namespace {
             std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(text.data()), text.size()));
     }
 
-    // tests/Sha256.hpp: GxCrypt's ExCryptSha256 does not link.
+    // tests/support/Sha256.hpp: GxCrypt's ExCryptSha256 does not link.
     std::string sha256(std::span<const uint8_t> bytes) {
         return test::sha256_hex(bytes);
     }

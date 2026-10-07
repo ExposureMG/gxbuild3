@@ -1,5 +1,5 @@
-#include "XeRsaTestKey.hpp"
 #include "excrypt.h"
+#include "support/XeRsaTestKey.hpp"
 #include "utils/BigUint.hpp"
 #include "utils/XeRsa.hpp"
 
@@ -84,7 +84,8 @@ namespace {
     }
 
     bool test_sd_signature_round_trips_and_covers_the_body() {
-        const auto key = gxbuild3::utils::XeRsaPrivateKey::parse(xe_rsa_test::shared_private_key());
+        const auto key =
+            gxbuild3::utils::XeRsaPrivateKey::parse(gxbuild3::test::xe_rsa::shared_private_key());
         if (!require(key.has_value(), "a generated RSA-2048 key parses")) {
             return false;
         }
@@ -127,7 +128,8 @@ namespace {
     }
 
     bool test_signature_agrees_with_xecrypt_format() {
-        const auto key = gxbuild3::utils::XeRsaPrivateKey::parse(xe_rsa_test::shared_private_key());
+        const auto key =
+            gxbuild3::utils::XeRsaPrivateKey::parse(gxbuild3::test::xe_rsa::shared_private_key());
         std::array<uint8_t, 20> hash{};
         hash.fill(0x42);
         const std::string_view salt = "XBOX_ROM_4";
@@ -161,7 +163,7 @@ namespace {
     }
 
     bool test_inconsistent_keys_are_refused() {
-        auto key = xe_rsa_test::shared_private_key();
+        auto key = gxbuild3::test::xe_rsa::shared_private_key();
         auto wrong_prime = key;
         wrong_prime[0x110 + 0x7F] ^= 0x02;
         const auto wrong_size = std::span(key).first(key.size() - 1);

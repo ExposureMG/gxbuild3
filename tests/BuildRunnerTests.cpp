@@ -1,10 +1,7 @@
 #include "BuildRunner.hpp"
-#include "ExtractProjection.hpp"
 #include "GoldenSnapshot.hpp"
 #include "Library.hpp"
-#include "ScopedTimeZone.hpp"
 #include "TestResult.hpp"
-#include "XeRsaTestKey.hpp"
 #include "excrypt.h"
 #include "nand/FlashDriver.hpp"
 #include "nand/FlashImage.hpp"
@@ -18,6 +15,9 @@
 #include "nand/objects/Patchset.hpp"
 #include "nand/objects/SMC.hpp"
 #include "nand/objects/SecuredFiles.hpp"
+#include "support/Env.hpp"
+#include "support/XeRsaTestKey.hpp"
+#include "support/render/ExtractProjection.hpp"
 #include "utils/XeRsa.hpp"
 
 #include <algorithm>
@@ -3603,7 +3603,7 @@ namespace {
 
         // 2026-10-04 09:22:02 UTC: in UTC the entries say 09:22:04, 0x5D444AC2.
         const auto built = [&] {
-            const ScopedTimeZone utc{"UTC0"};
+            const gxbuild3::test::ScopedTimeZone utc{"UTC0"};
             set_source_date_epoch("1791105722");
             auto result = run_build(input);
             set_source_date_epoch(nullptr);
@@ -4548,7 +4548,7 @@ namespace {
         InputPayloads payloads{};
         payloads.fuses = Bytes(0x60, 0xF5);
         input.payloads = std::move(payloads);
-        input.sb_private_key = xe_rsa_test::shared_private_key();
+        input.sb_private_key = gxbuild3::test::xe_rsa::shared_private_key();
         return input;
     }
 
@@ -4721,7 +4721,7 @@ namespace {
             std::pair{BuildType::Devkit, "devkit"}, std::pair{BuildType::Devgl, "devgl"}};
 
         const auto build_pinned = [](const Input& input) {
-            const ScopedTimeZone utc{"UTC0"};
+            const gxbuild3::test::ScopedTimeZone utc{"UTC0"};
             set_source_date_epoch("1791105724");
             auto result = run_build(input);
             set_source_date_epoch(nullptr);
@@ -4763,8 +4763,8 @@ namespace {
         return require(matched, "run_build output digests match the golden") && ok;
     }
 
-    // Every public extract_* projection (tests/ExtractProjection.hpp) of two run_build digest
-    // outputs, against tests/golden/extract_projections_synthetic.txt:
+    // Every public extract_* projection (tests/support/render/ExtractProjection.hpp) of two
+    // run_build digest outputs, against tests/golden/extract_projections_synthetic.txt:
     //   small.glitch2             CB_A + CB_B, CE, CF/CG in slot 0, patch file and XeLL;
     //   newsmall.devkit           the SB/SC/SD/SE chain, where extract_all_info states the SC
     //                             decrypted while extract_some_info reads it sealed;
@@ -4776,7 +4776,7 @@ namespace {
     // gxbuild3_orchestration_golden_tests (tests/golden/extract_projections_mydata.txt).
     bool test_extract_projection_snapshots(const gxbuild3::test::GoldenOptions& options) {
         const auto build_pinned = [](const Input& input) {
-            const ScopedTimeZone utc{"UTC0"};
+            const gxbuild3::test::ScopedTimeZone utc{"UTC0"};
             set_source_date_epoch("1791105724");
             auto result = run_build(input);
             set_source_date_epoch(nullptr);

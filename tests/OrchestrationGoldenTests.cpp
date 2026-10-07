@@ -21,10 +21,10 @@
 // overrides the support directory, for mutation checks against scratch copies only.
 
 #include "BuildRunner.hpp"
-#include "ExtractProjection.hpp"
 #include "GoldenSnapshot.hpp"
-#include "ScopedTimeZone.hpp"
 #include "excrypt.h"
+#include "support/Env.hpp"
+#include "support/render/ExtractProjection.hpp"
 
 #include <array>
 #include <cstdint>
@@ -109,7 +109,7 @@ namespace {
     }
 
     BuildResult build_pinned(const Input& input) {
-        const ScopedTimeZone utc{"UTC0"};
+        const gxbuild3::test::ScopedTimeZone utc{"UTC0"};
         set_source_date_epoch(kSourceDateEpoch);
         auto result = run_build(input);
         set_source_date_epoch(nullptr);
@@ -137,7 +137,7 @@ namespace {
         bool smcnocheck;
     };
 
-    // Every public extract_* projection (tests/ExtractProjection.hpp) of
+    // Every public extract_* projection (tests/support/render/ExtractProjection.hpp) of
     //   mydata.image           image.bin under its CPU key;
     //   mydata.image.zero-key  image.bin under the all-zero CPU key, under which the console's
     //                          keyvault stays sealed (extract_all leaves it out);
