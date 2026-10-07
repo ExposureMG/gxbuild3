@@ -216,12 +216,6 @@ target_link_libraries(gxbuild3_flashimage_golden_tests PRIVATE gxbuild3_flashima
 target_compile_definitions(gxbuild3_flashimage_golden_tests PRIVATE
     GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
 set_tests_properties(gxbuild3_flashimage_golden_tests PROPERTIES TIMEOUT 600)
-# Snapshot of the NAND-object codecs over tracked fixtures (tests/golden/objects_corpus.txt):
-# every patches_*.bin x build type with and without add-ons, XeLL, the mydata secured files,
-# xboxupd.bin from su20076000, CoronaConfig, freeBOOT, XConfig and the SMC classifier.
-add_gxbuild3_test(gxbuild3_objects_corpus_tests ObjectsCorpusTests.cpp LABELS golden)
-target_compile_definitions(gxbuild3_objects_corpus_tests PRIVATE
-    GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
 # run_build digests over the tracked mydata/image.bin (tests/golden/
 # orchestration_mydata_builds.txt): extract_all, then retail, jtag and glitch2 rebuilds with
 # the tracked patch files and XeLLs, each built twice under a pinned time and donor nonces;

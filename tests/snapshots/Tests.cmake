@@ -2,9 +2,10 @@
 # as their old binaries are ported) and its main is golden_main (support/golden/Golden.hpp):
 # no argument runs the tests, --list-goldens prints the registered goldens and
 # --update <name>... re-renders them (twice, written only when both renders agree). CTest only
-# compares. The helper suites of 5 or more cheap cases run as one bundled entry each, and so does
+# compares. The helper suites of 5 or more cheap cases run as one bundled entry each, and so do
 # StfsSystemUpdateGolden, whose four cases share the 11.8 MB su20076000 package read once per
-# process; the other goldens (WireCorpusGolden's three cases included: its 145 stage fixtures
+# process, and ObjectsCorpusGolden, whose eight cases share one corpus render per process (about
+# 0.2 s); the other goldens (WireCorpusGolden's three cases included: its 145 stage fixtures
 # load and render in about 0.2 s) and the single-case suites are one entry per TEST.
 gxbuild3_add_gtest(gxbuild3_golden_tests
     PREFIX golden
@@ -19,6 +20,8 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
         ${CMAKE_CURRENT_LIST_DIR}/GoldenSectionTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/GoldenUpdateTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/GoldenSnapshotSelfTestGolden.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ObjectsCorpusRender.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ObjectsCorpusGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/StfsSystemUpdateGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/WireCorpusRender.cpp
         ${CMAKE_CURRENT_LIST_DIR}/WireCorpusGoldenTests.cpp
@@ -27,6 +30,7 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
         GoldenArgs
         GoldenSection
         GoldenUpdate
+        ObjectsCorpusGolden
         StfsSystemUpdateGolden)
 
 # Capture targets, one per golden, by name only and never run by CTest:
@@ -34,6 +38,7 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
 # environment redirects the write to a scratch copy.
 set(GXBUILD3_TEXT_GOLDENS
     golden_snapshot_selftest
+    objects_corpus
     stfs_su20076000_entries
     stfs_su20076000_metadata
     wire_corpus_bootloaders)

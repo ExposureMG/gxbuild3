@@ -3,13 +3,13 @@
 # Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
 # id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
 # hand
-ObjectsCorpus.main.TrackedFixturesLoad	main#TrackedFixturesLoad@1073	1	-	pending
-ObjectsCorpus.main.ImageReadable	main#ImageReadable@1065	1	-	pending
-ObjectsCorpus.main.Su20076000Readable	main#Su20076000Readable@1066	1	-	pending
-ObjectsCorpus.main.PatchFileCount	main#PatchFileCount@1076	1	-	pending
-ObjectsCorpus.main.AddonCount	main#AddonCount@1080	1	-	pending
-ObjectsCorpus.main.RenderIsDeterministic	main#RenderIsDeterministic@1088	1	-	pending
-ObjectsCorpus.inside_equal.XconfigRegionCheck	inside_equal#XconfigRegionCheck@830	1	-	pending
-ObjectsCorpus.main.XboxupdSplits	main#XboxupdSplits@1094	1	-	pending
-ObjectsCorpus.main.ImageSmc	main#ImageSmc@1095	1	-	pending
-ObjectsCorpus.main.GoldenMatches	main#GoldenMatches@1105	1	-	pending
+ObjectsCorpus.main.TrackedFixturesLoad	main#TrackedFixturesLoad@1073	1	golden.ObjectsCorpusGolden#TrackedFixturesLoad	ported;note:the renderer moved to tests/snapshots/ObjectsCorpusRender.cpp (format strings verbatim); the loaders return a Result whose contexts carry the old messages (cannot read, cannot list, cannot read tracked fixture), read once per process by objects_corpus::tracked_corpus; the old --update path is gxbuild3_golden_tests --update objects_corpus (GX_GOLDEN render_file)
+ObjectsCorpus.main.ImageReadable	main#ImageReadable@1065	1	-	merged:ObjectsCorpus.main.TrackedFixturesLoad;note:the image read is part of load_corpus; its old message "tracked mydata/image.bin is readable" is the Error context TrackedFixturesLoad reports
+ObjectsCorpus.main.Su20076000Readable	main#Su20076000Readable@1066	1	-	merged:ObjectsCorpus.main.TrackedFixturesLoad;note:the package read is part of load_corpus; its old message "tracked 17559/su20076000_00000000 is readable" is the Error context TrackedFixturesLoad reports
+ObjectsCorpus.main.PatchFileCount	main#PatchFileCount@1076	1	golden.ObjectsCorpusGolden#PatchFileCountIs25	ported
+ObjectsCorpus.main.AddonCount	main#AddonCount@1080	1	golden.ObjectsCorpusGolden#AddonCountIs14	ported
+ObjectsCorpus.main.RenderIsDeterministic	main#RenderIsDeterministic@1088	1	golden.ObjectsCorpusGolden#RenderIsDeterministic	ported
+ObjectsCorpus.inside_equal.XconfigRegionCheck	inside_equal#XconfigRegionCheck@830	1	golden.ObjectsCorpusGolden#XconfigRoundTripsInsideItsRegion	ported;note:render_xconfig appends the old check message (and a parse failure, which only cleared ok before) to Rendered::problems instead of stderr; the case asserts it empty
+ObjectsCorpus.main.XboxupdSplits	main#XboxupdSplits@1094	1	golden.ObjectsCorpusGolden#XboxupdFromSu20076000SplitsIntoCfAndCg	ported
+ObjectsCorpus.main.ImageSmc	main#ImageSmc@1095	1	golden.ObjectsCorpusGolden#ImageBinYieldsAnSmc	ported
+ObjectsCorpus.main.GoldenMatches	main#GoldenMatches@1105	1	golden.ObjectsCorpusGolden#MatchesGolden	ported;note:the two summary lines are RecordProperty patchsets and objects and ride on the failure message
