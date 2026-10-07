@@ -2,55 +2,58 @@
 # rows: 12 automatic, 39 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
 # Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
 # id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
-GlitchCrypto.test_retail_digest_vectors	test_retail_digest_vectors@154	4	-	pending
-GlitchCrypto.test_retail_digest	test_retail_digest@192	7	-	pending
-GlitchCrypto.test_build_policy	test_build_policy@334	5	-	pending
-GlitchCrypto.test_cb_b_extraction_preserves_perbox_ldv	test_cb_b_extraction_preserves_perbox_ldv@368	9	-	pending
-GlitchCrypto.test_glitch3_requires_cb_x_and_cb_b	test_glitch3_requires_cb_x_and_cb_b@417	1	-	pending
-GlitchCrypto.test_patched_stages_are_encrypted_for_their_parent	test_patched_stages_are_encrypted_for_their_parent@435	1	-	pending
-GlitchCrypto.test_glitch3_encrypted_replacement_preserves_handoff_key	test_glitch3_encrypted_replacement_preserves_handoff_key@463	1	-	pending
-GlitchCrypto.test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words	test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words@486	10	-	pending
-GlitchCrypto.test_glitch3_seals_cb_x_with_the_v1_fix	test_glitch3_seals_cb_x_with_the_v1_fix@529	5	-	pending
-GlitchCrypto.test_single_cb_pairing	test_single_cb_pairing@582	13	-	pending
-GlitchCrypto.test_jtag_chains	test_jtag_chains@669	7	-	pending
-GlitchCrypto.test_cg_decrypts_with_cf_payload_nonce	test_cg_decrypts_with_cf_payload_nonce@761	8	-	pending
+GlitchCrypto.test_retail_digest_vectors	test_retail_digest_vectors@154	4	-	merged:GlitchCrypto.main.test_retail_digest_vectors.Call;note:its loop over the three variants is TEST_P RetailDigestVector.MatchesTheIndependentPythonVector with rows SingleCb, SplitFlags0x0800, SplitFlags0x1800 (the three Python vectors verbatim and in order, the variant formulas unchanged), bundled as bootloaders.Vector/RetailDigestVector; the 3 must() calls per variant are ASSERT_OK_AND_ASSIGN (two parses) and ASSERT_OK (encrypt_retail), and an ASSERT that the seal derived a key now guards the derived_key dereference; the 16 digest bytes are EXPECT_BYTES_EQ
+GlitchCrypto.test_retail_digest	test_retail_digest@192	7	-	merged:GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change0;note:its 15 calls from the nested main() loop are TEST_P RetailDigest.CbDigestBindsTheConsoleDataAndTheSealedSmc, instantiated per regime (Single false/0, Split0800 true/0x800, Split1800 true/0x1800) over the five changes (UnchangedBigBlock 0, PairingChanged 1, CbLdvChanged 2, CpuKeyChanged 3, SmcChanged 4) through ::testing::Combine, one bundled entry per regime; the early returns are ASSERTs (build, read, parse, SMC and CB_B present, extract, rebuild); the change-3 keyvault .value() calls are ASSERT_OK_AND_ASSIGN; the digest is EXPECT_BYTES_EQ with the old split/flags/change message
+GlitchCrypto.test_build_policy	test_build_policy@334	5	-	merged:GlitchCrypto.main.test_build_policy.Retail;note:its ten calls are TEST_P ChainPolicy.BuildsExtractsAndRebuildsTheSealedChain, instantiated per family (Retail: Retail, RetailManufacturing; Glitch: Glitch1, Glitch2, BigBlockGlitch2; Glitch2m: Glitch2m, Glitch2mManufacturing, Glitch2mManufacturingV2; Glitch3: Glitch3, Glitch3V2), one bundled entry per family, the old name string kept as the message label; check_chain is the void helper expect_chain (ASSERTs that the image reads and parses, then one EXPECT per stage), called under EXPECT_NO_FATAL_FAILURE for the build and ASSERT_NO_FATAL_FAILURE for the rebuild; the CB_B, CD and CE && chain is one EXPECT per stage; optional stages compare through EXPECT_OPTIONAL_BYTES_EQ (presence, then bytes)
+GlitchCrypto.test_cb_b_extraction_preserves_perbox_ldv	test_cb_b_extraction_preserves_perbox_ldv@368	9	-	merged:GlitchCrypto.main.test_cb_b_extraction_preserves_perbox_ldv.Ldv0;note:its two calls are TEST_P CbBPerboxLdv.ExtractionKeepsThePerBoxLdvApartFromTheDisplayLdv with rows Ldv0 and Ldv7, bundled as bootloaders.Row/CbBPerboxLdv; the three-API && chain is ASSERT_OK per API plus an ASSERT that inspection has a CB_B; the two rebuild workflows stay a loop inside the case under SCOPED_TRACE (they share the donor), each with one EXPECT per LDV
+GlitchCrypto.test_glitch3_requires_cb_x_and_cb_b	test_glitch3_requires_cb_x_and_cb_b@417	1	-	merged:GlitchCrypto.main.test_glitch3_requires_cb_x_and_cb_b.Call;note:its loop over missing_x is TEST_P Glitch3IncompleteChain.IsRefusedEvenWithNoBlPatch with rows MissingCbX and MissingCbB, bundled as bootloaders.Case/Glitch3IncompleteChain; the refusal is EXPECT_ERROR InvalidBootloader
+GlitchCrypto.test_patched_stages_are_encrypted_for_their_parent	test_patched_stages_are_encrypted_for_their_parent@435	1	-	merged:GlitchCrypto.main.test_patched_stages_are_encrypted_for_their_parent.Glitch2;note:its two calls are TEST_P PatchedStageSealing.PatchedStagesAreEncryptedForTheirParent with rows Glitch2 and Glitch3, bundled as bootloaders.Type/PatchedStageSealing; the local word() lambda is test::append_be32 (same big-endian bytes)
+GlitchCrypto.test_glitch3_encrypted_replacement_preserves_handoff_key	test_glitch3_encrypted_replacement_preserves_handoff_key@463	1	bootloaders.Glitch3Replacement.EncryptedReplacementPreservesHandoffKey	ported;note:the build is ASSERT_OK and check_chain is expect_chain under ASSERT_NO_FATAL_FAILURE; an ASSERT that the fixture has a CB_B guards its dereference
+GlitchCrypto.test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words	test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words@486	10	bootloaders.CbXFix.RewritesExactlyFourWordsOfAPlaintextV1CbXOnly	ported;note:the 4 must() parses are ASSERT_OK_AND_ASSIGN; each patch && serialize chain is EXPECT_TRUE/EXPECT_FALSE on the patch plus EXPECT_BYTES_EQ on the bytes, so the bytes are checked even when the patch result is wrong; put_word is test::put_be32 (same bytes) and the v1/fixed word sets are put_v1_words/put_fixed_words, shared with Glitch3SealsCbX
+GlitchCrypto.test_glitch3_seals_cb_x_with_the_v1_fix	test_glitch3_seals_cb_x_with_the_v1_fix@529	5	-	merged:GlitchCrypto.main.test_glitch3_seals_cb_x_with_the_v1_fix.True;note:its two calls are TEST_P Glitch3SealsCbX.SealsTheFixedCbXUnderCbAsKeyItsNonceAndAZeroCpuKey with rows V1 (true) and V2 (false), bundled as bootloaders.Row/Glitch3SealsCbX, the old label string kept; the early returns are ASSERTs; the sealed bytes, the nonce and the extracted plaintext are EXPECT_BYTES_EQ / EXPECT_OPTIONAL_BYTES_EQ
+GlitchCrypto.test_single_cb_pairing	test_single_cb_pairing@582	13	-	merged:GlitchCrypto.main.test_single_cb_pairing.Glitch1;note:its two calls are TEST_P SingleCbPairing.SealsCbCdCeAndCfForTheBuildTypesPairing with rows Glitch1 and Retail, bundled as bootloaders.Type/SingleCbPairing; the 2 must() calls are ASSERT_OK_AND_ASSIGN (CF parse) and ASSERT_OK (CF decrypt); the per-box all_of and the pairing/LDV && chain are EXPECT_BYTES_EQ against 32 zeros and 1 2 3 4; the CF per-box parse, its perbox and calc_mac are ASSERT guards
+GlitchCrypto.test_jtag_chains	test_jtag_chains@669	7	bootloaders.JtagChain.SealsAZeroPairedMainChainAndAPairedSecondChainBoundToTheSmc	ported;note:the build and the read/parse/SMC/encrypted chain are ASSERTs, one per fact; the main CB per-box all_of is EXPECT_BYTES_EQ against 32 zeros; the three opens_to checks and the non-zero digest are EXPECTs with the old messages
+GlitchCrypto.test_cg_decrypts_with_cf_payload_nonce	test_cg_decrypts_with_cf_payload_nonce@761	8	bootloaders.CfCgNonce.CgDecryptsWithTheCfPayloadNonce	ported;note:the six early returns are ASSERTs (CF0 and CG0 presence one each, the planted nonce ASSERT_BYTES_EQ); the final && chain is two EXPECTs, so the decrypted CG is checked even when the nonce was not fresh
 # hand
-GlitchCrypto.main.test_cb_b_extraction_preserves_perbox_ldv.Ldv0	test_cb_b_extraction_preserves_perbox_ldv#Ldv0@831	1	-	pending
-GlitchCrypto.main.test_cb_b_extraction_preserves_perbox_ldv.Ldv7	test_cb_b_extraction_preserves_perbox_ldv#Ldv7@832	1	-	pending
-GlitchCrypto.main.test_retail_digest_vectors.Call	test_retail_digest_vectors#Call@833	1	-	pending
-GlitchCrypto.main.test_build_policy.Retail	test_build_policy#Retail@834	1	-	pending
-GlitchCrypto.main.test_build_policy.Glitch1	test_build_policy#Glitch1@835	1	-	pending
-GlitchCrypto.main.test_build_policy.Glitch2	test_build_policy#Glitch2@836	1	-	pending
-GlitchCrypto.main.test_build_policy.BigBlockGlitch2	test_build_policy#BigBlockGlitch2@837	1	-	pending
-GlitchCrypto.main.test_build_policy.Glitch2m	test_build_policy#Glitch2m@839	1	-	pending
-GlitchCrypto.main.test_build_policy.Glitch2mManufacturing	test_build_policy#Glitch2mManufacturing@840	1	-	pending
-GlitchCrypto.main.test_build_policy.Glitch2mManufacturingV2	test_build_policy#Glitch2mManufacturingV2@841	1	-	pending
-GlitchCrypto.main.test_build_policy.RetailManufacturing	test_build_policy#RetailManufacturing@842	1	-	pending
-GlitchCrypto.main.test_build_policy.Glitch3	test_build_policy#Glitch3@843	1	-	pending
-GlitchCrypto.main.test_build_policy.Glitch3V2	test_build_policy#Glitch3V2@844	1	-	pending
-GlitchCrypto.main.test_single_cb_pairing.Glitch1	test_single_cb_pairing#Glitch1@845	1	-	pending
-GlitchCrypto.main.test_single_cb_pairing.Retail	test_single_cb_pairing#Retail@846	1	-	pending
-GlitchCrypto.main.test_jtag_chains.Call	test_jtag_chains#Call@847	1	-	pending
-GlitchCrypto.main.test_glitch3_requires_cb_x_and_cb_b.Call	test_glitch3_requires_cb_x_and_cb_b#Call@848	1	-	pending
-GlitchCrypto.main.test_patched_stages_are_encrypted_for_their_parent.Glitch2	test_patched_stages_are_encrypted_for_their_parent#Glitch2@849	1	-	pending
-GlitchCrypto.main.test_patched_stages_are_encrypted_for_their_parent.Glitch3	test_patched_stages_are_encrypted_for_their_parent#Glitch3@850	1	-	pending
-GlitchCrypto.main.test_glitch3_encrypted_replacement_preserves_handoff_key.Call	test_glitch3_encrypted_replacement_preserves_handoff_key#Call@851	1	-	pending
-GlitchCrypto.main.test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words.Call	test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words#Call@852	1	-	pending
-GlitchCrypto.main.test_glitch3_seals_cb_x_with_the_v1_fix.True	test_glitch3_seals_cb_x_with_the_v1_fix#True@853	1	-	pending
-GlitchCrypto.main.test_glitch3_seals_cb_x_with_the_v1_fix.False	test_glitch3_seals_cb_x_with_the_v1_fix#False@854	1	-	pending
-GlitchCrypto.main.test_cg_decrypts_with_cf_payload_nonce.Call	test_cg_decrypts_with_cf_payload_nonce#Call@855	1	-	pending
-GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change0	test_retail_digest#NoSplitFlags0Change0@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change0	test_retail_digest#SplitFlags0x800Change0@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change0	test_retail_digest#SplitFlags0x1800Change0@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change1	test_retail_digest#NoSplitFlags0Change1@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change1	test_retail_digest#SplitFlags0x800Change1@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change1	test_retail_digest#SplitFlags0x1800Change1@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change2	test_retail_digest#NoSplitFlags0Change2@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change2	test_retail_digest#SplitFlags0x800Change2@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change2	test_retail_digest#SplitFlags0x1800Change2@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change3	test_retail_digest#NoSplitFlags0Change3@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change3	test_retail_digest#SplitFlags0x800Change3@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change3	test_retail_digest#SplitFlags0x1800Change3@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change4	test_retail_digest#NoSplitFlags0Change4@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change4	test_retail_digest#SplitFlags0x800Change4@856	1	-	pending
-GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change4	test_retail_digest#SplitFlags0x1800Change4@856	1	-	pending
+GlitchCrypto.main.test_cb_b_extraction_preserves_perbox_ldv.Ldv0	test_cb_b_extraction_preserves_perbox_ldv#Ldv0@831	1	bootloaders.Row/CbBPerboxLdv#ExtractionKeepsThePerBoxLdvApartFromTheDisplayLdv/Ldv0	ported
+GlitchCrypto.main.test_cb_b_extraction_preserves_perbox_ldv.Ldv7	test_cb_b_extraction_preserves_perbox_ldv#Ldv7@832	1	bootloaders.Row/CbBPerboxLdv#ExtractionKeepsThePerBoxLdvApartFromTheDisplayLdv/Ldv7	ported
+GlitchCrypto.main.test_retail_digest_vectors.Call	test_retail_digest_vectors#Call@833	1	bootloaders.Vector/RetailDigestVector#MatchesTheIndependentPythonVector/SingleCb	ported;note:the one main() call ran all three variants; variant 0 is this row, variants 1 and 2 are the new rows SplitFlags0x0800 and SplitFlags0x1800
+GlitchCrypto.main.test_build_policy.Retail	test_build_policy#Retail@834	1	bootloaders.Retail/ChainPolicy#BuildsExtractsAndRebuildsTheSealedChain/Retail	ported
+GlitchCrypto.main.test_build_policy.Glitch1	test_build_policy#Glitch1@835	1	bootloaders.Glitch/ChainPolicy#BuildsExtractsAndRebuildsTheSealedChain/Glitch1	ported
+GlitchCrypto.main.test_build_policy.Glitch2	test_build_policy#Glitch2@836	1	bootloaders.Glitch/ChainPolicy#BuildsExtractsAndRebuildsTheSealedChain/Glitch2	ported
+GlitchCrypto.main.test_build_policy.BigBlockGlitch2	test_build_policy#BigBlockGlitch2@837	1	bootloaders.Glitch/ChainPolicy#BuildsExtractsAndRebuildsTheSealedChain/BigBlockGlitch2	ported
+GlitchCrypto.main.test_build_policy.Glitch2m	test_build_policy#Glitch2m@839	1	bootloaders.Glitch2m/ChainPolicy#BuildsExtractsAndRebuildsTheSealedChain/Glitch2m	ported
+GlitchCrypto.main.test_build_policy.Glitch2mManufacturing	test_build_policy#Glitch2mManufacturing@840	1	bootloaders.Glitch2m/ChainPolicy#BuildsExtractsAndRebuildsTheSealedChain/Glitch2mManufacturing	ported
+GlitchCrypto.main.test_build_policy.Glitch2mManufacturingV2	test_build_policy#Glitch2mManufacturingV2@841	1	bootloaders.Glitch2m/ChainPolicy#BuildsExtractsAndRebuildsTheSealedChain/Glitch2mManufacturingV2	ported
+GlitchCrypto.main.test_build_policy.RetailManufacturing	test_build_policy#RetailManufacturing@842	1	bootloaders.Retail/ChainPolicy#BuildsExtractsAndRebuildsTheSealedChain/RetailManufacturing	ported;note:grouped with Retail, so it now runs second instead of eighth (each row is its own process-independent case)
+GlitchCrypto.main.test_build_policy.Glitch3	test_build_policy#Glitch3@843	1	bootloaders.Glitch3/ChainPolicy#BuildsExtractsAndRebuildsTheSealedChain/Glitch3	ported
+GlitchCrypto.main.test_build_policy.Glitch3V2	test_build_policy#Glitch3V2@844	1	bootloaders.Glitch3/ChainPolicy#BuildsExtractsAndRebuildsTheSealedChain/Glitch3V2	ported
+GlitchCrypto.main.test_single_cb_pairing.Glitch1	test_single_cb_pairing#Glitch1@845	1	bootloaders.Type/SingleCbPairing#SealsCbCdCeAndCfForTheBuildTypesPairing/Glitch1	ported
+GlitchCrypto.main.test_single_cb_pairing.Retail	test_single_cb_pairing#Retail@846	1	bootloaders.Type/SingleCbPairing#SealsCbCdCeAndCfForTheBuildTypesPairing/Retail	ported
+GlitchCrypto.main.test_jtag_chains.Call	test_jtag_chains#Call@847	1	-	merged:GlitchCrypto.test_jtag_chains;note:the single main() call is the case bootloaders.JtagChain.SealsAZeroPairedMainChainAndAPairedSecondChainBoundToTheSmc
+GlitchCrypto.main.test_glitch3_requires_cb_x_and_cb_b.Call	test_glitch3_requires_cb_x_and_cb_b#Call@848	1	bootloaders.Case/Glitch3IncompleteChain#IsRefusedEvenWithNoBlPatch/MissingCbX	ported;note:the one main() call ran both loop iterations; missing_x true is this row, false is the new row MissingCbB
+GlitchCrypto.main.test_patched_stages_are_encrypted_for_their_parent.Glitch2	test_patched_stages_are_encrypted_for_their_parent#Glitch2@849	1	bootloaders.Type/PatchedStageSealing#PatchedStagesAreEncryptedForTheirParent/Glitch2	ported
+GlitchCrypto.main.test_patched_stages_are_encrypted_for_their_parent.Glitch3	test_patched_stages_are_encrypted_for_their_parent#Glitch3@850	1	bootloaders.Type/PatchedStageSealing#PatchedStagesAreEncryptedForTheirParent/Glitch3	ported
+GlitchCrypto.main.test_glitch3_encrypted_replacement_preserves_handoff_key.Call	test_glitch3_encrypted_replacement_preserves_handoff_key#Call@851	1	-	merged:GlitchCrypto.test_glitch3_encrypted_replacement_preserves_handoff_key;note:the single main() call is the case bootloaders.Glitch3Replacement.EncryptedReplacementPreservesHandoffKey
+GlitchCrypto.main.test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words.Call	test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words#Call@852	1	-	merged:GlitchCrypto.test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words;note:the single main() call is the case bootloaders.CbXFix.RewritesExactlyFourWordsOfAPlaintextV1CbXOnly
+GlitchCrypto.main.test_glitch3_seals_cb_x_with_the_v1_fix.True	test_glitch3_seals_cb_x_with_the_v1_fix#True@853	1	bootloaders.Row/Glitch3SealsCbX#SealsTheFixedCbXUnderCbAsKeyItsNonceAndAZeroCpuKey/V1	ported
+GlitchCrypto.main.test_glitch3_seals_cb_x_with_the_v1_fix.False	test_glitch3_seals_cb_x_with_the_v1_fix#False@854	1	bootloaders.Row/Glitch3SealsCbX#SealsTheFixedCbXUnderCbAsKeyItsNonceAndAZeroCpuKey/V2	ported
+GlitchCrypto.main.test_cg_decrypts_with_cf_payload_nonce.Call	test_cg_decrypts_with_cf_payload_nonce#Call@855	1	-	merged:GlitchCrypto.test_cg_decrypts_with_cf_payload_nonce;note:the single main() call is the case bootloaders.CfCgNonce.CgDecryptsWithTheCfPayloadNonce
+GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change0	test_retail_digest#NoSplitFlags0Change0@856	1	bootloaders.Single/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/UnchangedBigBlock	ported
+GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change0	test_retail_digest#SplitFlags0x800Change0@856	1	bootloaders.Split0800/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/UnchangedBigBlock	ported
+GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change0	test_retail_digest#SplitFlags0x1800Change0@856	1	bootloaders.Split1800/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/UnchangedBigBlock	ported
+GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change1	test_retail_digest#NoSplitFlags0Change1@856	1	bootloaders.Single/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/PairingChanged	ported
+GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change1	test_retail_digest#SplitFlags0x800Change1@856	1	bootloaders.Split0800/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/PairingChanged	ported
+GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change1	test_retail_digest#SplitFlags0x1800Change1@856	1	bootloaders.Split1800/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/PairingChanged	ported
+GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change2	test_retail_digest#NoSplitFlags0Change2@856	1	bootloaders.Single/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/CbLdvChanged	ported
+GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change2	test_retail_digest#SplitFlags0x800Change2@856	1	bootloaders.Split0800/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/CbLdvChanged	ported
+GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change2	test_retail_digest#SplitFlags0x1800Change2@856	1	bootloaders.Split1800/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/CbLdvChanged	ported
+GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change3	test_retail_digest#NoSplitFlags0Change3@856	1	bootloaders.Single/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/CpuKeyChanged	ported
+GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change3	test_retail_digest#SplitFlags0x800Change3@856	1	bootloaders.Split0800/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/CpuKeyChanged	ported
+GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change3	test_retail_digest#SplitFlags0x1800Change3@856	1	bootloaders.Split1800/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/CpuKeyChanged	ported
+GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change4	test_retail_digest#NoSplitFlags0Change4@856	1	bootloaders.Single/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/SmcChanged	ported
+GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change4	test_retail_digest#SplitFlags0x800Change4@856	1	bootloaders.Split0800/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/SmcChanged	ported
+GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change4	test_retail_digest#SplitFlags0x1800Change4@856	1	bootloaders.Split1800/RetailDigest#CbDigestBindsTheConsoleDataAndTheSealedSmc/SmcChanged	ported
+GlitchCrypto.main.test_retail_digest_vectors.SplitFlags0x0800	test_retail_digest_vectors#SplitFlags0x0800@173	-	bootloaders.Vector/RetailDigestVector#MatchesTheIndependentPythonVector/SplitFlags0x0800	new;note:variant 1 of the loop the one main() call ran (old lines 173-188) as its own row, so each Python vector is reported apart
+GlitchCrypto.main.test_retail_digest_vectors.SplitFlags0x1800	test_retail_digest_vectors#SplitFlags0x1800@173	-	bootloaders.Vector/RetailDigestVector#MatchesTheIndependentPythonVector/SplitFlags0x1800	new;note:variant 2 of the loop the one main() call ran (old lines 173-188) as its own row, so each Python vector is reported apart
+GlitchCrypto.main.test_glitch3_requires_cb_x_and_cb_b.MissingCbB	test_glitch3_requires_cb_x_and_cb_b#MissingCbB@419	-	bootloaders.Case/Glitch3IncompleteChain#IsRefusedEvenWithNoBlPatch/MissingCbB	new;note:the missing_x false iteration of the loop the one main() call ran (old line 419) as its own row

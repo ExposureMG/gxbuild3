@@ -192,7 +192,6 @@ add_gxbuild3_test(gxbuild3_flashdriver_tests FlashDriverTests.cpp)
 add_gxbuild3_test(gxbuild3_flashfs_tests FlashFileSystemTests.cpp)
 add_gxbuild3_test(gxbuild3_commandline_tests CommandLineTests.cpp)
 add_gxbuild3_test(gxbuild3_buildrunner_tests BuildRunnerTests.cpp)
-add_gxbuild3_test(gxbuild3_glitch_crypto_tests GlitchCryptoTests.cpp)
 add_gxbuild3_test(gxbuild3_resolver_tests BuildInputResolverTests.cpp)
 add_gxbuild3_test(gxbuild3_buildcommand_tests BuildCommandTests.cpp)
 # tests/TestResult.hpp's must() aborts with Error::describe() and the call site; the demo tool
