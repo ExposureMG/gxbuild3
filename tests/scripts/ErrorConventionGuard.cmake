@@ -133,7 +133,7 @@ foreach(rule IN LISTS rules)
         if(NOT allowed IN_LIST hits_${rule})
             string(APPEND violations
                 "  ${allowed}: stale allowlist entry for ${rule_${rule}_label}; remove it from "
-                "tests/ErrorConventionGuard.cmake\n")
+                "tests/scripts/ErrorConventionGuard.cmake\n")
         endif()
     endforeach()
 endforeach()

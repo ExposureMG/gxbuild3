@@ -5,7 +5,8 @@
 // scratch copy of that golden (one perturbed line must fail and name the line).
 //
 // --update rewrites the tracked golden. --must-abort-demo [void] makes must() fail on purpose;
-// tests/MustAbortTest.cmake drives it and expects an abort with Error::describe() on stderr.
+// tests/scripts/MustAbortTest.cmake drives it and expects an abort with Error::describe()
+// on stderr.
 
 #include "Error.hpp"
 #include "GoldenSnapshot.hpp"

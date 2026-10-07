@@ -1,15 +1,39 @@
 # gxbuild3 tests, registered only when GXBUILD3_BUILD_TESTS and BUILD_TESTING are on (see the
 # root CMakeLists.txt). Source paths are relative to tests/; the fixed scratch directories
 # (flashimage-tests, cli-integration-tests, golden-snapshot-tests) stay under CMAKE_BINARY_DIR.
+# CMake -P tests live in scripts/, helper executables that are not tests in tools/.
+#
+# Labels: unit (plain test binaries), golden (text-golden binaries), oracle (the build_all.sh
+# byte oracle), guard (convention and self-test scripts), integration and cli (the CLI end-to-end
+# script), private (needs the git-ignored keyvault fixtures), slow (minutes, not seconds).
+# Every test runs with TMPDIR=<build>/tmp: /tmp is often a small shared tmpfs.
 
+set(GXBUILD3_TEST_SCRIPTS ${CMAKE_CURRENT_SOURCE_DIR}/scripts)
+set(GXBUILD3_TEST_TMPDIR ${CMAKE_BINARY_DIR}/tmp)
+file(MAKE_DIRECTORY ${GXBUILD3_TEST_TMPDIR})
+
+# Common setup of every test executable and tool: internal headers, tests/ for the shared
+# test headers, -Werror warnings and no C++20 module scanning.
+function(gxbuild3_test_target target)
+    target_link_libraries(${target} PRIVATE gxbuild3_internal)
+    target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/tests)
+    set_target_properties(${target} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+    gxbuild3_enable_warnings(${target})
+endfunction()
+
+# add_gxbuild3_test(<name> <source> [LABELS <label>...]); LABELS defaults to unit.
 function(add_gxbuild3_test name source)
+    cmake_parse_arguments(T "" "" "LABELS" ${ARGN})
+    if(NOT T_LABELS)
+        set(T_LABELS unit)
+    endif()
     add_executable(${name} ${source})
-    target_link_libraries(${name} PRIVATE gxbuild3_internal)
-    gxbuild3_enable_warnings(${name})
+    gxbuild3_test_target(${name})
     # Tracked text goldens for tests/GoldenSnapshot.hpp. CTest never passes --update.
     target_compile_definitions(${name} PRIVATE
         GXBUILD3_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
     add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS "${T_LABELS}")
 endfunction()
 
 add_gxbuild3_test(gxbuild3_anchor_layout_tests AnchorLayoutTests.cpp)
@@ -41,13 +65,14 @@ add_gxbuild3_test(gxbuild3_bootloader_layout_tests BootloaderLayoutTests.cpp)
 # src/nand/bootloaders/Stage.hpp: the shared stage parse, padding, serialize and record crypt
 # checked against a plain crypt_single_bl, plus the paths the bootloader corpus never reaches.
 add_gxbuild3_test(gxbuild3_stage_tests StageTests.cpp)
-add_gxbuild3_test(gxbuild3_golden_snapshot_tests GoldenSnapshotTests.cpp)
+add_gxbuild3_test(gxbuild3_golden_snapshot_tests GoldenSnapshotTests.cpp LABELS golden)
 target_compile_definitions(gxbuild3_golden_snapshot_tests PRIVATE
     GXBUILD3_TEST_SCRATCH_DIR="${CMAKE_BINARY_DIR}/golden-snapshot-tests")
 add_test(NAME gxbuild3_must_abort_tests
     COMMAND ${CMAKE_COMMAND}
         -DGXBUILD3_SELFTEST=$<TARGET_FILE:gxbuild3_golden_snapshot_tests>
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/MustAbortTest.cmake)
+        -P ${GXBUILD3_TEST_SCRIPTS}/MustAbortTest.cmake)
+set_tests_properties(gxbuild3_must_abort_tests PROPERTIES LABELS guard)
 foreach(cli_test gxbuild3_commandline_tests gxbuild3_resolver_tests
         gxbuild3_buildcommand_tests)
     target_link_libraries(${cli_test} PRIVATE gxbuild3_cli)
@@ -61,20 +86,20 @@ target_compile_definitions(gxbuild3_crypto_reference_tests PRIVATE
 # the synthetic fresh-layout matrix (flashimage_matrix.txt) and the FlashImage failure
 # table (flashimage_failures.txt). The matrix writes 48 full-size images: about 30 s in
 # Release, so the timeout leaves room for an unoptimized build.
-add_gxbuild3_test(gxbuild3_flashimage_golden_tests FlashImageGoldenTests.cpp)
+add_gxbuild3_test(gxbuild3_flashimage_golden_tests FlashImageGoldenTests.cpp LABELS golden)
 target_compile_definitions(gxbuild3_flashimage_golden_tests PRIVATE
     GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
 set_tests_properties(gxbuild3_flashimage_golden_tests PROPERTIES TIMEOUT 600)
 # Snapshot of every tracked bootloader stage fixture in common/*.bin
 # (tests/golden/wire_corpus_bootloaders.txt): parse fields, serialize identity, per-box
 # bytes and seals under fixed keys, with all-zero nonces pinned inside the test.
-add_gxbuild3_test(gxbuild3_wire_corpus_tests WireCorpusTests.cpp)
+add_gxbuild3_test(gxbuild3_wire_corpus_tests WireCorpusTests.cpp LABELS golden)
 target_compile_definitions(gxbuild3_wire_corpus_tests PRIVATE
     GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
 # Snapshot of the NAND-object codecs over tracked fixtures (tests/golden/objects_corpus.txt):
 # every patches_*.bin x build type with and without add-ons, XeLL, the mydata secured files,
 # xboxupd.bin from su20076000, CoronaConfig, freeBOOT, XConfig and the SMC classifier.
-add_gxbuild3_test(gxbuild3_objects_corpus_tests ObjectsCorpusTests.cpp)
+add_gxbuild3_test(gxbuild3_objects_corpus_tests ObjectsCorpusTests.cpp LABELS golden)
 target_compile_definitions(gxbuild3_objects_corpus_tests PRIVATE
     GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
 # run_build digests over the tracked mydata/image.bin (tests/golden/
@@ -82,14 +107,13 @@ target_compile_definitions(gxbuild3_objects_corpus_tests PRIVATE
 # the tracked patch files and XeLLs, each built twice under a pinned time and donor nonces;
 # then every public extract_* projection of image.bin and of the glitch2 rebuild
 # (tests/golden/extract_projections_mydata.txt, via tests/ExtractProjection.hpp).
-add_gxbuild3_test(gxbuild3_orchestration_golden_tests OrchestrationGoldenTests.cpp)
+add_gxbuild3_test(gxbuild3_orchestration_golden_tests OrchestrationGoldenTests.cpp LABELS golden)
 target_compile_definitions(gxbuild3_orchestration_golden_tests PRIVATE
     GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
 set_tests_properties(gxbuild3_orchestration_golden_tests PROPERTIES TIMEOUT 300)
 
 add_executable(gxbuild3_keyvault_crypto_tests KeyvaultCryptoTests.cpp)
-target_link_libraries(gxbuild3_keyvault_crypto_tests PRIVATE gxbuild3_internal)
-gxbuild3_enable_warnings(gxbuild3_keyvault_crypto_tests)
+gxbuild3_test_target(gxbuild3_keyvault_crypto_tests)
 set(GXBUILD3_KEYVAULT_CPU_KEY_FILE "${PROJECT_SOURCE_DIR}/_temp/cpukey.txt"
     CACHE FILEPATH "Private CPU key fixture (32 hex characters)")
 set(GXBUILD3_KEYVAULT_ENCRYPTED_FILE "${PROJECT_SOURCE_DIR}/_temp/KV_en.bin"
@@ -101,15 +125,13 @@ add_test(NAME gxbuild3_keyvault_crypto_tests COMMAND gxbuild3_keyvault_crypto_te
     "${GXBUILD3_KEYVAULT_ENCRYPTED_FILE}"
     "${GXBUILD3_KEYVAULT_DECRYPTED_FILE}"
     --skip-if-missing)
-set_tests_properties(gxbuild3_keyvault_crypto_tests PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(gxbuild3_keyvault_crypto_tests PROPERTIES SKIP_RETURN_CODE 77 LABELS private)
 
-add_executable(gxbuild3_cli_fixture_generator CliFixtureGenerator.cpp)
-target_link_libraries(gxbuild3_cli_fixture_generator PRIVATE gxbuild3_internal)
-gxbuild3_enable_warnings(gxbuild3_cli_fixture_generator)
+add_executable(gxbuild3_cli_fixture_generator tools/CliFixtureGenerator.cpp)
+gxbuild3_test_target(gxbuild3_cli_fixture_generator)
 
-add_executable(gxbuild3_cli_output_verifier CliOutputVerifier.cpp)
-target_link_libraries(gxbuild3_cli_output_verifier PRIVATE gxbuild3_internal)
-gxbuild3_enable_warnings(gxbuild3_cli_output_verifier)
+add_executable(gxbuild3_cli_output_verifier tools/CliOutputVerifier.cpp)
+gxbuild3_test_target(gxbuild3_cli_output_verifier)
 
 add_test(NAME gxbuild3_cli_integration_tests
     COMMAND ${CMAKE_COMMAND}
@@ -117,12 +139,14 @@ add_test(NAME gxbuild3_cli_integration_tests
         -DGXBUILD3_FIXTURE_GENERATOR=$<TARGET_FILE:gxbuild3_cli_fixture_generator>
         -DGXBUILD3_OUTPUT_VERIFIER=$<TARGET_FILE:gxbuild3_cli_output_verifier>
         -DTEST_ROOT=${CMAKE_BINARY_DIR}/cli-integration-tests
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/CliIntegrationTests.cmake)
+        -P ${GXBUILD3_TEST_SCRIPTS}/CliIntegrationTests.cmake)
+set_tests_properties(gxbuild3_cli_integration_tests PROPERTIES LABELS "integration;cli")
 
 add_test(NAME gxbuild3_error_convention_guard
     COMMAND ${CMAKE_COMMAND}
         -DSOURCE_ROOT=${PROJECT_SOURCE_DIR}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/ErrorConventionGuard.cmake)
+        -P ${GXBUILD3_TEST_SCRIPTS}/ErrorConventionGuard.cmake)
+set_tests_properties(gxbuild3_error_convention_guard PROPERTIES LABELS guard)
 
 find_program(GXBUILD3_BASH_EXECUTABLE NAMES bash)
 if(UNIX)
@@ -140,12 +164,18 @@ if(UNIX)
         -DGXBUILD3_SCRATCH_DIR=${CMAKE_BINARY_DIR}/flashimage-tests)
     add_test(NAME gxbuild3_flashimage_tests
         COMMAND ${CMAKE_COMMAND} ${GXBUILD3_FLASHIMAGE_ARGS}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/FlashImageTests.cmake)
-    set_tests_properties(gxbuild3_flashimage_tests PROPERTIES TIMEOUT 1800 SKIP_RETURN_CODE 77)
+            -P ${GXBUILD3_TEST_SCRIPTS}/FlashImageTests.cmake)
+    # COST 1000 makes ctest start the longest test first under -j.
+    set_tests_properties(gxbuild3_flashimage_tests PROPERTIES
+        TIMEOUT 1800 SKIP_RETURN_CODE 77 COST 1000 LABELS "oracle;golden;slow")
     add_custom_target(gxbuild3_flashimage_golden_update
         COMMAND ${CMAKE_COMMAND} ${GXBUILD3_FLASHIMAGE_ARGS} -DGXBUILD3_UPDATE_GOLDEN=1
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/FlashImageTests.cmake
+            -P ${GXBUILD3_TEST_SCRIPTS}/FlashImageTests.cmake
         DEPENDS gxbuild3 gxbuild3_flashimage_golden_tests
         USES_TERMINAL
         COMMENT "Capturing tests/golden/build_all.sha256 and build_all.parse.txt (two identical runs required)")
 endif()
+
+get_property(gxbuild3_registered_tests DIRECTORY PROPERTY TESTS)
+set_tests_properties(${gxbuild3_registered_tests} PROPERTIES
+    ENVIRONMENT "TMPDIR=${GXBUILD3_TEST_TMPDIR}")
