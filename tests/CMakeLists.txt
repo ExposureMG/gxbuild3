@@ -178,6 +178,7 @@ endfunction()
 
 # One fragment per area: its gxbuild3_add_gtest call with the area's BUNDLE and PER_ROW lists.
 include(core/Tests.cmake)
+include(utils/Tests.cmake)
 include(snapshots/Tests.cmake)
 include(private/Tests.cmake)
 
@@ -186,7 +187,6 @@ include(private/Tests.cmake)
 add_gxbuild3_test(gxbuild3_anchor_layout_tests AnchorLayoutTests.cpp)
 add_gxbuild3_test(gxbuild3_flashdriver_tests FlashDriverTests.cpp)
 add_gxbuild3_test(gxbuild3_flashfs_tests FlashFileSystemTests.cpp)
-add_gxbuild3_test(gxbuild3_build_time_tests BuildTimeTests.cpp)
 add_gxbuild3_test(gxbuild3_secured_files_tests SecuredFilesTests.cpp)
 add_gxbuild3_test(gxbuild3_filemanager_tests FileManagerTests.cpp)
 add_gxbuild3_test(gxbuild3_commandline_tests CommandLineTests.cpp)
