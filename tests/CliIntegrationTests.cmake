@@ -36,6 +36,7 @@ endfunction()
 function(verify_output name output_path)
     execute_process(
         COMMAND "${GXBUILD3_OUTPUT_VERIFIER}" "${output_path}"
+                --donor "${TEST_ROOT}/donor-nand.bin"
         RESULT_VARIABLE verifier_result
         OUTPUT_VARIABLE verifier_output
         ERROR_VARIABLE verifier_error)
@@ -59,9 +60,22 @@ if(NOT fixture_error STREQUAL "")
     message(FATAL_ERROR "CLI fixture generator must not write to stderr: ${fixture_error}")
 endif()
 
-file(TO_CMAKE_PATH "${TEST_ROOT}/source" WINDOWS_SOURCE_DIR)
-if(NOT WINDOWS_SOURCE_DIR MATCHES "^[A-Za-z]:/")
-    message(FATAL_ERROR "The CLI integration fixture must use a Windows drive path")
+# The source root must carry a drive-style colon so the run proves `-d` keeps it as one root
+# (CommandLine splits -d only on ',' and ';'). On Windows that is the real drive path. Elsewhere
+# the fixture's source moves into a directory literally named `C:` inside TEST_ROOT and is passed
+# as the relative `C:/source`, which the resolver anchors to the working directory (TEST_ROOT).
+if(WIN32)
+    file(TO_CMAKE_PATH "${TEST_ROOT}/source" DRIVE_SOURCE_DIR)
+    if(NOT DRIVE_SOURCE_DIR MATCHES "^[A-Za-z]:/")
+        message(FATAL_ERROR "The CLI integration fixture must use a Windows drive path")
+    endif()
+else()
+    file(MAKE_DIRECTORY "${TEST_ROOT}/C:")
+    file(RENAME "${TEST_ROOT}/source" "${TEST_ROOT}/C:/source")
+    set(DRIVE_SOURCE_DIR "C:/source")
+    if(NOT IS_DIRECTORY "${TEST_ROOT}/${DRIVE_SOURCE_DIR}")
+        message(FATAL_ERROR "The CLI integration fixture must hold its source under TEST_ROOT/C:")
+    endif()
 endif()
 
 execute_process(
@@ -99,7 +113,8 @@ endif()
 
 execute_process(
     COMMAND "${GXBUILD3_EXE}" -b "${TEST_ROOT}/build.ini" -s falcon -t retail:xsb
-            -d "${WINDOWS_SOURCE_DIR}"
+            -d "${DRIVE_SOURCE_DIR}"
+    WORKING_DIRECTORY "${TEST_ROOT}"
     RESULT_VARIABLE missing_cpu_result
     OUTPUT_VARIABLE missing_cpu_output
     ERROR_VARIABLE missing_cpu_error)
@@ -107,13 +122,14 @@ require_result("missing CPU key" "${missing_cpu_result}" "3")
 if(NOT missing_cpu_error MATCHES "^gxbuild: No CPU key was supplied" OR
    NOT missing_cpu_output STREQUAL "")
     message(FATAL_ERROR
-        "a Windows drive source path must remain one source directory and reach CPU-key resolution")
+        "a drive-style source path must remain one source directory and reach CPU-key resolution")
 endif()
 
 execute_process(
     COMMAND "${GXBUILD3_EXE}" -b "${TEST_ROOT}/build.ini" -s falcon -t retail:xsb
-            -d "${WINDOWS_SOURCE_DIR}" -p ffffffffffff1f0000000000006ce58d
+            -d "${DRIVE_SOURCE_DIR}" -p ffffffffffff1f0000000000006ce58d
             -i "${TEST_ROOT}/missing-nanddump.bin"
+    WORKING_DIRECTORY "${TEST_ROOT}"
     RESULT_VARIABLE missing_donor_result
     OUTPUT_VARIABLE missing_donor_output
     ERROR_VARIABLE missing_donor_error)
@@ -139,7 +155,7 @@ set(fixture_build_arguments
     -b "${TEST_ROOT}/build.ini"
     -s falcon
     -t retail:xsb
-    -d "${WINDOWS_SOURCE_DIR}"
+    -d "${DRIVE_SOURCE_DIR}"
     -p "${fixture_cpu_key}"
     -i "${TEST_ROOT}/donor-nand.bin")
 set(default_output "${TEST_ROOT}/updflash.bin")

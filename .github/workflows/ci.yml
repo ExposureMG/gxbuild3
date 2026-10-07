@@ -44,8 +44,6 @@ jobs:
 
       # gxbuild3_flashimage_tests and gxbuild3_keyvault_crypto_tests skip themselves
       # (exit 77) when their private fixtures are absent, as they are in CI.
-      # gxbuild3_cli_integration_tests requires a Windows drive path, so it is excluded here.
       - name: Test
         run: >
           ctest --test-dir build --output-on-failure -j"$(nproc)"
-          -E gxbuild3_cli_integration_tests
