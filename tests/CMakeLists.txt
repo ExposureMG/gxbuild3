@@ -6,6 +6,8 @@
 # Labels: unit (plain test binaries), golden (text-golden binaries), oracle (the build_all.sh
 # byte oracle), guard (convention and self-test scripts), integration and cli (the CLI end-to-end
 # script), private (needs the git-ignored keyvault fixtures), slow (minutes, not seconds).
+# GoogleTest binaries (gxbuild3_add_gtest, one fragment per area in <area>/Tests.cmake) add
+# their area label (core, ...) and register ctest entries named <area prefix>.<gtest name>.
 # Every test runs with TMPDIR=<build>/tmp: /tmp is often a small shared tmpfs.
 
 set(GXBUILD3_TEST_SCRIPTS ${CMAKE_CURRENT_SOURCE_DIR}/scripts)
@@ -35,6 +37,134 @@ function(add_gxbuild3_test name source)
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES LABELS "${T_LABELS}")
 endfunction()
+
+# ---- GoogleTest ------------------------------------------------------------------------------
+# The installed package (pacman gtest, brew googletest, vcpkg gtest); its imported targets are
+# SYSTEM, so -Werror does not reach its headers. 1.17 brings --gtest_fail_if_no_test_selected.
+find_package(GTest 1.17 CONFIG REQUIRED)
+include(GoogleTest)
+
+set(GXBUILD3_TEST_SCRATCH_ROOT ${CMAKE_BINARY_DIR}/test-scratch)
+file(MAKE_DIRECTORY ${GXBUILD3_TEST_SCRATCH_ROOT})
+
+# gxbuild3::test support library: Result-aware assertions, scratch directories, scoped
+# environment, byte helpers and the test CPU keys. Tests include it as "support/<Name>.hpp".
+add_library(gxbuild3_test_support STATIC
+    support/Bytes.cpp
+    support/Expect.cpp
+    support/Keys.cpp
+    support/Scratch.cpp)
+target_include_directories(gxbuild3_test_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(gxbuild3_test_support PUBLIC gxbuild3_internal GTest::gtest)
+target_compile_definitions(gxbuild3_test_support PUBLIC
+    GXBUILD3_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
+    GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files"
+    GXBUILD3_TEST_SCRATCH_ROOT="${GXBUILD3_TEST_SCRATCH_ROOT}")
+set_target_properties(gxbuild3_test_support PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+gxbuild3_enable_warnings(gxbuild3_test_support)
+
+# Standard and gtest headers only, never src/ headers.
+set(GXBUILD3_GTEST_PCH
+    <gtest/gtest.h> <algorithm> <array> <cstdint> <expected> <filesystem> <format>
+    <optional> <span> <string> <string_view> <vector>)
+
+# gxbuild3_add_gtest(<name> PREFIX <prefix> LABELS <label>... SOURCES <file>...
+#                    [LIBS <target>...] [MAIN <file>] [TIMEOUT <seconds>]
+#                    [BUNDLE <Suite|Inst/Suite>...] [PER_ROW <Inst/Suite>...]
+#                    [SKIP_BUNDLE <bundle>...])
+#
+# One GoogleTest executable. Every case is its own ctest entry, <prefix>.<Suite>.<Test>,
+# discovered before each ctest run (PRE_TEST, so building never runs test code), except:
+#  - BUNDLE: each entry is ONE ctest entry, <prefix>.<entry>, that runs the whole suite
+#    (<entry>.* and its instantiations */<entry>.*) or one instantiation (Inst/Suite.*) with
+#    --gtest_fail_if_no_test_selected, so a stale bundle name fails. Bundled cases are filtered
+#    out of discovery, so no case is registered twice; a failing row prints its full gtest name
+#    and the other rows still run.
+#  - SKIP_BUNDLE: bundles (also listed under BUNDLE) whose cases may GTEST_SKIP; ctest reports
+#    them as skipped. Other bundles never skip.
+#  - PER_ROW: TEST_P instantiations whose rows are each slow enough to be their own entry; they
+#    are discovered per row like any unbundled case and only recorded for the guards.
+# Each binary adds a line `name|prefix|path|bundles|per_row` (lists comma-separated) to
+# <build>/tests/gtest-binaries.txt.
+function(gxbuild3_add_gtest name)
+    cmake_parse_arguments(T "" "PREFIX;TIMEOUT;MAIN" "SOURCES;LABELS;LIBS;BUNDLE;PER_ROW;SKIP_BUNDLE"
+        ${ARGN})
+    if(NOT T_PREFIX OR NOT T_LABELS OR NOT T_SOURCES)
+        message(FATAL_ERROR "gxbuild3_add_gtest(${name}) needs PREFIX, LABELS and SOURCES")
+    endif()
+    if(T_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR "gxbuild3_add_gtest(${name}): unknown arguments ${T_UNPARSED_ARGUMENTS}")
+    endif()
+    if(NOT T_TIMEOUT)
+        set(T_TIMEOUT 120)
+    endif()
+
+    add_executable(${name} ${T_SOURCES})
+    if(T_MAIN)
+        target_sources(${name} PRIVATE ${T_MAIN})
+    else()
+        target_link_libraries(${name} PRIVATE GTest::gtest_main)
+    endif()
+    target_link_libraries(${name} PRIVATE gxbuild3_test_support ${T_LIBS})
+    target_precompile_headers(${name} PRIVATE ${GXBUILD3_GTEST_PCH})
+    set_target_properties(${name} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+    gxbuild3_enable_warnings(${name})
+
+    foreach(skip IN LISTS T_SKIP_BUNDLE)
+        if(NOT skip IN_LIST T_BUNDLE)
+            message(FATAL_ERROR "gxbuild3_add_gtest(${name}): SKIP_BUNDLE ${skip} is not a BUNDLE")
+        endif()
+    endforeach()
+    foreach(row IN LISTS T_PER_ROW)
+        if(NOT row MATCHES "^[A-Za-z0-9_]+/[A-Za-z0-9_]+$" OR row IN_LIST T_BUNDLE)
+            message(FATAL_ERROR
+                "gxbuild3_add_gtest(${name}): PER_ROW ${row} must be an unbundled Inst/Suite")
+        endif()
+    endforeach()
+
+    set(excluded "")
+    foreach(bundle IN LISTS T_BUNDLE)
+        if(bundle MATCHES "^[A-Za-z0-9_]+/[A-Za-z0-9_]+$")
+            set(pattern "${bundle}.*")
+        elseif(bundle MATCHES "^[A-Za-z0-9_]+$")
+            set(pattern "${bundle}.*:*/${bundle}.*")
+        else()
+            message(FATAL_ERROR "gxbuild3_add_gtest(${name}): bad BUNDLE ${bundle}")
+        endif()
+        list(APPEND excluded "${pattern}")
+        add_test(NAME ${T_PREFIX}.${bundle}
+            COMMAND ${name} --gtest_filter=${pattern} --gtest_fail_if_no_test_selected)
+        set_tests_properties(${T_PREFIX}.${bundle} PROPERTIES
+            LABELS "${T_LABELS}" TIMEOUT ${T_TIMEOUT}
+            ENVIRONMENT "TMPDIR=${GXBUILD3_TEST_TMPDIR}")
+        if(bundle IN_LIST T_SKIP_BUNDLE)
+            set_tests_properties(${T_PREFIX}.${bundle} PROPERTIES
+                SKIP_REGULAR_EXPRESSION "\\[  SKIPPED \\]")
+        endif()
+    endforeach()
+
+    set(filter "")
+    if(excluded)
+        list(JOIN excluded ":" negative)
+        set(filter TEST_FILTER "-${negative}")
+    endif()
+    gtest_discover_tests(${name}
+        DISCOVERY_MODE PRE_TEST
+        TEST_PREFIX "${T_PREFIX}."
+        ${filter}
+        PROPERTIES LABELS "${T_LABELS}" TIMEOUT ${T_TIMEOUT}
+                   ENVIRONMENT "TMPDIR=${GXBUILD3_TEST_TMPDIR}")
+
+    list(JOIN T_BUNDLE "," bundles)
+    list(JOIN T_PER_ROW "," per_row)
+    set_property(GLOBAL APPEND PROPERTY GXBUILD3_GTEST_BINARIES
+        "${name}|${T_PREFIX}|$<TARGET_FILE:${name}>|${bundles}|${per_row}")
+endfunction()
+
+# One fragment per area: its gxbuild3_add_gtest call with the area's BUNDLE and PER_ROW lists.
+include(core/Tests.cmake)
+
+# ---- Pre-GoogleTest test executables (ported area by area, then deleted) --------------------
 
 add_gxbuild3_test(gxbuild3_anchor_layout_tests AnchorLayoutTests.cpp)
 add_gxbuild3_test(gxbuild3_flashdriver_tests FlashDriverTests.cpp)
@@ -179,3 +309,13 @@ endif()
 get_property(gxbuild3_registered_tests DIRECTORY PROPERTY TESTS)
 set_tests_properties(${gxbuild3_registered_tests} PROPERTIES
     ENVIRONMENT "TMPDIR=${GXBUILD3_TEST_TMPDIR}")
+
+# The GoogleTest binaries for the listing and ledger guards: name|prefix|path|bundles|per_row.
+get_property(gxbuild3_gtest_binaries GLOBAL PROPERTY GXBUILD3_GTEST_BINARIES)
+list(JOIN gxbuild3_gtest_binaries "\n" gxbuild3_gtest_listing)
+if(CMAKE_CONFIGURATION_TYPES)
+    set(gxbuild3_gtest_listing_file ${CMAKE_CURRENT_BINARY_DIR}/gtest-binaries-$<CONFIG>.txt)
+else()
+    set(gxbuild3_gtest_listing_file ${CMAKE_CURRENT_BINARY_DIR}/gtest-binaries.txt)
+endif()
+file(GENERATE OUTPUT ${gxbuild3_gtest_listing_file} CONTENT "${gxbuild3_gtest_listing}\n")
