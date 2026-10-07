@@ -2,9 +2,9 @@
 # rows: 5 automatic, 0 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
 # Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
 # id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
-BuildCommand.test_resolution_failure_returns_exit_code_three	test_resolution_failure_returns_exit_code_three@47	2	-	pending
-BuildCommand.test_build_failure_returns_exit_code_four	test_build_failure_returns_exit_code_four@60	2	-	pending
-BuildCommand.test_write_failure_returns_exit_code_five	test_write_failure_returns_exit_code_five@73	2	-	pending
-BuildCommand.test_success_creates_output_parent_and_writes_bytes	test_success_creates_output_parent_and_writes_bytes@85	2	-	pending
-BuildCommand.test_success_overwrites_existing_output	test_success_overwrites_existing_output@108	2	-	pending
+BuildCommand.test_resolution_failure_returns_exit_code_three	test_resolution_failure_returns_exit_code_three@47	2	cli.BuildCommand.ResolutionFailureReturnsExitCodeThree	ported
+BuildCommand.test_build_failure_returns_exit_code_four	test_build_failure_returns_exit_code_four@60	2	cli.BuildCommand.BuildFailureReturnsExitCodeFour	ported
+BuildCommand.test_write_failure_returns_exit_code_five	test_write_failure_returns_exit_code_five@73	2	cli.BuildCommand.WriteFailureReturnsExitCodeFive	ported
+BuildCommand.test_success_creates_output_parent_and_writes_bytes	test_success_creates_output_parent_and_writes_bytes@85	2	cli.BuildCommandTest.SuccessCreatesTheOutputParentWithTheDefaultWriter	ported;note:runs in its ScratchTest directory instead of the fixed temp_directory_path()/gxbuild3-buildcommand-parent; the written bytes are read with test::read_file, an ASSERT_OK guard before the byte EXPECT
+BuildCommand.test_success_overwrites_existing_output	test_success_overwrites_existing_output@108	2	cli.BuildCommandTest.SuccessOverwritesAnExistingOutput	ported;note:the existing output is ScratchTest::write("updflash.bin", "old") instead of the fixed temp_directory_path()/gxbuild3-buildcommand-overwrite.bin; the injected writer is kept 1:1, and wrote && bytes are an EXPECT on wrote plus an ASSERT_OK read and a byte EXPECT
 # hand

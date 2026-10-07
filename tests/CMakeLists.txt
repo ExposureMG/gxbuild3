@@ -187,6 +187,7 @@ endfunction()
 
 # One fragment per area: its gxbuild3_add_gtest call with the area's BUNDLE and PER_ROW lists.
 include(core/Tests.cmake)
+include(cli/Tests.cmake)
 include(utils/Tests.cmake)
 include(stfs/Tests.cmake)
 include(bootloaders/Tests.cmake)
@@ -197,10 +198,8 @@ include(private/Tests.cmake)
 
 # ---- Pre-GoogleTest test executables (ported area by area, then deleted) --------------------
 
-add_gxbuild3_test(gxbuild3_commandline_tests CommandLineTests.cpp)
 add_gxbuild3_test(gxbuild3_buildrunner_tests BuildRunnerTests.cpp)
 add_gxbuild3_test(gxbuild3_resolver_tests BuildInputResolverTests.cpp)
-add_gxbuild3_test(gxbuild3_buildcommand_tests BuildCommandTests.cpp)
 # tests/TestResult.hpp's must() aborts with Error::describe() and the call site; the demo tool
 # fails it on purpose (retired with must()).
 add_executable(gxbuild3_must_abort_demo tools/MustAbortDemo.cpp)
@@ -210,10 +209,7 @@ add_test(NAME gxbuild3_must_abort_tests
         -DGXBUILD3_SELFTEST=$<TARGET_FILE:gxbuild3_must_abort_demo>
         -P ${GXBUILD3_TEST_SCRIPTS}/MustAbortTest.cmake)
 set_tests_properties(gxbuild3_must_abort_tests PROPERTIES LABELS guard)
-foreach(cli_test gxbuild3_commandline_tests gxbuild3_resolver_tests
-        gxbuild3_buildcommand_tests)
-    target_link_libraries(${cli_test} PRIVATE gxbuild3_cli)
-endforeach()
+target_link_libraries(gxbuild3_resolver_tests PRIVATE gxbuild3_cli)
 # run_build digests over the tracked mydata/image.bin (tests/golden/
 # orchestration_mydata_builds.txt): extract_all, then retail, jtag and glitch2 rebuilds with
 # the tracked patch files and XeLLs, each built twice under a pinned time and donor nonces;
