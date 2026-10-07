@@ -68,6 +68,8 @@ namespace gxbuild3::cli {
             return path.is_absolute() ? path : working_directory / path;
         }
 
+        // The filesystem half of options.ini: an absent file is no options, anything else that
+        // cannot be read is OptionsReadFailed; the text goes to parse_options_text.
         std::expected<OptionsArgs, ResolutionError>
         load_options(const std::filesystem::path& options_path) {
             std::error_code status_error;
@@ -103,51 +105,7 @@ namespace gxbuild3::cli {
                                              "Could not read options.ini", options_path));
             }
 
-            OptionsManager options;
-            const std::string content = contents.str();
-            std::string_view remaining = content;
-            size_t line_number = 0;
-            while (!remaining.empty()) {
-                ++line_number;
-                const auto newline = remaining.find('\n');
-                std::string_view line = trim_view(remaining.substr(0, newline));
-                remaining = newline == std::string_view::npos ? std::string_view{}
-                                                              : remaining.substr(newline + 1);
-                if (line.empty() || line.front() == ';' || line.front() == '#') {
-                    continue;
-                }
-                if (line.front() == '[') {
-                    return std::unexpected(error(ResolutionErrorCode::InvalidOption,
-                                                 "Sections are not valid in options.ini (line " +
-                                                     std::to_string(line_number) + ")",
-                                                 options_path, std::string(line)));
-                }
-
-                const auto equals = line.find('=');
-                if (equals == std::string_view::npos) {
-                    return std::unexpected(error(ResolutionErrorCode::InvalidOption,
-                                                 "Expected key=value in options.ini (line " +
-                                                     std::to_string(line_number) + ")",
-                                                 options_path, std::string(line)));
-                }
-                const std::string key = normalize_key(line.substr(0, equals));
-                std::string_view value = trim_view(line.substr(equals + 1));
-                if (const auto comment = value.find(';'); comment != std::string_view::npos) {
-                    value = trim_view(value.substr(0, comment));
-                }
-                if (is_legacy_non_option(key)) {
-                    continue;
-                }
-                if (key.empty() || !OptionsManager::is_known_option(key) ||
-                    !options.set(key, value)) {
-                    return std::unexpected(error(ResolutionErrorCode::InvalidOption,
-                                                 "Invalid option '" + key +
-                                                     "' in options.ini (line " +
-                                                     std::to_string(line_number) + ")",
-                                                 options_path, key));
-                }
-            }
-            return options.data();
+            return parse_options_text(contents.str(), options_path);
         }
 
         std::expected<std::pair<OptionsArgs, OptionsArgs>, ResolutionError>
@@ -620,6 +578,52 @@ namespace gxbuild3::cli {
         }
 
     } // namespace
+
+    std::expected<OptionsArgs, ResolutionError>
+    parse_options_text(std::string_view text, const std::filesystem::path& source) {
+        OptionsManager options;
+        std::string_view remaining = text;
+        size_t line_number = 0;
+        while (!remaining.empty()) {
+            ++line_number;
+            const auto newline = remaining.find('\n');
+            std::string_view line = trim_view(remaining.substr(0, newline));
+            remaining = newline == std::string_view::npos ? std::string_view{}
+                                                          : remaining.substr(newline + 1);
+            if (line.empty() || line.front() == ';' || line.front() == '#') {
+                continue;
+            }
+            if (line.front() == '[') {
+                return std::unexpected(error(ResolutionErrorCode::InvalidOption,
+                                             "Sections are not valid in options.ini (line " +
+                                                 std::to_string(line_number) + ")",
+                                             source, std::string(line)));
+            }
+
+            const auto equals = line.find('=');
+            if (equals == std::string_view::npos) {
+                return std::unexpected(error(ResolutionErrorCode::InvalidOption,
+                                             "Expected key=value in options.ini (line " +
+                                                 std::to_string(line_number) + ")",
+                                             source, std::string(line)));
+            }
+            const std::string key = normalize_key(line.substr(0, equals));
+            std::string_view value = trim_view(line.substr(equals + 1));
+            if (const auto comment = value.find(';'); comment != std::string_view::npos) {
+                value = trim_view(value.substr(0, comment));
+            }
+            if (is_legacy_non_option(key)) {
+                continue;
+            }
+            if (key.empty() || !OptionsManager::is_known_option(key) || !options.set(key, value)) {
+                return std::unexpected(error(ResolutionErrorCode::InvalidOption,
+                                             "Invalid option '" + key + "' in options.ini (line " +
+                                                 std::to_string(line_number) + ")",
+                                             source, key));
+            }
+        }
+        return options.data();
+    }
 
     BuildInputResolver::BuildInputResolver(std::filesystem::path working_directory)
         : working_directory_(std::move(working_directory)) {}

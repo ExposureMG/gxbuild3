@@ -639,6 +639,18 @@ namespace {
         return passed;
     }
 
+    bool test_parse_options_text_edge_cases() {
+        const std::filesystem::path source = "virtual/options.ini";
+        bool passed = true;
+        for (const auto& options_case : options_text_cases()) {
+            passed = check_options_case(
+                         options_case, gxbuild3::cli::parse_options_text(options_case.text, source),
+                         source, "parse_options_text") &&
+                     passed;
+        }
+        return passed;
+    }
+
     bool test_cpu_key_precedence_and_discovery_order() {
         ResolverFixture fixture;
         const auto first_key = valid_cpu_key();
@@ -2258,6 +2270,7 @@ int main(int argc, char** argv) {
     passed = test_empty_cli_option_is_rejected() && passed;
     passed = test_options_read_failure_is_distinct() && passed;
     passed = test_options_ini_edge_cases_through_the_file() && passed;
+    passed = test_parse_options_text_edge_cases() && passed;
     passed = test_cpu_key_precedence_and_discovery_order() && passed;
     passed = test_relative_source_root_is_anchored_to_working_directory() && passed;
     passed = test_uppercase_and_corrected_cpu_keys_are_accepted() && passed;
