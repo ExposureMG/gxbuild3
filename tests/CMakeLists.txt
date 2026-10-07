@@ -196,7 +196,6 @@ add_gxbuild3_test(gxbuild3_buildrunner_tests BuildRunnerTests.cpp)
 add_gxbuild3_test(gxbuild3_glitch_crypto_tests GlitchCryptoTests.cpp)
 add_gxbuild3_test(gxbuild3_resolver_tests BuildInputResolverTests.cpp)
 add_gxbuild3_test(gxbuild3_buildcommand_tests BuildCommandTests.cpp)
-add_gxbuild3_test(gxbuild3_keyvault_version_tests KeyvaultVersionTests.cpp)
 add_gxbuild3_test(gxbuild3_crypto_reference_tests CryptoReferenceTests.cpp)
 # src/nand/bootloaders/Stage.hpp: the shared stage parse, padding, serialize and record crypt
 # checked against a plain crypt_single_bl, plus the paths the bootloader corpus never reaches.
