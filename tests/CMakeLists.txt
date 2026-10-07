@@ -182,13 +182,13 @@ include(utils/Tests.cmake)
 include(stfs/Tests.cmake)
 include(bootloaders/Tests.cmake)
 include(objects/Tests.cmake)
+include(nand/Tests.cmake)
 include(snapshots/Tests.cmake)
 include(private/Tests.cmake)
 
 # ---- Pre-GoogleTest test executables (ported area by area, then deleted) --------------------
 
 add_gxbuild3_test(gxbuild3_anchor_layout_tests AnchorLayoutTests.cpp)
-add_gxbuild3_test(gxbuild3_flashdriver_tests FlashDriverTests.cpp)
 add_gxbuild3_test(gxbuild3_flashfs_tests FlashFileSystemTests.cpp)
 add_gxbuild3_test(gxbuild3_commandline_tests CommandLineTests.cpp)
 add_gxbuild3_test(gxbuild3_buildrunner_tests BuildRunnerTests.cpp)
