@@ -1,0 +1,56 @@
+# Coverage ledger for tests/GlitchCryptoTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 12 automatic, 39 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+GlitchCrypto.test_retail_digest_vectors	test_retail_digest_vectors@154	4	-	pending
+GlitchCrypto.test_retail_digest	test_retail_digest@192	7	-	pending
+GlitchCrypto.test_build_policy	test_build_policy@334	5	-	pending
+GlitchCrypto.test_cb_b_extraction_preserves_perbox_ldv	test_cb_b_extraction_preserves_perbox_ldv@368	9	-	pending
+GlitchCrypto.test_glitch3_requires_cb_x_and_cb_b	test_glitch3_requires_cb_x_and_cb_b@417	1	-	pending
+GlitchCrypto.test_patched_stages_are_encrypted_for_their_parent	test_patched_stages_are_encrypted_for_their_parent@435	1	-	pending
+GlitchCrypto.test_glitch3_encrypted_replacement_preserves_handoff_key	test_glitch3_encrypted_replacement_preserves_handoff_key@463	1	-	pending
+GlitchCrypto.test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words	test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words@486	10	-	pending
+GlitchCrypto.test_glitch3_seals_cb_x_with_the_v1_fix	test_glitch3_seals_cb_x_with_the_v1_fix@529	5	-	pending
+GlitchCrypto.test_single_cb_pairing	test_single_cb_pairing@582	13	-	pending
+GlitchCrypto.test_jtag_chains	test_jtag_chains@669	7	-	pending
+GlitchCrypto.test_cg_decrypts_with_cf_payload_nonce	test_cg_decrypts_with_cf_payload_nonce@761	8	-	pending
+# hand
+GlitchCrypto.main.test_cb_b_extraction_preserves_perbox_ldv.Ldv0	test_cb_b_extraction_preserves_perbox_ldv#Ldv0@831	1	-	pending
+GlitchCrypto.main.test_cb_b_extraction_preserves_perbox_ldv.Ldv7	test_cb_b_extraction_preserves_perbox_ldv#Ldv7@832	1	-	pending
+GlitchCrypto.main.test_retail_digest_vectors.Call	test_retail_digest_vectors#Call@833	1	-	pending
+GlitchCrypto.main.test_build_policy.Retail	test_build_policy#Retail@834	1	-	pending
+GlitchCrypto.main.test_build_policy.Glitch1	test_build_policy#Glitch1@835	1	-	pending
+GlitchCrypto.main.test_build_policy.Glitch2	test_build_policy#Glitch2@836	1	-	pending
+GlitchCrypto.main.test_build_policy.BigBlockGlitch2	test_build_policy#BigBlockGlitch2@837	1	-	pending
+GlitchCrypto.main.test_build_policy.Glitch2m	test_build_policy#Glitch2m@839	1	-	pending
+GlitchCrypto.main.test_build_policy.Glitch2mManufacturing	test_build_policy#Glitch2mManufacturing@840	1	-	pending
+GlitchCrypto.main.test_build_policy.Glitch2mManufacturingV2	test_build_policy#Glitch2mManufacturingV2@841	1	-	pending
+GlitchCrypto.main.test_build_policy.RetailManufacturing	test_build_policy#RetailManufacturing@842	1	-	pending
+GlitchCrypto.main.test_build_policy.Glitch3	test_build_policy#Glitch3@843	1	-	pending
+GlitchCrypto.main.test_build_policy.Glitch3V2	test_build_policy#Glitch3V2@844	1	-	pending
+GlitchCrypto.main.test_single_cb_pairing.Glitch1	test_single_cb_pairing#Glitch1@845	1	-	pending
+GlitchCrypto.main.test_single_cb_pairing.Retail	test_single_cb_pairing#Retail@846	1	-	pending
+GlitchCrypto.main.test_jtag_chains.Call	test_jtag_chains#Call@847	1	-	pending
+GlitchCrypto.main.test_glitch3_requires_cb_x_and_cb_b.Call	test_glitch3_requires_cb_x_and_cb_b#Call@848	1	-	pending
+GlitchCrypto.main.test_patched_stages_are_encrypted_for_their_parent.Glitch2	test_patched_stages_are_encrypted_for_their_parent#Glitch2@849	1	-	pending
+GlitchCrypto.main.test_patched_stages_are_encrypted_for_their_parent.Glitch3	test_patched_stages_are_encrypted_for_their_parent#Glitch3@850	1	-	pending
+GlitchCrypto.main.test_glitch3_encrypted_replacement_preserves_handoff_key.Call	test_glitch3_encrypted_replacement_preserves_handoff_key#Call@851	1	-	pending
+GlitchCrypto.main.test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words.Call	test_rgh3_v1_cb_x_fix_rewrites_exactly_four_words#Call@852	1	-	pending
+GlitchCrypto.main.test_glitch3_seals_cb_x_with_the_v1_fix.True	test_glitch3_seals_cb_x_with_the_v1_fix#True@853	1	-	pending
+GlitchCrypto.main.test_glitch3_seals_cb_x_with_the_v1_fix.False	test_glitch3_seals_cb_x_with_the_v1_fix#False@854	1	-	pending
+GlitchCrypto.main.test_cg_decrypts_with_cf_payload_nonce.Call	test_cg_decrypts_with_cf_payload_nonce#Call@855	1	-	pending
+GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change0	test_retail_digest#NoSplitFlags0Change0@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change0	test_retail_digest#SplitFlags0x800Change0@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change0	test_retail_digest#SplitFlags0x1800Change0@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change1	test_retail_digest#NoSplitFlags0Change1@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change1	test_retail_digest#SplitFlags0x800Change1@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change1	test_retail_digest#SplitFlags0x1800Change1@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change2	test_retail_digest#NoSplitFlags0Change2@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change2	test_retail_digest#SplitFlags0x800Change2@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change2	test_retail_digest#SplitFlags0x1800Change2@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change3	test_retail_digest#NoSplitFlags0Change3@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change3	test_retail_digest#SplitFlags0x800Change3@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change3	test_retail_digest#SplitFlags0x1800Change3@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.NoSplitFlags0Change4	test_retail_digest#NoSplitFlags0Change4@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.SplitFlags0x800Change4	test_retail_digest#SplitFlags0x800Change4@856	1	-	pending
+GlitchCrypto.main.test_retail_digest.SplitFlags0x1800Change4	test_retail_digest#SplitFlags0x1800Change4@856	1	-	pending

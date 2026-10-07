@@ -1,0 +1,15 @@
+# Coverage ledger for tests/PatchsetTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 5 automatic, 5 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+Patchset.test_byte_parser_uses_supplied_data	test_byte_parser_uses_supplied_data@65	4	-	pending
+Patchset.test_glitch_addons_append_in_order	test_glitch_addons_append_in_order@83	2	-	pending
+Patchset.test_jtag_addons_append_in_order	test_jtag_addons_append_in_order@96	2	-	pending
+Patchset.test_malformed_patchsets_fail_without_partial_output	test_malformed_patchsets_fail_without_partial_output@110	2	-	pending
+Patchset.test_jtag_delimiter_count_and_unsupported_type_fail_cleanly	test_jtag_delimiter_count_and_unsupported_type_fail_cleanly@156	2	-	pending
+# hand
+Patchset.test_malformed_patchsets_fail_without_partial_output.TruncatedAddress	test_malformed_patchsets_fail_without_partial_output#TruncatedAddress@112	2	-	pending
+Patchset.test_malformed_patchsets_fail_without_partial_output.TruncatedLength	test_malformed_patchsets_fail_without_partial_output#TruncatedLength@116	2	-	pending
+Patchset.test_malformed_patchsets_fail_without_partial_output.TruncatedPatchWord	test_malformed_patchsets_fail_without_partial_output#TruncatedPatchWord@122	2	-	pending
+Patchset.test_malformed_patchsets_fail_without_partial_output.TruncatedSectionDelimiter	test_malformed_patchsets_fail_without_partial_output#TruncatedSectionDelimiter@129	2	-	pending
+Patchset.test_malformed_patchsets_fail_without_partial_output.PartialSecondSection	test_malformed_patchsets_fail_without_partial_output#PartialSecondSection@137	2	-	pending

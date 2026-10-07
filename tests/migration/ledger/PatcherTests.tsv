@@ -1,0 +1,19 @@
+# Coverage ledger for tests/PatcherTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 5 automatic, 9 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+Patcher.test_every_in_tree_pattern_parses	test_every_in_tree_pattern_parses@90	1	-	pending
+Patcher.test_bad_token_fails_instead_of_becoming_a_wildcard	test_bad_token_fails_instead_of_becoming_a_wildcard@104	4	-	pending
+Patcher.test_signature_patch_counts_matches	test_signature_patch_counts_matches@127	3	-	pending
+Patcher.test_signature_patch_rejects_bad_arguments	test_signature_patch_rejects_bad_arguments@139	4	-	pending
+Patcher.test_patch_section_overflow_fails	test_patch_section_overflow_fails@158	6	-	pending
+# hand
+Patcher.test_every_in_tree_pattern_parses.Glitch	test_every_in_tree_pattern_parses#Glitch@35	1	-	pending
+Patcher.test_every_in_tree_pattern_parses.NoDriveBlink	test_every_in_tree_pattern_parses#NoDriveBlink@36	1	-	pending
+Patcher.test_every_in_tree_pattern_parses.NoDriveBlink_KSB	test_every_in_tree_pattern_parses#NoDriveBlink_KSB@37	1	-	pending
+Patcher.test_every_in_tree_pattern_parses.EjectDisable	test_every_in_tree_pattern_parses#EjectDisable@38	1	-	pending
+Patcher.test_every_in_tree_pattern_parses.EjectDisable_KSB	test_every_in_tree_pattern_parses#EjectDisable_KSB@39	1	-	pending
+Patcher.test_bad_token_fails_instead_of_becoming_a_wildcard.G1	test_bad_token_fails_instead_of_becoming_a_wildcard#G1@106	1	-	pending
+Patcher.test_bad_token_fails_instead_of_becoming_a_wildcard.QuestionA	test_bad_token_fails_instead_of_becoming_a_wildcard#QuestionA@106	1	-	pending
+Patcher.test_bad_token_fails_instead_of_becoming_a_wildcard.Fff	test_bad_token_fails_instead_of_becoming_a_wildcard#Fff@106	1	-	pending
+Patcher.test_bad_token_fails_instead_of_becoming_a_wildcard.HexPrefix	test_bad_token_fails_instead_of_becoming_a_wildcard#HexPrefix@106	1	-	pending

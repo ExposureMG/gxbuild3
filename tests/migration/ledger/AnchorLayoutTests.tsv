@@ -1,0 +1,20 @@
+# Coverage ledger for tests/AnchorLayoutTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 0 automatic, 15 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+# hand
+AnchorLayout.main.RawXellIsAccepted	raw_xell#RawXellIsAccepted@407	1	-	pending
+AnchorLayout.freeboot_provider	freeboot_provider@201	1	-	pending
+AnchorLayout.anchors.Small_Glitch2	anchors#Small_Glitch2@52	1	-	pending
+AnchorLayout.anchors.Small_Glitch2m	anchors#Small_Glitch2m@52	1	-	pending
+AnchorLayout.anchors.Big_Glitch2	anchors#Big_Glitch2@52	1	-	pending
+AnchorLayout.anchors.Big_Glitch2m	anchors#Big_Glitch2m@52	1	-	pending
+AnchorLayout.anchors.Emmc_Glitch2	anchors#Emmc_Glitch2@52	1	-	pending
+AnchorLayout.anchors.Emmc_Glitch2m	anchors#Emmc_Glitch2m@52	1	-	pending
+AnchorLayout.spill.Retail	spill#Retail@410	1	-	pending
+AnchorLayout.spill.Glitch2	spill#Glitch2@411	1	-	pending
+AnchorLayout.spill.Jtag	spill#Jtag@412	1	-	pending
+AnchorLayout.jtag_window.Small	jtag_window#Small@413	1	-	pending
+AnchorLayout.jtag_window.Big	jtag_window#Big@414	1	-	pending
+AnchorLayout.custom_header_roundtrip	custom_header_roundtrip@185	1	-	pending
+AnchorLayout.payload_range_overflow_precedence	payload_range_overflow_precedence@330	1	-	pending

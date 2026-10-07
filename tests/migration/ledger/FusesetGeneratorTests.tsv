@@ -1,0 +1,8 @@
+# Coverage ledger for tests/FusesetGeneratorTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 3 automatic, 0 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+FusesetGenerator.test_every_line_of_a_retail_slim_console	test_every_line_of_a_retail_slim_console@36	8	-	pending
+FusesetGenerator.test_a_devkit_type_and_no_lockdown	test_a_devkit_type_and_no_lockdown@66	3	-	pending
+FusesetGenerator.test_the_word_comes_off_the_cb_and_an_unknown_type_is_refused	test_the_word_comes_off_the_cb_and_an_unknown_type_is_refused@76	3	-	pending
+# hand

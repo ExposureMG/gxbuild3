@@ -1,0 +1,10 @@
+# Coverage ledger for tests/BuildCommandTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 5 automatic, 0 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+BuildCommand.test_resolution_failure_returns_exit_code_three	test_resolution_failure_returns_exit_code_three@47	2	-	pending
+BuildCommand.test_build_failure_returns_exit_code_four	test_build_failure_returns_exit_code_four@60	2	-	pending
+BuildCommand.test_write_failure_returns_exit_code_five	test_write_failure_returns_exit_code_five@73	2	-	pending
+BuildCommand.test_success_creates_output_parent_and_writes_bytes	test_success_creates_output_parent_and_writes_bytes@85	2	-	pending
+BuildCommand.test_success_overwrites_existing_output	test_success_overwrites_existing_output@108	2	-	pending
+# hand

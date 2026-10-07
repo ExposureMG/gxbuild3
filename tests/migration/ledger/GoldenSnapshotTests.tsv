@@ -1,0 +1,14 @@
+# Coverage ledger for tests/GoldenSnapshotTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 3 automatic, 6 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+GoldenSnapshot.test_difference_renderer	test_difference_renderer@90	9	-	pending
+GoldenSnapshot.test_options	test_options@129	4	-	pending
+GoldenSnapshot.test_mutation_on_scratch_copy	test_mutation_on_scratch_copy@163	17	-	pending
+# hand
+GoldenSnapshot.test_options.NoArgumentIsCompareOnly	test_options#NoArgumentIsCompareOnly@137	1	-	pending
+GoldenSnapshot.test_options.UpdateTurnsOnRewriting	test_options#UpdateTurnsOnRewriting@141	1	-	pending
+GoldenSnapshot.test_options.TypoIsRefused	test_options#TypoIsRefused@145	1	-	pending
+GoldenSnapshot.test_options.CmakeInjectsGoldenDir	test_options#CmakeInjectsGoldenDir@149	1	-	pending
+GoldenSnapshot.main.RenderIsDeterministic	main#RenderIsDeterministic@257	1	-	pending
+GoldenSnapshot.main.GoldenMatches	main#GoldenMatches@261	1	-	pending

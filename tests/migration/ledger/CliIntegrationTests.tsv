@@ -1,0 +1,14 @@
+# Coverage ledger for tests/scripts/CliIntegrationTests.cmake (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 0 automatic, 9 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+# hand
+CliIntegration.Help	--help#Help@86	2	-	pending
+CliIntegration.Version	--version#Version@97	2	-	pending
+CliIntegration.MissingRequiredArguments	missing required arguments#MissingRequiredArguments@108	2	-	pending
+CliIntegration.MissingCPUKey	missing CPU key#MissingCPUKey@121	2	-	pending
+CliIntegration.MissingDonorData	missing donor data#MissingDonorData@136	2	-	pending
+CliIntegration.UnsupportedXMode	unsupported -x mode#UnsupportedXMode@147	2	-	pending
+CliIntegration.DefaultOutputRealBuild	default-output real build#DefaultOutputRealBuild@169	2	-	pending
+CliIntegration.DefaultOutputOverwriteBuild	default-output overwrite build#DefaultOutputOverwriteBuild@186	2	-	pending
+CliIntegration.NestedOutputRealBuild	nested-output real build#NestedOutputRealBuild@200	2	-	pending

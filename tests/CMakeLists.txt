@@ -4,8 +4,9 @@
 # CMake -P tests live in scripts/, helper executables that are not tests in tools/.
 #
 # Labels: unit (plain test binaries), golden (text-golden binaries), oracle (the build_all.sh
-# byte oracle), guard (convention and self-test scripts), integration and cli (the CLI end-to-end
-# script), private (needs the git-ignored keyvault fixtures), slow (minutes, not seconds).
+# byte oracle), guard (convention, test-listing, coverage-ledger, golden-freeze and self-test
+# scripts), integration and cli (the CLI end-to-end script), private (needs the git-ignored
+# keyvault fixtures), slow (minutes, not seconds).
 # GoogleTest binaries (gxbuild3_add_gtest, one fragment per area in <area>/Tests.cmake) add
 # their area label (core, ...) and register ctest entries named <area prefix>.<gtest name>.
 # Every test runs with TMPDIR=<build>/tmp: /tmp is often a small shared tmpfs.
@@ -84,8 +85,8 @@ set(GXBUILD3_GTEST_PCH
 #    them as skipped. Other bundles never skip.
 #  - PER_ROW: TEST_P instantiations whose rows are each slow enough to be their own entry; they
 #    are discovered per row like any unbundled case and only recorded for the guards.
-# Each binary adds a line `name|prefix|path|bundles|per_row` (lists comma-separated) to
-# <build>/tests/gtest-binaries.txt.
+# Each binary adds a line `name|prefix|path|bundles|per_row|skip_bundles` (lists
+# comma-separated) to <build>/tests/gtest-binaries.txt, which the listing and ledger guards read.
 function(gxbuild3_add_gtest name)
     cmake_parse_arguments(T "" "PREFIX;TIMEOUT;MAIN" "SOURCES;LABELS;LIBS;BUNDLE;PER_ROW;SKIP_BUNDLE"
         ${ARGN})
@@ -157,8 +158,9 @@ function(gxbuild3_add_gtest name)
 
     list(JOIN T_BUNDLE "," bundles)
     list(JOIN T_PER_ROW "," per_row)
+    list(JOIN T_SKIP_BUNDLE "," skip_bundles)
     set_property(GLOBAL APPEND PROPERTY GXBUILD3_GTEST_BINARIES
-        "${name}|${T_PREFIX}|$<TARGET_FILE:${name}>|${bundles}|${per_row}")
+        "${name}|${T_PREFIX}|$<TARGET_FILE:${name}>|${bundles}|${per_row}|${skip_bundles}")
 endfunction()
 
 # One fragment per area: its gxbuild3_add_gtest call with the area's BUNDLE and PER_ROW lists.
@@ -306,11 +308,8 @@ if(UNIX)
         COMMENT "Capturing tests/golden/build_all.sha256 and build_all.parse.txt (two identical runs required)")
 endif()
 
-get_property(gxbuild3_registered_tests DIRECTORY PROPERTY TESTS)
-set_tests_properties(${gxbuild3_registered_tests} PROPERTIES
-    ENVIRONMENT "TMPDIR=${GXBUILD3_TEST_TMPDIR}")
-
-# The GoogleTest binaries for the listing and ledger guards: name|prefix|path|bundles|per_row.
+# The GoogleTest binary registry for the guards below:
+# name|prefix|path|bundles|per_row|skip_bundles.
 get_property(gxbuild3_gtest_binaries GLOBAL PROPERTY GXBUILD3_GTEST_BINARIES)
 list(JOIN gxbuild3_gtest_binaries "\n" gxbuild3_gtest_listing)
 if(CMAKE_CONFIGURATION_TYPES)
@@ -319,3 +318,36 @@ else()
     set(gxbuild3_gtest_listing_file ${CMAKE_CURRENT_BINARY_DIR}/gtest-binaries.txt)
 endif()
 file(GENERATE OUTPUT ${gxbuild3_gtest_listing_file} CONTENT "${gxbuild3_gtest_listing}\n")
+
+# Permanent: every listed case runs in exactly one ctest entry, bundles are live, TEST_P rows
+# are named and only PER_ROW tables are discovered per row, no skip hides in a bundle, no
+# captured stream or death test (scripts/TestListingGuard.cmake).
+add_test(NAME gxbuild3_test_listing_guard
+    COMMAND ${CMAKE_COMMAND}
+        -DGTEST_BINARIES=${gxbuild3_gtest_listing_file}
+        -DCTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+        -DBUILD_DIR=${CMAKE_BINARY_DIR}
+        -DCONFIG=$<CONFIG>
+        -DTESTS_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DGOLDEN_DIR=${CMAKE_CURRENT_SOURCE_DIR}/golden
+        -P ${GXBUILD3_TEST_SCRIPTS}/TestListingGuard.cmake)
+
+# Migration only, deleted with tests/migration/: the coverage ledger (one row per old test
+# function, static_assert and table row; scripts/CoverageLedger.cmake, seeded once by
+# scripts/SeedLedger.cmake) and the frozen goldens (scripts/GoldenFrozen.cmake).
+add_test(NAME gxbuild3_coverage_ledger
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_ROOT=${PROJECT_SOURCE_DIR}
+        -DGTEST_BINARIES=${gxbuild3_gtest_listing_file}
+        -P ${GXBUILD3_TEST_SCRIPTS}/CoverageLedger.cmake)
+add_test(NAME gxbuild3_golden_frozen
+    COMMAND ${CMAKE_COMMAND}
+        -DGOLDEN_DIR=${CMAKE_CURRENT_SOURCE_DIR}/golden
+        -DBASELINE=${CMAKE_CURRENT_SOURCE_DIR}/migration/golden-baseline.sha256
+        -P ${GXBUILD3_TEST_SCRIPTS}/GoldenFrozen.cmake)
+set_tests_properties(gxbuild3_test_listing_guard gxbuild3_coverage_ledger gxbuild3_golden_frozen
+    PROPERTIES LABELS guard)
+
+get_property(gxbuild3_registered_tests DIRECTORY PROPERTY TESTS)
+set_tests_properties(${gxbuild3_registered_tests} PROPERTIES
+    ENVIRONMENT "TMPDIR=${GXBUILD3_TEST_TMPDIR}")

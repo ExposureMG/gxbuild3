@@ -1,0 +1,8 @@
+# Coverage ledger for tests/WireCorpusTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 0 automatic, 3 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+# hand
+WireCorpus.main.FixtureCount	main#FixtureCount@559	1	-	pending
+WireCorpus.main.RenderIsDeterministic	main#RenderIsDeterministic@568	1	-	pending
+WireCorpus.main.GoldenMatches	main#GoldenMatches@575	1	-	pending

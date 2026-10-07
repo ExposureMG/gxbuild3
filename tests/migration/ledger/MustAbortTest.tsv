@@ -1,0 +1,7 @@
+# Coverage ledger for tests/scripts/MustAbortTest.cmake (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 0 automatic, 2 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+# hand
+MustAbort.overload.value	must-abort-demo#value@12	4	-	pending
+MustAbort.overload.void	must-abort-demo#void@12	4	-	pending

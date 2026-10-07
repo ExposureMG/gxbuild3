@@ -1,0 +1,22 @@
+# Coverage ledger for tests/InputTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 10 automatic, 7 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+Input.test_typed_image_layout	test_typed_image_layout@33	1	-	pending
+Input.test_mobile_slot_mapping	test_mobile_slot_mapping@40	3	-	pending
+Input.test_validation_rejects_missing_required_values	test_validation_rejects_missing_required_values@49	5	-	pending
+Input.test_glitch_requires_patchset	test_glitch_requires_patchset@84	1	-	pending
+Input.test_retail_rejects_automatic_patchset	test_retail_rejects_automatic_patchset@92	1	-	pending
+Input.test_retail_and_devkit_reject_addon_patch_data	test_retail_and_devkit_reject_addon_patch_data@100	1	-	pending
+Input.test_payload_and_rebooter_sizes	test_payload_and_rebooter_sizes@122	4	-	pending
+Input.test_settings_block_sizes	test_settings_block_sizes@154	3	-	pending
+Input.test_nopatch_options_accumulate_stage_by_stage	test_nopatch_options_accumulate_stage_by_stage@180	6	-	pending
+Input.test_button_options_take_xebuild_names_only	test_button_options_take_xebuild_names_only@203	7	-	pending
+# hand
+Input.test_validation_rejects_missing_required_values.InvalidCpuKey	test_validation_rejects_missing_required_values#InvalidCpuKey@52	1	-	pending
+Input.test_validation_rejects_missing_required_values.MissingSmc	test_validation_rejects_missing_required_values#MissingSmc@59	1	-	pending
+Input.test_validation_rejects_missing_required_values.MissingKeyvault	test_validation_rejects_missing_required_values#MissingKeyvault@66	1	-	pending
+Input.test_validation_rejects_missing_required_values.MissingCb	test_validation_rejects_missing_required_values#MissingCb@73	1	-	pending
+Input.test_validation_rejects_missing_required_values.MissingCd	test_validation_rejects_missing_required_values#MissingCd@80	1	-	pending
+Input.test_retail_and_devkit_reject_addon_patch_data.Retail	test_retail_and_devkit_reject_addon_patch_data#Retail@101	1	-	pending
+Input.test_retail_and_devkit_reject_addon_patch_data.Devkit	test_retail_and_devkit_reject_addon_patch_data#Devkit@101	1	-	pending

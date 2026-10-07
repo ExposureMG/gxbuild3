@@ -1,0 +1,13 @@
+# Coverage ledger for tests/StageTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 5 automatic, 3 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+Stage.test_parse_stage	test_parse_stage@53	7	-	pending
+Stage.test_payload_size_and_padding	test_payload_size_and_padding@81	4	-	pending
+Stage.test_crypt_stage_record	test_crypt_stage_record@143	0	-	pending
+Stage.test_crypt_stage_record_failure_leaves_stage_untouched	test_crypt_stage_record_failure_leaves_stage_untouched@159	5	-	pending
+Stage.test_randomize_zero_nonce	test_randomize_zero_nonce@189	2	-	pending
+# hand
+Stage.test_crypt_stage_record.Sc3bl	test_crypt_stage_record#Sc3bl@149	1	-	pending
+Stage.test_crypt_stage_record.Cd4bl	test_crypt_stage_record#Cd4bl@153	1	-	pending
+Stage.test_crypt_stage_record.Cf6bl	test_crypt_stage_record#Cf6bl@156	1	-	pending

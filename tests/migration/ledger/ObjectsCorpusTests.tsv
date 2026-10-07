@@ -1,0 +1,15 @@
+# Coverage ledger for tests/ObjectsCorpusTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 0 automatic, 10 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+# hand
+ObjectsCorpus.main.TrackedFixturesLoad	main#TrackedFixturesLoad@1073	1	-	pending
+ObjectsCorpus.main.ImageReadable	main#ImageReadable@1065	1	-	pending
+ObjectsCorpus.main.Su20076000Readable	main#Su20076000Readable@1066	1	-	pending
+ObjectsCorpus.main.PatchFileCount	main#PatchFileCount@1076	1	-	pending
+ObjectsCorpus.main.AddonCount	main#AddonCount@1080	1	-	pending
+ObjectsCorpus.main.RenderIsDeterministic	main#RenderIsDeterministic@1088	1	-	pending
+ObjectsCorpus.inside_equal.XconfigRegionCheck	inside_equal#XconfigRegionCheck@830	1	-	pending
+ObjectsCorpus.main.XboxupdSplits	main#XboxupdSplits@1094	1	-	pending
+ObjectsCorpus.main.ImageSmc	main#ImageSmc@1095	1	-	pending
+ObjectsCorpus.main.GoldenMatches	main#GoldenMatches@1105	1	-	pending

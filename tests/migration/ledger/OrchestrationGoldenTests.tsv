@@ -1,0 +1,19 @@
+# Coverage ledger for tests/OrchestrationGoldenTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 1 automatic, 13 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+OrchestrationGolden.test_extract_projection_snapshots	test_extract_projection_snapshots@149	4	-	pending
+# hand
+OrchestrationGolden.main.ImageReads	main#ImageReads@202	1	-	pending
+OrchestrationGolden.main.ExtractAllSucceeds	main#ExtractAllSucceeds@207	1	-	pending
+OrchestrationGolden.main.AllSixDonorNoncesFilled	main#AllSixDonorNoncesFilled@210	1	-	pending
+OrchestrationGolden.main.TrackedPatchAndXellRead	main#TrackedPatchAndXellRead@229	1	-	pending
+OrchestrationGolden.main.EachVariantBuilds	main#EachVariantBuilds@249	1	-	pending
+OrchestrationGolden.main.BuildsByteIdenticalTwice	main#BuildsByteIdenticalTwice@252	1	-	pending
+OrchestrationGolden.main.GoldenMatches	main#GoldenMatches@267	1	-	pending
+OrchestrationGolden.main.mydata.retail	main#mydata.retail@214	2	-	pending
+OrchestrationGolden.main.mydata.jtag	main#mydata.jtag@215	2	-	pending
+OrchestrationGolden.main.mydata.glitch2	main#mydata.glitch2@216	2	-	pending
+OrchestrationGolden.test_extract_projection_snapshots.mydata.image	test_extract_projection_snapshots#mydata.image@158	1	-	pending
+OrchestrationGolden.test_extract_projection_snapshots.mydata.image.zero-key	test_extract_projection_snapshots#mydata.image.zero-key@159	1	-	pending
+OrchestrationGolden.test_extract_projection_snapshots.mydata.glitch2	test_extract_projection_snapshots#mydata.glitch2@162	1	-	pending

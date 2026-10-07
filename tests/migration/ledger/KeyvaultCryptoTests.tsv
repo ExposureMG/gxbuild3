@@ -1,0 +1,11 @@
+# Coverage ledger for tests/KeyvaultCryptoTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 0 automatic, 6 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+# hand
+KeyvaultCrypto.main.SkipWhenAllFixturesAbsent	main#SkipWhenAllFixturesAbsent@64	1	-	pending
+KeyvaultCrypto.main.CpuKeyFixtureValidates	main#CpuKeyFixtureValidates@73	1	-	pending
+KeyvaultCrypto.main.FixtureSizes	main#FixtureSizes@82	1	-	pending
+KeyvaultCrypto.main.KeyvaultDecryptMatchesReference	main#KeyvaultDecryptMatchesReference@89	1	-	pending
+KeyvaultCrypto.main.KeyvaultClassDecryptMatchesReference	main#KeyvaultClassDecryptMatchesReference@100	1	-	pending
+KeyvaultCrypto.main.EncryptedFlagCleared	main#EncryptedFlagCleared@102	1	-	pending

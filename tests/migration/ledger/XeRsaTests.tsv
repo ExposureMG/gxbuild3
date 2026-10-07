@@ -1,0 +1,11 @@
+# Coverage ledger for tests/XeRsaTests.cpp (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
+# rows: 6 automatic, 0 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
+# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
+# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
+XeRsa.test_division_reconstructs_its_operands	test_division_reconstructs_its_operands@35	1	-	pending
+XeRsa.test_pow_mod_and_digit_layout	test_pow_mod_and_digit_layout@52	4	-	pending
+XeRsa.test_crc32_matches_zlib	test_crc32_matches_zlib@66	1	-	pending
+XeRsa.test_sd_signature_round_trips_and_covers_the_body	test_sd_signature_round_trips_and_covers_the_body@86	11	-	pending
+XeRsa.test_signature_agrees_with_xecrypt_format	test_signature_agrees_with_xecrypt_format@129	6	-	pending
+XeRsa.test_inconsistent_keys_are_refused	test_inconsistent_keys_are_refused@163	4	-	pending
+# hand
