@@ -183,7 +183,7 @@ namespace gxbuild3::nand {
     }
 
     bool FlashFileSystemEntry::matches(std::string_view name) const noexcept {
-        std::string_view self{filename};
+        const std::string_view self = entry_name(*this);
         if (self.size() != name.size()) {
             return false;
         }
@@ -500,7 +500,7 @@ namespace gxbuild3::nand {
         for (auto it = m_entries.begin() + static_cast<std::ptrdiff_t>(position);
              it != m_entries.end(); ++it) {
             free_chain(it->block_number);
-            const std::string name{it->filename};
+            const std::string name{entry_name(*it)};
             auto data_it = m_file_data.find(name);
             if (data_it == m_file_data.end()) {
                 return fail(ErrorCode::Internal, "FlashFS file '{}' has no data to lay again",
@@ -584,7 +584,7 @@ namespace gxbuild3::nand {
         result.reserve(m_entries.size());
         for (const auto& entry : m_entries) {
             if (entry.is_valid()) {
-                result.emplace_back(entry.filename);
+                result.emplace_back(entry_name(entry));
             }
         }
         return result;
@@ -730,7 +730,7 @@ namespace gxbuild3::nand {
             if (!entry.is_valid()) {
                 continue;
             }
-            auto it = m_file_data.find(std::string(entry.filename));
+            auto it = m_file_data.find(std::string(entry_name(entry)));
             if (it == m_file_data.end()) {
                 continue;
             }
@@ -811,9 +811,9 @@ namespace gxbuild3::nand {
             if (file_bytes.size() != entry.length) {
                 return fail(ErrorCode::Truncated,
                             "FlashFS file '{}' is truncated: expected {} bytes, read {}",
-                            entry.filename, entry.length, file_bytes.size());
+                            entry_name(entry), entry.length, file_bytes.size());
             }
-            m_file_data[std::string(entry.filename)] = std::move(file_bytes);
+            m_file_data[std::string(entry_name(entry))] = std::move(file_bytes);
         }
 
         return {};

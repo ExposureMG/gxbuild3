@@ -979,6 +979,72 @@ namespace {
         return ok;
     }
 
+    // An on-disk name may fill all 22 bytes with no terminator. It is read as exactly those 22
+    // characters wherever an entry's name is taken: load, list_files, stat, get_file and save
+    // agree on it, and re-serializing writes the same 22 bytes back.
+    bool test_unterminated_name_round_trips() {
+        bool ok = true;
+        constexpr std::string_view kLongName = "abcdefghijklmnopqrstuv";
+        static_assert(kLongName.size() == kMaxFilenameLength);
+        constexpr uint16_t kRootBlock = 0x3E0;
+        const Bytes long_data = pattern(kCleanBlockSize, 0x22);
+        const Bytes short_data = pattern(kCleanBlockSize, 0x05);
+
+        Driver driver(Driver::ImageSize::Smallblock, Driver::DriverMode::Small);
+        Bytes root = small_root();
+        put_entry(root, 0, kLongName, 0x60, 0x10);
+        put_entry(root, 1, "b.bin", 0x61, 0x20);
+        if (!driver.write_offset(0x60 * kCleanBlockSize, long_data) ||
+            !driver.write_offset(0x61 * kCleanBlockSize, short_data) ||
+            !driver.write_offset(kRootBlock * kCleanBlockSize, root)) {
+            return check(false, "unterminated-name fixture writes");
+        }
+
+        const auto expect_files = [&](const FlashFileSystem& fs, const char* when) {
+            bool good = true;
+            const std::vector<std::string> expected{std::string(kLongName), "b.bin"};
+            good = check(fs.list_files() == expected,
+                         std::format("list_files gives the 22-char name {}", when).c_str()) &&
+                   good;
+            const auto entry = fs.stat(kLongName);
+            good = check(entry && entry->block_number == 0x60 && entry->length == 0x10,
+                         std::format("stat finds the 22-char name {}", when).c_str()) &&
+                   good;
+            good = check(fs.stat("ABCDEFGHIJKLMNOPQRSTUV").has_value() && fs.exists(kLongName),
+                         std::format("the 22-char name matches case-blind {}", when).c_str()) &&
+                   good;
+            const auto bytes = fs.get_file(kLongName);
+            good = check(bytes && std::ranges::equal(*bytes, std::span(long_data).first(0x10)),
+                         std::format("get_file reads the 22-char name's file {}", when).c_str()) &&
+                   good;
+            return good;
+        };
+
+        FlashFileSystem fs;
+        ok = check(fs.load(driver, kRootBlock), "a 22-char on-disk name loads") && ok;
+        ok = expect_files(fs, "after load") && ok;
+
+        const auto reserialized = fs.serialize_root_block();
+        ok = check(reserialized && reserialized->size() == kCleanBlockSize &&
+                       std::ranges::equal(
+                           std::span(*reserialized).subspan(slot_offset(0), kMaxFilenameLength),
+                           kLongName) &&
+                       (*reserialized)[slot_offset(0) + 22] == 0x00 &&
+                       (*reserialized)[slot_offset(0) + 23] == 0x60,
+                   "re-serializing writes the 22 name bytes and the block after them") &&
+             ok;
+
+        // save() lays the file again from its data, found under the 22-char name.
+        if (!driver.write_offset(0x60 * kCleanBlockSize, Bytes(kCleanBlockSize, 0))) {
+            return check(false, "unterminated-name cluster wipe");
+        }
+        ok = check(fs.save(), "a filesystem holding a 22-char name saves") && ok;
+        FlashFileSystem reloaded;
+        ok = check(reloaded.load(driver, kRootBlock), "the saved 22-char name loads again") && ok;
+        ok = expect_files(reloaded, "after save and reload") && ok;
+        return ok;
+    }
+
     bool test_flashfs_root_goldens(const gxbuild3::test::GoldenOptions& options) {
         const std::vector<RootCase> cases{
             {"small", Driver::ImageSize::Smallblock, Driver::DriverMode::Small, false, std::nullopt,
@@ -1021,6 +1087,7 @@ int main(int argc, char** argv) {
     passed = test_insert_file_lays_files_back_to_back() && passed;
     passed = test_table_states_withheld_and_root_clusters() && passed;
     passed = test_big_block_single_cluster_padding_keeps_erased_fields() && passed;
+    passed = test_unterminated_name_round_trips() && passed;
     passed = test_flashfs_root_goldens(*options) && passed;
     return passed ? 0 : 1;
 }
