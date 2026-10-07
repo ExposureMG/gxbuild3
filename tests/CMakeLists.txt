@@ -51,12 +51,14 @@ set(GXBUILD3_TEST_SCRATCH_ROOT ${CMAKE_BINARY_DIR}/test-scratch)
 file(MAKE_DIRECTORY ${GXBUILD3_TEST_SCRATCH_ROOT})
 
 # gxbuild3::test support library: Result-aware assertions, scratch directories, scoped
-# environment, byte helpers and the test CPU keys. Tests include it as "support/<Name>.hpp".
+# environment, byte helpers, the test CPU keys and the shared builders (support/builders/).
+# Tests include it as "support/<Name>.hpp" and "support/builders/<Name>.hpp".
 add_library(gxbuild3_test_support STATIC
     support/Bytes.cpp
     support/Expect.cpp
     support/Keys.cpp
-    support/Scratch.cpp)
+    support/Scratch.cpp
+    support/builders/FlashFsRoots.cpp)
 target_include_directories(gxbuild3_test_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(gxbuild3_test_support PUBLIC gxbuild3_internal GTest::gtest)
 target_compile_definitions(gxbuild3_test_support PUBLIC
@@ -189,7 +191,10 @@ include(private/Tests.cmake)
 # ---- Pre-GoogleTest test executables (ported area by area, then deleted) --------------------
 
 add_gxbuild3_test(gxbuild3_anchor_layout_tests AnchorLayoutTests.cpp)
+# Only the flashfs_roots golden is left here; it shares the FlashFS root builders and
+# flashfs_pattern with the nand unit tests through gxbuild3_test_support.
 add_gxbuild3_test(gxbuild3_flashfs_tests FlashFileSystemTests.cpp)
+target_link_libraries(gxbuild3_flashfs_tests PRIVATE gxbuild3_test_support)
 add_gxbuild3_test(gxbuild3_commandline_tests CommandLineTests.cpp)
 add_gxbuild3_test(gxbuild3_buildrunner_tests BuildRunnerTests.cpp)
 add_gxbuild3_test(gxbuild3_resolver_tests BuildInputResolverTests.cpp)

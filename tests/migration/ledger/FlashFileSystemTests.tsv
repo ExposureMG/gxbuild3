@@ -2,21 +2,21 @@
 # rows: 16 automatic, 14 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
 # Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
 # id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
-FlashFileSystem.test_load_independent_big_block_layout	test_load_independent_big_block_layout@49	4	-	pending
-FlashFileSystem.test_failed_load_leaves_filesystem_unchanged	test_failed_load_leaves_filesystem_unchanged@85	8	-	pending
-FlashFileSystem.test_big_block_writer_uses_clusters	test_big_block_writer_uses_clusters@129	11	-	pending
-FlashFileSystem.test_big_block_stamps_retail_fs_metadata	test_big_block_stamps_retail_fs_metadata@168	12	-	pending
-FlashFileSystem.test_big_block_serialize_restamps_root	test_big_block_serialize_restamps_root@205	4	-	pending
-FlashFileSystem.test_small_block_fs_metadata_matches_dumps	test_small_block_fs_metadata_matches_dumps@283	0	-	pending
-FlashFileSystem.test_serialize_leaves_erased_low_pages_unprogrammed	test_serialize_leaves_erased_low_pages_unprogrammed@291	5	-	pending
-FlashFileSystem.test_big_block_large_file_roundtrips_through_serialize	test_big_block_large_file_roundtrips_through_serialize@336	8	-	pending
-FlashFileSystem.test_deferred_root_is_placed_last_from_free_pool	test_deferred_root_is_placed_last_from_free_pool@386	11	-	pending
-FlashFileSystem.test_insert_file_lays_files_back_to_back	test_insert_file_lays_files_back_to_back@428	10	-	pending
-FlashFileSystem.test_table_states_withheld_and_root_clusters	test_table_states_withheld_and_root_clusters@474	15	-	pending
-FlashFileSystem.test_big_block_single_cluster_padding_keeps_erased_fields	test_big_block_single_cluster_padding_keeps_erased_fields@518	7	-	pending
+FlashFileSystem.test_load_independent_big_block_layout	test_load_independent_big_block_layout@49	4	nand.FlashFsBigBlock.LoadsTheIndependentBigBlockLayout	ported;note:the three fixture writes and the reload write are ASSERTs (the reload write had no message and gets one); the get_file == expected check is an ASSERT on presence then ASSERT_BYTES_EQ; put16, put32 and map_offset come from tests/support/builders/FlashFsRoots.hpp
+FlashFileSystem.test_failed_load_leaves_filesystem_unchanged	test_failed_load_leaves_filesystem_unchanged@85	8	nand.FlashFsLoad.FailedLoadLeavesFilesystemUnchanged	ported;note:the two fixture writes and the good load are ASSERTs; each && chain is one EXPECT per fact (EXPECT_ERROR Truncated, root_block, version, has_root, blockmap, entry count); the file-data check is presence before and after plus EXPECT_BYTES_EQ
+FlashFileSystem.test_big_block_writer_uses_clusters	test_big_block_writer_uses_clusters@129	11	nand.FlashFsBigBlock.WriterUsesClusters	ported;note:each early-returning check is an ASSERT, one per fact (the relocation && chain three); new ASSERT guards on the two stat() results the old test dereferenced unchecked; the readbacks are EXPECT_BYTES_EQ
+FlashFileSystem.test_big_block_stamps_retail_fs_metadata	test_big_block_stamps_retail_fs_metadata@168	12	nand.FlashFsBigBlock.StampsRetailFsMetadata	ported
+FlashFileSystem.test_big_block_serialize_restamps_root	test_big_block_serialize_restamps_root@205	4	nand.FlashFsBigBlock.SerializeRestampsRoot	ported
+FlashFileSystem.test_small_block_fs_metadata_matches_dumps	test_small_block_fs_metadata_matches_dumps@283	0	nand.Mode/FlashFsSmallBlock#MetadataMatchesDumps/Small	ported;note:the function called small_block_fs_metadata_matches_dumps (old line 228, 12 check sites) for Small then NewSmall; it is TEST_P FlashFsSmallBlock.MetadataMatchesDumps with rows Small and NewSmall (same order), bundled as nand.Mode/FlashFsSmallBlock; NewSmall is the new hand row; early returns are ASSERTs, the size/page-count && pair two EXPECTs
+FlashFileSystem.test_serialize_leaves_erased_low_pages_unprogrammed	test_serialize_leaves_erased_low_pages_unprogrammed@291	5	nand.FlashFsSmallBlockLayout.SerializeLeavesErasedLowPagesUnprogrammed	ported;note:a plain companion of the Mode/FlashFsSmallBlock table, so its own suite (gtest forbids TEST and TEST_P in one suite); the programmed-page && chain is one EXPECT per byte
+FlashFileSystem.test_big_block_large_file_roundtrips_through_serialize	test_big_block_large_file_roundtrips_through_serialize@336	8	nand.FlashFsBigBlock.LargeFileRoundtripsThroughSerialize	ported;note:each file check is presence plus EXPECT_BYTES_EQ on value_or
+FlashFileSystem.test_deferred_root_is_placed_last_from_free_pool	test_deferred_root_is_placed_last_from_free_pool@386	11	nand.FlashFsSmallBlockLayout.DeferredRootIsPlacedLastFromFreePool	ported
+FlashFileSystem.test_insert_file_lays_files_back_to_back	test_insert_file_lays_files_back_to_back@428	10	nand.FlashFsSmallBlockLayout.InsertFileLaysFilesBackToBack	ported;note:the laid loop is an ASSERT on the entry count, which the old test indexed unchecked, then ASSERTs per entry name and block; the early-returning checks are ASSERTs one per fact; the final && chain is an ASSERT on the count then one EXPECT per fact
+FlashFileSystem.test_table_states_withheld_and_root_clusters	test_table_states_withheld_and_root_clusters@474	15	nand.FlashFsBigBlock.TableStatesWithheldAndRootClusters	ported;note:each early-returning check is an ASSERT, one per fact; the stated-value && pairs are one EXPECT per cluster; stated_map_value is file-local
+FlashFileSystem.test_big_block_single_cluster_padding_keeps_erased_fields	test_big_block_single_cluster_padding_keeps_erased_fields@518	7	nand.FlashFsBigBlock.SingleClusterPaddingKeepsErasedFields	ported;note:the format/allocate/save chain is one ASSERT per call; new ASSERT guards on both stat() results and on a non-empty long.bin chain, which the old test dereferenced unchecked
 FlashFileSystem.test_load_pins	test_load_pins@799	11	-	pending
-FlashFileSystem.test_unterminated_name_round_trips	test_unterminated_name_round_trips@977	10	-	pending
-FlashFileSystem.test_corrupt_length_fails_truncated	test_corrupt_length_fails_truncated@1043	4	-	pending
+FlashFileSystem.test_unterminated_name_round_trips	test_unterminated_name_round_trips@977	10	nand.FlashFsCorruptInput.UnterminatedNameRoundTrips	ported;note:expect_files stays a lambda under SCOPED_TRACE(when), one EXPECT per fact with the old when-suffixed messages; the reserialized chain is ASSERT_OK and an ASSERT on the size before indexing, then one EXPECT per fact; pattern is test::flashfs_pattern, small_root, put_entry and slot_offset come from tests/support/builders/FlashFsRoots.hpp
+FlashFileSystem.test_corrupt_length_fails_truncated	test_corrupt_length_fails_truncated@1043	4	nand.FlashFsCorruptInput.CorruptLengthFailsTruncated	ported;note:the catch(std::exception) is EXPECT_NO_THROW; the Truncated code and exact message are EXPECT_ERROR_MSG (describe() equals the message: no context); the empty filesystem is two EXPECTs
 FlashFileSystem.test_flashfs_root_goldens	test_flashfs_root_goldens@1075	0	-	pending
 # hand
 FlashFileSystem.root_case_golden.small	root_case_golden#small@1086	13	-	pending
@@ -33,3 +33,4 @@ FlashFileSystem.load_pin.file_past_map	load_pin#file_past_map@936	1	-	pending
 FlashFileSystem.load_pin.dropped_past_map	load_pin#dropped_past_map@953	1	-	pending
 FlashFileSystem.load_pin.short_root	load_pin#short_root@965	1	-	pending
 FlashFileSystem.load_pin.short_emmc_root	load_pin#short_emmc_root@974	1	-	pending
+FlashFileSystem.test_small_block_fs_metadata_matches_dumps.NewSmall	test_small_block_fs_metadata_matches_dumps#NewSmall@285	-	nand.Mode/FlashFsSmallBlock#MetadataMatchesDumps/NewSmall	new;note:the NewSmall call of the small-block metadata helper (old line 285) as its own row
