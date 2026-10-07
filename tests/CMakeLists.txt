@@ -58,7 +58,8 @@ add_library(gxbuild3_test_support STATIC
     support/Expect.cpp
     support/Keys.cpp
     support/Scratch.cpp
-    support/builders/FlashFsRoots.cpp)
+    support/builders/FlashFsRoots.cpp
+    support/builders/FlashImageCells.cpp)
 target_include_directories(gxbuild3_test_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(gxbuild3_test_support PUBLIC gxbuild3_internal GTest::gtest)
 target_compile_definitions(gxbuild3_test_support PUBLIC
@@ -207,15 +208,6 @@ foreach(cli_test gxbuild3_commandline_tests gxbuild3_resolver_tests
         gxbuild3_buildcommand_tests)
     target_link_libraries(${cli_test} PRIVATE gxbuild3_cli)
 endforeach()
-# In-process goldens over the tracked mydata/image.bin (tests/golden/flashimage_golden.txt),
-# the synthetic fresh-layout matrix (flashimage_matrix.txt) and the FlashImage failure
-# table (flashimage_failures.txt). The matrix writes 48 full-size images: about 30 s in
-# Release, so the timeout leaves room for an unoptimized build.
-add_gxbuild3_test(gxbuild3_flashimage_golden_tests FlashImageGoldenTests.cpp LABELS golden)
-target_link_libraries(gxbuild3_flashimage_golden_tests PRIVATE gxbuild3_flashimage_render)
-target_compile_definitions(gxbuild3_flashimage_golden_tests PRIVATE
-    GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
-set_tests_properties(gxbuild3_flashimage_golden_tests PROPERTIES TIMEOUT 600)
 # run_build digests over the tracked mydata/image.bin (tests/golden/
 # orchestration_mydata_builds.txt): extract_all, then retail, jtag and glitch2 rebuilds with
 # the tracked patch files and XeLLs, each built twice under a pinned time and donor nonces;

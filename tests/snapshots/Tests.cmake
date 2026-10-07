@@ -7,7 +7,9 @@
 # process, and ObjectsCorpusGolden, whose eight cases share one corpus render per process (about
 # 0.2 s); the other goldens (WireCorpusGolden's three cases included: its 145 stage fixtures
 # load and render in about 0.2 s) and the single-case suites (FlashFsRootGolden's whole-file
-# render takes about 2.5 s) are one entry per TEST.
+# render takes about 2.5 s) are one entry per TEST. So are the three FlashImage goldens: the
+# donor (flashimage_golden) and failure table each render in a few seconds, the whole-file
+# flashimage_matrix writes 48 full-size images (about 25 s) until it is sectioned.
 gxbuild3_add_gtest(gxbuild3_golden_tests
     PREFIX golden
     LABELS golden slow
@@ -23,6 +25,12 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
         ${CMAKE_CURRENT_LIST_DIR}/GoldenSnapshotSelfTestGolden.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FlashFsRootRender.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FlashFsRootGoldenTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/FlashImageDonorRender.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/FlashImageDonorGoldenTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/FlashImageMatrixRender.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/FlashImageMatrixGoldenTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/FlashImageFailureRender.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/FlashImageFailureGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ObjectsCorpusRender.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ObjectsCorpusGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/StfsSystemUpdateGoldenTests.cpp
@@ -41,6 +49,9 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
 # environment redirects the write to a scratch copy.
 set(GXBUILD3_TEXT_GOLDENS
     flashfs_roots
+    flashimage_failures
+    flashimage_golden
+    flashimage_matrix
     golden_snapshot_selftest
     objects_corpus
     stfs_su20076000_entries

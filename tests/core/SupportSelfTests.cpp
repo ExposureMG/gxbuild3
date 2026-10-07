@@ -1,10 +1,12 @@
 // Self-tests of tests/support: Scratch.hpp (scratch directories, the working-directory guard,
-// support files), Env.hpp (scoped environment, pinned build time) and Bytes.hpp.
+// support files), Env.hpp (scoped environment, pinned build time), Bytes.hpp and Sha256.hpp (the
+// FIPS 180-4 vectors the old FlashImageGoldenTests.cpp checked before trusting it).
 
 #include "support/Bytes.hpp"
 #include "support/Env.hpp"
 #include "support/Expect.hpp"
 #include "support/Scratch.hpp"
+#include "support/Sha256.hpp"
 #include "utils/BuildTime.hpp"
 
 #include <array>
@@ -14,6 +16,7 @@
 #include <gtest/gtest-spi.h>
 #include <gtest/gtest.h>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -213,6 +216,42 @@ namespace gxbuild3::core {
             EXPECT_EQ(bytes[0x2FFF], 0x6Au); // 0x5A + 0x14FF9 + 0x17
             EXPECT_NE(test::image_pattern(0x10, 3), test::flashfs_pattern(0x10, 3));
         }
+
+        // ---- Sha256 ----------------------------------------------------------------------
+
+        // FIPS 180-4 examples, including the two-block padding case (the old
+        // FlashImageGoldenTests.cpp sha256_self_test, verbatim).
+        struct Sha256Vector {
+            const char* name;
+            std::string_view text;
+            const char* digest;
+            const char* message;
+        };
+        GX_PRINT_ROW_AS_NAME(Sha256Vector)
+
+        class Sha256 : public ::testing::TestWithParam<Sha256Vector> {};
+
+        TEST_P(Sha256, MatchesTheFips180Example) {
+            const auto& vector = GetParam();
+            const auto digest = test::sha256_hex(std::span<const uint8_t>(
+                reinterpret_cast<const uint8_t*>(vector.text.data()), vector.text.size()));
+            EXPECT_EQ(digest, vector.digest) << vector.message;
+        }
+
+        INSTANTIATE_TEST_SUITE_P(
+            Vector, Sha256,
+            ::testing::Values(
+                Sha256Vector{"Abc", "abc",
+                             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+                             "sha256(\"abc\")"},
+                Sha256Vector{"Empty", "",
+                             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                             "sha256(\"\")"},
+                Sha256Vector{"448BitMessage",
+                             "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+                             "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
+                             "sha256(448-bit message)"}),
+            test::RowName{});
 
     } // namespace
 } // namespace gxbuild3::core

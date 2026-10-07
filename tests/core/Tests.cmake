@@ -1,8 +1,9 @@
 # gxbuild3_core_tests: the test support library's self-tests, the CPU keys, src/Error.hpp,
 # src/Wire.hpp, the Input model with validate_input, and OptionsManager (more core suites join as
 # their old tests are ported). SupportExpect, SupportBytes, ErrorResult and WireRecord are cheap
-# suites of 5 or more cases, so each runs as one bundled ctest entry, and so do the two cheap
-# tables Row/InputMissingRequired and Row/InputRejectsAddonPatchData; WireLayoutPins (the
+# suites of 5 or more cases, so each runs as one bundled ctest entry, and so do the three cheap
+# tables Row/InputMissingRequired, Row/InputRejectsAddonPatchData and Vector/Sha256 (the FIPS
+# 180-4 vectors of support/Sha256.hpp); WireLayoutPins (the
 # compile-time pins plus one run-time case), WireCursor, WireFormat, WireLog (the Log capture
 # fixture), InputLayout, InputValidate and OptionsManager are one entry per case.
 gxbuild3_add_gtest(gxbuild3_core_tests
@@ -25,4 +26,5 @@ gxbuild3_add_gtest(gxbuild3_core_tests
         ErrorResult
         WireRecord
         Row/InputMissingRequired
-        Row/InputRejectsAddonPatchData)
+        Row/InputRejectsAddonPatchData
+        Vector/Sha256)
