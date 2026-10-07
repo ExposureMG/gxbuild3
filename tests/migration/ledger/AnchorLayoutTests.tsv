@@ -3,18 +3,18 @@
 # Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
 # id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
 # hand
-AnchorLayout.main.RawXellIsAccepted	raw_xell#RawXellIsAccepted@407	1	-	pending
-AnchorLayout.freeboot_provider	freeboot_provider@201	1	-	pending
-AnchorLayout.anchors.Small_Glitch2	anchors#Small_Glitch2@52	1	-	pending
-AnchorLayout.anchors.Small_Glitch2m	anchors#Small_Glitch2m@52	1	-	pending
-AnchorLayout.anchors.Big_Glitch2	anchors#Big_Glitch2@52	1	-	pending
-AnchorLayout.anchors.Big_Glitch2m	anchors#Big_Glitch2m@52	1	-	pending
-AnchorLayout.anchors.Emmc_Glitch2	anchors#Emmc_Glitch2@52	1	-	pending
-AnchorLayout.anchors.Emmc_Glitch2m	anchors#Emmc_Glitch2m@52	1	-	pending
-AnchorLayout.spill.Retail	spill#Retail@410	1	-	pending
-AnchorLayout.spill.Glitch2	spill#Glitch2@411	1	-	pending
-AnchorLayout.spill.Jtag	spill#Jtag@412	1	-	pending
-AnchorLayout.jtag_window.Small	jtag_window#Small@413	1	-	pending
-AnchorLayout.jtag_window.Big	jtag_window#Big@414	1	-	pending
-AnchorLayout.custom_header_roundtrip	custom_header_roundtrip@185	1	-	pending
-AnchorLayout.payload_range_overflow_precedence	payload_range_overflow_precedence@330	1	-	pending
+AnchorLayout.main.RawXellIsAccepted	raw_xell#RawXellIsAccepted@407	1	nand.XeLL.RawExecutableIsAccepted	ported;note:the inline check of main() is its own case, EXPECT_OK on XeLL::parse(raw_xell()); raw_xell moves byte for byte into tests/nand/AnchorFixture.cpp
+AnchorLayout.freeboot_provider	freeboot_provider@201	1	nand.FreebootProvider.RebooterStatesTheKernelVersionAndPayloadLoadsItsWordCount	ported;note:each && chain is one EXPECT per fact (the 0xD0B placeholder, the stated version and the unchanged rest through EXPECT_BYTES_EQ on subspans, the three hold-address searches, the two payload words); new ASSERT guards cover the sizes the old test indexed unchecked (rebooter and payload non-empty, the rebooter long enough for 0xD0B + 0x20, the stated rebooter as long as the core, the built payloads past 0x53)
+AnchorLayout.anchors.Small_Glitch2	anchors#Small_Glitch2@52	1	nand.Small/AnchorLayout#KhvXellAndFusesAreAnchored/Glitch2	ported;note:the 3x2 loop of anchors() is TEST_P AnchorLayout.KhvXellAndFusesAreAnchored, instantiated per shape (Small/, Big/ and Emmc/AnchorLayout, one bundle each) over rows Glitch2 and Glitch2m in the old order; fixture() is anchor_image() in tests/nand/AnchorFixture.cpp, same bytes and the same silent skip of a patchset that fails to parse; the continue after a failed write is ASSERT_OK; the KHV && chain is one EXPECT per fact; the XeLL and fuse spans are EXPECT_BYTES_EQ (the fuse span now also checks its 0x60 length, where all_of passed an empty read); the read-back is ASSERTs on write, read and parse, then EXPECTs on XeLL and fuses
+AnchorLayout.anchors.Small_Glitch2m	anchors#Small_Glitch2m@52	1	nand.Small/AnchorLayout#KhvXellAndFusesAreAnchored/Glitch2m	ported
+AnchorLayout.anchors.Big_Glitch2	anchors#Big_Glitch2@52	1	nand.Big/AnchorLayout#KhvXellAndFusesAreAnchored/Glitch2	ported
+AnchorLayout.anchors.Big_Glitch2m	anchors#Big_Glitch2m@52	1	nand.Big/AnchorLayout#KhvXellAndFusesAreAnchored/Glitch2m	ported
+AnchorLayout.anchors.Emmc_Glitch2	anchors#Emmc_Glitch2@52	1	nand.Emmc/AnchorLayout#KhvXellAndFusesAreAnchored/Glitch2	ported
+AnchorLayout.anchors.Emmc_Glitch2m	anchors#Emmc_Glitch2m@52	1	nand.Emmc/AnchorLayout#KhvXellAndFusesAreAnchored/Glitch2m	ported
+AnchorLayout.spill.Retail	spill#Retail@410	1	nand.Type/SpillChain.OversizedCgSpillsThroughTheCfBlockListAndReassembles/Retail	ported;note:spill(type) is TEST_P SpillChain.OversizedCgSpillsThroughTheCfBlockListAndReassembles over Type/ rows Retail, Glitch2 and Jtag, one ctest entry per row (PER_ROW, about 2 s each); every early return is an ASSERT, one per fact; the 4 must() calls are ASSERT_OK; new ASSERT guards cover the CF and CG optionals and the CF data length before indexing; CG ciphertexts compare through ASSERT_BYTES_EQ; the random nonces mean only structure is compared
+AnchorLayout.spill.Glitch2	spill#Glitch2@411	1	nand.Type/SpillChain.OversizedCgSpillsThroughTheCfBlockListAndReassembles/Glitch2	ported
+AnchorLayout.spill.Jtag	spill#Jtag@412	1	nand.Type/SpillChain.OversizedCgSpillsThroughTheCfBlockListAndReassembles/Jtag	ported
+AnchorLayout.jtag_window.Small	jtag_window#Small@413	1	nand.Mode/JtagWindow#PayloadsLandAtTheAnchoredWindowAndReadBackAsJtag/Small	ported;note:jtag_window(mode) is TEST_P JtagWindow.PayloadsLandAtTheAnchoredWindowAndReadBackAsJtag over Mode/ rows Small and Big, bundled as nand.Mode/JtagWindow; the two precondition early returns are ASSERTs, one per fact; filled() and the window reads are EXPECT_BYTES_EQ against the expected fill or bytes; the read-back is an ASSERT on write and read, then EXPECTs on parse, build type, XeLL and fuses
+AnchorLayout.jtag_window.Big	jtag_window#Big@414	1	nand.Mode/JtagWindow#PayloadsLandAtTheAnchoredWindowAndReadBackAsJtag/Big	ported
+AnchorLayout.custom_header_roundtrip	custom_header_roundtrip@185	1	nand.AnchorLayoutRoundTrip.CustomHeaderLayoutKeepsItsHeaderDerivedKhvAnchor	ported;note:a plain companion of the AnchorLayout table, so its own suite (gtest forbids TEST and TEST_P in one suite); the two early returns are ASSERTs on write, read and parse, then one EXPECT per fact (cf_offset, fs_addr, the 16 bytes, the KHV address); be32 is test::be32
+AnchorLayout.payload_range_overflow_precedence	payload_range_overflow_precedence@330	1	nand.PayloadRange.OverflowsKeepTheirExactTextsAndSlotSpanPrecedence	ported;note:fails_with (code, exact message, empty context) is EXPECT_ERROR_MSG, whose describe() equals the message only without context; all exact texts kept; the ok-and-value chains are EXPECT_OK plus EXPECT_EQ on value_or, the recorded spill ranges one EXPECT_EQ on their (name, offset, length) tuples, so no fact hides the next

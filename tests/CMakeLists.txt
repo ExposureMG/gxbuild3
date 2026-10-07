@@ -190,7 +190,6 @@ include(private/Tests.cmake)
 
 # ---- Pre-GoogleTest test executables (ported area by area, then deleted) --------------------
 
-add_gxbuild3_test(gxbuild3_anchor_layout_tests AnchorLayoutTests.cpp)
 # Only the flashfs_roots golden is left here; it shares the FlashFS root builders and
 # flashfs_pattern with the nand unit tests through gxbuild3_test_support.
 add_gxbuild3_test(gxbuild3_flashfs_tests FlashFileSystemTests.cpp)
