@@ -2,11 +2,17 @@
 # BuildTime: the two cheap tables Row/FatTimestamp and Row/SourceDateEpoch run as one bundled
 # ctest entry each; FlashFsBuildTimestamp and the four FatTimestampZone cases, which change the
 # process's TZ (and whose British-summer-time case skips on WIN32), are one entry per case.
+# XeRsa: the three XeRsaSd cases share the generated RSA-2048 test key (about 0.5 s per process),
+# so they run as one bundled entry that makes it once; BigUint, Crc32 and Fuseset are suites of
+# fewer than five cases, one entry per case.
 gxbuild3_add_gtest(gxbuild3_utils_tests
     PREFIX utils
     LABELS unit utils
     SOURCES
         ${CMAKE_CURRENT_LIST_DIR}/BuildTimeTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/FusesetTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/XeRsaTests.cpp
     BUNDLE
         Row/FatTimestamp
-        Row/SourceDateEpoch)
+        Row/SourceDateEpoch
+        XeRsaSd)

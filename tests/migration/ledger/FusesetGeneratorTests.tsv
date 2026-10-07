@@ -2,7 +2,7 @@
 # rows: 3 automatic, 0 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
 # Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
 # id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
-FusesetGenerator.test_every_line_of_a_retail_slim_console	test_every_line_of_a_retail_slim_console@36	8	-	pending
-FusesetGenerator.test_a_devkit_type_and_no_lockdown	test_a_devkit_type_and_no_lockdown@66	3	-	pending
-FusesetGenerator.test_the_word_comes_off_the_cb_and_an_unknown_type_is_refused	test_the_word_comes_off_the_cb_and_an_unknown_type_is_refused@76	3	-	pending
+FusesetGenerator.test_every_line_of_a_retail_slim_console	test_every_line_of_a_retail_slim_console@36	8	utils.Fuseset.EveryLineOfARetailSlimConsole	ported;note:line vectors verbatim; the size precondition is ASSERT_OK plus ASSERT_EQ 0x60, the lines 3-6 chain is four EXPECTs and the lines 9-11 loop one EXPECT under SCOPED_TRACE(index); every line is checked through EXPECT_BYTES_EQ
+FusesetGenerator.test_a_devkit_type_and_no_lockdown	test_a_devkit_type_and_no_lockdown@66	3	utils.Fuseset.DevkitTypeAndNoLockdown	ported;note:adds one ASSERT_GE guard (fuseset reaches line 8) before line() reads lines 1, 7 and 8, which the old test did unchecked; lines 7 and 8 are one EXPECT each
+FusesetGenerator.test_the_word_comes_off_the_cb_and_an_unknown_type_is_refused	test_the_word_comes_off_the_cb_and_an_unknown_type_is_refused@76	3	utils.Fuseset.WordComesOffTheCbAndAnUnknownTypeIsRefused	ported;note:the two refusals (has_value only, as before) run before ASSERT_OK(word) and EXPECT_EQ 0x02001234 so they are not hidden by it
 # hand
