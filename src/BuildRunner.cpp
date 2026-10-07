@@ -37,6 +37,7 @@
 #include <expected>
 #include <format>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -1732,6 +1733,50 @@ namespace gxbuild3 {
             return decrypt_nand(image, cpu_key);
         }
 
+        // The text of a fixed-size, NUL-padded on-disk string field: its bytes up to the first
+        // NUL, or all of them when there is none.
+        std::string fixed_string(std::span<const uint8_t> bytes) {
+            const auto end = std::ranges::find(bytes, uint8_t{0});
+            return std::string(bytes.begin(), end);
+        }
+
+        // The NAND header fields the extract cores show.
+        void project_header(const nand_header& header, AllNandInfo& info) {
+            info.header_magic = header.magic.get();
+            info.header_version = header.version.get();
+            info.header_flags = header.flags.get();
+            info.header_size = header.size.get();
+            info.copyright = fixed_string(header.copyright);
+        }
+
+        // One stage's line in the extracted bootloader chain: its header fields and whether it is
+        // decrypted, which `decrypted_override` replaces when set (extract_all_info shows SC as
+        // decrypted whatever its state). The caller decides presence and adds any per-box values.
+        template <class Stage>
+        BootloaderEntryInfo summarize_stage(std::string_view name, const Stage& stage,
+                                            std::optional<bool> decrypted_override = {}) {
+            BootloaderEntryInfo entry{};
+            entry.name = name;
+            entry.version = stage.header.header.version.get();
+            entry.size = stage.header.header.size.get();
+            entry.flags = stage.header.header.flags.get();
+            entry.entrypoint = stage.header.header.entrypoint.get();
+            entry.present = true;
+            entry.decrypted = decrypted_override ? *decrypted_override : stage.is_decrypted();
+            return entry;
+        }
+
+        SmcSummaryInfo summarize_smc(const Smc& smc) {
+            SmcSummaryInfo summary{};
+            summary.present = true;
+            summary.version = smc.version;
+            summary.motherboard_name = std::string(smc_motherboard_name(smc.motherboard));
+            summary.type_name = std::string(smc_type_name(smc.variant));
+            summary.size = static_cast<uint32_t>(smc.data.size());
+            summary.decrypted = !smc.encrypted;
+            return summary;
+        }
+
     } // namespace
 
     Result<AllNandInfo> extract_some_info(std::span<const uint8_t> nand_image) {
@@ -1741,65 +1786,42 @@ namespace gxbuild3 {
         }
 
         AllNandInfo info{};
-        info.header_magic = img.header.magic;
-        info.header_version = img.header.version;
-        info.header_flags = img.header.flags;
-        info.header_size = img.header.size;
-        info.copyright = std::string(reinterpret_cast<const char*>(img.header.copyright),
-                                     strnlen(reinterpret_cast<const char*>(img.header.copyright),
-                                             sizeof(img.header.copyright)));
+        project_header(img.header, info);
         info.block_type = image_type_from_driver(img.flash_driver.driver_mode());
 
-        const auto summarize = [](const auto& bootloader, std::string_view name) {
-            BootloaderEntryInfo entry{};
-            entry.name = name;
-            entry.version = bootloader.header.header.version;
-            entry.size = bootloader.header.header.size;
-            entry.flags = bootloader.header.header.flags;
-            entry.entrypoint = bootloader.header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = bootloader.is_decrypted();
-            return entry;
-        };
-
         if (!img.cb_section.cb_or_A.data.empty()) {
-            info.bootloaders.cb_a = summarize(img.cb_section.cb_or_A, "CB_A");
+            info.bootloaders.cb_a = summarize_stage("CB_A", img.cb_section.cb_or_A);
         }
         if (img.cb_section.cb_x && !img.cb_section.cb_x->data.empty()) {
-            info.bootloaders.cb_x = summarize(*img.cb_section.cb_x, "CB_X");
+            info.bootloaders.cb_x = summarize_stage("CB_X", *img.cb_section.cb_x);
         }
         if (img.cb_section.cb_B && !img.cb_section.cb_B->data.empty()) {
-            info.bootloaders.cb_b = summarize(*img.cb_section.cb_B, "CB_B");
+            info.bootloaders.cb_b = summarize_stage("CB_B", *img.cb_section.cb_B);
         }
         if (img.cb_section.sc && !img.cb_section.sc->data.empty()) {
-            info.bootloaders.sc = summarize(*img.cb_section.sc, "SC");
+            info.bootloaders.sc = summarize_stage("SC", *img.cb_section.sc);
         }
         if (!img.kernel_section.cd.data.empty()) {
-            info.bootloaders.cd = summarize(img.kernel_section.cd, "CD");
+            info.bootloaders.cd = summarize_stage("CD", img.kernel_section.cd);
         }
         if (img.kernel_section.ce && !img.kernel_section.ce->data.empty()) {
-            info.bootloaders.ce = summarize(*img.kernel_section.ce, "CE");
+            info.bootloaders.ce = summarize_stage("CE", *img.kernel_section.ce);
         }
         if (img.system_update_0.cf && !img.system_update_0.cf->data.empty()) {
-            info.bootloaders.cf_0 = summarize(*img.system_update_0.cf, "CF_0");
+            info.bootloaders.cf_0 = summarize_stage("CF_0", *img.system_update_0.cf);
         }
         if (img.system_update_0.cg && !img.system_update_0.cg->data.empty()) {
-            info.bootloaders.cg_0 = summarize(*img.system_update_0.cg, "CG_0");
+            info.bootloaders.cg_0 = summarize_stage("CG_0", *img.system_update_0.cg);
         }
         if (img.system_update_1.cf && !img.system_update_1.cf->data.empty()) {
-            info.bootloaders.cf_1 = summarize(*img.system_update_1.cf, "CF_1");
+            info.bootloaders.cf_1 = summarize_stage("CF_1", *img.system_update_1.cf);
         }
         if (img.system_update_1.cg && !img.system_update_1.cg->data.empty()) {
-            info.bootloaders.cg_1 = summarize(*img.system_update_1.cg, "CG_1");
+            info.bootloaders.cg_1 = summarize_stage("CG_1", *img.system_update_1.cg);
         }
 
         if (img.smc) {
-            info.smc.present = true;
-            info.smc.version = img.smc->version;
-            info.smc.motherboard_name = std::string(smc_motherboard_name(img.smc->motherboard));
-            info.smc.type_name = std::string(smc_type_name(img.smc->variant));
-            info.smc.size = static_cast<uint32_t>(img.smc->data.size());
-            info.smc.decrypted = !img.smc->encrypted;
+            info.smc = summarize_smc(*img.smc);
         }
 
         return info;
@@ -1870,48 +1892,29 @@ namespace gxbuild3 {
         info.cpu_key = std::vector<uint8_t>(cpu_key.begin(), cpu_key.end());
         info.block_type = image_type_from_driver(img.flash_driver.driver_mode());
 
-        info.header_magic = img.header.magic;
-        info.header_version = img.header.version;
-        info.header_flags = img.header.flags;
-        info.header_size = img.header.size;
-        info.copyright = std::string(reinterpret_cast<const char*>(img.header.copyright),
-                                     strnlen(reinterpret_cast<const char*>(img.header.copyright),
-                                             sizeof(img.header.copyright)));
+        project_header(img.header, info);
 
         if (!img.cb_section.cb_or_A.data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CB_A";
-            entry.version = img.cb_section.cb_or_A.header.header.version;
-            entry.size = img.cb_section.cb_or_A.header.header.size;
-            entry.flags = img.cb_section.cb_or_A.header.header.flags;
-            entry.entrypoint = img.cb_section.cb_or_A.header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.cb_section.cb_or_A.is_decrypted();
-            if (img.cb_section.cb_or_A.perbox.has_value()) {
-                entry.ldv = img.cb_section.cb_or_A.perbox->lockdown_value;
-                std::array<uint8_t, 3> pd{};
-                std::memcpy(pd.data(), img.cb_section.cb_or_A.perbox->pairing_data, 3);
+            const auto& cb_a = img.cb_section.cb_or_A;
+            auto entry = summarize_stage("CB_A", cb_a);
+            if (cb_a.perbox.has_value()) {
+                const auto pd = std::to_array(cb_a.perbox->pairing_data);
+                entry.ldv = cb_a.perbox->lockdown_value;
                 entry.pairing_data = pd;
-                info.bootloaders.cb_ldv = img.cb_section.cb_or_A.perbox->lockdown_value;
+                info.bootloaders.cb_ldv = cb_a.perbox->lockdown_value;
                 info.bootloaders.cb_pairing_data = pd;
             }
             info.bootloaders.cb_a = entry;
         }
 
+        // CB_B's LDV and pairing override CB_A's at the chain level.
         if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CB_B";
-            entry.version = img.cb_section.cb_B->header.header.version;
-            entry.size = img.cb_section.cb_B->header.header.size;
-            entry.flags = img.cb_section.cb_B->header.header.flags;
-            entry.entrypoint = img.cb_section.cb_B->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.cb_section.cb_B->is_decrypted();
-            if (img.cb_section.cb_B->perbox.has_value()) {
-                const uint8_t ldv = cb_b_display_ldv(*img.cb_section.cb_B);
+            const auto& cb_b = *img.cb_section.cb_B;
+            auto entry = summarize_stage("CB_B", cb_b);
+            if (cb_b.perbox.has_value()) {
+                const uint8_t ldv = cb_b_display_ldv(cb_b);
+                const auto pd = std::to_array(cb_b.perbox->pairing_data);
                 entry.ldv = ldv;
-                std::array<uint8_t, 3> pd{};
-                std::memcpy(pd.data(), img.cb_section.cb_B->perbox->pairing_data, 3);
                 entry.pairing_data = pd;
                 info.bootloaders.cb_ldv = ldv;
                 info.bootloaders.cb_pairing_data = pd;
@@ -1920,124 +1923,57 @@ namespace gxbuild3 {
         }
 
         if (img.cb_section.cb_x.has_value() && !img.cb_section.cb_x->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CB_X";
-            entry.version = img.cb_section.cb_x->header.header.version;
-            entry.size = img.cb_section.cb_x->header.header.size;
-            entry.flags = img.cb_section.cb_x->header.header.flags;
-            entry.entrypoint = img.cb_section.cb_x->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.cb_section.cb_x->is_decrypted();
-            info.bootloaders.cb_x = entry;
+            info.bootloaders.cb_x = summarize_stage("CB_X", *img.cb_section.cb_x);
         }
 
         if (img.cb_section.sc.has_value() && !img.cb_section.sc->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "SC";
-            entry.version = img.cb_section.sc->header.header.version;
-            entry.size = img.cb_section.sc->header.header.size;
-            entry.flags = img.cb_section.sc->header.header.flags;
-            entry.entrypoint = img.cb_section.sc->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = true;
-            info.bootloaders.sc = entry;
+            info.bootloaders.sc = summarize_stage("SC", *img.cb_section.sc, true);
         }
 
         if (!img.kernel_section.cd.data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CD";
-            entry.version = img.kernel_section.cd.header.header.version;
-            entry.size = img.kernel_section.cd.header.header.size;
-            entry.flags = img.kernel_section.cd.header.header.flags;
-            entry.entrypoint = img.kernel_section.cd.header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.kernel_section.cd.is_decrypted();
-            info.bootloaders.cd = entry;
+            info.bootloaders.cd = summarize_stage("CD", img.kernel_section.cd);
         }
 
         if (img.kernel_section.ce.has_value() && !img.kernel_section.ce->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CE";
-            entry.version = img.kernel_section.ce->header.header.version;
-            entry.size = img.kernel_section.ce->header.header.size;
-            entry.flags = img.kernel_section.ce->header.header.flags;
-            entry.entrypoint = img.kernel_section.ce->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.kernel_section.ce->is_decrypted();
-            info.bootloaders.ce = entry;
+            info.bootloaders.ce = summarize_stage("CE", *img.kernel_section.ce);
         }
 
         if (img.system_update_0.cf.has_value() && !img.system_update_0.cf->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CF_0";
-            entry.version = img.system_update_0.cf->header.header.version;
-            entry.size = img.system_update_0.cf->header.header.size;
-            entry.flags = img.system_update_0.cf->header.header.flags;
-            entry.entrypoint = img.system_update_0.cf->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.system_update_0.cf->is_decrypted();
-            if (img.system_update_0.cf->perbox.has_value()) {
-                entry.ldv = img.system_update_0.cf->perbox->lockdown_value;
-                std::array<uint8_t, 3> pd{};
-                std::memcpy(pd.data(), img.system_update_0.cf->perbox->pairing_data, 3);
+            const auto& cf_0 = *img.system_update_0.cf;
+            auto entry = summarize_stage("CF_0", cf_0);
+            if (cf_0.perbox.has_value()) {
+                const auto pd = std::to_array(cf_0.perbox->pairing_data);
+                entry.ldv = cf_0.perbox->lockdown_value;
                 entry.pairing_data = pd;
-                info.bootloaders.cf0_ldv = img.system_update_0.cf->perbox->lockdown_value;
+                info.bootloaders.cf0_ldv = cf_0.perbox->lockdown_value;
                 info.bootloaders.cf0_pairing_data = pd;
             }
             info.bootloaders.cf_0 = entry;
         }
 
         if (img.system_update_0.cg.has_value() && !img.system_update_0.cg->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CG_0";
-            entry.version = img.system_update_0.cg->header.header.version;
-            entry.size = img.system_update_0.cg->header.header.size;
-            entry.flags = img.system_update_0.cg->header.header.flags;
-            entry.entrypoint = img.system_update_0.cg->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.system_update_0.cg->is_decrypted();
-            info.bootloaders.cg_0 = entry;
+            info.bootloaders.cg_0 = summarize_stage("CG_0", *img.system_update_0.cg);
         }
 
         if (img.system_update_1.cf.has_value() && !img.system_update_1.cf->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CF_1";
-            entry.version = img.system_update_1.cf->header.header.version;
-            entry.size = img.system_update_1.cf->header.header.size;
-            entry.flags = img.system_update_1.cf->header.header.flags;
-            entry.entrypoint = img.system_update_1.cf->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.system_update_1.cf->is_decrypted();
-            if (img.system_update_1.cf->perbox.has_value()) {
-                entry.ldv = img.system_update_1.cf->perbox->lockdown_value;
-                std::array<uint8_t, 3> pd{};
-                std::memcpy(pd.data(), img.system_update_1.cf->perbox->pairing_data, 3);
+            const auto& cf_1 = *img.system_update_1.cf;
+            auto entry = summarize_stage("CF_1", cf_1);
+            if (cf_1.perbox.has_value()) {
+                const auto pd = std::to_array(cf_1.perbox->pairing_data);
+                entry.ldv = cf_1.perbox->lockdown_value;
                 entry.pairing_data = pd;
-                info.bootloaders.cf1_ldv = img.system_update_1.cf->perbox->lockdown_value;
+                info.bootloaders.cf1_ldv = cf_1.perbox->lockdown_value;
                 info.bootloaders.cf1_pairing_data = pd;
             }
             info.bootloaders.cf_1 = entry;
         }
 
         if (img.system_update_1.cg.has_value() && !img.system_update_1.cg->data.empty()) {
-            BootloaderEntryInfo entry{};
-            entry.name = "CG_1";
-            entry.version = img.system_update_1.cg->header.header.version;
-            entry.size = img.system_update_1.cg->header.header.size;
-            entry.flags = img.system_update_1.cg->header.header.flags;
-            entry.entrypoint = img.system_update_1.cg->header.header.entrypoint;
-            entry.present = true;
-            entry.decrypted = img.system_update_1.cg->is_decrypted();
-            info.bootloaders.cg_1 = entry;
+            info.bootloaders.cg_1 = summarize_stage("CG_1", *img.system_update_1.cg);
         }
 
         if (img.smc.has_value()) {
-            info.smc.present = true;
-            info.smc.version = img.smc->version;
-            info.smc.motherboard_name = std::string(smc_motherboard_name(img.smc->motherboard));
-            info.smc.type_name = std::string(smc_type_name(img.smc->variant));
-            info.smc.size = static_cast<uint32_t>(img.smc->data.size());
-            info.smc.decrypted = !img.smc->encrypted;
+            info.smc = summarize_smc(*img.smc);
         }
 
         if (img.filesystem.has_value()) {
