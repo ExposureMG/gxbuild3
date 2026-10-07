@@ -6,12 +6,20 @@ on:
 
 jobs:
   build-and-test:
-    name: Clang Release build + ctest (Arch Linux)
+    name: ${{ matrix.compiler.name }} Release build + ctest (Arch Linux)
     runs-on: ubuntu-latest
     container: archlinux:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - { name: Clang, cc: clang, cxx: clang++ }
+          - { name: GCC, cc: gcc, cxx: g++ }
     steps:
+      # gtest is installed ahead of the GoogleTest migration so the first test ported to it
+      # needs no CI edit.
       - name: Install toolchain
-        run: pacman -Syu --noconfirm --needed clang cmake ninja git
+        run: pacman -Syu --noconfirm --needed clang gcc cmake ninja git gtest
 
       - name: Check out sources
         uses: actions/checkout@v4
@@ -28,8 +36,8 @@ jobs:
         run: >
           cmake -B build -S . -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_C_COMPILER=clang
-          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_C_COMPILER=${{ matrix.compiler.cc }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
