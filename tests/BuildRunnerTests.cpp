@@ -1785,6 +1785,37 @@ namespace {
         return passed;
     }
 
+    // The OSIG is read only when raw_data holds all 28 bytes at 0xC92, so through 0xCAD: one byte
+    // short (0xCAD bytes) gives an empty OSIG without reading past the buffer, even with no NUL
+    // in the bytes it has, and exactly 0xCAE bytes gives all 28. A parsed keyvault is always
+    // kSize bytes; this pins the bound for a hand-made one. Run under ASan to see the bound.
+    bool test_keyvault_summary_osig_bound() {
+        static_assert(Keyvault::kOsigOffset + Keyvault::kOsigLength == 0xCAE);
+        bool passed = true;
+        for (const auto& [size, expected] : std::array<std::pair<size_t, std::string_view>, 3>{{
+                 {0xCAD, ""},
+                 {0xCAE, "AAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+                 {0xCAF, "AAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+             }}) {
+            Keyvault kv{};
+            kv.encrypted = false;
+            kv.raw_data.assign(size, static_cast<uint8_t>('A'));
+            const auto summary = summarize_keyvault(kv);
+            char size_text[16];
+            std::snprintf(size_text, sizeof(size_text), "0x%zX", size);
+            const auto label = "raw_data of " + std::string(size_text) + " bytes";
+            passed = require(summary.present && summary.decrypted,
+                             label + ": the summary is present and decrypted") &&
+                     passed;
+            passed =
+                require(summary.osig == expected,
+                        label + ": osig is " +
+                            (expected.empty() ? std::string("empty") : "the 28 bytes at 0xC92")) &&
+                passed;
+        }
+        return passed;
+    }
+
     bool test_sc_survives_extraction_and_backing_cleared_layout_override() {
         auto source = fresh_input(ImageType::SmallBlock);
         const auto donor = make_donor(source, {});
@@ -5217,6 +5248,7 @@ int main(int argc, char** argv) {
     passed = test_extraction_cores_return_their_reason_and_the_shims_return_nullopt() && passed;
     passed = test_extract_all_info_reads_the_fcrt_flag_big_endian() && passed;
     passed = test_extract_all_info_pins_the_keyvault_summary_at_its_offsets() && passed;
+    passed = test_keyvault_summary_osig_bound() && passed;
     passed = test_sc_survives_extraction_and_backing_cleared_layout_override() && passed;
     passed = test_decrypt_all_distinguishes_encrypted_and_zero_key_plaintext_sc() && passed;
     passed = test_fresh_layouts_match_requested_image_types() && passed;
