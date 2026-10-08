@@ -1,6 +1,8 @@
 // src/stfs/StfsContainer.hpp and ContainerDetail.hpp: extract_all confines every entry to its
 // output directory (relative and absolute escapes, parent cycles, safe_join), checking all
-// destinations before it writes anything, and extracts nested directories. StfsSafeJoin (the
+// destinations before it writes anything, and extracts nested directories.
+// StfsContainerExtract names the order: a bad destination anywhere in the table fails extract_all
+// before even the output directory is created. StfsSafeJoin (the
 // WIN32-only drive and UNC paths) and StfsExtractToDisk (needs /dev/full) can skip, so they are
 // suites of their own outside the StfsPath bundle.
 
@@ -136,6 +138,36 @@ namespace gxbuild3::stfs {
             const auto read = test::read_file(dir.path() / "out" / "sub" / "inner.bin");
             ASSERT_OK(read) << "a nested file extracts with verification";
             EXPECT_BYTES_EQ(data, *read) << "a nested file extracts with verification";
+        }
+
+        // extract_all plans every destination (parent links, then safe_join) before it creates
+        // the output directory, so a bad entry after good files leaves no trace on disk: here a
+        // trailing "." directory (it passes the name checks, then collapses to the target
+        // itself) and a trailing forward parent reference.
+        TEST(StfsContainerExtract, DestinationsAreValidatedBeforeAnyWrite) {
+            const test::ScratchDir dir;
+            const auto dot = make_package({{"first.bin", pattern(10, 1)},
+                                           {"second.bin", pattern(0x1800, 2)},
+                                           {".", {}, true, -1, true}});
+            const auto dot_container = StfsContainer::open(dot);
+            ASSERT_OK(dot_container) << "a package ending in a \".\" directory opens";
+            EXPECT_ERROR_MSG(dot_container->extract_all(dir.path() / "dot"),
+                             ErrorCode::InvalidArgument, "STFS entry . has an empty path")
+                << "a \".\" entry is refused by safe_join";
+            EXPECT_FALSE(fs::exists(dir.path() / "dot"))
+                << "the output directory is not even created";
+
+            const auto forward = make_package({{"first.bin", pattern(10, 1)},
+                                               {"second.bin", pattern(10, 2)},
+                                               {"late.bin", pattern(10, 3), true, 3}});
+            const auto forward_container = StfsContainer::open(forward);
+            ASSERT_OK(forward_container) << "a package with a forward parent reference opens";
+            EXPECT_ERROR_MSG(forward_container->extract_all(dir.path() / "forward"),
+                             ErrorCode::Malformed,
+                             "STFS file table entry 2 references an invalid parent index 3")
+                << "a parent index at or after the entry is refused while planning";
+            EXPECT_FALSE(fs::exists(dir.path() / "forward"))
+                << "the output directory is not even created";
         }
 
         // The drive-relative and UNC rows of safe_join exist on WIN32 only.

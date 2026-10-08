@@ -4,7 +4,8 @@
 # entry each. NeedsDevFull/StfsErrorCode, the one row that skips without /dev/full, is its own
 # instantiation outside the bundle, discovered per row. StfsSafeJoin (WIN32-only, skips
 # elsewhere) and StfsExtractToDisk (skips without /dev/full) are suites of their own; StfsHeader,
-# StfsVerify, StfsMetadata and StfsSystemUpdate (fewer than five cases) are one entry per case.
+# StfsVerify, StfsMetadata, StfsSystemUpdate, StfsContainerExtract and StfsExtractToMemory (fewer
+# than five cases) are one entry per case.
 gxbuild3_add_gtest(gxbuild3_stfs_tests
     PREFIX stfs
     LABELS unit stfs

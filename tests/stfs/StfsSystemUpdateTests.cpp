@@ -1,7 +1,9 @@
 // The tracked system update package 17559/su20076000_00000000 (two hash levels, 31 consecutive
 // files): StfsContainer lists, verifies and extracts it, and the hash-verified extract agrees
 // with extract_to_memory. Its file table and metadata are pinned field by field by the
-// stfs_su20076000_* goldens, which this binary does not own.
+// stfs_su20076000_* goldens, which this binary does not own. StfsExtractToMemory pins the key
+// rule over a synthetic package: the "$flash_" prefix is stripped whatever its case (the fixture
+// only has lower-case ones, and memory_key below strips case-sensitively).
 
 #include "PirsPackage.hpp"
 #include "stfs/MetadataParser.hpp"
@@ -17,6 +19,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace gxbuild3::stfs {
     namespace {
@@ -141,6 +144,42 @@ namespace gxbuild3::stfs {
             EXPECT_ERROR(corrupt->extract_all(corrupt_dir.path() / "out", Verify::Yes),
                          ErrorCode::HashMismatch)
                 << "verified container extract_all fails the hash";
+        }
+
+        // StfsContainer.cpp lowercases the first seven characters before comparing them with
+        // "$flash_", then lowercases the whole name. Exclusions are compared with those keys as
+        // given, and the by-name lookups lowercase the wanted name but never strip the prefix.
+        TEST(StfsExtractToMemory, KeyStripsFlashPrefixCaseBlindAndLowercases) {
+            const auto dash = pattern(0x20, 1);
+            const auto other = pattern(0x20, 2);
+            const auto bytes = make_package({{"$FLASH_Dash.XEX", dash}, {"Other.BIN", other}});
+            const auto container = StfsContainer::open(bytes);
+            ASSERT_OK(container) << "the package opens";
+
+            const auto all = container->extract_to_memory();
+            ASSERT_OK(all) << "extract_to_memory succeeds";
+            EXPECT_EQ(all->size(), 2u) << "both files are keyed";
+            ASSERT_TRUE(all->contains("dash.xex")) << "$FLASH_ is stripped and the rest lowercased";
+            EXPECT_BYTES_EQ(dash, all->at("dash.xex")) << "the stripped key holds the file";
+            ASSERT_TRUE(all->contains("other.bin")) << "a plain name is lowercased";
+            EXPECT_BYTES_EQ(other, all->at("other.bin")) << "the lowercased key holds the file";
+
+            const std::vector<std::string> lower{"dash.xex"};
+            const auto excluded = container->extract_to_memory(lower);
+            ASSERT_OK(excluded) << "extract_to_memory with an exclusion succeeds";
+            EXPECT_FALSE(excluded->contains("dash.xex")) << "the key excludes the file";
+            const std::vector<std::string> upper{"DASH.XEX"};
+            const auto kept = container->extract_to_memory(upper);
+            ASSERT_OK(kept) << "extract_to_memory with an upper-case exclusion succeeds";
+            EXPECT_TRUE(kept->contains("dash.xex")) << "exclusions are not lowercased";
+
+            EXPECT_TRUE(container->contains_file_by_name("DASH.XEX"))
+                << "the lookup lowercases the wanted name";
+            EXPECT_FALSE(container->contains_file_by_name("$FLASH_Dash.XEX"))
+                << "the lookup does not strip the prefix";
+            EXPECT_ERROR_MSG(container->extract_file_by_name("$flash_dash.xex"),
+                             ErrorCode::NotFound, "STFS file not found: $flash_dash.xex")
+                << "the on-disk name is not a lookup key";
         }
 
     } // namespace

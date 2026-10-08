@@ -1,5 +1,7 @@
 // src/Error.hpp: Error::describe and its context chain, fail(), with_context() on Result<T>
-// and Result<>, from_error_code() and to_string() over every ErrorCode.
+// and Result<>, from_error_code() and to_string() over every ErrorCode. Row/ErrorCodeNames pins
+// the exact name of each code, which golden_snapshot_selftest.txt (error_code[N] lines) and every
+// describe() of an error without a message print.
 
 #include "Error.hpp"
 #include "support/Expect.hpp"
@@ -98,6 +100,44 @@ namespace gxbuild3::core {
             EXPECT_EQ(names.size(), static_cast<size_t>(ErrorCode::Internal) + 1)
                 << "every code name is distinct";
         }
+
+        struct CodeNameRow {
+            const char* name;
+            ErrorCode code;
+            int value;
+            std::string_view text;
+        };
+        GX_PRINT_ROW_AS_NAME(CodeNameRow)
+
+        class ErrorCodeNames : public ::testing::TestWithParam<CodeNameRow> {};
+
+        // The enumerator value and the to_string text of each code, as the selftest golden's
+        // error_code[N] lines print them; describe() of a message-less error falls back to it.
+        TEST_P(ErrorCodeNames, ToStringIsPinned) {
+            const auto& row = GetParam();
+            EXPECT_EQ(static_cast<int>(row.code), row.value) << "the enumerator keeps its value";
+            EXPECT_EQ(to_string(row.code), row.text) << "to_string names the code";
+            EXPECT_EQ(Error(row.code, "").describe(), row.text)
+                << "describe() of an error without a message is the code name";
+        }
+
+        INSTANTIATE_TEST_SUITE_P(
+            Row, ErrorCodeNames,
+            ::testing::Values(
+                CodeNameRow{"InvalidArgument", ErrorCode::InvalidArgument, 0, "invalid argument"},
+                CodeNameRow{"Truncated", ErrorCode::Truncated, 1, "truncated"},
+                CodeNameRow{"Malformed", ErrorCode::Malformed, 2, "malformed"},
+                CodeNameRow{"Unsupported", ErrorCode::Unsupported, 3, "unsupported"},
+                CodeNameRow{"NotFound", ErrorCode::NotFound, 4, "not found"},
+                CodeNameRow{"IoError", ErrorCode::IoError, 5, "I/O error"},
+                CodeNameRow{"AuthFailed", ErrorCode::AuthFailed, 6, "authentication failed"},
+                CodeNameRow{"HashMismatch", ErrorCode::HashMismatch, 7, "hash mismatch"},
+                CodeNameRow{"SignatureMismatch", ErrorCode::SignatureMismatch, 8,
+                            "signature mismatch"},
+                CodeNameRow{"OutOfRange", ErrorCode::OutOfRange, 9, "out of range"},
+                CodeNameRow{"Exhausted", ErrorCode::Exhausted, 10, "exhausted"},
+                CodeNameRow{"Internal", ErrorCode::Internal, 11, "internal error"}),
+            test::RowName{});
 
     } // namespace
 } // namespace gxbuild3::core

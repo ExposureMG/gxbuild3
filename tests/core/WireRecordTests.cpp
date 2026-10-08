@@ -1,6 +1,7 @@
 // src/Wire.hpp record codecs: read, read_head, write, patch, append, bytes_of and as_u8 over the
 // sample record (core/WireSample.hpp), including the bounds checks that cannot wrap and leave
-// the buffer untouched on failure.
+// the buffer untouched on failure. WireErrors names the asymmetry of the failure codes: every
+// out-of-bounds read is Truncated and an out-of-bounds write is OutOfRange.
 
 #include "Error.hpp"
 #include "Wire.hpp"
@@ -155,6 +156,43 @@ namespace gxbuild3::core {
                 std::endian::native == std::endian::big ? host : std::byteswap(host);
             EXPECT_EQ(*word, big_endian)
                 << "wire::read agrees with a std::byteswap of the host word";
+        }
+
+        // One shape of out-of-bounds access (a be32 at offset 1 of 4 bytes, 3 available) through
+        // every checked entry point: the reads (read, read_head, patch and the Cursor takes) all
+        // fail Truncated "need", the one write fails OutOfRange "cannot write", and the reads at
+        // the same absolute offset print the same text.
+        TEST(WireErrors, ReadFailuresAreTruncatedWriteFailuresAreOutOfRange) {
+            Bytes buffer{0x10, 0x20, 0x30, 0x40};
+            const std::span<const std::uint8_t> view(buffer);
+            constexpr std::string_view need = "word: need 0x4 bytes at offset 0x1, 0x3 available";
+
+            EXPECT_ERROR_MSG(wire::read<wire::be32>(view, 1, "word"), ErrorCode::Truncated, need)
+                << "read";
+            EXPECT_ERROR_MSG(wire::read_head<wire::be32>(view.subspan(1), "word"),
+                             ErrorCode::Truncated,
+                             "word: need 0x4 bytes at offset 0x0, 0x3 available")
+                << "read_head reports the offset inside its own span";
+            EXPECT_ERROR_MSG(
+                wire::patch<wire::be32>(std::span(buffer), 1, "word",
+                                        [](wire::be32& word) { word = wire::be32{0}; }),
+                ErrorCode::Truncated, need)
+                << "patch fails as a read, before its write-back";
+
+            wire::Cursor take(view.subspan(1), 1);
+            EXPECT_ERROR_MSG(take.take<wire::be32>("word"), ErrorCode::Truncated, need)
+                << "Cursor::take";
+            EXPECT_ERROR_MSG(take.take_bytes(4, "word"), ErrorCode::Truncated, need)
+                << "Cursor::take_bytes";
+            EXPECT_ERROR_MSG(take.skip(4, "word"), ErrorCode::Truncated, need) << "Cursor::skip";
+            EXPECT_ERROR_MSG(take.sub(4, "word"), ErrorCode::Truncated, need) << "Cursor::sub";
+
+            EXPECT_ERROR_MSG(wire::write(std::span(buffer), 1, wire::be32{0}, "word"),
+                             ErrorCode::OutOfRange,
+                             "word: cannot write 0x4 bytes at offset 0x1, 0x3 available")
+                << "write";
+            EXPECT_BYTES_EQ((Bytes{0x10, 0x20, 0x30, 0x40}), buffer)
+                << "neither the failed patch nor the failed write touched the buffer";
         }
 
     } // namespace

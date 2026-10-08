@@ -1,7 +1,8 @@
 // src/stfs/FileExtractor.hpp and BlockParser.hpp: a chained file follows its hash chain and is
 // cut at file_size, a short chain is Truncated, a zero-size file walks nothing, consecutive files
 // ignore the chain but stay bounded, block offsets are 64-bit, a bad hash status prints in hex,
-// and the file table itself follows the hash chain.
+// the file table itself follows the hash chain, and block 0 starts at the header size rounded up
+// to the next 0x1000 boundary.
 
 #include "PirsPackage.hpp"
 #include "stfs/BlockParser.hpp"
@@ -172,6 +173,28 @@ namespace gxbuild3::stfs {
                 << "StfsContainer finds the entry from the second table block by name";
             EXPECT_BYTES_EQ(data, by_name.value_or(Bytes{}))
                 << "StfsContainer finds the entry from the second table block by name";
+        }
+
+        // block_to_offset rounds the header size up to the next 0x1000 boundary and leaves an
+        // aligned one alone, so a package declaring the real-world 0x971A (or 0x9001) lays out
+        // exactly like the synthetic 0xA000 one, while header_size() keeps the declared value.
+        TEST(StfsChain, HeaderSizeRoundsUpToTheNextBlockBoundary) {
+            EXPECT_EQ(block_to_offset(0, 0xA000).value_or(0), 0xA000u) << "aligned stays";
+            EXPECT_EQ(block_to_offset(0, 0xA001).value_or(0), 0xB000u) << "one past rounds up";
+            EXPECT_EQ(block_to_offset(0, 0x9001).value_or(0), 0xA000u) << "0x9001 rounds up";
+            EXPECT_EQ(block_to_offset(3, 0x971A).value_or(0), 0xD000u)
+                << "block N is the rounded base plus N blocks";
+
+            const auto data = pattern(0x1800, 7);
+            auto bytes = make_package({{"a.bin", data, false}});
+            put_be(bytes, 0x340, 0x971A, 4);
+            const auto container = StfsContainer::open(bytes);
+            ASSERT_OK(container) << "a package declaring header size 0x971A opens";
+            EXPECT_EQ(container->header_size(), 0x971Au) << "the declared size is kept";
+            const auto extracted = container->extract(container->entries().at(0), Verify::Yes);
+            ASSERT_OK(extracted) << "the chain and hashes resolve against the rounded base";
+            EXPECT_BYTES_EQ(data, *extracted)
+                << "the chain and hashes resolve against the rounded base";
         }
 
     } // namespace
