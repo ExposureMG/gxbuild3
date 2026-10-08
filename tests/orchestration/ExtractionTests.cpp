@@ -6,12 +6,17 @@
 // offsets. ExtractionFailure: a CD record shorter than its header is refused by every entry point
 // without an exception, and the cores return their reason while the shims return nullopt.
 // Size/KeyvaultSummaryOsig: the OSIG is read only when raw_data holds all 28 bytes (one bundled
-// ctest entry, three rows); every other case is its own ctest entry (each runs run_build).
+// ctest entry, three rows). Seq/ExtractCbLdv and ExtractCbLdvPerBox: extract_all_info shows CB_B's
+// console-sequence byte as its LDV when it is 16 or less, while extract_metadata and extract_all
+// keep the per-box LDV. Key/ExtractScState: extract_all_info states SC decrypted whatever its
+// state. The two tables are one bundled entry each; every other case is its own ctest entry
+// (each runs run_build).
 
 #include "BuildRunner.hpp"
 #include "Library.hpp"
 #include "nand/FlashDriver.hpp"
 #include "nand/FlashImage.hpp"
+#include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
 #include "nand/bootloaders/5bl.hpp"
 #include "nand/bootloaders/Common.hpp"
@@ -329,6 +334,152 @@ namespace gxbuild3::orchestration {
         }
 
         INSTANTIATE_TEST_SUITE_P(Size, KeyvaultSummaryOsig, ::testing::ValuesIn(kOsigBoundCases),
+                                 test::RowName{});
+
+        // ---- Seq/ExtractCbLdv and ExtractCbLdvPerBox ----------------------------------------
+
+        // A decrypted 0x600-byte CB, version 9188, whose nonce is sixteen `nonce` bytes and whose
+        // payload is zero: the split chain of tests/bootloaders/glitch/GlitchFixture.cpp's cb().
+        // fresh_input's 0x390-byte CB has no per-box block extract_all_info can read, so its
+        // CB_B shows no LDV at all.
+        Bytes split_cb(uint16_t flags, uint8_t nonce) {
+            nand::BootloaderCb loader{};
+            loader.header.header.magic = nand::NANDBootloaderMagic::CB;
+            loader.header.header.version = 9188;
+            loader.header.header.flags = flags;
+            loader.header.header.entrypoint = 0x400;
+            loader.header.header.size = 0x600;
+            loader.data.assign(0x600 - sizeof(nand::generic_header), 0);
+            std::fill_n(loader.data.begin(), 16, nonce);
+            loader.decrypted = true;
+            return loader.serialize();
+        }
+
+        // fresh_input(SmallBlock) as a retail split chain (CB_A flags 0x800, CB_B, no SC) with
+        // the per-box LDV 3 and CB_B's console-sequence byte (header 0x3B1) set to `sequence`.
+        Input split_chain_input(uint8_t sequence) {
+            auto input = test::fresh_input(ImageType::SmallBlock);
+            input.bootloaders.cb_or_a = split_cb(0x800, 0x11);
+            input.bootloaders.cb_b = split_cb(0, 0x33);
+            (*input.bootloaders.cb_b)[0x3B1] = sequence;
+            input.bootloaders.sc.reset();
+            input.metadata.cb_ldv = 3;
+            return input;
+        }
+
+        struct CbLdvRow {
+            const char* name;
+            uint8_t sequence;
+            uint8_t shown_ldv;
+        };
+        GX_PRINT_ROW_AS_NAME(CbLdvRow)
+
+        constexpr std::array kCbLdvRows{
+            CbLdvRow{"Seq12", 12, 12},
+            CbLdvRow{"Seq16", 16, 16},
+            CbLdvRow{"Seq17", 17, 3},
+            CbLdvRow{"Seq0x20", 0x20, 3},
+        };
+
+        class ExtractCbLdv : public ::testing::TestWithParam<CbLdvRow> {};
+
+        // extract_all_info shows CB_B's LDV as its console-sequence byte when that byte is 16 or
+        // less, else as the per-box LDV (cb_b_display_ldv in src/BuildRunner.cpp), and the chain
+        // LDV follows CB_B's.
+        TEST_P(ExtractCbLdv, AllInfoShowsTheConsoleSequenceByteUpTo16ElseThePerBoxLdvAsToday) {
+            const auto& row = GetParam();
+            const auto input = split_chain_input(row.sequence);
+            ASSERT_OK_AND_ASSIGN(const auto built, run_build(input));
+            ASSERT_OK_AND_ASSIGN(const auto info, extract_all_info(built, input.metadata.cpu_key));
+            ASSERT_TRUE(info.bootloaders.cb_b.has_value()) << "inspection decodes CB_B";
+            EXPECT_EQ(info.bootloaders.cb_b->ldv, std::optional<uint8_t>{row.shown_ldv})
+                << "CB_B's shown LDV for console sequence " << unsigned{row.sequence};
+            EXPECT_EQ(unsigned{info.bootloaders.cb_ldv}, unsigned{row.shown_ldv})
+                << "the chain LDV follows CB_B's shown LDV";
+        }
+
+        INSTANTIATE_TEST_SUITE_P(Seq, ExtractCbLdv, ::testing::ValuesIn(kCbLdvRows),
+                                 test::RowName{});
+
+        // gtest keeps TEST and TEST_P apart, so the companion takes a suffixed suite. The donor
+        // metadata keeps the per-box LDV (3) while inspection shows the console sequence (12).
+        TEST(ExtractCbLdvPerBox, MetadataAndExtractAllKeepThePerBoxLdvBesideADisplayLdv) {
+            const auto input = split_chain_input(12);
+            ASSERT_OK_AND_ASSIGN(const auto built, run_build(input));
+            const auto& cpu_key = input.metadata.cpu_key;
+            ASSERT_OK_AND_ASSIGN(const auto metadata, extract_metadata(built, cpu_key));
+            EXPECT_EQ(unsigned{metadata.cb_ldv}, 3u) << "extract_metadata reports the per-box LDV";
+            ASSERT_OK_AND_ASSIGN(const auto extracted, extract_all(built, cpu_key));
+            EXPECT_EQ(unsigned{extracted.metadata.cb_ldv}, 3u)
+                << "extract_all reports the per-box LDV";
+            ASSERT_TRUE(extracted.bootloaders.cb_b.has_value()) << "extract_all returns CB_B";
+            EXPECT_EQ(unsigned{(*extracted.bootloaders.cb_b)[0x23]}, 3u)
+                << "CB_B carries the per-box LDV at +0x23";
+            EXPECT_EQ(unsigned{(*extracted.bootloaders.cb_b)[0x3B1]}, 12u)
+                << "CB_B keeps its console sequence at +0x3B1";
+            ASSERT_OK_AND_ASSIGN(const auto info, extract_all_info(built, cpu_key));
+            ASSERT_TRUE(info.bootloaders.cb_b.has_value()) << "inspection decodes CB_B";
+            EXPECT_EQ(info.bootloaders.cb_b->ldv, std::optional<uint8_t>{12})
+                << "inspection shows the console sequence as CB_B's LDV";
+            EXPECT_EQ(unsigned{info.bootloaders.cb_ldv}, 12u)
+                << "inspection shows the console sequence as the chain LDV";
+        }
+
+        // ---- Key/ExtractScState -------------------------------------------------------------
+
+        struct ScKeyRow {
+            const char* name;
+            bool zero_key;
+        };
+        GX_PRINT_ROW_AS_NAME(ScKeyRow)
+
+        constexpr std::array kScKeyRows{
+            ScKeyRow{"ItsOwnKey", false},
+            ScKeyRow{"ZeroKey", true},
+        };
+
+        class ExtractScState : public ::testing::TestWithParam<ScKeyRow> {};
+
+        // run_build writes fresh_input's plaintext SC as it is, with a zero nonce, and
+        // decrypt_all leaves an SC with a zero nonce alone, so the stage reads is_decrypted()
+        // false (the flag a parse never sets) before and after opening the image under either
+        // key. extract_some_info reports that flag, decrypted=0; extract_all_info passes
+        // summarize_stage("SC", ..., true) and states decrypted=1 whatever the stage reads (the
+        // golden extract_projections_synthetic.txt shows the same pair for
+        // newsmall.devkit.zero-key).
+        TEST_P(ExtractScState, SomeInfoReadsScSealedWhileAllInfoStatesItDecryptedAsToday) {
+            const auto input = test::fresh_input(ImageType::SmallBlock);
+            ASSERT_OK_AND_ASSIGN(const auto built, run_build(input));
+            const Bytes key = GetParam().zero_key ? Bytes(16, 0) : input.metadata.cpu_key;
+
+            auto image = parse_image(built);
+            ASSERT_TRUE(image.has_value() && image->cb_section.sc.has_value())
+                << "the built image has an SC";
+            EXPECT_TRUE(std::ranges::all_of(image->cb_section.sc->header.key, [](uint8_t byte) {
+                return byte == 0;
+            })) << "the SC is written with a zero nonce";
+            ASSERT_OK(image->decrypt_all(key)) << "the image opens under the row's key";
+            EXPECT_FALSE(image->cb_section.sc->is_decrypted())
+                << "decrypt_all leaves the zero-nonce SC's flag unset";
+
+            ASSERT_OK_AND_ASSIGN(const auto some, extract_some_info(built));
+            ASSERT_TRUE(some.bootloaders.sc.has_value()) << "extract_some_info lists SC";
+            EXPECT_TRUE(some.bootloaders.sc->present) << "extract_some_info lists SC";
+            EXPECT_FALSE(some.bootloaders.sc->decrypted)
+                << "extract_some_info reports the stage's flag, decrypted=0";
+
+            ASSERT_OK_AND_ASSIGN(const auto all, extract_all_info(built, key));
+            ASSERT_TRUE(all.bootloaders.sc.has_value()) << "extract_all_info lists SC";
+            EXPECT_TRUE(all.bootloaders.sc->present) << "extract_all_info lists SC";
+            EXPECT_TRUE(all.bootloaders.sc->decrypted)
+                << "extract_all_info states SC decrypted=1 over the unset flag";
+            EXPECT_EQ(all.bootloaders.sc->version, some.bootloaders.sc->version)
+                << "both read the same SC header";
+            EXPECT_EQ(all.bootloaders.sc->size, some.bootloaders.sc->size)
+                << "both read the same SC header";
+        }
+
+        INSTANTIATE_TEST_SUITE_P(Key, ExtractScState, ::testing::ValuesIn(kScKeyRows),
                                  test::RowName{});
 
         // ---- ExtractionFailure --------------------------------------------------------------

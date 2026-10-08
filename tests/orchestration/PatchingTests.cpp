@@ -277,6 +277,26 @@ namespace gxbuild3::orchestration {
             }
         }
 
+        // The Patchset delimiter gate seen from run_build: parse_glitch_patch_set counts every
+        // 0xFFFFFFFF word as a section delimiter, so a CB_B data word of 0xFFFFFFFF splits the
+        // glitch2 file into four sections and the build is refused; the same file with an
+        // ordinary data word builds. CB_B is CB_A's copy, as in Glitch2TargetsCbB.
+        TEST(RunBuildPatching, FfffffffPatchWordSplitsTheGlitchPatchsetAsToday) {
+            auto split = test::glitch_input(
+                BuildType::Glitch2,
+                test::glitch_patchset(0x20, 0xFFFFFFFF, 0x30, 0x55667788, Bytes{0xA5}));
+            split.bootloaders.cb_b = split.bootloaders.cb_or_a;
+            EXPECT_ERROR_MSG(run_build(split), BuildErrorCode::PatchFailure,
+                             "automatic patchset automatic: Glitch patchset must have 3 sections "
+                             "[CB_B][CD][KHV], found 4")
+                << "a 0xFFFFFFFF data word is a fourth delimiter";
+            auto ordinary = test::glitch_input(
+                BuildType::Glitch2,
+                test::glitch_patchset(0x20, 0x11223344, 0x30, 0x55667788, Bytes{0xA5}));
+            ordinary.bootloaders.cb_b = ordinary.bootloaders.cb_or_a;
+            EXPECT_OK(run_build(ordinary)) << "the same file with data word 0x11223344 builds";
+        }
+
         TEST(RunBuildJtag, PatchsetIsSerializedAtFixedRegion) {
             auto input = test::fresh_input(ImageType::SmallBlock);
             input.build_type = BuildType::Jtag;
