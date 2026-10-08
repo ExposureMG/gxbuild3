@@ -24,8 +24,11 @@
 // GXBUILD3_FLASHIMAGE_GOLDEN_SUPPORT the support directory the matrix and the failure table read
 // their stages from, for mutation checks against scratch copies only.
 
+#include "Args.hpp"
 #include "Error.hpp"
+#include "nand/FlashDriver.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -77,7 +80,25 @@ namespace gxbuild3::snapshots {
             std::vector<std::string> problems;
         };
 
-        // The matrix over the stages in support.
+        // The shapes and build types the matrix walks, in file order (shape-major).
+        inline constexpr std::array<nand::Driver::DriverMode, 3> kModes{
+            nand::Driver::Small, nand::Driver::Big, nand::Driver::Emmc};
+        inline constexpr std::array<BuildType, 8> kTypes{
+            BuildType::Retail,   BuildType::Jtag,    BuildType::Glitch, BuildType::Glitch2,
+            BuildType::Glitch2m, BuildType::Glitch3, BuildType::Devgl,  BuildType::Devkit};
+
+        // The pieces of the file, each under PinnedBuildTime: the "# F0c" comment and the
+        // header_encode.<Mode>. lines of every shape; one cell's matrix.<Mode>.<Type>. lines over
+        // the stages in support (its failed checks appended to problems); the closing
+        // "matrix.cells=<cells>" line.
+        [[nodiscard]] std::string render_header_encode();
+        [[nodiscard]] std::string render_cell(const std::filesystem::path& support,
+                                              nand::Driver::DriverMode mode, BuildType type,
+                                              std::vector<std::string>& problems);
+        [[nodiscard]] std::string render_trailer(std::size_t cells);
+
+        // The matrix over the stages in support: render_header_encode, render_cell over kModes x
+        // kTypes, render_trailer.
         [[nodiscard]] Rendered render(const std::filesystem::path& support);
         // render(test::support_dir(GXBUILD3_FLASHIMAGE_GOLDEN_SUPPORT)); a note goes to stderr
         // when the override is set.

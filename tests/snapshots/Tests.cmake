@@ -7,10 +7,13 @@
 # process, and ObjectsCorpusGolden, whose eight cases share one corpus render per process (about
 # 0.2 s); the other goldens (WireCorpusGolden's three cases included: its 145 stage fixtures
 # load and render in about 0.2 s) and the single-case suites (FlashFsRootGolden's whole-file
-# render takes about 2.5 s) are one entry per TEST. So are the three FlashImage goldens: the
-# donor (flashimage_golden) and failure table each render in a few seconds, the whole-file
-# flashimage_matrix writes 48 full-size images (about 25 s) until it is sectioned. So are the
-# three run_build goldens: run_build_failures (60 refused builds, under a second),
+# render takes about 2.5 s) are one entry per TEST. So are two FlashImage goldens: the donor
+# (flashimage_golden) and the failure table each render in a few seconds. flashimage_matrix is
+# compared per section: FlashImageMatrixCell is instantiated per build type over the three
+# shapes, each instantiation one bundle of three cells (six full-size images, about 2-4 s, a Big
+# cell most of it), and FlashImageMatrixGolden bundles the header slice, the cell-count trailer
+# and the partition check (about 2 s, the three zeroed header images). The three run_build
+# goldens are one entry per TEST: run_build_failures (60 refused builds, under a second),
 # run_build_digests (32 builds, about 12 s) and extract_projections_synthetic (6 builds and 6
 # projection passes, about 23 s), the last two whole-file until they are sectioned. So are the
 # three MydataGolden cases over the tracked mydata/image.bin (the donor's extract_all and nonce
@@ -60,7 +63,16 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
         GoldenSection
         GoldenUpdate
         ObjectsCorpusGolden
-        StfsSystemUpdateGolden)
+        StfsSystemUpdateGolden
+        FlashImageMatrixGolden
+        Retail/FlashImageMatrixCell
+        Jtag/FlashImageMatrixCell
+        Glitch/FlashImageMatrixCell
+        Glitch2/FlashImageMatrixCell
+        Glitch2m/FlashImageMatrixCell
+        Glitch3/FlashImageMatrixCell
+        Devgl/FlashImageMatrixCell
+        Devkit/FlashImageMatrixCell)
 
 # Capture targets, one per golden, by name only and never run by CTest:
 # `cmake --build build --target gxbuild3_golden_update_<name>`. GXBUILD3_GOLDEN_DIR in the
