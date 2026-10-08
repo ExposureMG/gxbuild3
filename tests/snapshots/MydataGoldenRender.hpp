@@ -16,7 +16,7 @@
 //   extract_projections_mydata   (MydataRender.cpp) every public extract_* projection
 //                                (support/render/ExtractProjection.hpp) of image.bin under its
 //                                CPU key and under the all-zero key, and of the glitch2 rebuild,
-//                                each projected twice with identical text.
+//                                each projected twice with identical text (render_case).
 //
 // The bootloader chain is the donor's own in every build: the per-console chains the release
 // INIs name live in untracked directories. Every nonce comes from the donor (extract_all fills
@@ -70,6 +70,8 @@ namespace gxbuild3::snapshots {
 
         // The variants, in golden order: retail, jtag, glitch2.
         inline constexpr std::size_t kVariants = 3;
+        inline constexpr std::size_t kRetail = 0;
+        inline constexpr std::size_t kJtag = 1;
         inline constexpr std::size_t kGlitch2 = 2;
 
         struct VariantBuild {
@@ -101,6 +103,7 @@ namespace gxbuild3::snapshots {
             std::vector<std::string> problems;
         };
 
+        // variant_build(index).line over the three variants, in the file's order.
         [[nodiscard]] Rendered render();
         // render(), registered with GX_GOLDEN; an error while the render reports a problem.
         [[nodiscard]] Result<std::string> render_file();
@@ -122,6 +125,24 @@ namespace gxbuild3::snapshots {
             std::vector<std::string> problems;
         };
 
+        // One case of the file: its "<label>.extract_..." lines.
+        struct CaseRendered {
+            std::string text;
+            // Projected identically twice.
+            bool stable = false;
+            // How many of the other overloads and shims were compared with the core's span
+            // overload (12 per projected image) and how many rendered the same.
+            std::size_t comparisons = 0;
+            std::size_t agreements = 0;
+            // The failed check() messages, in order.
+            std::vector<std::string> problems;
+        };
+
+        // The case labelled `label` (mydata.image, mydata.image.zero-key or mydata.glitch2),
+        // projected twice; mydata.glitch2 projects variant_build(kGlitch2). With no donor, no
+        // glitch2 rebuild or an unknown label it renders nothing and reports a problem.
+        [[nodiscard]] CaseRendered render_case(std::string_view label);
+        // render_case over the three cases in the file's order (cases counts those projected).
         [[nodiscard]] Rendered render();
         [[nodiscard]] Result<std::string> render_file();
 

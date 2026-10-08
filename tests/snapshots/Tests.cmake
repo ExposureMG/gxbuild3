@@ -15,15 +15,18 @@
 # and the partition check (about 2 s, the three zeroed header images). run_build_digests is
 # compared per row: RunBuildDigest is instantiated per build type over the four layouts, each
 # instantiation one bundle of four rows (eight builds, about 3 s), and its plain companion
-# RunBuildDigestGolden.IsPartitioned is one entry. The other two run_build goldens are one entry
-# per TEST: run_build_failures (60 refused builds, under a second, compared whole) and
-# extract_projections_synthetic (6 builds and 6 projection passes, about 23 s, whole-file until
-# it is sectioned). So are the
-# three MydataGolden cases over the tracked mydata/image.bin (the donor's extract_all and nonce
-# check, the six builds of orchestration_mydata_builds, and the glitch2 rebuild plus the nine
-# projection passes of extract_projections_mydata; each case reads what it needs through a
-# per-process cache, so none depends on another having run) and ResolverDigestGolden
-# (resolver_build_requests: two pinned donor builds and ten resolves in the test's ScratchDir).
+# RunBuildDigestGolden.IsPartitioned is one entry. run_build_failures (60 refused builds, under a
+# second) is compared whole, one entry per TEST. extract_projections_synthetic is compared per
+# case: each Case/ExtractProjectionSynthetic row builds its image twice and projects it twice
+# (several seconds), so each row is its own entry (PER_ROW), and its plain companion
+# ExtractProjectionSyntheticGolden.IsPartitioned is one entry. The two goldens over the tracked
+# mydata/image.bin are compared per section too: Build/MydataBuild (the three variants, six
+# builds, about 2 s) is one bundled entry, each Case/MydataProjection row (two projection passes,
+# the Glitch2 row its rebuild too) is its own entry (PER_ROW), and MydataGolden bundles the
+# donor's nonce check and the two partition checks. Each of these cases reads the donor and the
+# builds it needs through a per-process cache, so none depends on another having run.
+# ResolverDigestGolden (resolver_build_requests: two pinned donor builds and ten resolves in the
+# test's ScratchDir) is one entry, compared whole.
 gxbuild3_add_gtest(gxbuild3_golden_tests
     PREFIX golden
     LABELS golden slow
@@ -79,7 +82,12 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
         Retail/RunBuildDigest
         Glitch2/RunBuildDigest
         Devkit/RunBuildDigest
-        Devgl/RunBuildDigest)
+        Devgl/RunBuildDigest
+        Build/MydataBuild
+        MydataGolden
+    PER_ROW
+        Case/ExtractProjectionSynthetic
+        Case/MydataProjection)
 
 # Capture targets, one per golden, by name only and never run by CTest:
 # `cmake --build build --target gxbuild3_golden_update_<name>`. GXBUILD3_GOLDEN_DIR in the

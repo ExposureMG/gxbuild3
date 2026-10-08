@@ -9,7 +9,7 @@
 //   extract_projections_synthetic  (ExtractProjectionSyntheticRender.cpp) every public extract_*
 //                                  projection (support/render/ExtractProjection.hpp) of
 //                                  small.glitch2, newsmall.devkit and newsmall.devkit under the
-//                                  all-zero CPU key;
+//                                  all-zero CPU key, one case each (render_case);
 //   run_build_failures             (RunBuildFailureRender.cpp) the BuildErrorCode and describe()
 //                                  message of each run_build exit an Input can reach, then the
 //                                  19 exits only a fault could reach, as not-covered lines.
@@ -75,7 +75,27 @@ namespace gxbuild3::snapshots {
             std::vector<std::string> problems;
         };
 
+        // One case of the file: its "<label>.extract_..." lines.
+        struct CaseRendered {
+            std::string text;
+            // Built identically twice and projected identically twice.
+            bool stable = false;
+            // How many of the other overloads and shims were compared with the core's span
+            // overload (12 per projected image) and how many rendered the same.
+            std::size_t comparisons = 0;
+            std::size_t agreements = 0;
+            // The failed require() messages, in order.
+            std::vector<std::string> problems;
+        };
+
+        // The case labelled `label` (small.glitch2, newsmall.devkit or
+        // newsmall.devkit.zero-key): its image built twice under the pinned build time and
+        // projected twice. A build error or difference renders its old " build-error=" or
+        // " nondeterministic-build" line; an unknown label renders nothing. Each is a problem.
+        [[nodiscard]] CaseRendered render_case(std::string_view label);
+        // render_case over the three cases in the file's order.
         [[nodiscard]] Rendered render();
+        // render(), registered with GX_GOLDEN; an error while the render reports a problem.
         [[nodiscard]] Result<std::string> render_file();
 
     } // namespace extract_projections_synthetic

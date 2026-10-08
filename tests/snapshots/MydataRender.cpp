@@ -1,8 +1,11 @@
 // The run_build digests and extract_* projections over the tracked mydata/image.bin
 // (MydataGoldenRender.hpp), against tests/golden/orchestration_mydata_builds.txt and
 // tests/golden/extract_projections_mydata.txt. The old tests/OrchestrationGoldenTests.cpp main()
-// and test_extract_projection_snapshots, verbatim: its check() messages are problems now, and its
-// golden compares and summary lines are MydataGolden's.
+// and test_extract_projection_snapshots, verbatim: its check() messages are problems now. Each
+// variant (variant_build) and each projection case (extract_projections_mydata::render_case)
+// renders its own lines, which the MydataBuild and MydataProjection rows compare with their
+// sections of the goldens; render (and render_file, the whole-file renderer --update uses)
+// concatenates them in the file's order.
 
 #include "BuildRunner.hpp"
 #include "MydataGoldenRender.hpp"
@@ -12,6 +15,7 @@
 #include "support/Scratch.hpp"
 #include "support/render/ExtractProjection.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -185,60 +189,84 @@ namespace gxbuild3::snapshots {
 
     namespace extract_projections_mydata {
 
-        // Every public extract_* projection (tests/support/render/ExtractProjection.hpp) of
-        //   mydata.image           image.bin under its CPU key;
-        //   mydata.image.zero-key  image.bin under the all-zero CPU key, under which the
-        //                          console's keyvault stays sealed (extract_all leaves it out);
-        //   mydata.glitch2         the glitch2 rebuild, read back under the CPU key;
-        // each extracted twice with identical text. The snapshot pins the CB_B display LDV that
-        // extract_all_info reads at +0x3B1 beside the per-box LDV extract_metadata reads, SC
-        // decrypted=1 in extract_all_info, and the keyvault summary decode.
-        Rendered render() {
+        namespace {
+
+            // Every public extract_* projection (tests/support/render/ExtractProjection.hpp) of
+            //   mydata.image           image.bin under its CPU key;
+            //   mydata.image.zero-key  image.bin under the all-zero CPU key, under which the
+            //                          console's keyvault stays sealed (extract_all leaves it
+            //                          out);
+            //   mydata.glitch2         the glitch2 rebuild, read back under the CPU key;
+            // each extracted twice with identical text. The snapshot pins the CB_B display LDV
+            // that extract_all_info reads at +0x3B1 beside the per-box LDV extract_metadata
+            // reads, SC decrypted=1 in extract_all_info, and the keyvault summary decode.
+            constexpr std::array<std::string_view, 3> kCases{
+                "mydata.image", "mydata.image.zero-key", "mydata.glitch2"};
+
+        } // namespace
+
+        CaseRendered render_case(std::string_view case_label) {
             using Bytes = std::vector<uint8_t>;
             constexpr auto kCpuKey = test::kBuildAllCpuKey;
-            Rendered out;
+            CaseRendered out;
+            if (std::ranges::find(kCases, case_label) == kCases.end()) {
+                out.problems.push_back("extract_projections_mydata has no case " +
+                                       std::string{case_label});
+                return out;
+            }
             const auto& loaded = mydata::donor();
             if (!loaded) {
                 out.problems.push_back(loaded.error().describe());
                 return out;
             }
-            const Bytes& image = loaded->image;
-            const auto& glitch2_output = mydata::variant_build(mydata::kGlitch2).output;
-
             const std::array<uint8_t, 16> zero_key{};
-            struct Case {
-                std::string label;
-                const Bytes* image;
-                std::span<const uint8_t> cpu_key;
-            };
-            std::vector<Case> cases{
-                {"mydata.image", &image, kCpuKey},
-                {"mydata.image.zero-key", &image, zero_key},
-            };
-            if (glitch2_output.has_value()) {
-                cases.push_back({"mydata.glitch2", &*glitch2_output, kCpuKey});
-            } else {
-                out.problems.emplace_back("the glitch2 rebuild exists for its projection");
+            const std::string label{case_label};
+            const Bytes* image = &loaded->image;
+            std::span<const uint8_t> cpu_key = kCpuKey;
+            if (case_label == "mydata.image.zero-key") {
+                cpu_key = zero_key;
+            } else if (case_label == "mydata.glitch2") {
+                const auto& glitch2_output = mydata::variant_build(mydata::kGlitch2).output;
+                if (!glitch2_output.has_value()) {
+                    out.problems.emplace_back("the glitch2 rebuild exists for its projection");
+                    return out;
+                }
+                image = &*glitch2_output;
             }
-            out.cases = cases.size();
 
-            std::string& rendered = out.text;
-            for (const auto& c : cases) {
-                const auto first =
-                    test::projection::render_extract_projections(c.label, *c.image, c.cpu_key);
-                const auto second =
-                    test::projection::render_extract_projections(c.label, *c.image, c.cpu_key);
-                out.comparisons += first.comparisons;
-                out.agreements += first.agreements;
-                for (const auto& what : first.disagreements) {
-                    out.problems.push_back(what + " renders the same as the core's span overload");
-                }
-                if (first.text == second.text) {
-                    ++out.stable;
-                } else {
-                    out.problems.push_back(c.label + " projects identically twice");
-                }
-                rendered += first.text;
+            const auto first = test::projection::render_extract_projections(label, *image, cpu_key);
+            const auto second =
+                test::projection::render_extract_projections(label, *image, cpu_key);
+            out.comparisons += first.comparisons;
+            out.agreements += first.agreements;
+            for (const auto& what : first.disagreements) {
+                out.problems.push_back(what + " renders the same as the core's span overload");
+            }
+            if (first.text == second.text) {
+                out.stable = true;
+            } else {
+                out.problems.push_back(label + " projects identically twice");
+            }
+            out.text += first.text;
+            return out;
+        }
+
+        Rendered render() {
+            Rendered out;
+            if (const auto& loaded = mydata::donor(); !loaded) {
+                out.problems.push_back(loaded.error().describe());
+                return out;
+            }
+            for (const auto label : kCases) {
+                CaseRendered rendered = render_case(label);
+                // A case that renders nothing (no glitch2 rebuild) was not projected.
+                out.cases += rendered.text.empty() ? 0 : 1;
+                out.stable += rendered.stable ? 1 : 0;
+                out.comparisons += rendered.comparisons;
+                out.agreements += rendered.agreements;
+                out.text += rendered.text;
+                out.problems.insert(out.problems.end(), rendered.problems.begin(),
+                                    rendered.problems.end());
             }
             return out;
         }
