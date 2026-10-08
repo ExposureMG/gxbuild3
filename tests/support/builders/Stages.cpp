@@ -72,6 +72,7 @@ namespace gxbuild3::test {
         cd.header.header.version = 1;
         cd.header.header.size = static_cast<uint32_t>(sizeof(cd_header) + 0x20);
         cd.header.ce_hash[0] = 1;
+        std::ranges::copy(gxbuild3::nand::kRomSalt6bl, cd.header.salt_6bl);
         cd.data.resize(0x20, 0x42);
         cd.decrypted = true;
 

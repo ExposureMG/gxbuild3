@@ -89,6 +89,12 @@ namespace gxbuild3::nand {
     };
     static_assert(wire::WireLayout<sc_header>);
 
+    // The salt a CD stores at 0x240 for the 6BL key derivation. It lies in the encrypted part of
+    // the stage, so it reads as this constant only in a plaintext CD (the 42 tracked plaintext
+    // CD/SD images all carry it; ciphertext matches it with probability 2^-80).
+    inline constexpr std::array<char, 10> kRomSalt6bl{'X', 'B', 'O', 'X', '_',
+                                                      'R', 'O', 'M', '_', '6'};
+
     struct cd_header {
         generic_header header;
         uint8_t key[0x10];

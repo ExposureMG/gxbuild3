@@ -18,6 +18,7 @@
 #include "nand/bootloaders/7bl.hpp"
 #include "nand/objects/Keyvault.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <expected>
@@ -96,6 +97,7 @@ namespace {
         cd.header.header.version = 3;
         cd.header.header.size = static_cast<uint32_t>(sizeof(cd_header) + 0x20);
         cd.header.ce_hash[0] = 1;
+        std::ranges::copy(gxbuild3::nand::kRomSalt6bl, cd.header.salt_6bl);
         cd.data.resize(0x20, 0x42);
         cd.decrypted = true;
 

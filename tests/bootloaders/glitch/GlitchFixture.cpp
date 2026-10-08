@@ -68,6 +68,7 @@ namespace gxbuild3::bootloaders::glitch {
                                         sizeof(nand::cd_header) + 0x20);
         std::fill_n(cd.header.key, 16, 0x44);
         cd.header.ce_hash[0] = 1;
+        std::ranges::copy(gxbuild3::nand::kRomSalt6bl, cd.header.salt_6bl);
         cd.data.assign(0x20, 0xCD);
         cd.decrypted = true;
         input.bootloaders.cd = cd.serialize();
