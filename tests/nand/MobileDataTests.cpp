@@ -1,7 +1,7 @@
 // The mobile data blobs (MobileB = type 0x31, MobileC = 0x32, src/nand/objects/MobileData.hpp)
 // as FlashImage reads and lays them: the latest copy is taken on small and big block, a written
 // blob is laid where and as xeBuild lays it, a rewrite erases every older copy, and a blob longer
-// than one copy is refused.
+// than one copy is refused, at a limit that follows the layout.
 //
 // The fixture class MobileData (the Shape/MobileData table) hides nand::MobileData inside this
 // file's anonymous namespace, so the blob set is always spelled nand::MobileData here.
@@ -11,6 +11,7 @@
 #include "nand/NandShapes.hpp"
 #include "nand/objects/MobileData.hpp"
 #include "support/Expect.hpp"
+#include "support/builders/FlashImageCells.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -230,6 +231,41 @@ namespace gxbuild3::nand {
             EXPECT_FALSE(image.write().has_value())
                 << "a small-block blob longer than its block cannot be written";
         }
+
+        // How long one copy may be follows the layout: small block holds a copy in one 0x4000
+        // block, big block and eMMC cap it at the 16-bit length a copy records (0xFFFF), however
+        // large their blocks are (lay_mobile_data in src/nand/FlashImageWrite.cpp; the
+        // mobile_over_limit.* lines of flashimage_failures.txt).
+        struct CopyLimitShape {
+            const char* name;
+            Driver::DriverMode mode;
+            size_t over;
+            const char* message;
+        };
+        GX_PRINT_ROW_AS_NAME(CopyLimitShape)
+
+        constexpr CopyLimitShape kCopyLimitShapes[] = {
+            {"Small", Driver::DriverMode::Small, 0x4001,
+             "Mobile data type 0x31 is 0x4001 bytes; one copy holds at most 0x4000"},
+            {"Big", Driver::DriverMode::Big, 0x10000,
+             "Mobile data type 0x31 is 0x10000 bytes; one copy holds at most 0xFFFF"},
+            {"Emmc", Driver::DriverMode::Emmc, 0x10000,
+             "Mobile data type 0x31 is 0x10000 bytes; one copy holds at most 0xFFFF"},
+        };
+
+        class MobileDataCopyLimit : public ::testing::TestWithParam<CopyLimitShape> {};
+
+        TEST_P(MobileDataCopyLimit, CopyLimitFollowsLayout) {
+            const auto& shape = GetParam();
+            // The failure table's bare Retail image of this shape.
+            auto image = test::flashimage_cells::bare(shape.mode, BuildType::Retail);
+            image->mobile_data = nand::MobileData{};
+            image->mobile_data->x31 = Bytes(shape.over, 0x31);
+            EXPECT_ERROR_MSG(image->write(), ErrorCode::OutOfRange, shape.message);
+        }
+
+        INSTANTIATE_TEST_SUITE_P(Shape, MobileDataCopyLimit, ::testing::ValuesIn(kCopyLimitShapes),
+                                 test::RowName{});
 
     } // namespace
 } // namespace gxbuild3::nand

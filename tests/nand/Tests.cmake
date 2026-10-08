@@ -6,10 +6,12 @@
 # DriverSpare (5 driver cases, no image written) is a cheap suite of five cases, one bundled
 # entry. Shape/BadBlockMark (Small, Big), Shape/SmcConfig (two cases over the Small, Big and
 # eMMC settings-block shapes), Shape/SettingsBlock (the same three shapes), Shape/MobileData (the
-# latest copy on Small and NewSmall) and Shape/MobileDataLayout (Small, NewSmall, Big) are cheap
-# tables, one bundled entry each. Their plain companions SmcConfigChecksum (1), SmcSize (1),
-# MobileDataBigBlock (1) and MobileDataWrite (2), and CoronaAnchor (3), FlashImageFsPlacement
-# (4) and FlashFsAllocation (2) are suites of fewer than five cases, one entry per case.
+# latest copy on Small and NewSmall), Shape/MobileDataLayout (Small, NewSmall, Big) and
+# Shape/MobileDataCopyLimit (Small, Big, Emmc) are cheap tables, one bundled entry each. Their
+# plain companions SmcConfigChecksum (1), SmcSize (1), MobileDataBigBlock (1) and MobileDataWrite
+# (2), and CoronaAnchor (3), FlashImageFsPlacement (4) and FlashFsAllocation (2) are suites of
+# fewer than five cases, one entry per case. FlashImageRoundTrip (1, the tracked mydata image)
+# and FlashImageSeal (2, a sealed matrix cell) are nand image cases, one entry per case.
 # Mode/FlashFsSmallBlock (Small, NewSmall) is a cheap table, one bundled entry; its plain
 # companion FlashFsSmallBlockLayout (3), FlashFsRootCodec (1), FlashFsLoad (1), FlashFsEmmc (1)
 # and FlashFsCorruptInput (2) are one entry per case. Pin/FlashFsLoadPin (the nine [load <pin>]
@@ -36,6 +38,7 @@ gxbuild3_add_gtest(gxbuild3_nand_tests
         ${CMAKE_CURRENT_LIST_DIR}/FlashFsLoadTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FlashFsSmallBlockTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FlashImageFsPlacementTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/FlashImageRoundTripTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FreebootProviderTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/JtagWindowTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/MobileDataTests.cpp
@@ -49,6 +52,7 @@ gxbuild3_add_gtest(gxbuild3_nand_tests
         Shape/SettingsBlock
         Shape/MobileData
         Shape/MobileDataLayout
+        Shape/MobileDataCopyLimit
         Mode/FlashFsSmallBlock
         Pin/FlashFsLoadPin
         Small/AnchorLayout
