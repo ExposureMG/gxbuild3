@@ -19,7 +19,7 @@ small.glitch2.extract_some_info keyvault.identity serial=empty console_id_raw=em
 small.glitch2.extract_some_info cpu_key none
 small.glitch2.extract_some_info raw_keyvault none
 small.glitch2.extract_metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
-small.glitch2.extract_metadata nand_image size=0x1080000 sha1=20b04ecf917bb8468e38f0be1644c455a36b9d92
+small.glitch2.extract_metadata nand_image size=0x1080000 sha1=c6cbc548b1206331fc3b5744c23ca0dfa6902a03
 small.glitch2.extract_metadata keyvault size=0x4000 sha1=7b619465eb670ec45032f7a3725cc9c0be886518
 small.glitch2.extract_metadata smc none
 small.glitch2.extract_metadata cb_ldv=0 pairing=000000 cf_ldv=212 cf_pairing=000000
@@ -59,7 +59,7 @@ small.glitch2.extract_all options cbldv=unset pairing_data=unset cfldv=unset xel
 small.glitch2.extract_all options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
 small.glitch2.extract_all options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
 small.glitch2.extract_all.metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
-small.glitch2.extract_all.metadata nand_image size=0x1080000 sha1=20b04ecf917bb8468e38f0be1644c455a36b9d92
+small.glitch2.extract_all.metadata nand_image size=0x1080000 sha1=c6cbc548b1206331fc3b5744c23ca0dfa6902a03
 small.glitch2.extract_all.metadata keyvault size=0x4000 sha1=7b619465eb670ec45032f7a3725cc9c0be886518
 small.glitch2.extract_all.metadata smc size=0x300 sha1=b9bfae0ea64300ef88d7bc90da4f07604b544c51
 small.glitch2.extract_all.metadata cb_ldv=0 pairing=000000 cf_ldv=212 cf_pairing=000000
@@ -78,7 +78,7 @@ small.glitch2.extract_all.bootloaders cb_or_a size=0x390 sha1=eaab7f1b7c90b54ef6
 small.glitch2.extract_all.bootloaders cb_x none
 small.glitch2.extract_all.bootloaders cb_b size=0x390 sha1=7de83ec44e46cf6b3d99351820a63e09fbb6bbfb
 small.glitch2.extract_all.bootloaders sc size=0x140 sha1=158e207696a4631ee4f138c0897b5fcf2f782e4c
-small.glitch2.extract_all.bootloaders cd size=0x280 sha1=a05266e6cb323f2e202c223da4c9db4544eaf628
+small.glitch2.extract_all.bootloaders cd size=0x280 sha1=e5d0c43c0eeab7da7f85e8df70d950de47a0d628
 small.glitch2.extract_all.bootloaders ce size=0x50 sha1=1b0ec99b4fb98997b6ea2098ce48f2112187c7e1
 small.glitch2.extract_all.bootloaders cf0 size=0x370 sha1=d7062ea929ecdca0fb16d3fdd2d540c7b0c63446
 small.glitch2.extract_all.bootloaders cg0 size=0x90 sha1=f5fb8fc7a0e74c06968b371e9e7919137772d86e
