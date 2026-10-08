@@ -4,9 +4,9 @@
 # CMake -P tests live in scripts/, helper executables that are not tests in tools/.
 #
 # Labels: unit (plain test binaries), golden (text-golden binaries), oracle (the build_all.sh
-# byte oracle), guard (convention, test-listing, coverage-ledger, golden-freeze and self-test
-# scripts), integration and cli (the CLI end-to-end script), private (needs the git-ignored
-# keyvault fixtures), slow (minutes, not seconds).
+# byte oracle), guard (the error-convention and test-listing scripts), integration and cli (the
+# CLI end-to-end script), private (needs the git-ignored keyvault fixtures), slow (minutes, not
+# seconds).
 # GoogleTest binaries (gxbuild3_add_gtest, one fragment per area in <area>/Tests.cmake) add
 # their area label (core, ...) and register ctest entries named <area prefix>.<gtest name>.
 # Every test runs with TMPDIR=<build>/tmp: /tmp is often a small shared tmpfs.
@@ -15,30 +15,13 @@ set(GXBUILD3_TEST_SCRIPTS ${CMAKE_CURRENT_SOURCE_DIR}/scripts)
 set(GXBUILD3_TEST_TMPDIR ${CMAKE_BINARY_DIR}/tmp)
 file(MAKE_DIRECTORY ${GXBUILD3_TEST_TMPDIR})
 
-# Common setup of every test executable and tool: internal headers, tests/ for the shared
+# Common setup of the GoogleTest-free tools in tools/: internal headers, tests/ for the shared
 # test headers, -Werror warnings and no C++20 module scanning.
 function(gxbuild3_test_target target)
     target_link_libraries(${target} PRIVATE gxbuild3_internal)
     target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/tests)
     set_target_properties(${target} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
     gxbuild3_enable_warnings(${target})
-endfunction()
-
-# add_gxbuild3_test(<name> <source> [LABELS <label>...]); LABELS defaults to unit.
-function(add_gxbuild3_test name source)
-    cmake_parse_arguments(T "" "" "LABELS" ${ARGN})
-    if(NOT T_LABELS)
-        set(T_LABELS unit)
-    endif()
-    add_executable(${name} ${source})
-    gxbuild3_test_target(${name})
-    # Tracked text goldens for support/golden/GoldenSnapshot.hpp, which the old binaries still
-    # include as "GoldenSnapshot.hpp". CTest never passes --update.
-    target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support/golden)
-    target_compile_definitions(${name} PRIVATE
-        GXBUILD3_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
-    add_test(NAME ${name} COMMAND ${name})
-    set_tests_properties(${name} PROPERTIES LABELS "${T_LABELS}")
 endfunction()
 
 # ---- GoogleTest ------------------------------------------------------------------------------
@@ -53,8 +36,7 @@ file(MAKE_DIRECTORY ${GXBUILD3_TEST_SCRATCH_ROOT})
 # gxbuild3::test support library: Result-aware assertions, scratch directories, scoped
 # environment, byte helpers, the test CPU keys and the shared builders (support/builders/).
 # Tests include it as "support/<Name>.hpp" and "support/builders/<Name>.hpp". The builders are
-# GoogleTest-free and return a Result where they can fail, so the pre-GoogleTest binaries link
-# them too. gxbuild3_cli is public for ResolverTree (the resolver's source tree).
+# GoogleTest-free and return a Result where they can fail. gxbuild3_cli is public for ResolverTree (the resolver's source tree).
 add_library(gxbuild3_test_support STATIC
     support/Bytes.cpp
     support/Expect.cpp
@@ -108,7 +90,7 @@ set(GXBUILD3_GTEST_PCH
 #  - PER_ROW: TEST_P instantiations whose rows are each slow enough to be their own entry; they
 #    are discovered per row like any unbundled case and only recorded for the guards.
 # Each binary adds a line `name|prefix|path|bundles|per_row|skip_bundles` (lists
-# comma-separated) to <build>/tests/gtest-binaries.txt, which the listing and ledger guards read.
+# comma-separated) to <build>/tests/gtest-binaries.txt, which the listing guard reads.
 function(gxbuild3_add_gtest name)
     cmake_parse_arguments(T "" "PREFIX;TIMEOUT;MAIN" "SOURCES;LABELS;LIBS;BUNDLE;PER_ROW;SKIP_BUNDLE"
         ${ARGN})
@@ -291,22 +273,7 @@ add_test(NAME gxbuild3_test_listing_guard
         -DGOLDEN_DIR=${CMAKE_CURRENT_SOURCE_DIR}/golden
         -DTEXT_GOLDENS=${gxbuild3_text_goldens_arg}
         -P ${GXBUILD3_TEST_SCRIPTS}/TestListingGuard.cmake)
-
-# Migration only, deleted with tests/migration/: the coverage ledger (one row per old test
-# function, static_assert and table row; scripts/CoverageLedger.cmake, seeded once by
-# scripts/SeedLedger.cmake) and the frozen goldens (scripts/GoldenFrozen.cmake).
-add_test(NAME gxbuild3_coverage_ledger
-    COMMAND ${CMAKE_COMMAND}
-        -DSOURCE_ROOT=${PROJECT_SOURCE_DIR}
-        -DGTEST_BINARIES=${gxbuild3_gtest_listing_file}
-        -P ${GXBUILD3_TEST_SCRIPTS}/CoverageLedger.cmake)
-add_test(NAME gxbuild3_golden_frozen
-    COMMAND ${CMAKE_COMMAND}
-        -DGOLDEN_DIR=${CMAKE_CURRENT_SOURCE_DIR}/golden
-        -DBASELINE=${CMAKE_CURRENT_SOURCE_DIR}/migration/golden-baseline.sha256
-        -P ${GXBUILD3_TEST_SCRIPTS}/GoldenFrozen.cmake)
-set_tests_properties(gxbuild3_test_listing_guard gxbuild3_coverage_ledger gxbuild3_golden_frozen
-    PROPERTIES LABELS guard)
+set_tests_properties(gxbuild3_test_listing_guard PROPERTIES LABELS guard)
 
 get_property(gxbuild3_registered_tests DIRECTORY PROPERTY TESTS)
 set_tests_properties(${gxbuild3_registered_tests} PROPERTIES

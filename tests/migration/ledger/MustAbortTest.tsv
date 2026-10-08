@@ -1,7 +1,0 @@
-# Coverage ledger for tests/scripts/MustAbortTest.cmake (GoogleTest migration; see tests/scripts/CoverageLedger.cmake).
-# rows: 0 automatic, 2 hand. Port commits change statuses and never delete a row; rows with status new are not counted.
-# Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
-# id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
-# hand
-MustAbort.overload.value	must-abort-demo#value@12	4	-	retired:must() deleted;note:the must() header, its demo tool and MustAbortTest.cmake are deleted. A failed unwrap of a valued Result is fatal and carries the describe() context chain in core.SupportExpect#AssertOkFailureIsFatalAndCarriesDescribe, and the success path in core.SupportExpect#AssertOkAndAssignUnwrapsValue
-MustAbort.overload.void	must-abort-demo#void@12	4	-	retired:must() deleted;note:the must() header, its demo tool and MustAbortTest.cmake are deleted. A failed Result<void> unwrap is fatal and carries describe() in core.SupportExpect#AssertOkVoidFailureIsFatal

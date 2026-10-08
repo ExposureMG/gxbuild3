@@ -1,14 +1,13 @@
-# Helpers shared by TestListingGuard.cmake and CoverageLedger.cmake: the GoogleTest binary
-# registry that tests/CMakeLists.txt writes, each binary's --gtest_list_tests, the ctest entry a
-# case runs in, and a scan of the TEST bodies in the new test sources.
+# Helpers for TestListingGuard.cmake: the GoogleTest binary registry that tests/CMakeLists.txt
+# writes, each binary's --gtest_list_tests, and a scan of the TEST bodies in the test sources.
 #
 # Registry lines (<build>/tests/gtest-binaries.txt, one per gxbuild3_add_gtest binary):
 #   name|prefix|path|bundles|per_row|skip_bundles      (lists comma-separated)
 
 include_guard(GLOBAL)
 
-# gxbuild3_gtest_encode(<out-list> <text>): one list element per line, with ; [ ] \ encoded as in
-# LedgerCommon.cmake so that no line can split or merge list elements.
+# gxbuild3_gtest_encode(<out-list> <text>): one list element per line, with ; [ ] \ encoded as
+# @SC@ @LB@ @RB@ @BS@ so that no line can split or merge list elements.
 function(gxbuild3_gtest_encode out text)
     string(REPLACE "\r" "" text "${text}")
     string(REPLACE "\\" "@BS@" text "${text}")
@@ -100,49 +99,8 @@ function(gxbuild3_gtest_split case suite_var test_var)
     set(${test_var} "${test}" PARENT_SCOPE)
 endfunction()
 
-# gxbuild3_gtest_bundle_of(<out> <bundles> <case>): the BUNDLE entry whose filter selects the
-# case (Suite -> Suite.* and */Suite.*, Inst/Suite -> Inst/Suite.*), or "" when it is discovered.
-function(gxbuild3_gtest_bundle_of out bundles case)
-    gxbuild3_gtest_split("${case}" suite test)
-    set(found "")
-    foreach(bundle IN LISTS bundles)
-        if(suite STREQUAL bundle)
-            set(found "${bundle}")
-            break()
-        endif()
-        if(NOT bundle MATCHES "/" AND suite MATCHES "/${bundle}$")
-            set(found "${bundle}")
-            break()
-        endif()
-    endforeach()
-    set(${out} "${found}" PARENT_SCOPE)
-endfunction()
-
-# gxbuild3_gtest_new_test(<out> <prefix> <bundles> <case>): the ledger's new_test spelling of a
-# case: `<prefix>.<case>` when it is its own (discovered) ctest entry, otherwise
-# `<prefix>.<bundle>#<label>` where label is the case minus its `<bundle>.` head (or the whole
-# case when a Suite bundle selects an instantiation, Inst/Suite.Test/Row).
-function(gxbuild3_gtest_new_test out prefix bundles case)
-    gxbuild3_gtest_bundle_of(bundle "${bundles}" "${case}")
-    if(bundle STREQUAL "")
-        set(${out} "${prefix}.${case}" PARENT_SCOPE)
-        return()
-    endif()
-    string(LENGTH "${bundle}." head)
-    string(SUBSTRING "${case}" 0 ${head} start)
-    if(start STREQUAL "${bundle}.")
-        string(SUBSTRING "${case}" ${head} -1 label)
-    else()
-        set(label "${case}")
-    endif()
-    set(${out} "${prefix}.${bundle}#${label}" PARENT_SCOPE)
-endfunction()
-
 # gxbuild3_gtest_scan_sources(<tests dir>) reads every .cpp/.hpp under the area directories of
-# tests/ (not golden/, gxBuild-support-files/, migration/ or scripts/) and sets:
-#   GTEST_SRC_TESTS                  Suite.Test for every TEST/TEST_F/TEST_P body
-#   GTEST_SRC_ASSERTS_<key>          EXPECT_*/ASSERT_*/matches_golden calls in that body
-#                                    (key = gxbuild3_gtest_key of Suite.Test)
+# tests/ (not golden/, gxBuild-support-files/ or scripts/) and sets:
 #   GTEST_SRC_SKIPPING_SUITES        suites with a GTEST_SKIP in one of their TEST bodies
 #   GTEST_SRC_FORBIDDEN              "file:line: text" uses of CaptureStdout/CaptureStderr or
 #                                    death tests
@@ -150,9 +108,8 @@ endfunction()
 # not a closing brace or a preprocessor line (sources are clang-formatted).
 function(gxbuild3_gtest_scan_sources tests_dir)
     file(GLOB_RECURSE sources RELATIVE "${tests_dir}" "${tests_dir}/*/*.cpp" "${tests_dir}/*/*.hpp")
-    list(FILTER sources EXCLUDE REGEX "^(golden|gxBuild-support-files|migration|scripts)/")
+    list(FILTER sources EXCLUDE REGEX "^(golden|gxBuild-support-files|scripts)/")
     list(SORT sources)
-    set(tests "")
     set(skipping "")
     set(forbidden "")
     foreach(source IN LISTS sources)
@@ -169,7 +126,6 @@ function(gxbuild3_gtest_scan_sources tests_dir)
             if(open AND line MATCHES "^([ ]*)([^ }#])")
                 string(LENGTH "${CMAKE_MATCH_1}" indent)
                 if(NOT indent GREATER open_indent)
-                    set(GTEST_SRC_ASSERTS_${open_key} ${open_asserts} PARENT_SCOPE)
                     set(open "")
                 endif()
             endif()
@@ -177,29 +133,14 @@ function(gxbuild3_gtest_scan_sources tests_dir)
                 string(LENGTH "${CMAKE_MATCH_1}" open_indent)
                 set(open_suite "${CMAKE_MATCH_3}")
                 set(open "${CMAKE_MATCH_3}.${CMAKE_MATCH_4}")
-                gxbuild3_gtest_key(open_key "${open}")
-                set(open_asserts 0)
-                list(APPEND tests "${open}")
                 continue()
             endif()
-            if(open)
-                if(line MATCHES "(EXPECT|ASSERT)_|matches_golden")
-                    string(REGEX MATCHALL "((EXPECT|ASSERT)_[A-Z0-9_]+\\(|matches_golden)" hits
-                        "${line}")
-                    list(LENGTH hits n)
-                    math(EXPR open_asserts "${open_asserts} + ${n}")
-                endif()
-                if(line MATCHES "GTEST_SKIP")
-                    list(APPEND skipping "${open_suite}")
-                endif()
+            if(open AND line MATCHES "GTEST_SKIP")
+                list(APPEND skipping "${open_suite}")
             endif()
         endforeach()
-        if(open)
-            set(GTEST_SRC_ASSERTS_${open_key} ${open_asserts} PARENT_SCOPE)
-        endif()
     endforeach()
     list(REMOVE_DUPLICATES skipping)
-    set(GTEST_SRC_TESTS "${tests}" PARENT_SCOPE)
     set(GTEST_SRC_SKIPPING_SUITES "${skipping}" PARENT_SCOPE)
     set(GTEST_SRC_FORBIDDEN "${forbidden}" PARENT_SCOPE)
 endfunction()

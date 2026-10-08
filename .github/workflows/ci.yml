@@ -16,8 +16,7 @@ jobs:
           - { name: Clang, cc: clang, cxx: clang++ }
           - { name: GCC, cc: gcc, cxx: g++ }
     steps:
-      # gtest is installed ahead of the GoogleTest migration so the first test ported to it
-      # needs no CI edit.
+      # gtest: every test binary is a GoogleTest executable (find_package(GTest 1.17)).
       - name: Install toolchain
         run: pacman -Syu --noconfirm --needed clang gcc cmake ninja git gtest
 
