@@ -1,5 +1,5 @@
-# gxbuild3_cli_tests: src/cli (the resolver suites join as BuildInputResolverTests.cpp is
-# ported). CommandLine (5 cheap cases), Block/CommandLineBlockType (4 block types) and
+# gxbuild3_cli_tests: src/cli (the resolver suites ported from BuildInputResolverTests.cpp,
+# whose resolver_build_requests golden is the golden binary's). CommandLine (5 cheap cases), Block/CommandLineBlockType (4 block types) and
 # Argv/CommandLineError (26 refused command lines) run as one bundled ctest entry each.
 # BuildCommand (3 cases) and BuildCommandTest (2 cases in a scratch directory) are suites of
 # fewer than five cases, one entry per case.

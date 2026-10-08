@@ -7,8 +7,8 @@
 //                             sealed under the test console's key, stays sealed, and
 //                             extract_all leaves it out (extract_metadata refuses).
 // Each image is built twice under the pinned build time and donor nonces, and each image
-// is projected twice; both must be identical. The mydata dump's projections live in
-// gxbuild3_orchestration_golden_tests (tests/golden/extract_projections_mydata.txt).
+// is projected twice; both must be identical. The mydata dump's projections are
+// MydataRender.cpp's (tests/golden/extract_projections_mydata.txt).
 // The old BuildRunnerTests.cpp test_extract_projection_snapshots, verbatim: its require()
 // messages are problems now, and its golden compare and summary line are
 // ExtractProjectionSyntheticGolden's.

@@ -12,7 +12,12 @@
 # flashimage_matrix writes 48 full-size images (about 25 s) until it is sectioned. So are the
 # three run_build goldens: run_build_failures (60 refused builds, under a second),
 # run_build_digests (32 builds, about 12 s) and extract_projections_synthetic (6 builds and 6
-# projection passes, about 23 s), the last two whole-file until they are sectioned.
+# projection passes, about 23 s), the last two whole-file until they are sectioned. So are the
+# three MydataGolden cases over the tracked mydata/image.bin (the donor's extract_all and nonce
+# check, the six builds of orchestration_mydata_builds, and the glitch2 rebuild plus the nine
+# projection passes of extract_projections_mydata; each case reads what it needs through a
+# per-process cache, so none depends on another having run) and ResolverDigestGolden
+# (resolver_build_requests: two pinned donor builds and ten resolves in the test's ScratchDir).
 gxbuild3_add_gtest(gxbuild3_golden_tests
     PREFIX golden
     LABELS golden slow
@@ -34,10 +39,14 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
         ${CMAKE_CURRENT_LIST_DIR}/FlashImageMatrixGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FlashImageFailureRender.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FlashImageFailureGoldenTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/MydataRender.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/MydataGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ExtractProjectionSyntheticRender.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ExtractProjectionSyntheticGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ObjectsCorpusRender.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ObjectsCorpusGoldenTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ResolverDigestRender.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ResolverDigestGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/RunBuildDigestRender.cpp
         ${CMAKE_CURRENT_LIST_DIR}/RunBuildDigestGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/RunBuildFailureRender.cpp
@@ -57,6 +66,7 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
 # `cmake --build build --target gxbuild3_golden_update_<name>`. GXBUILD3_GOLDEN_DIR in the
 # environment redirects the write to a scratch copy.
 set(GXBUILD3_TEXT_GOLDENS
+    extract_projections_mydata
     extract_projections_synthetic
     flashfs_roots
     flashimage_failures
@@ -64,6 +74,8 @@ set(GXBUILD3_TEXT_GOLDENS
     flashimage_matrix
     golden_snapshot_selftest
     objects_corpus
+    orchestration_mydata_builds
+    resolver_build_requests
     run_build_digests
     run_build_failures
     stfs_su20076000_entries

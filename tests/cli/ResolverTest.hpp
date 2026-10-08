@@ -1,8 +1,8 @@
 #pragma once
 
 // The fixture of the src/cli/BuildInputResolver.hpp tests (ResolverRoots, ResolverOptions,
-// OptionsText, ResolverCpuKey and the suites that join as BuildInputResolverTests.cpp is
-// ported, one-line subclasses per file so each suite stands on its own).
+// OptionsText, ResolverCpuKey and the other suites ported from BuildInputResolverTests.cpp,
+// one-line subclasses per file so each suite stands on its own).
 //
 // ResolverTest owns a ResolverTree (tests/support/builders/ResolverTree.hpp) rooted at the
 // test's ScratchDir: <root>/working is the resolver's working directory, <root>/first and

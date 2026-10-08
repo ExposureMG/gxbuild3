@@ -197,9 +197,8 @@ include(orchestration/Tests.cmake)
 include(snapshots/Tests.cmake)
 include(private/Tests.cmake)
 
-# ---- Pre-GoogleTest test executables (ported area by area, then deleted) --------------------
+# ---- Pre-GoogleTest leftovers (deleted with must()) -----------------------------------------
 
-add_gxbuild3_test(gxbuild3_resolver_tests BuildInputResolverTests.cpp)
 # tests/TestResult.hpp's must() aborts with Error::describe() and the call site; the demo tool
 # fails it on purpose (retired with must()).
 add_executable(gxbuild3_must_abort_demo tools/MustAbortDemo.cpp)
@@ -209,22 +208,6 @@ add_test(NAME gxbuild3_must_abort_tests
         -DGXBUILD3_SELFTEST=$<TARGET_FILE:gxbuild3_must_abort_demo>
         -P ${GXBUILD3_TEST_SCRIPTS}/MustAbortTest.cmake)
 set_tests_properties(gxbuild3_must_abort_tests PROPERTIES LABELS guard)
-target_link_libraries(gxbuild3_resolver_tests PRIVATE gxbuild3_cli)
-# run_build digests over the tracked mydata/image.bin (tests/golden/
-# orchestration_mydata_builds.txt): extract_all, then retail, jtag and glitch2 rebuilds with
-# the tracked patch files and XeLLs, each built twice under a pinned time and donor nonces;
-# then every public extract_* projection of image.bin and of the glitch2 rebuild
-# (tests/golden/extract_projections_mydata.txt, via tests/support/render/ExtractProjection.hpp).
-add_gxbuild3_test(gxbuild3_orchestration_golden_tests OrchestrationGoldenTests.cpp LABELS golden)
-target_compile_definitions(gxbuild3_orchestration_golden_tests PRIVATE
-    GXBUILD3_SUPPORT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/gxBuild-support-files")
-set_tests_properties(gxbuild3_orchestration_golden_tests PROPERTIES TIMEOUT 300)
-# The orchestration and resolver builders (support/builders/Stages, Inputs, Patchsets,
-# ResolverTree) and the support byte helpers and keys; no gtest_main, so the old mains run as
-# before.
-foreach(builder_test gxbuild3_resolver_tests gxbuild3_orchestration_golden_tests)
-    target_link_libraries(${builder_test} PRIVATE gxbuild3_test_support)
-endforeach()
 
 # The byte oracle's snapshot tool: --snapshot <image> [--expect <file>], exit 0/1/2.
 add_executable(gxbuild3_flashimage_snapshot tools/FlashImageSnapshot.cpp)
