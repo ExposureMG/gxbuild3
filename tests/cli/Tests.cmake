@@ -6,7 +6,10 @@
 # Resolver (ResolverTest.hpp, a ResolverTree in each test's scratch directory, one fixture
 # subclass per file): the ResolverRoots, ResolverOptions and ResolverCpuKey cases are one entry
 # per case; the 35-row options.ini decode table runs as two bundled entries,
-# ThroughFile/OptionsText and ThroughParseOptionsText/OptionsText.
+# ThroughFile/OptionsText and ThroughParseOptionsText/OptionsText. ResolverDonor,
+# ResolverLooseDonor and ResolverMetadata (donor run_builds, the BigBlock flake history) are one
+# entry per case; the three refused -c metadata rows run as one bundled entry,
+# Row/CliMetadataProvenance.
 gxbuild3_add_gtest(gxbuild3_cli_tests
     PREFIX cli
     LABELS unit cli
@@ -16,6 +19,9 @@ gxbuild3_add_gtest(gxbuild3_cli_tests
         ${CMAKE_CURRENT_LIST_DIR}/CommandLineErrorTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/CommandLineTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ResolverCpuKeyTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ResolverDonorTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ResolverLooseDonorTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ResolverMetadataTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ResolverOptionsTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ResolverRootsTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ResolverTest.cpp
@@ -24,4 +30,5 @@ gxbuild3_add_gtest(gxbuild3_cli_tests
         Block/CommandLineBlockType
         Argv/CommandLineError
         ThroughFile/OptionsText
-        ThroughParseOptionsText/OptionsText)
+        ThroughParseOptionsText/OptionsText
+        Row/CliMetadataProvenance)
