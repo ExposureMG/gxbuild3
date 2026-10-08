@@ -335,6 +335,7 @@ namespace gxbuild3::orchestration {
             extra_cd.header.header.magic = nand::NANDBootloaderMagic::CD;
             extra_cd.header.header.version = 8453;
             extra_cd.header.ce_hash[0] = 1;
+            std::ranges::copy(gxbuild3::nand::kRomSalt6bl, extra_cd.header.salt_6bl);
             extra_cd.data.resize(0x100, 0x72);
             extra_cd.header.header.size =
                 static_cast<uint32_t>(sizeof(nand::cd_header) + extra_cd.data.size());

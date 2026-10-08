@@ -4,6 +4,7 @@
 #include "nand/bootloaders/Stage.hpp"
 #include "utils/Log.hpp"
 
+#include <algorithm>
 #include <string_view>
 #include <utility>
 
@@ -76,7 +77,10 @@ namespace gxbuild3::nand {
     }
 
     bool BootloaderCd::is_decrypted() const {
-        return decrypted || (header.nonce_6bl[0] == 0x00 && header.ce_hash[0] != 0x00);
+        // A sealed CD is told from a plaintext one by its 6BL salt, which only a plaintext CD
+        // shows as the ROM constant. The first nonce byte and the CE hash are ciphertext in a
+        // sealed CD, so testing them mistook about 1 in 256 sealed CDs for plaintext.
+        return decrypted || std::ranges::equal(header.salt_6bl, kRomSalt6bl);
     }
 
     std::vector<uint8_t> BootloaderCd::serialize() const {

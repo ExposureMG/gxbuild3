@@ -4,7 +4,7 @@ donor.retail.input options cbldv="3" pairing_data=unset cfldv="5" xellbutton=uns
 donor.retail.input options nomobile=false nofcrt=true noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
 donor.retail.input options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
 donor.retail.input.metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
-donor.retail.input.metadata nand_image size=0x1080000 sha1=f2bb66045c15a0eaf0af374b291d2fbadf3e74fa
+donor.retail.input.metadata nand_image size=0x1080000 sha1=a5988f2c66ad1aa613c6ec4984bb20a1ca3797b7
 donor.retail.input.metadata keyvault size=0x4000 sha1=a8b415fe31dcbbae87338e0fb9b45671dd0fff00
 donor.retail.input.metadata smc size=0x300 sha1=473191a3317ca0ad5e1872e4d37bbc4f5047b289
 donor.retail.input.metadata cb_ldv=7 pairing=a1b2c3 cf_ldv=5 cf_pairing=a1b2c3
@@ -183,7 +183,7 @@ donor-glitch2.retail.input options cbldv=unset pairing_data=unset cfldv=unset xe
 donor-glitch2.retail.input options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
 donor-glitch2.retail.input options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
 donor-glitch2.retail.input.metadata cpu_key size=0x10 sha1=2138ea0c5b0b4d40b75e7978d09afc246255dd4f
-donor-glitch2.retail.input.metadata nand_image size=0x1080000 sha1=65b70465b4112d8439ab83bca9a06c801cd74bad
+donor-glitch2.retail.input.metadata nand_image size=0x1080000 sha1=871026883df802d7f99046ce32f3012991ea681d
 donor-glitch2.retail.input.metadata keyvault size=0x4000 sha1=c0ad35b92eb66ed5b3c7b5cb06f8177136d43262
 donor-glitch2.retail.input.metadata smc size=0x300 sha1=5d222da93ef6439b5448a73957644e94216404ac
 donor-glitch2.retail.input.metadata cb_ldv=0 pairing=000000 cf_ldv=none cf_pairing=none

@@ -3,7 +3,8 @@
 # KeyChain (the CB/CD key chain, 4 cases) is a suite of fewer than five cases. Stage (3 cases),
 # StageCryptRecord (4), StageNonce (3), BootloaderCb (1), StageCryptFailure (3), CryptSingleBl (1),
 # CfCalcMac (1), XerunnerSeal (2), SmcDetection (1), UnboundCbB (1) and CbBPerboxLdvPolicy (1)
-# are suites of fewer than five cases too, one entry per case. Row/StageDeclaredSize (9 parses), Flags/CbBRegime (4 regimes x 2 CPU keys)
+# are suites of fewer than five cases too, one entry per case. CdPlaintextDetection (6 cases,
+# milliseconds) is a cheap suite, one bundled entry. Row/StageDeclaredSize (9 parses), Flags/CbBRegime (4 regimes x 2 CPU keys)
 # and Flags/CbBBinding (3 regimes) are cheap tables, one bundled entry each.
 # glitch/ seals synthetic chains through run_build (about 0.3 s per build in Release):
 # ChainPolicy is instantiated per family (Retail 2, Glitch 3, Glitch2m 3 and Glitch3 2 rows)
@@ -17,6 +18,7 @@ gxbuild3_add_gtest(gxbuild3_bootloader_tests
     LABELS unit bootloaders slow
     SOURCES
         ${CMAKE_CURRENT_LIST_DIR}/BootloaderLayoutPins.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/CdPlaintextDetectionTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/CryptoReferenceTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/KeyChainTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/StageRefusalTests.cpp
@@ -29,6 +31,7 @@ gxbuild3_add_gtest(gxbuild3_bootloader_tests
         ${CMAKE_CURRENT_LIST_DIR}/glitch/RetailDigestTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/glitch/SingleCbAndJtagTests.cpp
     BUNDLE
+        CdPlaintextDetection
         Row/StageDeclaredSize
         Flags/CbBRegime
         Flags/CbBBinding
