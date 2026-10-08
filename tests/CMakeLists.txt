@@ -193,6 +193,7 @@ include(stfs/Tests.cmake)
 include(bootloaders/Tests.cmake)
 include(objects/Tests.cmake)
 include(nand/Tests.cmake)
+include(orchestration/Tests.cmake)
 include(snapshots/Tests.cmake)
 include(private/Tests.cmake)
 
