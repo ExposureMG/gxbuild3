@@ -1,12 +1,18 @@
 #include "orchestration/RunBuildImage.hpp"
 
-#include "nand/FlashImage.hpp"
-
 #include <algorithm>
 #include <cstddef>
 #include <utility>
 
 namespace gxbuild3::orchestration {
+
+    std::optional<nand::FlashImage> parse_image(std::span<const uint8_t> bytes) {
+        auto image = nand::FlashImage::read(test::Bytes(bytes.begin(), bytes.end()));
+        if (!image || !image->parse()) {
+            return std::nullopt;
+        }
+        return image;
+    }
 
     std::optional<test::Bytes> read_logical(std::span<const uint8_t> image, size_t offset,
                                             size_t length) {

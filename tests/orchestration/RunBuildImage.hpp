@@ -1,10 +1,11 @@
 #pragma once
 
-// Reads of a run_build image shared by the orchestration tests: the logical bytes at an offset
-// (through FlashImage's driver, so spare bytes and bad-block remaps are hidden), and the two
-// size checks the patch tests make of a patched stage. The old tests/BuildRunnerTests.cpp
-// helpers, same behaviour.
+// Reads of a run_build image shared by the orchestration tests: the image read and parsed as a
+// FlashImage, the logical bytes at an offset (through FlashImage's driver, so spare bytes and
+// bad-block remaps are hidden), and the two size checks the patch tests make of a patched stage.
+// The old tests/BuildRunnerTests.cpp helpers, same behaviour.
 
+#include "nand/FlashImage.hpp"
 #include "support/Bytes.hpp"
 
 #include <cstddef>
@@ -13,6 +14,9 @@
 #include <span>
 
 namespace gxbuild3::orchestration {
+
+    // The image read and parsed as a FlashImage, or nullopt when it does not read or parse.
+    [[nodiscard]] std::optional<nand::FlashImage> parse_image(std::span<const uint8_t> bytes);
 
     // `length` logical bytes at `offset` of the image, or nullopt when the image does not read or
     // parse as a FlashImage. A read past the image's end is shorter than `length`.
