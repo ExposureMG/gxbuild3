@@ -5,7 +5,7 @@
 //   run_build_digests              (RunBuildDigestRender.cpp) SmallBlock, NewSmallBlock, BigBlock
 //                                  and Emmc crossed with retail, glitch2, devkit and devgl, each
 //                                  built twice under the pinned build time; the size and SHA-1
-//                                  of each output;
+//                                  of each output, one line per row (render_row);
 //   extract_projections_synthetic  (ExtractProjectionSyntheticRender.cpp) every public extract_*
 //                                  projection (support/render/ExtractProjection.hpp) of
 //                                  small.glitch2, newsmall.devkit and newsmall.devkit under the
@@ -23,6 +23,7 @@
 // EPOCH and TZ=UTC0 around each run_build); the failure exits pin nothing, as before. Every input
 // is synthetic (tests/support/builders/Inputs.hpp), so the three render on a clean clone.
 
+#include "Args.hpp"
 #include "Error.hpp"
 
 #include <cstddef>
@@ -45,6 +46,14 @@ namespace gxbuild3::snapshots {
             std::vector<std::string> problems;
         };
 
+        // One row: the "<layout>.<build> " line of image_type built as build_type, twice under
+        // the pinned build time; a build error or a difference is appended to problems (the line
+        // then says error= or nondeterministic). A pair outside the file's 4x4 table renders
+        // nothing and is a problem.
+        [[nodiscard]] std::string render_row(ImageType image_type, BuildType build_type,
+                                             std::vector<std::string>& problems);
+        // render_row over SmallBlock, NewSmallBlock, BigBlock, Emmc x Retail, Glitch2, Devkit,
+        // Devgl, layout-major (the file's order).
         [[nodiscard]] Rendered render();
         // render(), registered with GX_GOLDEN; an error while the render reports a problem.
         [[nodiscard]] Result<std::string> render_file();

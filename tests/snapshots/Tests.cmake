@@ -12,10 +12,13 @@
 # compared per section: FlashImageMatrixCell is instantiated per build type over the three
 # shapes, each instantiation one bundle of three cells (six full-size images, about 2-4 s, a Big
 # cell most of it), and FlashImageMatrixGolden bundles the header slice, the cell-count trailer
-# and the partition check (about 2 s, the three zeroed header images). The three run_build
-# goldens are one entry per TEST: run_build_failures (60 refused builds, under a second),
-# run_build_digests (32 builds, about 12 s) and extract_projections_synthetic (6 builds and 6
-# projection passes, about 23 s), the last two whole-file until they are sectioned. So are the
+# and the partition check (about 2 s, the three zeroed header images). run_build_digests is
+# compared per row: RunBuildDigest is instantiated per build type over the four layouts, each
+# instantiation one bundle of four rows (eight builds, about 3 s), and its plain companion
+# RunBuildDigestGolden.IsPartitioned is one entry. The other two run_build goldens are one entry
+# per TEST: run_build_failures (60 refused builds, under a second, compared whole) and
+# extract_projections_synthetic (6 builds and 6 projection passes, about 23 s, whole-file until
+# it is sectioned). So are the
 # three MydataGolden cases over the tracked mydata/image.bin (the donor's extract_all and nonce
 # check, the six builds of orchestration_mydata_builds, and the glitch2 rebuild plus the nine
 # projection passes of extract_projections_mydata; each case reads what it needs through a
@@ -72,7 +75,11 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
         Glitch2m/FlashImageMatrixCell
         Glitch3/FlashImageMatrixCell
         Devgl/FlashImageMatrixCell
-        Devkit/FlashImageMatrixCell)
+        Devkit/FlashImageMatrixCell
+        Retail/RunBuildDigest
+        Glitch2/RunBuildDigest
+        Devkit/RunBuildDigest
+        Devgl/RunBuildDigest)
 
 # Capture targets, one per golden, by name only and never run by CTest:
 # `cmake --build build --target gxbuild3_golden_update_<name>`. GXBUILD3_GOLDEN_DIR in the
