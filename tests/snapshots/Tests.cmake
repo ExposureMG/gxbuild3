@@ -9,7 +9,10 @@
 # load and render in about 0.2 s) and the single-case suites (FlashFsRootGolden's whole-file
 # render takes about 2.5 s) are one entry per TEST. So are the three FlashImage goldens: the
 # donor (flashimage_golden) and failure table each render in a few seconds, the whole-file
-# flashimage_matrix writes 48 full-size images (about 25 s) until it is sectioned.
+# flashimage_matrix writes 48 full-size images (about 25 s) until it is sectioned. So are the
+# three run_build goldens: run_build_failures (60 refused builds, under a second),
+# run_build_digests (32 builds, about 12 s) and extract_projections_synthetic (6 builds and 6
+# projection passes, about 23 s), the last two whole-file until they are sectioned.
 gxbuild3_add_gtest(gxbuild3_golden_tests
     PREFIX golden
     LABELS golden slow
@@ -31,8 +34,14 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
         ${CMAKE_CURRENT_LIST_DIR}/FlashImageMatrixGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FlashImageFailureRender.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FlashImageFailureGoldenTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ExtractProjectionSyntheticRender.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ExtractProjectionSyntheticGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ObjectsCorpusRender.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ObjectsCorpusGoldenTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/RunBuildDigestRender.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/RunBuildDigestGoldenTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/RunBuildFailureRender.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/RunBuildFailureGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/StfsSystemUpdateGoldenTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/WireCorpusRender.cpp
         ${CMAKE_CURRENT_LIST_DIR}/WireCorpusGoldenTests.cpp
@@ -48,12 +57,15 @@ gxbuild3_add_gtest(gxbuild3_golden_tests
 # `cmake --build build --target gxbuild3_golden_update_<name>`. GXBUILD3_GOLDEN_DIR in the
 # environment redirects the write to a scratch copy.
 set(GXBUILD3_TEXT_GOLDENS
+    extract_projections_synthetic
     flashfs_roots
     flashimage_failures
     flashimage_golden
     flashimage_matrix
     golden_snapshot_selftest
     objects_corpus
+    run_build_digests
+    run_build_failures
     stfs_su20076000_entries
     stfs_su20076000_metadata
     wire_corpus_bootloaders)

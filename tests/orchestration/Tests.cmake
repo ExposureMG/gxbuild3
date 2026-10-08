@@ -1,6 +1,7 @@
 # gxbuild3_orchestration_tests: run_build and the extract_* cores (src/BuildRunner.cpp), ported
-# group by group from tests/BuildRunnerTests.cpp (every group A-J is here; the old file keeps only
-# its three goldens).
+# group by group from tests/BuildRunnerTests.cpp (every group A-J is here; its three goldens are
+# the golden binary's RunBuildDigestGolden, RunBuildFailureGolden and
+# ExtractProjectionSyntheticGolden, tests/snapshots/).
 # RunBuildPatching (8 cases: glitch CB/CB_B/CD patching, the clean retail SMC reboot patch,
 # noblpatch, nopatch, overflow and the retail/devkit add-on refusal), RunBuildJtag (4 cases: the
 # JTAG patch region, window items, window padding and the clean-SMC refusal), PatchSlotLayout

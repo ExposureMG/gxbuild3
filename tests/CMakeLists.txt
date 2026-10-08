@@ -199,7 +199,6 @@ include(private/Tests.cmake)
 
 # ---- Pre-GoogleTest test executables (ported area by area, then deleted) --------------------
 
-add_gxbuild3_test(gxbuild3_buildrunner_tests BuildRunnerTests.cpp)
 add_gxbuild3_test(gxbuild3_resolver_tests BuildInputResolverTests.cpp)
 # tests/TestResult.hpp's must() aborts with Error::describe() and the call site; the demo tool
 # fails it on purpose (retired with must()).
@@ -223,8 +222,7 @@ set_tests_properties(gxbuild3_orchestration_golden_tests PROPERTIES TIMEOUT 300)
 # The orchestration and resolver builders (support/builders/Stages, Inputs, Patchsets,
 # ResolverTree) and the support byte helpers and keys; no gtest_main, so the old mains run as
 # before.
-foreach(builder_test gxbuild3_buildrunner_tests gxbuild3_resolver_tests
-        gxbuild3_orchestration_golden_tests)
+foreach(builder_test gxbuild3_resolver_tests gxbuild3_orchestration_golden_tests)
     target_link_libraries(${builder_test} PRIVATE gxbuild3_test_support)
 endforeach()
 
