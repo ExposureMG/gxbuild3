@@ -1,5 +1,6 @@
 # gxbuild3_orchestration_tests: run_build and the extract_* cores (src/BuildRunner.cpp), ported
-# group by group from tests/BuildRunnerTests.cpp (more suites join as its groups are ported).
+# group by group from tests/BuildRunnerTests.cpp (every group A-J is here; the old file keeps only
+# its three goldens).
 # RunBuildPatching (8 cases: glitch CB/CB_B/CD patching, the clean retail SMC reboot patch,
 # noblpatch, nopatch, overflow and the retail/devkit add-on refusal), RunBuildJtag (4 cases: the
 # JTAG patch region, window items, window padding and the clean-SMC refusal), PatchSlotLayout
@@ -16,9 +17,16 @@
 # made up clean), BootChainMetadata (8 cases: extraction round trips of the chain and the fixed
 # payloads, the CB/CB_B/CF LDV and pairing overrides, the extended CF header, the unbound first
 # JTAG pair and the unwritable CB/CF per-box refusals), ZeroCpuKey (2 cases: a zero-paired CB_B
-# chain and the donor keyvault left sealed) and BootChainRecords (10 cases: the donor chain
+# chain and the donor keyvault left sealed), BootChainRecords (10 cases: the donor chain
 # replaced by input presence, the actual CF slot base, stage header endianness, the CB console
-# allowance and the header-only/orphan record refusals). Orchestration stays one ctest entry per
+# allowance and the header-only/orphan record refusals), UpdateSlots (1 case: a spilled slot-zero
+# CG beside a surviving slot 1), StageNonces (3 cases: fresh drawn nonces, donor nonces by
+# position and in every slot, the max-LDV slot's CF metadata and nonces), ClearBootloaderChain (1
+# case: header-only CB and CD records), ErasedSpace (3 cases: unlaid donor space, eMMC anchor
+# tails and unused blocks, big-block FlashFS clusters), Devkit (5 cases: the chain sealed from the
+# zero secret, read back and rebuilt, donor nonces by position, its own 64 MB shape beside a 16 MB
+# donor and the raw patches) and Devgl (3 cases: the patched and signed SD, the big-block slot
+# step and the SB private key refusals). Orchestration stays one ctest entry per
 # case (SUITE RULE): most cases run run_build, 0.1-2 s in Release, and the few stage-record cases
 # of BootChainRecords that do not stay beside them. The one bundle is Size/KeyvaultSummaryOsig (3
 # rows of summarize_keyvault on a hand-made keyvault, microseconds). RunBuildImage.cpp holds the
@@ -29,6 +37,8 @@ gxbuild3_add_gtest(gxbuild3_orchestration_tests
     SOURCES
         ${CMAKE_CURRENT_LIST_DIR}/BootChainMetadataTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/BootChainRecordsTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/DevkitDevglTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ErasedSpaceTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ExtractionTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FlashFsOverlayTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FreshLayoutHeaderTests.cpp
@@ -38,5 +48,6 @@ gxbuild3_add_gtest(gxbuild3_orchestration_tests
         ${CMAKE_CURRENT_LIST_DIR}/PatchingTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/RunBuildImage.cpp
         ${CMAKE_CURRENT_LIST_DIR}/SecuredFlashFsTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/UpdateSlotsNoncesTests.cpp
     BUNDLE
         Size/KeyvaultSummaryOsig)
