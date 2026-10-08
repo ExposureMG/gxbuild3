@@ -7,6 +7,7 @@
 // same bytes.
 
 #include "Args.hpp"
+#include "Error.hpp"
 #include "nand/FlashDriver.hpp"
 #include "nand/FlashImage.hpp"
 #include "nand/bootloaders/2bl.hpp"
@@ -25,9 +26,11 @@ namespace gxbuild3::nand {
 
     // An image of `mode` (Smallblock, Bigordevkit or Emmcblock driver) whose patchset is empty CB
     // and CD sections followed by one valid runtime KHV record (address 0x1000, one word
-    // 0x60000000), with a fourth empty section for Jtag. A patchset that fails to parse leaves
-    // the image without one, silently, as the old fixture() did.
-    [[nodiscard]] FlashImage anchor_image(Driver::DriverMode mode, BuildType type);
+    // 0x60000000), with a fourth empty section for Jtag. A patchset that fails to parse is the
+    // fixture's failure, with context "anchor patchset": callers take the image through
+    // ASSERT_OK_AND_ASSIGN, so a malformed KHV record stops the case at the fixture instead of
+    // leaving an image without a patchset (the old fixture() skipped it silently).
+    [[nodiscard]] Result<FlashImage> anchor_image(Driver::DriverMode mode, BuildType type);
 
     // A 0x100-byte CB or CD stage of `fill` bytes, header magic and size set, nothing sealed.
     [[nodiscard]] BootloaderCb synthetic_cb(uint8_t fill);

@@ -4,6 +4,7 @@
 #include "nand/objects/Patchset.hpp"
 
 #include <algorithm>
+#include <expected>
 #include <utility>
 
 namespace gxbuild3::nand {
@@ -17,7 +18,7 @@ namespace gxbuild3::nand {
         return b;
     }
 
-    FlashImage anchor_image(Driver::DriverMode mode, BuildType type) {
+    Result<FlashImage> anchor_image(Driver::DriverMode mode, BuildType type) {
         FlashImage f{};
         f.flash_driver = Driver(mode == Driver::DriverMode::Big ? Driver::Bigordevkit
                                 : mode == Driver::Emmc          ? Driver::Emmcblock
@@ -29,9 +30,11 @@ namespace gxbuild3::nand {
         if (type == BuildType::Jtag) {
             p.insert(p.begin() + 8, {255, 255, 255, 255});
         }
-        if (auto ps = parse_patch_set(p, type)) {
-            f.payloads.patchset = std::move(*ps);
+        auto ps = parse_patch_set(p, type);
+        if (!ps) {
+            return std::unexpected(std::move(ps.error()).add_context("anchor patchset"));
         }
+        f.payloads.patchset = std::move(*ps);
         return f;
     }
 

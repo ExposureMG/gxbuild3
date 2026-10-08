@@ -46,7 +46,7 @@ namespace gxbuild3::nand {
 
         TEST_P(AnchorLayout, KhvXellAndFusesAreAnchored) {
             const BuildType type = GetParam().type;
-            auto f = anchor_image(GetParam().mode, type);
+            ASSERT_OK_AND_ASSIGN(auto f, anchor_image(GetParam().mode, type));
             XeLL x{};
             x.data = raw_xell();
             f.payloads.xell = x;
@@ -95,7 +95,7 @@ namespace gxbuild3::nand {
                                  test::RowName{});
 
         TEST(AnchorLayoutRoundTrip, CustomHeaderLayoutKeepsItsHeaderDerivedKhvAnchor) {
-            auto f = anchor_image(Driver::Big, BuildType::Glitch2);
+            ASSERT_OK_AND_ASSIGN(auto f, anchor_image(Driver::Big, BuildType::Glitch2));
             f.preserve_layout = true;
             f.header.cf_offset = 0x100000;
             f.header.fs_addr = 0x30000;

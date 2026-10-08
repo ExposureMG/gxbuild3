@@ -39,7 +39,7 @@ namespace gxbuild3::nand {
 
         TEST_P(SpillChain, OversizedCgSpillsThroughTheCfBlockListAndReassembles) {
             const BuildType type = GetParam().type;
-            auto f = anchor_image(Driver::DriverMode::Big, BuildType::Glitch2);
+            ASSERT_OK_AND_ASSIGN(auto f, anchor_image(Driver::DriverMode::Big, BuildType::Glitch2));
             if (type != BuildType::Glitch2) {
                 f.payloads.patchset.reset();
             }

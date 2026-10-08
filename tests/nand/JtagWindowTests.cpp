@@ -36,7 +36,7 @@ namespace gxbuild3::nand {
 
         TEST_P(JtagWindow, PayloadsLandAtTheAnchoredWindowAndReadBackAsJtag) {
             const size_t window = 0x90000;
-            auto f = anchor_image(GetParam().mode, BuildType::Jtag);
+            ASSERT_OK_AND_ASSIGN(auto f, anchor_image(GetParam().mode, BuildType::Jtag));
             f.build_type = BuildType::Jtag;
             XeLL x{};
             x.data = raw_xell();
