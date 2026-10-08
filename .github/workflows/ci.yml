@@ -6,12 +6,19 @@ on:
 
 jobs:
   build-and-test:
-    name: Clang Release build + ctest (Arch Linux)
+    name: ${{ matrix.compiler.name }} Release build + ctest (Arch Linux)
     runs-on: ubuntu-latest
     container: archlinux:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - { name: Clang, cc: clang, cxx: clang++ }
+          - { name: GCC, cc: gcc, cxx: g++ }
     steps:
+      # gtest: every test binary is a GoogleTest executable (find_package(GTest 1.17)).
       - name: Install toolchain
-        run: pacman -Syu --noconfirm --needed clang cmake ninja git
+        run: pacman -Syu --noconfirm --needed clang gcc cmake ninja git gtest
 
       - name: Check out sources
         uses: actions/checkout@v4
@@ -28,16 +35,27 @@ jobs:
         run: >
           cmake -B build -S . -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_C_COMPILER=clang
-          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_C_COMPILER=${{ matrix.compiler.cc }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
 
-      # gxbuild3_flashimage_tests and gxbuild3_keyvault_crypto_tests skip themselves
-      # (exit 77) when their private fixtures are absent, as they are in CI.
-      # gxbuild3_cli_integration_tests requires a Windows drive path, so it is excluded here.
+      # gxbuild3_flashimage_tests (exit 77) and private.KeyvaultCrypto (GTEST_SKIP) skip
+      # themselves when their private fixtures are absent, as they are in CI.
       - name: Test
         run: >
           ctest --test-dir build --output-on-failure -j"$(nproc)"
-          -E gxbuild3_cli_integration_tests
+
+      # ctest runs every case or bundle in a process of its own, so state that leaks from one case
+      # into the next (environment, TZ, cwd, logger, STFS cache) only shows when a whole binary
+      # runs in one process: run each GoogleTest binary once more, in shuffled order.
+      - name: In-process shuffle
+        working-directory: build/tests
+        run: |
+          export TMPDIR="$GITHUB_WORKSPACE/build/tmp"
+          while IFS='|' read -r name prefix binary rest; do
+            [ -n "$name" ] || continue
+            echo "== $name"
+            "$binary" --gtest_shuffle --gtest_brief=1 || exit 1
+          done < gtest-binaries.txt
