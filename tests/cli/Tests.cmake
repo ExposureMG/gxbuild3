@@ -9,7 +9,10 @@
 # ThroughFile/OptionsText and ThroughParseOptionsText/OptionsText. ResolverDonor,
 # ResolverLooseDonor and ResolverMetadata (donor run_builds, the BigBlock flake history) are one
 # entry per case; the three refused -c metadata rows run as one bundled entry,
-# Row/CliMetadataProvenance.
+# Row/CliMetadataProvenance. ResolverPayload and ResolverPatchset (resolves, some with donor
+# run_builds) are one entry per case; the automatic patch file names of the five hacked build
+# types and the two types that select none run as two bundled entries, Row/AutomaticPatchsetName
+# and Row/NoAutomaticPatchset.
 gxbuild3_add_gtest(gxbuild3_cli_tests
     PREFIX cli
     LABELS unit cli
@@ -23,6 +26,8 @@ gxbuild3_add_gtest(gxbuild3_cli_tests
         ${CMAKE_CURRENT_LIST_DIR}/ResolverLooseDonorTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ResolverMetadataTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ResolverOptionsTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ResolverPatchsetTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ResolverPayloadTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ResolverRootsTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ResolverTest.cpp
     BUNDLE
@@ -31,4 +36,6 @@ gxbuild3_add_gtest(gxbuild3_cli_tests
         Argv/CommandLineError
         ThroughFile/OptionsText
         ThroughParseOptionsText/OptionsText
-        Row/CliMetadataProvenance)
+        Row/CliMetadataProvenance
+        Row/AutomaticPatchsetName
+        Row/NoAutomaticPatchset)

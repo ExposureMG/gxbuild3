@@ -139,6 +139,11 @@ namespace gxbuild3::test::xe_rsa {
     // key file. CRC-32 is affine over GF(2), so the four bytes solve a 32x32 linear system.
     inline std::vector<uint8_t> with_crc32(std::vector<uint8_t> key, uint32_t target) {
         constexpr size_t kAt = 0x08;
+        // A key too short to hold the four bytes has no solution (an empty key, as
+        // generate_private_key never makes).
+        if (key.size() < kAt + 4) {
+            return {};
+        }
         std::fill(key.begin() + kAt, key.begin() + kAt + 4, uint8_t{0});
         const uint32_t base = gxbuild3::utils::crc32(key);
         // Column b: how flipping bit b of the four bytes changes the CRC.
