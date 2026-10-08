@@ -1,8 +1,9 @@
 // The big-block FlashFS (src/nand/objects/FlashFileSystem.hpp on Driver::DriverMode::Big): file
 // chains on 16 KiB cluster addresses, the writer's cluster allocation, the retail/xeBuild spare
 // profile that save() and serialize() stamp, a 148-cluster file through save -> serialize -> load,
-// what the table states for withheld and root clusters, and the spare of a one-cluster file's
-// padding.
+// what the table states for withheld and root clusters, the spare of a one-cluster file's
+// padding, and the larger (devkit) layout the [big_larger] lines of
+// tests/golden/flashfs_roots.txt render: base cluster 0x2E0 and fs_size 0x6010.
 
 #include "nand/FlashDriver.hpp"
 #include "nand/objects/FlashFileSystem.hpp"
@@ -25,6 +26,7 @@ namespace gxbuild3::nand {
         using test::flashfs::map_offset;
         using test::flashfs::put16;
         using test::flashfs::put32;
+        using test::flashfs::slot_offset;
 
         uint16_t stated_map_value(const Bytes& root, size_t index) {
             const size_t at = map_offset(index);
@@ -302,6 +304,48 @@ namespace gxbuild3::nand {
             EXPECT_TRUE(padding_pages) << "its padding pages keep erased fields";
             EXPECT_TRUE(long_pages)
                 << "a longer file's last cluster carries its spare on every page";
+        }
+
+        // set_larger_filesystem(true) moves the filesystem base from cluster 0xAE0 to 0x2E0, so
+        // the first file lands on 0x2E0 and the root states it, and its links, relative to that
+        // base; the fs_size stamp becomes 0x6010 instead of 0x2006.
+        TEST(FlashFsBigBlock, LargerLayoutUsesBaseCluster0x2E0AndFsSize0x6010) {
+            const Bytes payload(0x4001, 0xA1);
+            Driver standard_driver(Driver::ImageSize::Bigordevkit, Driver::DriverMode::Big);
+            FlashFileSystem standard;
+            standard.set_driver(&standard_driver);
+            ASSERT_OK(standard.format(standard_driver.block_count(), 0x15F, 0x125))
+                << "the standard filesystem formats";
+            ASSERT_OK(standard.add_file("a.bin", payload)) << "a.bin allocates";
+            const auto standard_entry = standard.stat("a.bin");
+            ASSERT_TRUE(standard_entry.has_value()) << "a.bin entry exists";
+            EXPECT_EQ(standard_entry->block_number, 0xAE0) << "the standard base is 0xAE0";
+            EXPECT_EQ(standard.big_fs_size(), 0x2006) << "the standard fs_size is 0x2006";
+
+            Driver driver(Driver::ImageSize::Bigordevkit, Driver::DriverMode::Big);
+            FlashFileSystem fs;
+            fs.set_driver(&driver);
+            fs.set_larger_filesystem(true);
+            ASSERT_OK(fs.format(driver.block_count(), 0x5F, 0x126))
+                << "the larger filesystem formats";
+            ASSERT_OK(fs.add_file("a.bin", payload)) << "a.bin allocates";
+            const auto entry = fs.stat("a.bin");
+            ASSERT_TRUE(entry.has_value()) << "a.bin entry exists";
+            EXPECT_EQ(entry->block_number, 0x2E0) << "the larger base is 0x2E0";
+            EXPECT_EQ(fs.get_chain(entry->block_number), (std::vector<uint16_t>{0x2E0, 0x2E1}))
+                << "a.bin takes the two clusters from the base";
+            EXPECT_EQ(fs.big_fs_size(), 0x6010) << "the larger fs_size is 0x6010";
+
+            ASSERT_OK(fs.save()) << "the larger filesystem saves";
+            const auto root_meta = driver.interpret_cluster(0x5F * 8);
+            EXPECT_EQ(root_meta.fs_size, 0x6010) << "the root spare states fs_size 0x6010";
+            ASSERT_OK_AND_ASSIGN(const Bytes root, fs.serialize_root_block());
+            ASSERT_EQ(root.size(), 0x4000u) << "the root serializes whole";
+            EXPECT_EQ(stated_map_value(root, 0), 1)
+                << "cluster 0x2E0 is map index 0 and links to relative cluster 1";
+            const size_t slot = slot_offset(0);
+            EXPECT_EQ((root[slot + 22] << 8) | root[slot + 23], 0)
+                << "a.bin is stated at relative block 0";
         }
 
     } // namespace

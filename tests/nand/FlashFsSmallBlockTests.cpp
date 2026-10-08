@@ -4,8 +4,11 @@
 // and inserted CG tails lay every file back to back behind them.
 //
 // FlashFsSmallBlock is the Mode/ table over both small-block modes; its plain companions are in
-// FlashFsSmallBlockLayout (gtest forbids TEST and TEST_P in one suite).
+// FlashFsSmallBlockLayout (gtest forbids TEST and TEST_P in one suite). FlashFsRootCodec names
+// the identical [small] and [newsmall] root sha1 of tests/golden/flashfs_roots.txt: both modes
+// share one root encoding, whatever their version.
 
+#include "Error.hpp"
 #include "nand/FlashDriver.hpp"
 #include "nand/objects/FlashFileSystem.hpp"
 #include "support/Expect.hpp"
@@ -13,6 +16,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <gtest/gtest.h>
 #include <span>
 #include <string>
@@ -222,6 +226,44 @@ namespace gxbuild3::nand {
                 << "replacing the first tail lays the rest again behind it";
             EXPECT_EQ(fs.entries()[2].block_number, 0x26)
                 << "replacing the first tail lays the rest again behind it";
+        }
+
+        // The root codec does not depend on the small-block mode or on the version: the same
+        // files on Small (version 7) and NewSmall (version 9) serialize to the same root bytes,
+        // while the images differ (the version and the spare layout live in the spare).
+        TEST(FlashFsRootCodec, SmallAndNewSmallShareOneRootEncoding) {
+            struct Built {
+                Bytes root;
+                Bytes image;
+            };
+            const auto build = [](Driver::DriverMode mode, uint32_t version) -> Result<Built> {
+                Driver driver(Driver::ImageSize::Smallblock, mode);
+                FlashFileSystem fs;
+                fs.set_driver(&driver);
+                fs.set_timestamp(0x5D444AC2);
+                if (auto formatted = fs.format(driver.block_count(), 0x5C, version); !formatted)
+                    return std::unexpected(std::move(formatted.error()));
+                for (const auto& [name, size] : {std::pair{"a.bin", 0x4001},
+                                                 {"b.bin", 0x10},
+                                                 {"c.bin", 0x9000},
+                                                 {"empty.bin", 0x0}}) {
+                    if (auto added = fs.add_file(name, Bytes(size, 0x5A)); !added)
+                        return std::unexpected(std::move(added.error()));
+                }
+                if (auto saved = fs.save(); !saved)
+                    return std::unexpected(std::move(saved.error()));
+                auto root = fs.serialize_root_block();
+                if (!root)
+                    return std::unexpected(std::move(root.error()));
+                return Built{std::move(*root), driver.serialize()};
+            };
+            ASSERT_OK_AND_ASSIGN(const Built small, build(Driver::DriverMode::Small, 7));
+            ASSERT_OK_AND_ASSIGN(const Built newsmall, build(Driver::DriverMode::NewSmall, 9));
+            ASSERT_EQ(small.root.size(), 0x4000u) << "the Small root serializes whole";
+            EXPECT_BYTES_EQ(small.root, newsmall.root)
+                << "Small and NewSmall share one root encoding";
+            EXPECT_EQ(small.image.size(), newsmall.image.size()) << "both are 16 MB images";
+            EXPECT_NE(small.image, newsmall.image) << "the images differ outside the root bytes";
         }
 
     } // namespace

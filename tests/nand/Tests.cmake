@@ -11,9 +11,11 @@
 # MobileDataBigBlock (1) and MobileDataWrite (2), and CoronaAnchor (3), FlashImageFsPlacement
 # (4) and FlashFsAllocation (2) are suites of fewer than five cases, one entry per case.
 # Mode/FlashFsSmallBlock (Small, NewSmall) is a cheap table, one bundled entry; its plain
-# companion FlashFsSmallBlockLayout (3), FlashFsLoad (1) and FlashFsCorruptInput (2) are one entry
-# per case. FlashFsBigBlock has seven cases, but its big-block serializes take about 0.7 s
-# together, past the ~1 s budget of a bundled suite with the rest: one entry per case.
+# companion FlashFsSmallBlockLayout (3), FlashFsRootCodec (1), FlashFsLoad (1), FlashFsEmmc (1)
+# and FlashFsCorruptInput (2) are one entry per case. Pin/FlashFsLoadPin (the nine [load <pin>]
+# lines of flashfs_roots.txt, one row each) is a cheap table, one bundled entry. FlashFsBigBlock
+# has eight cases, but its big-block serializes take about 0.7 s together, past the ~1 s budget
+# of a bundled suite with the rest: one entry per case.
 # AnchorLayout (Glitch2 and Glitch2m rows, each writing and re-reading a full image) is
 # instantiated per shape, Small/, Big/ and Emmc/AnchorLayout, one bundled entry per shape; its
 # plain companion AnchorLayoutRoundTrip (1), XeLL (1), PayloadRange (1) and FreebootProvider (1)
@@ -48,6 +50,7 @@ gxbuild3_add_gtest(gxbuild3_nand_tests
         Shape/MobileData
         Shape/MobileDataLayout
         Mode/FlashFsSmallBlock
+        Pin/FlashFsLoadPin
         Small/AnchorLayout
         Big/AnchorLayout
         Emmc/AnchorLayout
