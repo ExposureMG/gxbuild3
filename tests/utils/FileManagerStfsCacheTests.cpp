@@ -1,18 +1,22 @@
 // src/utils/FileManager.hpp: the process-wide STFS caches and in-memory packages. Repeat lookups
 // are served from the package, directory and derived-bootloader caches, clear_stfs_cache()
-// empties them and a package rewritten on disk is read again. ScanOptions::in_memory_stfs
-// packages answer without any root (empty source_path, root_index counting the packages),
-// outrank the disk roots and honour nosu and nosusecurity.
+// empties them and a package rewritten on disk is read again, but only when its mtime or size
+// changed: a same-size rewrite under the old mtime is served from the cache (AsToday).
+// ScanOptions::in_memory_stfs packages answer without any root (empty source_path, root_index
+// counting the packages), outrank the disk roots and honour nosu and nosusecurity.
 //
 // The in-memory cases touch no file, but use the fixture too (gtest cannot mix TEST and TEST_F
 // in one suite) for its clear_stfs_cache() in SetUp and TearDown.
 
 #include "FileManagerTest.hpp"
 #include "support/Expect.hpp"
+#include "support/Scratch.hpp"
 #include "utils/FileManager.hpp"
 
+#include <chrono>
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <system_error>
 #include <vector>
 
 namespace gxbuild3::utils {
@@ -68,6 +72,48 @@ namespace gxbuild3::utils {
                 << "modifying STFS package on disk invalidates cache and returns fresh data";
             EXPECT_EQ(after_modify->data, Bytes{0x99})
                 << "modifying STFS package on disk invalidates cache and returns fresh data";
+        }
+
+        // get_or_load_disk_package keys a disk package on its canonical path, last_write_time
+        // and file_size only, never on its bytes: a rewrite that keeps both is served from the
+        // cached package. Setting the old mtime back makes this deterministic, unlike the
+        // rewrite above, which relies on a size change. Moving the mtime alone reloads.
+        TEST_F(FileManagerStfsCache, SameSizeSameMtimeRewriteIsServedFromCacheAsToday) {
+            write_stfs("mydata/su_test", {{"$flash_dash.xex", {0x10}}});
+            const fs::path package = root() / "mydata/su_test";
+            const std::vector<fs::path> roots{root() / "mydata"};
+
+            ASSERT_OK_AND_ASSIGN(const auto first, find_file_data_detailed("dash.xex", roots));
+            ASSERT_TRUE(first.has_value());
+            EXPECT_EQ(first->data, Bytes{0x10}) << "first lookup loads and caches the package";
+            EXPECT_EQ(first->source_path, package);
+
+            std::error_code ec;
+            const auto old_mtime = fs::last_write_time(package, ec);
+            ASSERT_FALSE(ec) << ec.message();
+            const auto old_size = fs::file_size(package, ec);
+            ASSERT_FALSE(ec) << ec.message();
+
+            write_stfs("mydata/su_test", {{"$flash_dash.xex", {0x20}}});
+            fs::last_write_time(package, old_mtime, ec);
+            ASSERT_FALSE(ec) << ec.message();
+            ASSERT_EQ(fs::file_size(package), old_size) << "the rewrite keeps the size";
+            ASSERT_EQ(fs::last_write_time(package), old_mtime) << "the old mtime is restored";
+            ASSERT_OK_AND_ASSIGN(const Bytes on_disk, test::read_file(package));
+            ASSERT_EQ(on_disk, make_simple_package({{"$flash_dash.xex", {0x20}}}))
+                << "the new bytes are on disk";
+
+            ASSERT_OK_AND_ASSIGN(const auto stale, find_file_data_detailed("dash.xex", roots));
+            ASSERT_TRUE(stale.has_value());
+            EXPECT_EQ(stale->data, Bytes{0x10})
+                << "same path, size and mtime: the cached package answers with the old bytes";
+
+            fs::last_write_time(package, old_mtime + std::chrono::seconds(2), ec);
+            ASSERT_FALSE(ec) << ec.message();
+            ASSERT_OK_AND_ASSIGN(const auto fresh, find_file_data_detailed("dash.xex", roots));
+            ASSERT_TRUE(fresh.has_value());
+            EXPECT_EQ(fresh->data, Bytes{0x20})
+                << "a changed mtime alone (same size) invalidates the cached package";
         }
 
         TEST_F(FileManagerStfsCache, InMemoryPackageAnswersWithoutAnyRoot) {

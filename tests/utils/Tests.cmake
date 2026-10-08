@@ -6,10 +6,10 @@
 # so they run as one bundled entry that makes it once; BigUint, Crc32 and Fuseset are suites of
 # fewer than five cases, one entry per case.
 # FileManager (FileManagerTest.hpp, one fixture subclass per file): FileManagerLookup,
-# FileManagerBootloader, FileManagerIni and FileManagerScan are cheap suites of 5 or more cases
-# and Row/FileManagerUnconfinedPath a cheap table, one bundled entry each; FileManagerSymlink,
-# which skips where directory symlinks cannot be made, FileManagerStfsCache (4 cases) and
-# UtilsIo (1) are one entry per case.
+# FileManagerBootloader, FileManagerIni, FileManagerScan and FileManagerStfsCache are cheap suites
+# of 5 or more cases and Row/FileManagerUnconfinedPath a cheap table, one bundled entry each;
+# FileManagerSymlink, which skips where directory symlinks cannot be made, and UtilsIo (1) are one
+# entry per case.
 gxbuild3_add_gtest(gxbuild3_utils_tests
     PREFIX utils
     LABELS unit utils
@@ -32,4 +32,5 @@ gxbuild3_add_gtest(gxbuild3_utils_tests
         FileManagerBootloader
         FileManagerIni
         FileManagerScan
+        FileManagerStfsCache
         Row/FileManagerUnconfinedPath)
