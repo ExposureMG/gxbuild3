@@ -117,5 +117,23 @@ namespace gxbuild3::cli {
             EXPECT_BYTES_EQ(expected, *written) << "successful command overwrites output bytes";
         }
 
+        // The CLI contract's "-o ... overwritten", pinned through the real write service: the
+        // existing output is longer than the three built bytes, so a writer that did not truncate
+        // would leave its tail behind.
+        TEST_F(BuildCommandTest, SuccessOverwritesAnExistingOutputWithTheDefaultWriter) {
+            const auto output_path = write("updflash.bin", "old output");
+
+            auto services = successful_services();
+            services.write = default_build_command_services(root()).write;
+            const auto result = run_build_command(minimum_build_args(output_path), services);
+            EXPECT_EQ(result.exit_code, 0) << "existing output does not block a successful command";
+            EXPECT_EQ(result.message, "") << "a successful command carries no message";
+            const auto written = test::read_file(output_path);
+            const Bytes expected{1, 2, 3};
+            ASSERT_OK(written) << "the default writer leaves the output readable";
+            EXPECT_BYTES_EQ(expected, *written)
+                << "the default writer truncates the old output to the built bytes";
+        }
+
     } // namespace
 } // namespace gxbuild3::cli
