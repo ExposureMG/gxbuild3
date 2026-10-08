@@ -1,5 +1,7 @@
-# gxbuild3_golden_tests: the golden binary. It owns the text goldens in tests/golden (more join
-# as their old binaries are ported) and its main is golden_main (support/golden/Golden.hpp):
+# gxbuild3_golden_tests: the golden binary. It owns every text golden in tests/golden except the
+# oracle's build_all.parse.txt, each through one GX_GOLDEN registration, and the listing guard
+# fails when --list-goldens or GXBUILD3_TEXT_GOLDENS below drifts from that set. Its main is
+# golden_main (support/golden/Golden.hpp):
 # no argument runs the tests, --list-goldens prints the registered goldens and
 # --update <name>... re-renders them (twice, written only when both renders agree). CTest only
 # compares. The helper suites of 5 or more cheap cases run as one bundled entry each, and so do

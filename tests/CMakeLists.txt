@@ -287,7 +287,10 @@ file(GENERATE OUTPUT ${gxbuild3_gtest_listing_file} CONTENT "${gxbuild3_gtest_li
 
 # Permanent: every listed case runs in exactly one ctest entry, bundles are live, TEST_P rows
 # are named and only PER_ROW tables are discovered per row, no skip hides in a bundle, no
-# captured stream or death test (scripts/TestListingGuard.cmake).
+# captured stream or death test, and gxbuild3_golden_tests' goldens and the capture targets
+# (GXBUILD3_TEXT_GOLDENS, snapshots/Tests.cmake) are exactly the tests/golden/*.txt files other
+# than the oracle's build_all.parse.txt (scripts/TestListingGuard.cmake).
+list(JOIN GXBUILD3_TEXT_GOLDENS "," gxbuild3_text_goldens_arg)
 add_test(NAME gxbuild3_test_listing_guard
     COMMAND ${CMAKE_COMMAND}
         -DGTEST_BINARIES=${gxbuild3_gtest_listing_file}
@@ -296,6 +299,7 @@ add_test(NAME gxbuild3_test_listing_guard
         -DCONFIG=$<CONFIG>
         -DTESTS_DIR=${CMAKE_CURRENT_SOURCE_DIR}
         -DGOLDEN_DIR=${CMAKE_CURRENT_SOURCE_DIR}/golden
+        -DTEXT_GOLDENS=${gxbuild3_text_goldens_arg}
         -P ${GXBUILD3_TEST_SCRIPTS}/TestListingGuard.cmake)
 
 # Migration only, deleted with tests/migration/: the coverage ledger (one row per old test

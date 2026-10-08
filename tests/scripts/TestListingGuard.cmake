@@ -12,13 +12,17 @@ cmake_minimum_required(VERSION 3.29)
 #   5. a TEST_P row is discovered as its own entry outside a PER_ROW instantiation (TABLE RULE);
 #   6. a TEST body of a suite bundled without SKIP_BUNDLE calls GTEST_SKIP (a bundle would hide
 #      the skip), or any test source captures stdout/stderr or uses a death test;
-#   7. a golden binary (gxbuild3_golden_tests) owns a golden with no tests/golden/<name>.txt.
-# It prints `entries E, cases C` per binary.
+#   7. the goldens gxbuild3_golden_tests owns (--list-goldens) are not exactly the
+#      tests/golden/*.txt files other than the oracle-owned build_all.parse.txt (an unowned
+#      golden, an orphan registration or a golden registered twice), or the capture targets
+#      (gxbuild3_golden_update_<name>, TEXT_GOLDENS) are not exactly that set either.
+# It prints `entries E, cases C` per binary and `goldens G` for the golden binary.
 #
 # Inputs (-D): GTEST_BINARIES (registry file), CTEST_COMMAND, BUILD_DIR, CONFIG (may be empty),
-# TESTS_DIR (the tests/ source directory), GOLDEN_DIR.
+# TESTS_DIR (the tests/ source directory), GOLDEN_DIR, TEXT_GOLDENS (the capture targets' golden
+# names, comma-separated).
 
-foreach(input GTEST_BINARIES CTEST_COMMAND BUILD_DIR TESTS_DIR GOLDEN_DIR)
+foreach(input GTEST_BINARIES CTEST_COMMAND BUILD_DIR TESTS_DIR GOLDEN_DIR TEXT_GOLDENS)
     if(NOT DEFINED ${input})
         message(FATAL_ERROR "TestListingGuard: ${input} is required")
     endif()
@@ -185,21 +189,62 @@ foreach(use IN LISTS GTEST_SRC_FORBIDDEN)
     problem("tests/${use}: captured streams and death tests are not allowed (inject a std::ostream&)")
 endforeach()
 
-# ---- Golden ownership: every golden a golden binary renders is a tracked file -----------------
-if("gxbuild3_golden_tests" IN_LIST GTEST_BINARIES)
+# ---- Golden ownership: the golden binary owns exactly the tracked text goldens -----------------
+# Every tests/golden/<name>.txt is owned by one GX_GOLDEN registration of gxbuild3_golden_tests,
+# except build_all.parse.txt, which the byte oracle (scripts/FlashImageTests.cmake) owns.
+set(oracle_goldens build_all.parse)
+foreach(golden IN LISTS oracle_goldens)
+    if(NOT EXISTS "${GOLDEN_DIR}/${golden}.txt")
+        problem("${golden} is excluded as oracle-owned, but ${GOLDEN_DIR}/${golden}.txt does not exist")
+    endif()
+endforeach()
+file(GLOB tracked_files RELATIVE "${GOLDEN_DIR}" "${GOLDEN_DIR}/*.txt")
+set(tracked "")
+foreach(file IN LISTS tracked_files)
+    string(REGEX REPLACE "\\.txt$" "" golden "${file}")
+    if(NOT golden IN_LIST oracle_goldens)
+        list(APPEND tracked "${golden}")
+    endif()
+endforeach()
+list(SORT tracked)
+
+# check_golden_set(<what> <names>): <names> must be <tracked>, each name once.
+function(check_golden_set what names)
+    set(seen "")
+    foreach(golden IN LISTS names)
+        if(golden IN_LIST seen)
+            problem("${what} lists ${golden} more than once")
+            continue()
+        endif()
+        list(APPEND seen "${golden}")
+        if(NOT golden IN_LIST tracked)
+            problem("${what} lists ${golden}, but ${GOLDEN_DIR}/${golden}.txt is not a tracked text golden (an orphan)")
+        endif()
+    endforeach()
+    foreach(golden IN LISTS tracked)
+        if(NOT golden IN_LIST seen)
+            problem("${what} does not list ${golden}: ${GOLDEN_DIR}/${golden}.txt is unowned")
+        endif()
+    endforeach()
+    set(problems "${problems}" PARENT_SCOPE)
+endfunction()
+
+if(NOT "gxbuild3_golden_tests" IN_LIST GTEST_BINARIES)
+    problem("gxbuild3_golden_tests is not registered, so no binary owns the text goldens")
+else()
     execute_process(COMMAND "${GTEST_gxbuild3_golden_tests_PATH}" --list-goldens
         RESULT_VARIABLE result OUTPUT_VARIABLE owned ERROR_VARIABLE err)
     if(NOT result EQUAL 0)
         problem("gxbuild3_golden_tests --list-goldens failed (${result}): ${err}")
     else()
         string(REGEX MATCHALL "[^\n]+" owned "${owned}")
-        foreach(golden IN LISTS owned)
-            if(NOT EXISTS "${GOLDEN_DIR}/${golden}.txt")
-                problem("gxbuild3_golden_tests owns ${golden}, but ${GOLDEN_DIR}/${golden}.txt does not exist")
-            endif()
-        endforeach()
+        check_golden_set("gxbuild3_golden_tests --list-goldens" "${owned}")
+        list(LENGTH owned owned_count)
+        message(STATUS "gxbuild3_golden_tests: goldens ${owned_count}")
     endif()
 endif()
+string(REPLACE "," ";" text_goldens "${TEXT_GOLDENS}")
+check_golden_set("GXBUILD3_TEXT_GOLDENS (gxbuild3_golden_update_<name> targets)" "${text_goldens}")
 
 if(problems)
     foreach(text IN LISTS problems)
