@@ -1,6 +1,7 @@
 // CB_B carries two LDVs: the per-box LDV at +0x23, which pairs it with the console, and the
 // display LDV at +0x3B1. The extract_* APIs report the per-box one as the donor's CB LDV,
-// inspection reports the display one, and a rebuild keeps both apart.
+// inspection reports the display one, and a rebuild keeps both apart. CbBPerboxLdvPolicy gives
+// the extraction half of that policy a searchable name of its own (one build, no rebuild).
 
 #include "BuildRunner.hpp"
 #include "bootloaders/glitch/GlitchFixture.hpp"
@@ -75,6 +76,27 @@ namespace gxbuild3::bootloaders::glitch {
                 EXPECT_OPTIONAL_BYTES_EQ(extracted->bootloaders.cb_b, decoded->bootloaders.cb_b)
                     << "unchanged CB_B rebuild preserves its authenticated plaintext";
             }
+        }
+
+        // gtest keeps TEST and TEST_P apart, so the alias takes the suffixed suite. The donor
+        // metadata's CB LDV is the CB_B per-box byte +0x23 (7), never the display LDV at +0x3B1
+        // (12) that inspection reports.
+        TEST(CbBPerboxLdvPolicy, ExtractTakesPerBoxByte0x23NotDisplay0x3B1) {
+            auto input = fixture(BuildType::Retail);
+            input.metadata.cb_ldv = 7;
+            input.metadata.pairing_data = {1, 2, 3};
+            ASSERT_TRUE(input.bootloaders.cb_b.has_value()) << "the retail fixture has a CB_B";
+            (*input.bootloaders.cb_b)[0x3B1] = 12;
+            ASSERT_OK_AND_ASSIGN(const auto donor, run_build(input));
+
+            ASSERT_OK_AND_ASSIGN(const auto metadata,
+                                 extract_metadata(donor, input.metadata.cpu_key));
+            EXPECT_EQ(unsigned{metadata.cb_ldv}, 7u)
+                << "extract_metadata takes the CB LDV from CB_B +0x23";
+            ASSERT_OK_AND_ASSIGN(const auto info, extract_all_info(donor, input.metadata.cpu_key));
+            ASSERT_TRUE(info.bootloaders.cb_b.has_value()) << "inspection decodes CB_B";
+            EXPECT_EQ(info.bootloaders.cb_b->ldv, std::optional<uint8_t>{12})
+                << "inspection reports the display LDV at +0x3B1";
         }
 
         INSTANTIATE_TEST_SUITE_P(Row, CbBPerboxLdv, ::testing::ValuesIn(kPerboxLdvRows),

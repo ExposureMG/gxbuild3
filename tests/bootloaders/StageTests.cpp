@@ -3,9 +3,15 @@
 // parse failures and their messages, payload padding, crypt_stage_record against a plain
 // crypt_single_bl over the serialized stage (crypt starts 0x20 and 0x30), its failure path
 // leaving the stage untouched, and randomize_zero_nonce on zero and set nonces.
+// It also names three stage quirks the corpus pins only as lines (old WireCorpusTests.cpp
+// header, lines 20-25): SC's is_decrypted() reads only the flag, CB's 1BL crypt toggles
+// instead of forcing a direction, and a seal over an all-zero nonce draws a fresh one, which is
+// why the corpus renderer pins kPinnedNonce before every crypt.
 
 #include "Error.hpp"
 #include "bootloaders/StageBytes.hpp"
+#include "nand/bootloaders/2bl.hpp"
+#include "nand/bootloaders/3bl.hpp"
 #include "nand/bootloaders/BootloaderPacker.hpp"
 #include "nand/bootloaders/Common.hpp"
 #include "nand/bootloaders/Stage.hpp"
@@ -15,8 +21,12 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <gtest/gtest.h>
+#include <iterator>
+#include <span>
 #include <string_view>
+#include <utility>
 
 namespace gxbuild3::bootloaders {
     namespace {
@@ -53,6 +63,22 @@ namespace gxbuild3::bootloaders {
                 << "parse_stage keeps the bytes after the header as the payload";
             EXPECT_BYTES_EQ(image, stage::serialize_stage(parsed->header, parsed->data))
                 << "serialize_stage reproduces the parsed image";
+        }
+
+        // wire_corpus_bootloaders.txt records `state is_decrypted=0 decrypted=0` for every SC
+        // fixture: unlike CB (an all-zero tail) and CD (nonce_6bl and ce_hash), SC derives
+        // nothing from its bytes, so even an all-zero payload parses as sealed, and setting the
+        // flag alone makes it read as plaintext.
+        TEST(Stage, ScIsDecryptedReadsOnlyTheFlagAsToday) {
+            const auto size = static_cast<uint32_t>(sizeof(nand::sc_header) + 0x40);
+            const Bytes plain = stage_bytes(nand::SC, size, size, Fill::Zero);
+            ASSERT_OK_AND_ASSIGN(auto sc, nand::BootloaderSc::parse(plain));
+            EXPECT_FALSE(sc.decrypted) << "parse leaves the flag clear on an all-zero SC";
+            EXPECT_FALSE(sc.is_decrypted()) << "an all-zero SC payload does not read as plaintext";
+
+            sc.decrypted = true;
+            EXPECT_TRUE(sc.is_decrypted()) << "the flag alone makes the SC read as plaintext";
+            EXPECT_BYTES_EQ(plain, sc.serialize()) << "setting the flag changes no byte";
         }
 
         TEST(Stage, PayloadSizeIsTheAlignedSizeMinusTheHeaderAndPaddingOnlyGrowsWithZeros) {
@@ -176,6 +202,74 @@ namespace gxbuild3::bootloaders {
             EXPECT_TRUE(std::any_of(zero_nonce.begin(), zero_nonce.end(), [](uint8_t b) {
                 return b != 0;
             })) << "randomize_zero_nonce draws a fresh nonce for an all-zero one";
+        }
+
+        // The corpus pin (kPinnedNonce 0x11..0x20 in tests/snapshots/WireCorpusRender.cpp):
+        // sealing a plaintext SC whose nonce is all zero draws a fresh nonce, so two seals of
+        // the same stage differ; with a set nonce the seal is a pure function of its input.
+        TEST(StageNonce, PinnedNonceSealIsDeterministicZeroNonceSealIsNot) {
+            constexpr std::array<uint8_t, 16> kPinnedNonce = {0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
+                                                              0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C,
+                                                              0x1D, 0x1E, 0x1F, 0x20};
+            const auto size = static_cast<uint32_t>(sizeof(nand::sc_header) + 0x40);
+            ASSERT_OK_AND_ASSIGN(auto plain, nand::BootloaderSc::parse(stage_bytes(
+                                                 nand::SC, size, size, Fill::Counting)));
+            plain.decrypted = true;
+
+            const auto seal = [&plain](std::span<const uint8_t, 16> nonce) -> Result<Bytes> {
+                nand::BootloaderSc sc = plain;
+                std::ranges::copy(nonce, std::begin(sc.header.key));
+                if (auto sealed = sc.encrypt(nand::BootloaderSc::kZeroSecret); !sealed) {
+                    return std::unexpected(std::move(sealed.error()));
+                }
+                return sc.serialize();
+            };
+
+            const std::array<uint8_t, 16> zero{};
+            ASSERT_OK_AND_ASSIGN(const Bytes zero_first, seal(zero));
+            ASSERT_OK_AND_ASSIGN(const Bytes zero_second, seal(zero));
+            EXPECT_FALSE(zero_first == zero_second)
+                << "two seals over an all-zero nonce draw two nonces and differ";
+            EXPECT_FALSE(std::ranges::equal(std::span(zero_first).subspan(0x10, 0x10), zero))
+                << "the sealed stage carries the drawn nonce, not zero";
+
+            ASSERT_OK_AND_ASSIGN(const Bytes pinned_first, seal(kPinnedNonce));
+            ASSERT_OK_AND_ASSIGN(const Bytes pinned_second, seal(kPinnedNonce));
+            EXPECT_BYTES_EQ(pinned_first, pinned_second)
+                << "two seals over the pinned nonce are byte-identical";
+            EXPECT_BYTES_EQ(kPinnedNonce, std::span(pinned_first).subspan(0x10, 0x10))
+                << "the pinned nonce is kept at +0x10";
+        }
+
+        // wire_corpus_bootloaders.txt's cb.crypt_1bl lines open an encrypted fixture through
+        // encrypt(): BootloaderCb's 1BL decrypt() and encrypt() are one RC4 toggle that flips
+        // `decrypted`, never a forced direction (SC and CD no-op when already in the requested
+        // state). An all-zero payload parses as plaintext (verify_decrypted).
+        TEST(BootloaderCb, OneBlCryptTogglesInsteadOfForcingAsToday) {
+            constexpr std::array<uint8_t, 16> kOneBlKey = {0x10, 0x32, 0x54, 0x76, 0x98, 0xBA,
+                                                           0xDC, 0xFE, 0x01, 0x23, 0x45, 0x67,
+                                                           0x89, 0xAB, 0xCD, 0xEF};
+            const Bytes plain = stage_bytes(nand::CB, 0x400, 0x400, Fill::Zero);
+            ASSERT_OK_AND_ASSIGN(auto cb, nand::BootloaderCb::parse(plain));
+            ASSERT_TRUE(cb.decrypted) << "an all-zero CB payload parses as plaintext";
+
+            ASSERT_OK(cb.decrypt(kOneBlKey.data()));
+            EXPECT_FALSE(cb.decrypted)
+                << "decrypt() of a plaintext CB seals it and clears the flag";
+            const Bytes sealed = cb.serialize();
+            EXPECT_FALSE(sealed == plain) << "decrypt() of a plaintext CB rewrites the payload";
+            EXPECT_BYTES_EQ(std::span(plain).first(0x20), std::span(sealed).first(0x20))
+                << "the header and the nonce stay in the clear";
+
+            ASSERT_OK(cb.encrypt(kOneBlKey.data()));
+            EXPECT_TRUE(cb.decrypted) << "encrypt() of a sealed CB opens it and sets the flag";
+            EXPECT_BYTES_EQ(plain, cb.serialize()) << "encrypt() of a sealed CB restores the input";
+
+            ASSERT_OK_AND_ASSIGN(auto other, nand::BootloaderCb::parse(plain));
+            ASSERT_OK(other.encrypt(kOneBlKey.data()));
+            EXPECT_FALSE(other.decrypted) << "encrypt() of a plaintext CB seals it";
+            EXPECT_BYTES_EQ(sealed, other.serialize())
+                << "encrypt() and decrypt() of a plaintext CB give the same sealed bytes";
         }
 
     } // namespace
