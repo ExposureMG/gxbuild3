@@ -13,13 +13,22 @@
 # cases: big-block round trips, donor roots of higher sequence, allocation limits, the directory
 # capacity and the xeBuild layout under a pinned build time) and SecuredFlashFs (4 cases: secured
 # files round-trip, are sealed for the console, a damaged fcrt.bin and unusable extended/secdata
-# made up clean). Every case runs run_build, 0.1-2 s in Release: one ctest entry per case. The
-# one bundle is Size/KeyvaultSummaryOsig (3 rows of summarize_keyvault on a hand-made keyvault,
-# microseconds). RunBuildImage.cpp holds the shared image reads.
+# made up clean), BootChainMetadata (8 cases: extraction round trips of the chain and the fixed
+# payloads, the CB/CB_B/CF LDV and pairing overrides, the extended CF header, the unbound first
+# JTAG pair and the unwritable CB/CF per-box refusals), ZeroCpuKey (2 cases: a zero-paired CB_B
+# chain and the donor keyvault left sealed) and BootChainRecords (10 cases: the donor chain
+# replaced by input presence, the actual CF slot base, stage header endianness, the CB console
+# allowance and the header-only/orphan record refusals). Orchestration stays one ctest entry per
+# case (SUITE RULE): most cases run run_build, 0.1-2 s in Release, and the few stage-record cases
+# of BootChainRecords that do not stay beside them. The one bundle is Size/KeyvaultSummaryOsig (3
+# rows of summarize_keyvault on a hand-made keyvault, microseconds). RunBuildImage.cpp holds the
+# shared image reads.
 gxbuild3_add_gtest(gxbuild3_orchestration_tests
     PREFIX orchestration
     LABELS unit orchestration slow
     SOURCES
+        ${CMAKE_CURRENT_LIST_DIR}/BootChainMetadataTests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/BootChainRecordsTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/ExtractionTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FlashFsOverlayTests.cpp
         ${CMAKE_CURRENT_LIST_DIR}/FreshLayoutHeaderTests.cpp
