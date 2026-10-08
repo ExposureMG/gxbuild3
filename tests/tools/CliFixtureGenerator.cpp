@@ -1,5 +1,14 @@
+// Writes the fixture of gxbuild3_cli_integration_tests (tests/scripts/CliIntegrationTests.cmake):
+// a donor NAND, loose bootloaders and a build.ini under <fixture-root>.
+//
+// Usage: gxbuild3_cli_fixture_generator <fixture-root>
+// Exit codes: 0 fixture written, 2 usage, 3 invalid fixture CPU key, 4 source directory not
+// created, 5 donor NAND build failed, 6 fixture file not written, 8 SC encryption failed,
+// 9 CG0 encryption failed, 10 CG1 encryption failed. Every failure prints one line on stderr
+// (with Error::describe() for 8-10).
+
 #include "BuildRunner.hpp"
-#include "TestResult.hpp"
+#include "Error.hpp"
 #include "nand/FlashDriver.hpp"
 #include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
@@ -11,9 +20,11 @@
 
 #include <array>
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -26,6 +37,10 @@ namespace {
     using Bytes = std::vector<uint8_t>;
     using gxbuild3::run_build;
     using gxbuild3::nand::Keyvault;
+
+    constexpr int kExitScEncrypt = 8;
+    constexpr int kExitCg0Encrypt = 9;
+    constexpr int kExitCg1Encrypt = 10;
 
     constexpr std::array<uint8_t, 16> kCpuKey{
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f, 0x00,
@@ -51,7 +66,14 @@ namespace {
         return output.good();
     }
 
-    InputBootloaders valid_bootloaders() {
+    // Reports a failed encryption on stderr and hands back its exit code.
+    std::unexpected<int> encrypt_failed(std::string_view what, const Error& error, int exit_code) {
+        std::cerr << "could not encrypt the fixture " << what << ": " << error.describe() << '\n';
+        return std::unexpected(exit_code);
+    }
+
+    // The fixture's bootloader chain, or the exit code of the encryption that failed.
+    std::expected<InputBootloaders, int> valid_bootloaders() {
         BootloaderCb cb{};
         cb.header.header.magic = NANDBootloaderMagic::CB;
         cb.header.header.version = 1;
@@ -65,7 +87,9 @@ namespace {
         sc.header.header.size = static_cast<uint32_t>(sizeof(sc_header) + 0x20);
         sc.data.assign(0x20, 0x53);
         sc.decrypted = true;
-        test::must(sc.encrypt(BootloaderSc::kZeroSecret));
+        if (auto sealed = sc.encrypt(BootloaderSc::kZeroSecret); !sealed) {
+            return encrypt_failed("SC", sealed.error(), kExitScEncrypt);
+        }
 
         BootloaderCd cd{};
         cd.header.header.magic = NANDBootloaderMagic::CD;
@@ -111,10 +135,14 @@ namespace {
 
         auto cf0 = make_cf(5, 0x50);
         auto cg0 = make_cg(6, 0x60);
-        test::must(cg0.encrypt(cf0.data.data() + 0x300));
+        if (auto sealed = cg0.encrypt(cf0.data.data() + 0x300); !sealed) {
+            return encrypt_failed("CG0", sealed.error(), kExitCg0Encrypt);
+        }
         auto cf1 = make_cf(7, 0x70);
         auto cg1 = make_cg(8, 0x80);
-        test::must(cg1.encrypt(cf1.data.data() + 0x300));
+        if (auto sealed = cg1.encrypt(cf1.data.data() + 0x300); !sealed) {
+            return encrypt_failed("CG1", sealed.error(), kExitCg1Encrypt);
+        }
 
         InputBootloaders bootloaders{};
         bootloaders.cb_or_a = cb.serialize();
@@ -168,7 +196,11 @@ int main(int argc, char* argv[]) {
         return 4;
     }
 
-    const auto bootloaders = valid_bootloaders();
+    const auto chain = valid_bootloaders();
+    if (!chain) {
+        return chain.error();
+    }
+    const InputBootloaders& bootloaders = *chain;
     const auto donor = donor_nand(bootloaders);
     if (!donor) {
         std::cerr << "could not create fixture donor NAND\n";

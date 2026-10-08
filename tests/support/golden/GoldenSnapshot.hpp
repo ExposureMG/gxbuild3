@@ -4,14 +4,9 @@
 //
 // check_golden(options, "name", text) compares text with tests/golden/<name>.txt byte for byte
 // (CRLF in the golden file is read as LF so a Windows checkout still matches). On a mismatch it
-// prints the golden path and the first differing lines and returns false. The golden is only
-// rewritten when the test binary was started with the explicit --update argument; add_test()
-// never passes it, so CTest can only compare.
-//
-// Usage in a test main():
-//     const auto options = gxbuild3::test::golden_options(argc, argv);
-//     if (!options) { return 2; }
-//     ok &= gxbuild3::test::check_golden(*options, "stfs_digests", rendered);
+// prints the golden path and the first differing lines and returns false. With options.update
+// set it rewrites the golden instead; golden_main (Golden.hpp) compares with update off and
+// writes goldens only on its explicit --update <name> path, so CTest can only compare.
 
 #include <algorithm>
 #include <cstddef>
@@ -24,7 +19,6 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <utility>
 #include <vector>
 
 namespace gxbuild3::test {
@@ -41,30 +35,6 @@ namespace gxbuild3::test {
 #else
         return {};
 #endif
-    }
-
-    // Accepts only "--update"; anything else is a usage error (nullopt) so a typo can never
-    // silently turn into a compare-only or an update run.
-    [[nodiscard]] inline std::optional<GoldenOptions>
-    golden_options(int argc, char** argv,
-                   std::filesystem::path directory = default_golden_directory(),
-                   std::ostream& err = std::cerr) {
-        GoldenOptions options{std::move(directory), false};
-        for (int i = 1; i < argc; ++i) {
-            const std::string_view arg{argv[i]};
-            if (arg == "--update") {
-                options.update = true;
-            } else {
-                err << "usage: " << (argc > 0 ? argv[0] : "test")
-                    << " [--update]\nunknown argument: " << arg << '\n';
-                return std::nullopt;
-            }
-        }
-        if (options.directory.empty()) {
-            err << "no golden directory: define GXBUILD3_GOLDEN_DIR for this test\n";
-            return std::nullopt;
-        }
-        return options;
     }
 
     namespace detail {

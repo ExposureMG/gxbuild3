@@ -26,7 +26,7 @@ if(NOT DEFINED SOURCE_ROOT OR NOT IS_DIRECTORY "${SOURCE_ROOT}/src")
     message(FATAL_ERROR "SOURCE_ROOT must name the gxbuild3 repository root")
 endif()
 
-# Shim inventory: empty. Tests unwrap Results with gxbuild3::test::must (tests/TestResult.hpp).
+# Shim inventory: empty. Tests unwrap Results with ASSERT_OK_AND_ASSIGN (tests/support/Expect.hpp).
 set(shim_name_allowlist
 )
 

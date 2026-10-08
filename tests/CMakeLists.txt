@@ -197,17 +197,7 @@ include(orchestration/Tests.cmake)
 include(snapshots/Tests.cmake)
 include(private/Tests.cmake)
 
-# ---- Pre-GoogleTest leftovers (deleted with must()) -----------------------------------------
-
-# tests/TestResult.hpp's must() aborts with Error::describe() and the call site; the demo tool
-# fails it on purpose (retired with must()).
-add_executable(gxbuild3_must_abort_demo tools/MustAbortDemo.cpp)
-gxbuild3_test_target(gxbuild3_must_abort_demo)
-add_test(NAME gxbuild3_must_abort_tests
-    COMMAND ${CMAKE_COMMAND}
-        -DGXBUILD3_SELFTEST=$<TARGET_FILE:gxbuild3_must_abort_demo>
-        -P ${GXBUILD3_TEST_SCRIPTS}/MustAbortTest.cmake)
-set_tests_properties(gxbuild3_must_abort_tests PROPERTIES LABELS guard)
+# ---- Tools and CMake-script tests ------------------------------------------------------------
 
 # The byte oracle's snapshot tool: --snapshot <image> [--expect <file>], exit 0/1/2.
 add_executable(gxbuild3_flashimage_snapshot tools/FlashImageSnapshot.cpp)

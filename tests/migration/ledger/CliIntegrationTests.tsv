@@ -3,12 +3,12 @@
 # Seeded by tests/scripts/SeedLedger.cmake. Columns, tab-separated:
 # id	old_symbol@line	old_assert_sites	new_test	status[;note:<text>]
 # hand
-CliIntegration.Help	--help#Help@86	2	-	pending
-CliIntegration.Version	--version#Version@97	2	-	pending
-CliIntegration.MissingRequiredArguments	missing required arguments#MissingRequiredArguments@108	2	-	pending
-CliIntegration.MissingCPUKey	missing CPU key#MissingCPUKey@121	2	-	pending
-CliIntegration.MissingDonorData	missing donor data#MissingDonorData@136	2	-	pending
-CliIntegration.UnsupportedXMode	unsupported -x mode#UnsupportedXMode@147	2	-	pending
-CliIntegration.DefaultOutputRealBuild	default-output real build#DefaultOutputRealBuild@169	2	-	pending
-CliIntegration.DefaultOutputOverwriteBuild	default-output overwrite build#DefaultOutputOverwriteBuild@186	2	-	pending
-CliIntegration.NestedOutputRealBuild	nested-output real build#NestedOutputRealBuild@200	2	-	pending
+CliIntegration.Help	--help#Help@86	2	-	retired:not a GoogleTest case;note:the --help scenario stays in the permanent CMake script test gxbuild3_cli_integration_tests (tests/scripts/CliIntegrationTests.cmake), which drives the real gxbuild executable and is not ported to GoogleTest
+CliIntegration.Version	--version#Version@97	2	-	retired:not a GoogleTest case;note:the --version scenario stays in the permanent CMake script test gxbuild3_cli_integration_tests (tests/scripts/CliIntegrationTests.cmake), which drives the real gxbuild executable and is not ported to GoogleTest
+CliIntegration.MissingRequiredArguments	missing required arguments#MissingRequiredArguments@108	2	-	retired:not a GoogleTest case;note:the missing required arguments scenario stays in the permanent CMake script test gxbuild3_cli_integration_tests (tests/scripts/CliIntegrationTests.cmake), which drives the real gxbuild executable and is not ported to GoogleTest
+CliIntegration.MissingCPUKey	missing CPU key#MissingCPUKey@121	2	-	retired:not a GoogleTest case;note:the missing CPU key scenario stays in the permanent CMake script test gxbuild3_cli_integration_tests (tests/scripts/CliIntegrationTests.cmake), which drives the real gxbuild executable and is not ported to GoogleTest
+CliIntegration.MissingDonorData	missing donor data#MissingDonorData@136	2	-	retired:not a GoogleTest case;note:the missing donor data scenario stays in the permanent CMake script test gxbuild3_cli_integration_tests (tests/scripts/CliIntegrationTests.cmake), which drives the real gxbuild executable and is not ported to GoogleTest
+CliIntegration.UnsupportedXMode	unsupported -x mode#UnsupportedXMode@147	2	-	retired:not a GoogleTest case;note:the unsupported -x mode scenario stays in the permanent CMake script test gxbuild3_cli_integration_tests (tests/scripts/CliIntegrationTests.cmake), which drives the real gxbuild executable and is not ported to GoogleTest
+CliIntegration.DefaultOutputRealBuild	default-output real build#DefaultOutputRealBuild@169	2	-	retired:not a GoogleTest case;note:the default-output real build scenario stays in the permanent CMake script test gxbuild3_cli_integration_tests (tests/scripts/CliIntegrationTests.cmake), which drives the real gxbuild executable and is not ported to GoogleTest
+CliIntegration.DefaultOutputOverwriteBuild	default-output overwrite build#DefaultOutputOverwriteBuild@186	2	-	retired:not a GoogleTest case;note:the default-output overwrite build scenario stays in the permanent CMake script test gxbuild3_cli_integration_tests (tests/scripts/CliIntegrationTests.cmake), which drives the real gxbuild executable and is not ported to GoogleTest
+CliIntegration.NestedOutputRealBuild	nested-output real build#NestedOutputRealBuild@200	2	-	retired:not a GoogleTest case;note:the nested-output real build scenario stays in the permanent CMake script test gxbuild3_cli_integration_tests (tests/scripts/CliIntegrationTests.cmake), which drives the real gxbuild executable and is not ported to GoogleTest

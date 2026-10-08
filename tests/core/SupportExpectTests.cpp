@@ -1,7 +1,7 @@
 // Self-tests of tests/support/Expect.hpp. The fatal and non-fatal pins use gtest-spi's
 // EXPECT_FATAL_FAILURE / EXPECT_NONFATAL_FAILURE on static helpers: no death test and no
-// captured stream. They are the replacements for the must() abort checks of
-// MustAbortTest.cmake, which stays until must() is retired.
+// captured stream. They replace the abort checks of the retired MustAbortTest.cmake: a failed
+// unwrap is fatal and carries Error::describe().
 
 #include "Error.hpp"
 #include "GxBuildTypes.hpp"
