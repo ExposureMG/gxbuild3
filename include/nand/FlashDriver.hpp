@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <optional>
 #include <span>
 #include <vector>
@@ -144,7 +145,7 @@ namespace gxbuild3::NAND {
         ImageSize m_image_size;
         size_t m_page_size;
         NandLayout m_layout;
-        mutable std::vector<uint8_t> m_offset_scratch;
+        mutable std::deque<std::vector<uint8_t>> m_offset_scratch;
     };
 
 } // namespace gxbuild3::NAND

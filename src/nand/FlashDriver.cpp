@@ -217,6 +217,7 @@ namespace gxbuild3::NAND {
         m_driver_mode = detect_driver_mode(m_nand_image);
         m_image_size = detect_image_size(m_nand_image);
         m_page_size = (m_driver_mode == DriverMode::Emmc) ? 512 : 528;
+        m_offset_scratch.clear();
     }
 
     std::span<const uint8_t> Driver::read_page(size_t page) const {
@@ -705,15 +706,11 @@ namespace gxbuild3::NAND {
             return {m_nand_image.data() + raw_pos, length};
         }
 
-        // Slow path: the range crosses one or more 16-byte spare gaps, so it
-        // has no contiguous representation in m_nand_image. De-interleave it
-        // into the scratch buffer (same logic as read_clean) and return a
-        // span into that. Valid until the next call that repopulates it.
-        m_offset_scratch = read_clean(offset, length);
-        if (m_offset_scratch.size() != length) {
+        auto& scratch = m_offset_scratch.emplace_back(read_clean(offset, length));
+        if (scratch.size() != length) {
             return {};
         }
-        return {m_offset_scratch.data(), m_offset_scratch.size()};
+        return {scratch.data(), scratch.size()};
     }
 
     std::span<uint8_t> Driver::read_offset(size_t offset, size_t length) {
@@ -907,6 +904,7 @@ namespace gxbuild3::NAND {
 
     void Driver::clean() {
         m_nand_image.clear();
+        m_offset_scratch.clear();
     }
 
 } // namespace gxbuild3::NAND

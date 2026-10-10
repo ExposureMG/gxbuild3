@@ -44,6 +44,7 @@ namespace gxbuild3::NAND {
 
         [[nodiscard]] bool is_valid() const noexcept;
         [[nodiscard]] bool matches(std::string_view name) const noexcept;
+        [[nodiscard]] std::string_view name() const noexcept;
     };
     static_assert(sizeof(FlashFileSystemEntry) == 32);
 #pragma pack(pop)
