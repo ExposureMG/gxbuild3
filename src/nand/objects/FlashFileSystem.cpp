@@ -57,7 +57,8 @@ namespace gxbuild3::NAND {
     }
 
     std::string_view FlashFileSystemEntry::name() const noexcept {
-        return {filename, strnlen(filename, kMaxFilenameLength)};
+        const auto it = std::find(filename, filename + kMaxFilenameLength, '\0');
+        return {filename, static_cast<size_t>(it - filename)};
     }
 
     bool FlashFileSystemEntry::matches(std::string_view name) const noexcept {
