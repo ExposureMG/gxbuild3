@@ -15,7 +15,7 @@
 // Every bounds check has the form `offset > size || size - offset < n`, so it cannot wrap. A short
 // read fails with ErrorCode::Truncated and a short write with ErrorCode::OutOfRange; the message
 // names the record (`what`) and the offset. The caller adds its own context with with_context()
-// and never logs the error (src/Error.hpp policy).
+// and never logs the error (include/Error.hpp policy).
 //
 // Assignment from a wider type narrows silently (-Wconversion is off): cast explicitly, as in
 // `h.size = static_cast<uint32_t>(n);`. `auto x = h.size` yields a be32, not a host integer; use a

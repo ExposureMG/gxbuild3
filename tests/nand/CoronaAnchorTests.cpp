@@ -1,4 +1,4 @@
-// The eMMC anchor block (src/nand/objects/CoronaConfig.hpp): its bytes against xerunner's
+// The eMMC anchor block (include/nand/objects/CoronaConfig.hpp): its bytes against xerunner's
 // reference vectors, the choice between the two copies by number, and FlashImage laying both
 // copies of an eMMC image so the mobile data is found again through them.
 

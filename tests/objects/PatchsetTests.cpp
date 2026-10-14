@@ -1,4 +1,4 @@
-// src/nand/objects/Patchset.hpp: patchsets parsed from the bytes handed in (never from the file
+// include/nand/objects/Patchset.hpp: patchsets parsed from the bytes handed in (never from the file
 // name beside them), add-ons appended in command order to the KHV or JTAG section four tail, and
 // malformed bytes, a wrong JTAG delimiter count or an unsupported build type refused. Two quirks
 // pinned elsewhere only as golden lines or a source comment get names here: a patch file of the

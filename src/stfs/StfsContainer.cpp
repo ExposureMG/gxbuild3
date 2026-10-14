@@ -1,6 +1,6 @@
 #include "stfs/StfsContainer.hpp"
 
-#include "ContainerDetail.hpp"
+#include "stfs/ContainerDetail.hpp"
 #include "stfs/BlockParser.hpp"
 #include "stfs/FileExtractor.hpp"
 #include "stfs/FileTableParser.hpp"

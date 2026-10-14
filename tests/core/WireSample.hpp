@@ -1,6 +1,6 @@
 #pragma once
 
-// The sample record shared by the src/Wire.hpp tests: one field of every wire type (big and
+// The sample record shared by the include/Wire.hpp tests: one field of every wire type (big and
 // little 16/24/32/64-bit, byte and char arrays), a constexpr builder and its on-disk image.
 // Its layout is pinned in WireLayoutPins.cpp.
 

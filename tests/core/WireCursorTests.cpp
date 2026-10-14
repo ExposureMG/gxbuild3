@@ -1,4 +1,4 @@
-// src/Wire.hpp Cursor: takes decode, advance and borrow the caller's storage; failures are not
+// include/Wire.hpp Cursor: takes decode, advance and borrow the caller's storage; failures are not
 // sticky, never advance and report absolute offsets; a sub-cursor is based at its absolute
 // offset and stops at its own end.
 

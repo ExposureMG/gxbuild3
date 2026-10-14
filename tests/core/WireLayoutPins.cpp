@@ -1,4 +1,4 @@
-// Compile-time pins of src/Wire.hpp: the sample record's on-disk layout, constexpr encode and
+// Compile-time pins of include/Wire.hpp: the sample record's on-disk layout, constexpr encode and
 // round trips of every field type, what the convention accepts (switch, comparisons, bitwise
 // and arithmetic on host values) and what it rejects (manual swaps through the deleted
 // overloads, std::byteswap, compound assignment, implicit construction, deduced std::max).

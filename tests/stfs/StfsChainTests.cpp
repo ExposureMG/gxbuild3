@@ -1,4 +1,4 @@
-// src/stfs/FileExtractor.hpp and BlockParser.hpp: a chained file follows its hash chain and is
+// include/stfs/FileExtractor.hpp and BlockParser.hpp: a chained file follows its hash chain and is
 // cut at file_size, a short chain is Truncated, a zero-size file walks nothing, consecutive files
 // ignore the chain but stay bounded, block offsets are 64-bit, a bad hash status prints in hex,
 // the file table itself follows the hash chain, and block 0 starts at the header size rounded up

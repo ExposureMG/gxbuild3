@@ -68,7 +68,7 @@ target_link_libraries(gxbuild3_flashimage_render PUBLIC gxbuild3_internal)
 set_target_properties(gxbuild3_flashimage_render PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 gxbuild3_enable_warnings(gxbuild3_flashimage_render)
 
-# Standard and gtest headers only, never src/ headers.
+# Standard and gtest headers only, never gxbuild3 headers.
 set(GXBUILD3_GTEST_PCH
     <gtest/gtest.h> <algorithm> <array> <cstdint> <expected> <filesystem> <format>
     <optional> <span> <string> <string_view> <vector>)

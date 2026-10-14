@@ -1,6 +1,6 @@
 #pragma once
 
-// The fixture of the src/cli/BuildInputResolver.hpp tests (ResolverRoots, ResolverOptions,
+// The fixture of the include/cli/BuildInputResolver.hpp tests (ResolverRoots, ResolverOptions,
 // OptionsText, ResolverCpuKey and the other suites ported from BuildInputResolverTests.cpp,
 // one-line subclasses per file so each suite stands on its own).
 //

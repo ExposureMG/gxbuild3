@@ -1,7 +1,8 @@
-// The payload layout's overflow steps (src/nand/FlashImageLayout.hpp, detail::add_payload_range,
-// add_update_slot_ranges and check_overlaps), driven directly: a parsed or built image cannot
-// reach them on 64-bit, so this pins their exact texts and their precedence (a CF or CG range
-// overflow is reported as its slot's span) and the first-pair order of the collision check.
+// The payload layout's overflow steps (include/nand/FlashImageLayout.hpp,
+// detail::add_payload_range, add_update_slot_ranges and check_overlaps), driven directly: a parsed
+// or built image cannot reach them on 64-bit, so this pins their exact texts and their precedence
+// (a CF or CG range overflow is reported as its slot's span) and the first-pair order of the
+// collision check.
 
 #include "nand/FlashImageLayout.hpp"
 #include "support/Expect.hpp"

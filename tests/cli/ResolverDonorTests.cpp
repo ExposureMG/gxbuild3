@@ -1,4 +1,4 @@
-// src/cli/BuildInputResolver.hpp: the NAND donor. The first root's nanddump.bin is discovered
+// include/cli/BuildInputResolver.hpp: the NAND donor. The first root's nanddump.bin is discovered
 // and an explicit -i (relative to the working directory, or absolute) overrides it; the donor
 // sets the layout unless -t names one, and a layout override keeps every extracted component
 // but drops the raw donor backing. A missing, unextractable or malformed donor fails with its

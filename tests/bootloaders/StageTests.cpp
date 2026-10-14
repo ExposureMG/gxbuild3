@@ -1,4 +1,4 @@
-// Direct tests for src/nand/bootloaders/Stage.hpp, covering what the bootloader corpus
+// Direct tests for include/nand/bootloaders/Stage.hpp, covering what the bootloader corpus
 // (tests/golden/wire_corpus_bootloaders.txt) does not reach through the stage classes: the
 // parse failures and their messages, payload padding, crypt_stage_record against a plain
 // crypt_single_bl over the serialized stage (crypt starts 0x20 and 0x30), its failure path

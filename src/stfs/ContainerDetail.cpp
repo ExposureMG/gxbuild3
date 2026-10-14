@@ -1,4 +1,4 @@
-#include "ContainerDetail.hpp"
+#include "stfs/ContainerDetail.hpp"
 
 #include "stfs/FileExtractor.hpp"
 #include "stfs/Layout.hpp"

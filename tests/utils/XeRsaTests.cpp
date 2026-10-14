@@ -1,6 +1,6 @@
-// src/utils/BigUint.hpp and src/utils/XeRsa.hpp: BigUint division, pow_mod and the XeCrypt digit
-// layout, zlib's CRC-32, and XeCrypt RSA-2048 signing: an SD (4BL) signature made with a private
-// key, checked by XeCrypt's own verification, and the keys whose parts do not agree.
+// include/utils/BigUint.hpp and include/utils/XeRsa.hpp: BigUint division, pow_mod and the XeCrypt
+// digit layout, zlib's CRC-32, and XeCrypt RSA-2048 signing: an SD (4BL) signature made with a
+// private key, checked by XeCrypt's own verification, and the keys whose parts do not agree.
 //
 // The private key is a throwaway generated from a fixed seed (support/XeRsaTestKey.hpp), about
 // half a second per process: the XeRsaSd cases run as one bundled ctest entry, so it is made once.

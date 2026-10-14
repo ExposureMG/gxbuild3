@@ -1,6 +1,6 @@
 #include "stfs/FileExtractor.hpp"
 
-#include "ContainerDetail.hpp"
+#include "stfs/ContainerDetail.hpp"
 #include "Wire.hpp"
 #include "stfs/BlockParser.hpp"
 #include "stfs/Commons.hpp"

@@ -1,4 +1,4 @@
-// src/Error.hpp: Error::describe and its context chain, fail(), with_context() on Result<T>
+// include/Error.hpp: Error::describe and its context chain, fail(), with_context() on Result<T>
 // and Result<>, from_error_code() and to_string() over every ErrorCode. Row/ErrorCodeNames pins
 // the exact name of each code, which golden_snapshot_selftest.txt (error_code[N] lines) and every
 // describe() of an error without a message print.

@@ -1,4 +1,4 @@
-// src/stfs/MetadataParser.hpp: the locale strings decode from UTF-16BE to UTF-8 (surrogate
+// include/stfs/MetadataParser.hpp: the locale strings decode from UTF-16BE to UTF-8 (surrogate
 // pairs joined, unpaired ones U+FFFD, each field stopping at its size), and the thumbnail sizes
 // are kept, clamped to 0x4000 or, when negative, empty.
 

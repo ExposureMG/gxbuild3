@@ -1,8 +1,8 @@
-// src/nand/objects/SecuredFiles.hpp: fcrt.bin sealed for the console as xeBuild 1.21 seals it (a
-// copy in the clear sealed under the CPU key and its vector, a sealed copy carried, a copy of the
-// wrong size or offset carried as supplied, a damaged one written as its failed opening), checked
-// against the independent oracle in SecuredFilesOracle.hpp; and how a keyvault's OddFeatures word
-// flags fcrt.bin.
+// include/nand/objects/SecuredFiles.hpp: fcrt.bin sealed for the console as xeBuild 1.21 seals it
+// (a copy in the clear sealed under the CPU key and its vector, a sealed copy carried, a copy of
+// the wrong size or offset carried as supplied, a damaged one written as its failed opening),
+// checked against the independent oracle in SecuredFilesOracle.hpp; and how a keyvault's
+// OddFeatures word flags fcrt.bin.
 
 #include "excrypt.h"
 #include "nand/objects/SecuredFiles.hpp"

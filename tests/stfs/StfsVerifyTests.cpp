@@ -1,5 +1,5 @@
-// src/stfs/HashVerifier.hpp and FileExtractor.hpp: verified extraction needs total_blocks, and a
-// corrupted data block or hash table fails the hash (a block outside the package is OutOfRange)
+// include/stfs/HashVerifier.hpp and FileExtractor.hpp: verified extraction needs total_blocks, and
+// a corrupted data block or hash table fails the hash (a block outside the package is OutOfRange)
 // while unverified extraction ignores it. StfsVerify.BlockPastPackage... names the range check:
 // verification of a block past the package stops at its hash table with OutOfRange, before any
 // hash is compared.

@@ -1,4 +1,4 @@
-// The embedded freeBOOT rebooter and payload (src/nand/objects/Freeboot.hpp, arrays from
+// The embedded freeBOOT rebooter and payload (include/nand/objects/Freeboot.hpp, arrays from
 // freeboot/): their sizes and first bytes, the kernel version a built rebooter states at 0xD0B
 // in place of the thirty-two X placeholder, the old hold address a 9199 rebooter takes, and the
 // word count the payload's `li r4, 0xFFFF` at 0x50 is given for the core it loads.

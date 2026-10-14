@@ -1,4 +1,4 @@
-// src/cli/BuildInputResolver.hpp: the INI payloads and the build type's fixed payloads. A named
+// include/cli/BuildInputResolver.hpp: the INI payloads and the build type's fixed payloads. A named
 // INI payload comes from the first root that holds it (a first-root file that cannot be read
 // stops the search), else from the donor's FlashFS by lowercase basename, else it is an exact
 // AssetNotFound. JTAG resolves its XeLL (xell-2f.bin), the embedded freeBOOT rebooter for the

@@ -1,5 +1,5 @@
-// src/Wire.hpp record codecs: read, read_head, write, patch, append, bytes_of and as_u8 over the
-// sample record (core/WireSample.hpp), including the bounds checks that cannot wrap and leave
+// include/Wire.hpp record codecs: read, read_head, write, patch, append, bytes_of and as_u8 over
+// the sample record (core/WireSample.hpp), including the bounds checks that cannot wrap and leave
 // the buffer untouched on failure. WireErrors names the asymmetry of the failure codes: every
 // out-of-bounds read is Truncated and an out-of-bounds write is OutOfRange.
 

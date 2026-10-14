@@ -1,7 +1,7 @@
-// The small-block FlashFS (src/nand/objects/FlashFileSystem.hpp on Driver::DriverMode::Small and
-// NewSmall): the spare metadata save() writes matches real 16 MB dumps on both modes, serialize()
-// leaves the erased low pages unprogrammed, a deferred root is placed last from the free pool,
-// and inserted CG tails lay every file back to back behind them.
+// The small-block FlashFS (include/nand/objects/FlashFileSystem.hpp on Driver::DriverMode::Small
+// and NewSmall): the spare metadata save() writes matches real 16 MB dumps on both modes,
+// serialize() leaves the erased low pages unprogrammed, a deferred root is placed last from the
+// free pool, and inserted CG tails lay every file back to back behind them.
 //
 // FlashFsSmallBlock is the Mode/ table over both small-block modes; its plain companions are in
 // FlashFsSmallBlockLayout (gtest forbids TEST and TEST_P in one suite). FlashFsRootCodec names

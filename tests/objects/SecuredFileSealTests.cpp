@@ -1,4 +1,4 @@
-// src/nand/objects/SecuredFiles.hpp: crl.bin, dae.bin, extended.bin and secdata.bin sealed for
+// include/nand/objects/SecuredFiles.hpp: crl.bin, dae.bin, extended.bin and secdata.bin sealed for
 // the console as xeBuild 1.21 seals them, checked against the independent oracle in
 // SecuredFilesOracle.hpp; their stamp, the clean copies a build makes up, the loose copies the
 // Input boundary carries in the clear, and the sealing drawn when no console copy supplies it.

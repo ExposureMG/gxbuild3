@@ -96,7 +96,7 @@ namespace gxbuild3::nand {
         uint8_t b38CardeaCertificate[0x2108];
     };
 
-    // The keyvault records as the console stores them, big-endian (see src/Wire.hpp).
+    // The keyvault records as the console stores them, big-endian (see include/Wire.hpp).
     static_assert(wire::WireLayout<CONSOLE_PUBLIC_KEY> && sizeof(CONSOLE_PUBLIC_KEY) == 0x84);
     static_assert(wire::WireLayout<XE_CONSOLE_CERTIFICATE> &&
                   sizeof(XE_CONSOLE_CERTIFICATE) == 0x1A8);

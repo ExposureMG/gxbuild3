@@ -1,6 +1,6 @@
 #pragma once
 
-// The fixture of the src/utils/FileManager.hpp tests (FileManagerLookup, FileManagerBootloader,
+// The fixture of the include/utils/FileManager.hpp tests (FileManagerLookup, FileManagerBootloader,
 // FileManagerIni, FileManagerScan, FileManagerSymlink, FileManagerUnconfinedPath and
 // FileManagerStfsCache, one-line subclasses per file so each suite bundles on its own) and the
 // synthetic STFS packages they look assets up in.

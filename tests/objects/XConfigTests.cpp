@@ -1,4 +1,4 @@
-// src/nand/objects/XConfig.hpp: SmcConfig is deliberately unwired (AGENTS.md: the maintainer
+// include/nand/objects/XConfig.hpp: SmcConfig is deliberately unwired (AGENTS.md: the maintainer
 // will generate xconfigs with it), so these cases only name what objects_corpus.txt pins as
 // xconfig.base_0x0.* and xconfig.base_0xC000.* lines: serialize(parse(b)) gives back the
 // 0x1A18-byte settings region at the base and zero everywhere else in the 64 KiB blob.

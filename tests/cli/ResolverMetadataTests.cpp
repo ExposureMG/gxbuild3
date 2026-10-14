@@ -1,4 +1,4 @@
-// src/cli/BuildInputResolver.hpp: the metadata and the FlashFS files. Precedence, lowest to
+// include/cli/BuildInputResolver.hpp: the metadata and the FlashFS files. Precedence, lowest to
 // highest: options.ini, the donor, each -c item; user kv.bin, smc.bin and mobile files replace
 // the donor's. Only the winning source of a value is parsed (a malformed losing value is never
 // seen), a value must be a whole valid string, and a refused value names the source that won

@@ -1,4 +1,4 @@
-// src/stfs/HeaderParser.hpp: parse_header and read_header_from_file need the whole 0x22C-byte
+// include/stfs/HeaderParser.hpp: parse_header and read_header_from_file need the whole 0x22C-byte
 // header, a CON header's ConSignature fields come from their spec offsets, and
 // StfsContainer::open refuses an absurd header_size.
 

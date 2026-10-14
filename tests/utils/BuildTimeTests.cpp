@@ -1,7 +1,7 @@
-// src/utils/BuildTime.hpp: the FAT date and time a FlashFS directory entry keeps (fat_timestamp,
-// on the local clock and held to FAT's range), the build stamp xeBuild gives every entry
-// (flashfs_build_timestamp, two seconds after the build) and SOURCE_DATE_EPOCH parsing; plus the
-// secured files' FILETIME (nand::secured_file_stamp), which stays UTC in every zone.
+// include/utils/BuildTime.hpp: the FAT date and time a FlashFS directory entry keeps
+// (fat_timestamp, on the local clock and held to FAT's range), the build stamp xeBuild gives every
+// entry (flashfs_build_timestamp, two seconds after the build) and SOURCE_DATE_EPOCH parsing; plus
+// the secured files' FILETIME (nand::secured_file_stamp), which stays UTC in every zone.
 
 #include "nand/objects/SecuredFiles.hpp"
 #include "support/Env.hpp"

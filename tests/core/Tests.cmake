@@ -1,6 +1,6 @@
-# gxbuild3_core_tests: the test support library's self-tests, the CPU keys, src/Error.hpp,
-# src/Wire.hpp, the Input model with validate_input, and OptionsManager (more core suites join as
-# their old tests are ported). SupportExpect, SupportBytes, ErrorResult and WireRecord are cheap
+# gxbuild3_core_tests: the test support library's self-tests, the CPU keys, include/Error.hpp,
+# include/Wire.hpp, the Input model with validate_input, and OptionsManager (more core suites join
+# as their old tests are ported). SupportExpect, SupportBytes, ErrorResult and WireRecord are cheap
 # suites of 5 or more cases, so each runs as one bundled ctest entry, and so do the four cheap
 # tables Row/ErrorCodeNames (the 12 to_string names), Row/InputMissingRequired,
 # Row/InputRejectsAddonPatchData and Vector/Sha256 (the FIPS 180-4 vectors of support/Sha256.hpp);

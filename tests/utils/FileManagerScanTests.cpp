@@ -1,4 +1,4 @@
-// src/utils/FileManager.hpp: how read_ini_files scans its roots and names the FlashFS payloads.
+// include/utils/FileManager.hpp: how read_ini_files scans its roots and names the FlashFS payloads.
 // Explicit roots replace the defaults and their order decides; missing, regular-file, invalid
 // and repeated roots do not stop the fallback; a loose alias outranks STFS in one root; the
 // payloads list [flashfs] before [security] in INI order, keep the INI's casing and take the

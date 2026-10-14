@@ -1,4 +1,4 @@
-// src/utils/FileManager.hpp: read_ini_files over the default roots (./mydata, ./version,
+// include/utils/FileManager.hpp: read_ini_files over the default roots (./mydata, ./version,
 // ./common). Earlier roots win and later STFS packages fill gaps; aliases collapse by basename
 // across sections; names fall back to any case; ..\ entries name files beside the release and
 // are skipped when missing, as are missing [rawpatch] files. An entry that escapes its root

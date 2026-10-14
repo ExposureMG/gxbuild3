@@ -1,4 +1,4 @@
-// src/cli/CommandLine.hpp: every refused command line fails with a structured ParseError whose
+// include/cli/CommandLine.hpp: every refused command line fails with a structured ParseError whose
 // code names the reason (a missing value, a duplicate, an unknown option or build/block type, an
 // unsafe add-on, extension or list item, a stray positional or a missing required option).
 

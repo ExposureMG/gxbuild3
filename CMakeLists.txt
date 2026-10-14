@@ -74,12 +74,12 @@ set(GXBUILD3_LIB_SOURCES
     src/utils/XeRsa.cpp
 )
 
-# include/ holds only the public API (Library.hpp, GxBuildTypes.hpp); internal headers live
-# beside their sources in src/ and stay private, as do GxCrypt and spdlog.
+# Headers live in include/ and sources in src/, with the same relative paths. Only the public
+# API (Library.hpp, GxBuildTypes.hpp) is installed; GxCrypt and spdlog stay private.
 add_library(gxbuild3_lib STATIC ${GXBUILD3_LIB_SOURCES})
 target_include_directories(gxbuild3_lib
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/freeboot
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/freeboot
 )
 target_link_libraries(gxbuild3_lib PRIVATE
     GxCrypt
@@ -87,9 +87,8 @@ target_link_libraries(gxbuild3_lib PRIVATE
 )
 gxbuild3_enable_warnings(gxbuild3_lib)
 
-# Internal access for the CLI, tests and tools: src/ headers plus the private dependencies.
+# Internal access for the CLI, tests and tools: the library plus its private dependencies.
 add_library(gxbuild3_internal INTERFACE)
-target_include_directories(gxbuild3_internal INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(gxbuild3_internal INTERFACE
     gxbuild3_lib
     GxCrypt

@@ -1,4 +1,4 @@
-// The big-block FlashFS (src/nand/objects/FlashFileSystem.hpp on Driver::DriverMode::Big): file
+// The big-block FlashFS (include/nand/objects/FlashFileSystem.hpp on Driver::DriverMode::Big): file
 // chains on 16 KiB cluster addresses, the writer's cluster allocation, the retail/xeBuild spare
 // profile that save() and serialize() stamp, a 148-cluster file through save -> serialize -> load,
 // what the table states for withheld and root clusters, the spare of a one-cluster file's

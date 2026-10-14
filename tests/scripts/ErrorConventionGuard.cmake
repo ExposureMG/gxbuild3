@@ -7,13 +7,15 @@ cmake_minimum_required(VERSION 3.29)
 #   2. `throw` may only appear in BigUint (precondition violations).
 #   3. `catch (...)` may only appear in main().
 #
-# WireConventionGuard (see src/Wire.hpp): on-disk records are plain structs of wire:: field types,
-# so the legacy byte-order machinery is a second shrinking inventory.
+# WireConventionGuard (see include/Wire.hpp): on-disk records are plain structs of wire:: field
+# types, so the legacy byte-order machinery is a second shrinking inventory.
 #   4. `#pragma pack` may only appear in the files that still declare packed records.
 #   5. The manual byte-order helpers (bswap16/32/64, read_be*/read_le*, including their
-#      __builtin_bswap* bodies, and the deleted swap32) are gone with Endian.hpp; only src/Wire.hpp
-#      names bswap*, in the deleted overloads that reject a manual swap on a wire field.
-#   6. No file under src/nand/objects/ includes Endian.hpp: every objects record is a wire struct.
+#      __builtin_bswap* bodies, and the deleted swap32) are gone with Endian.hpp; only
+#      include/Wire.hpp names bswap*, in the deleted overloads that reject a manual swap on a wire
+#      field.
+#   6. No file under src/nand/objects/ or include/nand/objects/ includes Endian.hpp: every objects
+#      record is a wire struct.
 # A converting commit removes its file's entry in the same commit.
 #
 # Every allowlist entry must still match its rule: once a shim is deleted the guard fails until
@@ -40,17 +42,17 @@ set(catch_all_allowlist
 )
 
 # WireConventionGuard inventories. XConfig.hpp keeps its packed bitfields on purpose; every other
-# entry goes away as its records move to src/Wire.hpp. src/Wire.hpp itself stays: it declares
-# the deleted bswap* overloads that reject a manual swap on a wire field.
+# entry goes away as its records move to include/Wire.hpp. include/Wire.hpp itself stays: it
+# declares the deleted bswap* overloads that reject a manual swap on a wire field.
 set(pragma_pack_allowlist
-    src/nand/objects/XConfig.hpp
+    include/nand/objects/XConfig.hpp
 )
 
 set(byte_swap_allowlist
-    src/Wire.hpp
+    include/Wire.hpp
 )
 
-# No exceptions: objects/ reads and writes on-disk fields only through src/Wire.hpp.
+# No exceptions: objects/ reads and writes on-disk fields only through include/Wire.hpp.
 set(objects_endian_include_allowlist
 )
 
@@ -66,10 +68,10 @@ set(rule_objects_endian_include_regex "#[ \t]*include[ \t]*[\"<]([^\">]*/)?Endia
 set(rule_shim_name_label "throwing shim name (*_or_throw / value_or_throw)")
 set(rule_throw_label "`throw`")
 set(rule_catch_all_label "`catch (...)`")
-set(rule_pragma_pack_label "`#pragma pack` (use wire:: field types, src/Wire.hpp)")
-set(rule_byte_swap_label "manual byte-order helper (use wire:: field types, src/Wire.hpp)")
+set(rule_pragma_pack_label "`#pragma pack` (use wire:: field types, include/Wire.hpp)")
+set(rule_byte_swap_label "manual byte-order helper (use wire:: field types, include/Wire.hpp)")
 set(rule_objects_endian_include_label
-    "Endian.hpp include under src/nand/objects/ (use wire:: field types, src/Wire.hpp)")
+    "Endian.hpp include under nand/objects/ (use wire:: field types, include/Wire.hpp)")
 
 set(rule_shim_name_allow ${shim_name_allowlist})
 set(rule_throw_allow ${throw_allowlist})
@@ -79,7 +81,7 @@ set(rule_byte_swap_allow ${byte_swap_allowlist})
 set(rule_objects_endian_include_allow ${objects_endian_include_allowlist})
 
 # Optional per-rule path scope (a regex on the repository-relative path); unset means every file.
-set(rule_objects_endian_include_scope "^src/nand/objects/")
+set(rule_objects_endian_include_scope "^(src|include)/nand/objects/")
 
 set(rules shim_name throw catch_all pragma_pack byte_swap objects_endian_include)
 foreach(rule IN LISTS rules)
@@ -96,6 +98,12 @@ if(scanned_count EQUAL 0)
 endif()
 
 set(violations "")
+# Headers live in include/, sources in src/: no header may sit beside its source.
+foreach(relative IN LISTS scanned_files)
+    if(relative MATCHES "^src/.*\\.(hpp|h)$")
+        string(APPEND violations "  ${relative}: header under src/ (move it to include/)\n")
+    endif()
+endforeach()
 foreach(relative IN LISTS scanned_files)
     file(READ "${SOURCE_ROOT}/${relative}" content)
     # Neutralise the characters that CMake list splitting treats specially, then split on
@@ -140,8 +148,8 @@ endforeach()
 
 if(NOT violations STREQUAL "")
     message(FATAL_ERROR
-        "error-convention guard failed (see the Result convention in src/Error.hpp and the wire "
-        "convention in src/Wire.hpp):\n"
+        "error-convention guard failed (see the Result convention in include/Error.hpp and the "
+        "wire convention in include/Wire.hpp):\n"
         "${violations}")
 endif()
 

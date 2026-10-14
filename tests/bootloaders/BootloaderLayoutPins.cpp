@@ -1,4 +1,4 @@
-// Pins the on-disk layout of every bootloader record in src/nand/bootloaders/Common.hpp.
+// Pins the on-disk layout of every bootloader record in include/nand/bootloaders/Common.hpp.
 //
 // The expected values below come from the Xbox 360 on-disk bootloader layout, not from the
 // compiler: they are the byte offsets the wire format puts each field at. Today the records are

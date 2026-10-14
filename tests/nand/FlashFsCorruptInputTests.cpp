@@ -1,4 +1,4 @@
-// FlashFileSystem::load (src/nand/objects/FlashFileSystem.hpp) over on-disk roots a console
+// FlashFileSystem::load (include/nand/objects/FlashFileSystem.hpp) over on-disk roots a console
 // never writes but a corrupt dump may hold: a name that fills all 22 bytes with no terminator,
 // and a file length far past what its chain holds.
 

@@ -1,4 +1,4 @@
-// src/cli/CommandLine.hpp: parse_command_line turns argv into a BuildArgs (implicit or explicit
+// include/cli/CommandLine.hpp: parse_command_line turns argv into a BuildArgs (implicit or explicit
 // "build"), a HelpCommand or a VersionCommand. Build types and block types normalize, list
 // options keep their command-line order and Windows drive paths survive because only the build
 // type splits on ':'. The refused command lines are CommandLineErrorTests.cpp.

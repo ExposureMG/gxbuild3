@@ -1,5 +1,5 @@
-// src/utils/Utils.hpp: read_file, write_file and create_directory report failures as Errors that
-// carry the path, and write_file creates missing parents.
+// include/utils/Utils.hpp: read_file, write_file and create_directory report failures as Errors
+// that carry the path, and write_file creates missing parents.
 
 #include "Error.hpp"
 #include "support/Expect.hpp"

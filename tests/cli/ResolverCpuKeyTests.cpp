@@ -1,4 +1,4 @@
-// src/cli/BuildInputResolver.hpp: the CPU key. An explicit -p key (trimmed) beats every root,
+// include/cli/BuildInputResolver.hpp: the CPU key. An explicit -p key (trimmed) beats every root,
 // else the first root holding a cpukey.txt supplies it; uppercase hex is accepted and a
 // correctable ECC error is corrected. A missing, invalid or unreadable key fails with its own
 // code and, for a discovered key, the file it came from; a cpukey.txt that cannot be inspected

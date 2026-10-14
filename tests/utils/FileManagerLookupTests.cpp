@@ -1,4 +1,4 @@
-// src/utils/FileManager.hpp: find_file_data_detailed for regular assets. Roots are searched in
+// include/utils/FileManager.hpp: find_file_data_detailed for regular assets. Roots are searched in
 // order and within a root a loose file beats an STFS entry; the result names its provenance
 // (source kind, root index, package or file path, requested name). A missing asset is an empty
 // optional; a source that cannot be inspected fails the strict lookup with its provenance while

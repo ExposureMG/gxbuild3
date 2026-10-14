@@ -38,8 +38,8 @@ namespace gxbuild3::nand {
         SG = 0x5347
     };
 
-    // Bootloader stage records are wire structs (src/Wire.hpp): they hold their numeric fields in
-    // on-disk big-endian order, so sizeof and offsetof are the on-disk layout and a stage header
+    // Bootloader stage records are wire structs (include/Wire.hpp): they hold their numeric fields
+    // in on-disk big-endian order, so sizeof and offsetof are the on-disk layout and a stage header
     // is serialized by copying its bytes.
     struct generic_header {
         wire::be16 magic;

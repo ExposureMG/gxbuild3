@@ -1,5 +1,5 @@
-// src/utils/FileManager.hpp: bootloaders. A bootloader lookup (AssetKind::Bootloader) may derive
-// CF and CG from a package's xboxupd.bin, only for the package's own release; read_ini_files
+// include/utils/FileManager.hpp: bootloaders. A bootloader lookup (AssetKind::Bootloader) may
+// derive CF and CG from a package's xboxupd.bin, only for the package's own release; read_ini_files
 // places the [<section>bl] entries into the boot chain (CB/CB_B, SC, CD, CE), the two CF/CG patch
 // slots and, for JTAG only, the extra CB and CD, numbering chains by basename.
 

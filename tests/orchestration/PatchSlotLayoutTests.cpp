@@ -1,4 +1,4 @@
-// run_build's patch-slot layout (src/nand/FlashImageLayout.hpp and src/BuildRunner.cpp): where
+// run_build's patch-slot layout (include/nand/FlashImageLayout.hpp and src/BuildRunner.cpp): where
 // the glitch KHV lands (the header overlay anchor, one patch stride above the first update slot,
 // 0x20000 on big block), how a XeLL at 0x70000 pushes the slots to the next erase block, the
 // fixed JTAG offsets (patches at 0x91000, fuses at 0x95000, XeLL at 0x95060), the collisions

@@ -1,4 +1,4 @@
-// FlashFS chain allocation (src/nand/objects/FlashFileSystem.hpp): the block count a size needs
+// FlashFS chain allocation (include/nand/objects/FlashFileSystem.hpp): the block count a size needs
 // at its boundaries, and a SIZE_MAX allocation refused without touching the blockmap.
 
 #include "nand/objects/FlashFileSystem.hpp"

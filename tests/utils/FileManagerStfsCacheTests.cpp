@@ -1,5 +1,5 @@
-// src/utils/FileManager.hpp: the process-wide STFS caches and in-memory packages. Repeat lookups
-// are served from the package, directory and derived-bootloader caches, clear_stfs_cache()
+// include/utils/FileManager.hpp: the process-wide STFS caches and in-memory packages. Repeat
+// lookups are served from the package, directory and derived-bootloader caches, clear_stfs_cache()
 // empties them and a package rewritten on disk is read again, but only when its mtime or size
 // changed: a same-size rewrite under the old mtime is served from the cache (AsToday).
 // ScanOptions::in_memory_stfs packages answer without any root (empty source_path, root_index

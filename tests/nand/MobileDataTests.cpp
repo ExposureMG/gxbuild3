@@ -1,4 +1,4 @@
-// The mobile data blobs (MobileB = type 0x31, MobileC = 0x32, src/nand/objects/MobileData.hpp)
+// The mobile data blobs (MobileB = type 0x31, MobileC = 0x32, include/nand/objects/MobileData.hpp)
 // as FlashImage reads and lays them: the latest copy is taken on small and big block, a written
 // blob is laid where and as xeBuild lays it, a rewrite erases every older copy, and a blob longer
 // than one copy is refused, at a limit that follows the layout.

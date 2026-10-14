@@ -1,4 +1,4 @@
-// src/stfs/FileTableParser.hpp through StfsContainer::open: the volume descriptor's file table
+// include/stfs/FileTableParser.hpp through StfsContainer::open: the volume descriptor's file table
 // block count and block_separation bit 0, the file table chain length, and the name rules of a
 // file-table entry (name_length within the 0x28-byte field, a nameless entry ends the listing,
 // NUL padding trimmed, no empty or separated names, system update names accepted).

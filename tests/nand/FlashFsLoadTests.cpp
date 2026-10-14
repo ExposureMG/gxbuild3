@@ -1,4 +1,4 @@
-// FlashFileSystem::load (src/nand/objects/FlashFileSystem.hpp) is transactional: a root that
+// FlashFileSystem::load (include/nand/objects/FlashFileSystem.hpp) is transactional: a root that
 // fails to load leaves the filesystem, its root, table, directory, file data and driver, as the
 // last successful load left it.
 //

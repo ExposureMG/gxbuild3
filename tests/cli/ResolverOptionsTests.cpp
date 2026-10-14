@@ -1,4 +1,4 @@
-// src/cli/BuildInputResolver.hpp: the options. Only <working directory>/options.ini is read
+// include/cli/BuildInputResolver.hpp: the options. Only <working directory>/options.ini is read
 // (never a source root's), then each -c item in command-line order, later values winning; the
 // CLI overrides stay apart for later layering. An unknown or malformed option, an empty -c item
 // and an unreadable options.ini fail with their own code and provenance.

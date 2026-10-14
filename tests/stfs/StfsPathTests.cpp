@@ -1,4 +1,4 @@
-// src/stfs/StfsContainer.hpp and ContainerDetail.hpp: extract_all confines every entry to its
+// include/stfs/StfsContainer.hpp and ContainerDetail.hpp: extract_all confines every entry to its
 // output directory (relative and absolute escapes, parent cycles, safe_join), checking all
 // destinations before it writes anything, and extracts nested directories.
 // StfsContainerExtract names the order: a bad destination anywhere in the table fails extract_all

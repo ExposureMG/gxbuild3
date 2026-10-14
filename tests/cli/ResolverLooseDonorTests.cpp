@@ -1,4 +1,4 @@
-// src/cli/BuildInputResolver.hpp: the build INI and the loose donor. The build INI is required,
+// include/cli/BuildInputResolver.hpp: the build INI and the loose donor. The build INI is required,
 // read from the working directory, and only its exact [<section>bl] supplies the bootloader
 // chain (an INI SC replaces a donor's, and a chain that omits SC inherits none). Without a NAND
 // donor every loose component is required (the first missing one is named); kv.bin is opened

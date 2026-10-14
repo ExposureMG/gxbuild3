@@ -1,4 +1,4 @@
-// src/cli/BuildInputResolver.hpp: the source roots and the working directory. Every declared
+// include/cli/BuildInputResolver.hpp: the source roots and the working directory. Every declared
 // root must be a directory, at least one is required and an empty path is refused; a relative
 // root and a relative output path are anchored to the resolver's working directory, and
 // resolve() fails with the same errors resolve_foundations() reports.

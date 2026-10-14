@@ -1,4 +1,4 @@
-// src/cli/BuildInputResolver.hpp: the automatic patchset and the add-ons. The automatic patch
+// include/cli/BuildInputResolver.hpp: the automatic patchset and the add-ons. The automatic patch
 // file is <root>/bin/patches_<stem>[_<suffix>].bin with the stem the code states (jtag the
 // section, glitch fat, glitch2 g2<section>, glitch2m g2m<section>, glitch3 g3<section> searched
 // in every root before the g2 fallback); retail and devkit select none and refuse add-ons.

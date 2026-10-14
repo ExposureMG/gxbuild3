@@ -1,7 +1,7 @@
 #pragma once
 
 // The one test-side definition of nand::FlashFileSystemTestAccess, the friend that
-// src/nand/objects/FlashFileSystem.hpp declares. Every test TU that needs FlashFileSystem's
+// include/nand/objects/FlashFileSystem.hpp declares. Every test TU that needs FlashFileSystem's
 // private members includes this header, so the struct has a single definition in any binary.
 
 #include "nand/objects/FlashFileSystem.hpp"

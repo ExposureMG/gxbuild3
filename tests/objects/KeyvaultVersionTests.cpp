@@ -1,4 +1,4 @@
-// src/nand/objects/Keyvault.hpp: the all-zero CPU key is a usable key; a loose kv.bin is opened
+// include/nand/objects/Keyvault.hpp: the all-zero CPU key is a usable key; a loose kv.bin is opened
 // when sealed under the CPU key and otherwise taken as it stands, its form saying how xeBuild
 // 1.21 sees it; and the keyvault HMAC covers the big-endian keyvault version, checked against
 // independent Python vectors.

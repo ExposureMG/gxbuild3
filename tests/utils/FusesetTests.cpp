@@ -1,6 +1,6 @@
-// src/utils/FusesetGenerator.hpp: the twelve 8-byte fuse lines a console's fuseset holds, made from
-// the CB's console-type word, the CPU key and the lockdown (CF LDV) count, and the word read off
-// the CB.
+// include/utils/FusesetGenerator.hpp: the twelve 8-byte fuse lines a console's fuseset holds, made
+// from the CB's console-type word, the CPU key and the lockdown (CF LDV) count, and the word read
+// off the CB.
 //
 // Every vector below is xerunner's tests/xebuild/test_chain.py TheFusesALoaderHandsOver, with
 // its key bytes(range(0x10)).

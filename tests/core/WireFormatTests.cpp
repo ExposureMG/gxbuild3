@@ -1,4 +1,4 @@
-// Formatting src/Wire.hpp fields: std::format and fail() through the std::formatter
+// Formatting include/Wire.hpp fields: std::format and fail() through the std::formatter
 // specialisations, and gxbuild3::Log (spdlog with its bundled fmt) through wire::format_as,
 // found by ADL, without .get().
 

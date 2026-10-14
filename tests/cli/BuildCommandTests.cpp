@@ -1,5 +1,5 @@
-// src/cli/BuildCommand.hpp: run_build_command maps the resolve, build and write services onto the
-// CLI exit codes (3 input resolution, 4 NAND build, 5 output write) and keeps each failure's
+// include/cli/BuildCommand.hpp: run_build_command maps the resolve, build and write services onto
+// the CLI exit codes (3 input resolution, 4 NAND build, 5 output write) and keeps each failure's
 // message; the default write service creates the output's parent, and an existing output is
 // overwritten.
 

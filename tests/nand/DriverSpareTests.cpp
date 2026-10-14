@@ -1,4 +1,4 @@
-// The NAND driver (src/nand/FlashDriver.hpp): the spare bytes of each page (the good- and
+// The NAND driver (include/nand/FlashDriver.hpp): the spare bytes of each page (the good- and
 // bad-block marks, the big-block sequence, the block type under its ECC bits), the size of an
 // eMMC image and the refusal of an offset write past the clean capacity.
 
