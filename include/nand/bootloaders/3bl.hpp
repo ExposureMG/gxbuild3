@@ -1,21 +1,35 @@
 #pragma once
+#include "Error.hpp"
 #include "nand/bootloaders/Common.hpp"
 
+#include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
-class BootloaderSc {
-  public:
-    sc_header header;
-    std::vector<uint8_t> data;
-    bool decrypted = false;
+namespace gxbuild3::nand {
 
-    static BootloaderSc parse(const std::vector<uint8_t>& bytes);
+    class BootloaderSc {
+      public:
+        sc_header header;
+        std::vector<uint8_t> data;
+        // Runtime key handed to SD: HMAC(secret, nonce). header.key retains the on-disk nonce.
+        std::optional<std::array<uint8_t, 16>> derived_key;
+        bool decrypted = false;
 
-    void decrypt(const uint8_t cb_key[16]);
-    void encrypt(const uint8_t cb_key[16]);
+        // Fails when the bytes or the declared size cannot hold sc_header.
+        [[nodiscard]] static Result<BootloaderSc> parse(std::span<const uint8_t> bytes);
 
-    bool is_decrypted() const;
-    std::vector<uint8_t> serialize() const;
-};
+        // The secret is sixteen zero bytes on every console (kZeroSecret). Each is a no-op when
+        // the stage is already in the requested state, and fails before touching the payload.
+        [[nodiscard]] Result<void> decrypt(const uint8_t secret[16]);
+        [[nodiscard]] Result<void> encrypt(const uint8_t secret[16]);
+
+        static constexpr uint8_t kZeroSecret[16] = {};
+
+        bool is_decrypted() const;
+        std::vector<uint8_t> serialize() const;
+    };
+
+} // namespace gxbuild3::nand

@@ -1,0 +1,469 @@
+# FlashImage golden over tracked mydata/image.bin; identities only as SHA-1.
+input.size=0x1080000
+input.sha256=e7c30d150616bd1ab680c1ced8cb7149711ccdf18a88a474538e86ae51d7b796
+parse.driver_mode=NewSmall
+parse.block_count=0x400
+parse.preserve_layout=1
+parse.build_type=none
+parse.devkit_chain=0
+parse.header.magic=0xFF4F
+parse.header.version=0x760
+parse.header.pairing=0x0
+parse.header.flags=0x0
+parse.header.entrypoint=0x8000
+parse.header.size=0x70000
+parse.header.copyright=a920323030342d32303039204d6963726f736f667420436f72706f726174696f6e2e20416c6c207269676874732072657365727665642e00
+parse.header.hack_flags=0x0
+parse.header.boot_flags=0x0
+parse.header.reserved=00000000000000000000000000000000
+parse.header.kv_size=0x4000
+parse.header.cf_offset=0x70000
+parse.header.patch_slots=0x2
+parse.header.kv_version=0x712
+parse.header.kv_addr=0x4000
+parse.header.fs_addr=0x10000
+parse.header.smc_config_offset=0x0
+parse.header.smc_boot_size=0x3000
+parse.header.smc_boot_offset=0x1000
+parse.stage.CB_A.present=1
+parse.stage.CB_A.magic=0x4342
+parse.stage.CB_A.version=0x1A62
+parse.stage.CB_A.pairing=0x0
+parse.stage.CB_A.flags=0x1800
+parse.stage.CB_A.entrypoint=0x3E0
+parse.stage.CB_A.size=0x2000
+parse.stage.CB_A.data_size=0x1FF0
+parse.stage.CB_A.decrypted=0
+parse.stage.CB_A.is_decrypted=0
+parse.stage.CB_A.data_sha1=65570a1638109b49d9f1ae5e809e65657cd05d27
+parse.stage.CB_A.serialize_sha1=742146e914060b625bfc89cbdd991f7ab8be2c28
+parse.stage.CB_A.derived_key=0
+parse.stage.CB_A.perbox=0
+parse.stage.CB_X.present=0
+parse.stage.CB_B.present=1
+parse.stage.CB_B.magic=0x4342
+parse.stage.CB_B.version=0x1A62
+parse.stage.CB_B.pairing=0x0
+parse.stage.CB_B.flags=0x0
+parse.stage.CB_B.entrypoint=0x3E0
+parse.stage.CB_B.size=0x96C0
+parse.stage.CB_B.data_size=0x96B0
+parse.stage.CB_B.decrypted=0
+parse.stage.CB_B.is_decrypted=0
+parse.stage.CB_B.data_sha1=dd7dbd4228c9027385ab29ff9dcb4c9599220b9f
+parse.stage.CB_B.serialize_sha1=3e5bfb0867add9c8ffcfb446e96b9034698e4440
+parse.stage.CB_B.derived_key=0
+parse.stage.CB_B.perbox=0
+parse.stage.SC.present=0
+parse.stage.CD.present=1
+parse.stage.CD.magic=0x4344
+parse.stage.CD.version=0x1A62
+parse.stage.CD.pairing=0x0
+parse.stage.CD.flags=0x0
+parse.stage.CD.entrypoint=0x310
+parse.stage.CD.size=0x5080
+parse.stage.CD.data_size=0x4E20
+parse.stage.CD.decrypted=0
+parse.stage.CD.is_decrypted=0
+parse.stage.CD.data_sha1=e7bdc4d6d347db04bfa2e18f02220f7c79203b87
+parse.stage.CD.serialize_sha1=61d7239e4ac51f83d062801df7a99b5f078b551c
+parse.stage.CD.derived_key=0
+parse.stage.CE.present=1
+parse.stage.CE.magic=0x4345
+parse.stage.CE.version=0x760
+parse.stage.CE.pairing=0x0
+parse.stage.CE.flags=0x0
+parse.stage.CE.entrypoint=0x0
+parse.stage.CE.size=0x5606A
+parse.stage.CE.data_size=0x56040
+parse.stage.CE.decrypted=0
+parse.stage.CE.is_decrypted=0
+parse.stage.CE.data_sha1=920ebc34d202f7495f31ad313ef6d7349764f5a6
+parse.stage.CE.serialize_sha1=758b7946858dc33c0800614f42eeccb143791b58
+parse.stage.CF0.present=1
+parse.stage.CF0.magic=0x4346
+parse.stage.CF0.version=0x4497
+parse.stage.CF0.pairing=0x0
+parse.stage.CF0.flags=0x4000
+parse.stage.CF0.entrypoint=0x360
+parse.stage.CF0.size=0x4560
+parse.stage.CF0.data_size=0x4530
+parse.stage.CF0.decrypted=0
+parse.stage.CF0.is_decrypted=0
+parse.stage.CF0.data_sha1=901451577a5804cda4237e2df58a500be813daef
+parse.stage.CF0.serialize_sha1=6c2466b4ea0c2eea80fc6140e8b2148c6b01df2a
+parse.stage.CF0.perbox=0
+parse.stage.CG0.present=1
+parse.stage.CG0.magic=0x4347
+parse.stage.CG0.version=0x4497
+parse.stage.CG0.pairing=0x0
+parse.stage.CG0.flags=0x0
+parse.stage.CG0.entrypoint=0x0
+parse.stage.CG0.size=0x77A76
+parse.stage.CG0.data_size=0x77A26
+parse.stage.CG0.decrypted=0
+parse.stage.CG0.is_decrypted=0
+parse.stage.CG0.data_sha1=0547f1690f5c07514f7094d044dd11bb31d8d03a
+parse.stage.CG0.serialize_sha1=8736cdc98c18ba9206fddc9df8c719ff78ba20cb
+parse.stage.CF1.present=0
+parse.stage.CG1.present=0
+parse.cg_spill_blocks.0=0x24,0x25,0x26,0x27,0x28,0x29,0x2A,0x2B,0x2C,0x2D,0x2E,0x2F,0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x3A,0x3B,0x3C,0x3D,0x3E
+parse.cg_spill_blocks.1=none
+parse.smc.present=1
+parse.smc.encrypted=1
+parse.smc.motherboard=Jasper
+parse.smc.version=4.1.2
+parse.smc.variant=Retail
+parse.smc.size=0x3000
+parse.smc.data_sha1=26f752efaff58714ce5221ae1186016676f0b6fa
+parse.smc.has_jtag_mark=0
+parse.smc.is_encrypted_bytes=1
+parse.smc.get_type=Retail
+parse.keyvault.present=1
+parse.keyvault.encrypted=1
+parse.keyvault.raw_size=0x4000
+parse.keyvault.raw_sha1=b299d702082356a93c87d555a994378ff0b6c60b
+parse.keyvault.serialize_sha1=b299d702082356a93c87d555a994378ff0b6c60b
+parse.keyvault.serial_sha1=4617486bc7aabdec9be710a01c302434b6c632ed
+parse.keyvault.region=0x3AAA
+parse.keyvault.console_id_sha1=48608392f3ea86775bcfaa7540b125850ae8c81b
+parse.keyvault.mfr_date_sha1=4eede83679bfe242acba01b686077abedc175e7b
+parse.keyvault.osig_sha1=86d22894257fd8af0c44646ac5807c5b4087deca
+parse.keyvault.odd_features=0xB65F
+parse.smc_config=0x400 sha1:dabee46a9273e1496be769425d5f1722524e3831
+parse.statistics=0x1000 sha1:e0c66649d1434eca3435033a32634cb90cef0f31
+parse.manufacturing=0x1000 sha1:e0c66649d1434eca3435033a32634cb90cef0f31
+parse.corona_config.present=0
+parse.mobile.present=0
+parse.fs.present=1
+parse.fs.version=0x1
+parse.fs.root_block=0x37B
+parse.fs.has_root=1
+parse.fs.timestamp=0x0
+parse.fs.blockmap_entries=0x400
+parse.fs.blockmap_sha1=50bf69158c62be8f4456cf1a063ae46e1449a976
+parse.fs.entries=0x1E
+parse.fs.entry.0.name=sysupdate.xexp1
+parse.fs.entry.0.info=block=0x24 length=0x6BFE0 timestamp=0x5D3A7405 file=0x6BFE0 sha1:5d4d4bf1af018eea1e3078cfe2c582ae36c5b060
+parse.fs.entry.1.name=aac.xexp1
+parse.fs.entry.1.info=block=0x3F length=0x14000 timestamp=0x5D3A7405 file=0x14000 sha1:600b902eede2e7a66c82600ad95305ac37eb5f35
+parse.fs.entry.2.name=bootanim.xex
+parse.fs.entry.2.info=block=0x44 length=0x61000 timestamp=0x5D3A7405 file=0x61000 sha1:3c1bf1edc06a385455e74876c3aa28280e8f363c
+parse.fs.entry.3.name=createprofile.xex
+parse.fs.entry.3.info=block=0x5D length=0xC000 timestamp=0x5D3A7405 file=0xC000 sha1:3583aaa574eb64007d0d3967eff0785d22a85633
+parse.fs.entry.4.name=dash.xex
+parse.fs.entry.4.info=block=0x60 length=0x5B2000 timestamp=0x5D3A7405 file=0x5B2000 sha1:3d44ef57781c20669705cd687e3b62b1c2f1ff6b
+parse.fs.entry.5.name=deviceselector.xex
+parse.fs.entry.5.info=block=0x1CD length=0xA000 timestamp=0x5D3A7405 file=0xA000 sha1:87581dce29bbbe9232a24ec5ef965f947a3ef186
+parse.fs.entry.6.name=gamerprofile.xex
+parse.fs.entry.6.info=block=0x1D0 length=0x1B000 timestamp=0x5D3A7405 file=0x1B000 sha1:d2eaaa5c3b5b85ba98252d93b80c0521047d71e6
+parse.fs.entry.7.name=hud.xex
+parse.fs.entry.7.info=block=0x1D7 length=0x1D000 timestamp=0x5D3A7405 file=0x1D000 sha1:b0ab65e560b674739821e54c3c8b6be9d6579c4a
+parse.fs.entry.8.name=huduiskin.xex
+parse.fs.entry.8.info=block=0x1DF length=0x14000 timestamp=0x5D3A7405 file=0x14000 sha1:45203d5b26b952436ed86a3c791610c9f61a7b04
+parse.fs.entry.9.name=mfgbootlauncher.xex
+parse.fs.entry.9.info=block=0x1E4 length=0x8000 timestamp=0x5D3A7405 file=0x8000 sha1:d8056c3eefd6e74c92f3ab90d872f88da05ec1b1
+parse.fs.entry.10.name=minimediaplayer.xex
+parse.fs.entry.10.info=block=0x1E6 length=0xC000 timestamp=0x5D3A7405 file=0xC000 sha1:903c1213b962660fe9837de14ba2a4a8fbdf63bf
+parse.fs.entry.11.name=nomni.xexp1
+parse.fs.entry.11.info=block=0x1E9 length=0xF000 timestamp=0x5D3A7405 file=0xF000 sha1:9946ae6c431bcd1966e4808191d7578cce66c732
+parse.fs.entry.12.name=nomnifwk.xexp1
+parse.fs.entry.12.info=block=0x1ED length=0x2000 timestamp=0x5D3A7405 file=0x2000 sha1:eda45c26077b067b541359e6e62f70b0668e5b12
+parse.fs.entry.13.name=nomnifwm.xexp1
+parse.fs.entry.13.info=block=0x1EE length=0x5000 timestamp=0x5D3A7405 file=0x5000 sha1:ca76a96835f8709d588dbc47f5fe83749f455356
+parse.fs.entry.14.name=SegoeXbox-Light.xtt
+parse.fs.entry.14.info=block=0x1F0 length=0x6000 timestamp=0x5D3A7405 file=0x6000 sha1:1553e1172c83db7edc563f3c318e9fc607ce4769
+parse.fs.entry.15.name=signin.xex
+parse.fs.entry.15.info=block=0x1F2 length=0x1A000 timestamp=0x5D3A7405 file=0x1A000 sha1:b135aad09174165b2e129700a8649d6f0aab3b8b
+parse.fs.entry.16.name=updater.xex
+parse.fs.entry.16.info=block=0x1F9 length=0x7000 timestamp=0x5D3A7405 file=0x7000 sha1:48c409fda2321e8c01c024b1319c5172be9d9174
+parse.fs.entry.17.name=vk.xex
+parse.fs.entry.17.info=block=0x1FB length=0xB000 timestamp=0x5D3A7405 file=0xB000 sha1:a5ec3c4a93f15298cc178d0bcf36d69e5aea0e52
+parse.fs.entry.18.name=xam.xex
+parse.fs.entry.18.info=block=0x1FE length=0x250000 timestamp=0x5D3A7405 file=0x250000 sha1:32eedaacc2c67efbe48c31ff9e63e634c026181e
+parse.fs.entry.19.name=xenonclatin.xtt
+parse.fs.entry.19.info=block=0x292 length=0x11B000 timestamp=0x5D3A7405 file=0x11B000 sha1:4b639a429853e4e85357b1c7bc93ca48b5e4e221
+parse.fs.entry.20.name=xenonclatin.xttp1
+parse.fs.entry.20.info=block=0x2D9 length=0x18000 timestamp=0x5D3A7405 file=0x18000 sha1:4232347a84dd0e69d650ddfacd4896ed9d5795cf
+parse.fs.entry.21.name=xenonjklatin.xtt
+parse.fs.entry.21.info=block=0x2DF length=0x1A8000 timestamp=0x5D3A7405 file=0x1A8000 sha1:56a0817000e498752d60671f890417ce8a23633d
+parse.fs.entry.22.name=xenonjklatin.xttp1
+parse.fs.entry.22.info=block=0x349 length=0x7000 timestamp=0x5D3A7405 file=0x7000 sha1:4030d06c26f1ba03f5dfb23e600f5fa9d1d03014
+parse.fs.entry.23.name=ximecore.xex
+parse.fs.entry.23.info=block=0x34B length=0x17000 timestamp=0x5D3A7405 file=0x17000 sha1:0728d06309f3197d107ceab5827c7ccf53f386d0
+parse.fs.entry.24.name=ximedic.xex
+parse.fs.entry.24.info=block=0x351 length=0x90000 timestamp=0x5D3A7405 file=0x90000 sha1:95f3d68c0269c06a7d9ac5337af7b26e434b7c30
+parse.fs.entry.25.name=ximedic.xexp1
+parse.fs.entry.25.info=block=0x375 length=0x2800 timestamp=0x5D3A7405 file=0x2800 sha1:53e58bc7432e0c265964b9d1b25c9bdbfac70b17
+parse.fs.entry.26.name=crl.bin
+parse.fs.entry.26.info=block=0x376 length=0xA00 timestamp=0x5D3A7405 file=0xA00 sha1:591b877c261a6b592485b47a03eb2c0f0cb5bd49
+parse.fs.entry.27.name=dae.bin
+parse.fs.entry.27.info=block=0x377 length=0x7090 timestamp=0x5D3A7405 file=0x7090 sha1:a467136aa42cc68d539891e9da66cd74147d9281
+parse.fs.entry.28.name=extended.bin
+parse.fs.entry.28.info=block=0x379 length=0x4000 timestamp=0x5D3A7405 file=0x4000 sha1:36a41afb41c10d7fd069b564e5ae48930e798cac
+parse.fs.entry.29.name=secdata.bin
+parse.fs.entry.29.info=block=0x37A length=0x400 timestamp=0x5D3A7405 file=0x400 sha1:1cc01b137803b4383140e343489dcc941c146ec3
+parse.fs.serialize_root_block=0x4000 sha1:c983b5e8f1b233dd2caa0283d812ebf25172db80
+parse.payloads.xell=absent
+parse.payloads.fuses=absent
+parse.payloads.payload=absent
+parse.payloads.rebooter=absent
+parse.payloads.patchset=absent
+parse.stage.extra_cb.present=0
+parse.stage.extra_cd.present=0
+parse.raw_patches=0x0
+layout.update_slots_end=0x90000
+layout.patch_slot_offset=0x80000
+layout.active_payload_block_ranges=none
+layout.payload_layout=ok
+write.size=0x1080000
+write.sha256=fc7594ef86d4b1de37754c074a9303c0af0bd9050c41bbf30832670f56574197
+write.identity=0
+decrypt.driver_mode=NewSmall
+decrypt.block_count=0x400
+decrypt.preserve_layout=1
+decrypt.build_type=none
+decrypt.devkit_chain=0
+decrypt.header.magic=0xFF4F
+decrypt.header.version=0x760
+decrypt.header.pairing=0x0
+decrypt.header.flags=0x0
+decrypt.header.entrypoint=0x8000
+decrypt.header.size=0x70000
+decrypt.header.copyright=a920323030342d32303039204d6963726f736f667420436f72706f726174696f6e2e20416c6c207269676874732072657365727665642e00
+decrypt.header.hack_flags=0x0
+decrypt.header.boot_flags=0x0
+decrypt.header.reserved=00000000000000000000000000000000
+decrypt.header.kv_size=0x4000
+decrypt.header.cf_offset=0x70000
+decrypt.header.patch_slots=0x2
+decrypt.header.kv_version=0x712
+decrypt.header.kv_addr=0x4000
+decrypt.header.fs_addr=0x10000
+decrypt.header.smc_config_offset=0x0
+decrypt.header.smc_boot_size=0x3000
+decrypt.header.smc_boot_offset=0x1000
+decrypt.stage.CB_A.present=1
+decrypt.stage.CB_A.magic=0x4342
+decrypt.stage.CB_A.version=0x1A62
+decrypt.stage.CB_A.pairing=0x0
+decrypt.stage.CB_A.flags=0x1800
+decrypt.stage.CB_A.entrypoint=0x3E0
+decrypt.stage.CB_A.size=0x2000
+decrypt.stage.CB_A.data_size=0x1FF0
+decrypt.stage.CB_A.decrypted=1
+decrypt.stage.CB_A.is_decrypted=1
+decrypt.stage.CB_A.data_sha1=aca97167da3126bbf6fd5abd926c703ceb5c3a84
+decrypt.stage.CB_A.serialize_sha1=bd505aaf85feb0832219bb1d44faf33d2dd09f48
+decrypt.stage.CB_A.derived_key=1
+decrypt.stage.CB_A.perbox=1
+decrypt.stage.CB_A.perbox.lockdown_value=0x0
+decrypt.stage.CB_A.perbox.pairing_sha1=29e2dcfbb16f63bb0254df7585a15bb6fb5e927d
+decrypt.stage.CB_A.perbox.sha1=de8a847bff8c343d69b853a215e6ee775ef2ef96
+decrypt.stage.CB_X.present=0
+decrypt.stage.CB_B.present=1
+decrypt.stage.CB_B.magic=0x4342
+decrypt.stage.CB_B.version=0x1A62
+decrypt.stage.CB_B.pairing=0x0
+decrypt.stage.CB_B.flags=0x0
+decrypt.stage.CB_B.entrypoint=0x3E0
+decrypt.stage.CB_B.size=0x96C0
+decrypt.stage.CB_B.data_size=0x96B0
+decrypt.stage.CB_B.decrypted=1
+decrypt.stage.CB_B.is_decrypted=1
+decrypt.stage.CB_B.data_sha1=78efcf84fd0961990ca1f49886f581dbe0bf3f21
+decrypt.stage.CB_B.serialize_sha1=3f1632e65b232ee0e827cb39e504b137395e29f9
+decrypt.stage.CB_B.derived_key=1
+decrypt.stage.CB_B.perbox=1
+decrypt.stage.CB_B.perbox.lockdown_value=0x0
+decrypt.stage.CB_B.perbox.pairing_sha1=a5234c441ac9742434b9a33e1835fd4965dbb525
+decrypt.stage.CB_B.perbox.sha1=9c04d5ff38246a6b615b34de0987047007d71e22
+decrypt.stage.SC.present=0
+decrypt.stage.CD.present=1
+decrypt.stage.CD.magic=0x4344
+decrypt.stage.CD.version=0x1A62
+decrypt.stage.CD.pairing=0x0
+decrypt.stage.CD.flags=0x0
+decrypt.stage.CD.entrypoint=0x310
+decrypt.stage.CD.size=0x5080
+decrypt.stage.CD.data_size=0x4E20
+decrypt.stage.CD.decrypted=1
+decrypt.stage.CD.is_decrypted=1
+decrypt.stage.CD.data_sha1=6c074777f84a8db76cb94e8749e7875cbd3a1047
+decrypt.stage.CD.serialize_sha1=2de954d9bdfe8ed98a2b191abd1ed734fdadf6f7
+decrypt.stage.CD.derived_key=1
+decrypt.stage.CE.present=1
+decrypt.stage.CE.magic=0x4345
+decrypt.stage.CE.version=0x760
+decrypt.stage.CE.pairing=0x0
+decrypt.stage.CE.flags=0x0
+decrypt.stage.CE.entrypoint=0x0
+decrypt.stage.CE.size=0x5606A
+decrypt.stage.CE.data_size=0x56040
+decrypt.stage.CE.decrypted=1
+decrypt.stage.CE.is_decrypted=1
+decrypt.stage.CE.data_sha1=fd76dd90b5629cf21ce79d7535fd964bfd7660ff
+decrypt.stage.CE.serialize_sha1=748a97900900d3667b5bd9dbba36f54cc3816fb5
+decrypt.stage.CF0.present=1
+decrypt.stage.CF0.magic=0x4346
+decrypt.stage.CF0.version=0x4497
+decrypt.stage.CF0.pairing=0x0
+decrypt.stage.CF0.flags=0x4000
+decrypt.stage.CF0.entrypoint=0x360
+decrypt.stage.CF0.size=0x4560
+decrypt.stage.CF0.data_size=0x4530
+decrypt.stage.CF0.decrypted=1
+decrypt.stage.CF0.is_decrypted=1
+decrypt.stage.CF0.data_sha1=2bd436b0c27adaed22641ce84475334fea11d6ea
+decrypt.stage.CF0.serialize_sha1=2e0f8e93c288131cbc73f661859ead5931c898d2
+decrypt.stage.CF0.perbox=1
+decrypt.stage.CF0.perbox.lockdown_value=0x1A
+decrypt.stage.CF0.perbox.pairing_sha1=a5234c441ac9742434b9a33e1835fd4965dbb525
+decrypt.stage.CF0.perbox.sha1=2bb2e69dc4bf46a3d573000ab06066870f19b507
+decrypt.stage.CG0.present=1
+decrypt.stage.CG0.magic=0x4347
+decrypt.stage.CG0.version=0x4497
+decrypt.stage.CG0.pairing=0x0
+decrypt.stage.CG0.flags=0x0
+decrypt.stage.CG0.entrypoint=0x0
+decrypt.stage.CG0.size=0x77A76
+decrypt.stage.CG0.data_size=0x77A30
+decrypt.stage.CG0.decrypted=1
+decrypt.stage.CG0.is_decrypted=1
+decrypt.stage.CG0.data_sha1=2223f9e181d672d366274cd8cb133d2cd021fc40
+decrypt.stage.CG0.serialize_sha1=289cb8de0f3b1742a915e749bd7a5aa9e1d432fd
+decrypt.stage.CF1.present=0
+decrypt.stage.CG1.present=0
+decrypt.cg_spill_blocks.0=0x24,0x25,0x26,0x27,0x28,0x29,0x2A,0x2B,0x2C,0x2D,0x2E,0x2F,0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x3A,0x3B,0x3C,0x3D,0x3E
+decrypt.cg_spill_blocks.1=none
+decrypt.smc.present=1
+decrypt.smc.encrypted=0
+decrypt.smc.motherboard=Jasper
+decrypt.smc.version=4.1.2
+decrypt.smc.variant=Retail
+decrypt.smc.size=0x3000
+decrypt.smc.data_sha1=872468a38c42c4d340755e00389c089f06cf2143
+decrypt.smc.has_jtag_mark=0
+decrypt.smc.is_encrypted_bytes=0
+decrypt.smc.get_type=Retail
+decrypt.keyvault.present=1
+decrypt.keyvault.encrypted=0
+decrypt.keyvault.raw_size=0x4000
+decrypt.keyvault.raw_sha1=7b4e01d5977dbf8deafdb6e1544b8bced42e2f42
+decrypt.keyvault.serialize_sha1=7b4e01d5977dbf8deafdb6e1544b8bced42e2f42
+decrypt.keyvault.serial_sha1=726da040fadb3726af052810dbc844b8880ec999
+decrypt.keyvault.region=0xFF
+decrypt.keyvault.console_id_sha1=caa86299b56ecaa955c46125beeb8db5ce2bf912
+decrypt.keyvault.mfr_date_sha1=f29154ca2e0a77b7db65d5c76cdda219c6a7eba9
+decrypt.keyvault.osig_sha1=2eac0913fbe4524e5919ac0bc937e1db430f3ca8
+decrypt.keyvault.odd_features=0x0
+decrypt.keyvault.fcrt_requirement=NotRequired
+decrypt.smc_config=0x400 sha1:dabee46a9273e1496be769425d5f1722524e3831
+decrypt.statistics=0x1000 sha1:e0c66649d1434eca3435033a32634cb90cef0f31
+decrypt.manufacturing=0x1000 sha1:e0c66649d1434eca3435033a32634cb90cef0f31
+decrypt.corona_config.present=0
+decrypt.mobile.present=0
+decrypt.fs.present=1
+decrypt.fs.version=0x1
+decrypt.fs.root_block=0x37B
+decrypt.fs.has_root=1
+decrypt.fs.timestamp=0x0
+decrypt.fs.blockmap_entries=0x400
+decrypt.fs.blockmap_sha1=50bf69158c62be8f4456cf1a063ae46e1449a976
+decrypt.fs.entries=0x1E
+decrypt.fs.entry.0.name=sysupdate.xexp1
+decrypt.fs.entry.0.info=block=0x24 length=0x6BFE0 timestamp=0x5D3A7405 file=0x6BFE0 sha1:5d4d4bf1af018eea1e3078cfe2c582ae36c5b060
+decrypt.fs.entry.1.name=aac.xexp1
+decrypt.fs.entry.1.info=block=0x3F length=0x14000 timestamp=0x5D3A7405 file=0x14000 sha1:600b902eede2e7a66c82600ad95305ac37eb5f35
+decrypt.fs.entry.2.name=bootanim.xex
+decrypt.fs.entry.2.info=block=0x44 length=0x61000 timestamp=0x5D3A7405 file=0x61000 sha1:3c1bf1edc06a385455e74876c3aa28280e8f363c
+decrypt.fs.entry.3.name=createprofile.xex
+decrypt.fs.entry.3.info=block=0x5D length=0xC000 timestamp=0x5D3A7405 file=0xC000 sha1:3583aaa574eb64007d0d3967eff0785d22a85633
+decrypt.fs.entry.4.name=dash.xex
+decrypt.fs.entry.4.info=block=0x60 length=0x5B2000 timestamp=0x5D3A7405 file=0x5B2000 sha1:3d44ef57781c20669705cd687e3b62b1c2f1ff6b
+decrypt.fs.entry.5.name=deviceselector.xex
+decrypt.fs.entry.5.info=block=0x1CD length=0xA000 timestamp=0x5D3A7405 file=0xA000 sha1:87581dce29bbbe9232a24ec5ef965f947a3ef186
+decrypt.fs.entry.6.name=gamerprofile.xex
+decrypt.fs.entry.6.info=block=0x1D0 length=0x1B000 timestamp=0x5D3A7405 file=0x1B000 sha1:d2eaaa5c3b5b85ba98252d93b80c0521047d71e6
+decrypt.fs.entry.7.name=hud.xex
+decrypt.fs.entry.7.info=block=0x1D7 length=0x1D000 timestamp=0x5D3A7405 file=0x1D000 sha1:b0ab65e560b674739821e54c3c8b6be9d6579c4a
+decrypt.fs.entry.8.name=huduiskin.xex
+decrypt.fs.entry.8.info=block=0x1DF length=0x14000 timestamp=0x5D3A7405 file=0x14000 sha1:45203d5b26b952436ed86a3c791610c9f61a7b04
+decrypt.fs.entry.9.name=mfgbootlauncher.xex
+decrypt.fs.entry.9.info=block=0x1E4 length=0x8000 timestamp=0x5D3A7405 file=0x8000 sha1:d8056c3eefd6e74c92f3ab90d872f88da05ec1b1
+decrypt.fs.entry.10.name=minimediaplayer.xex
+decrypt.fs.entry.10.info=block=0x1E6 length=0xC000 timestamp=0x5D3A7405 file=0xC000 sha1:903c1213b962660fe9837de14ba2a4a8fbdf63bf
+decrypt.fs.entry.11.name=nomni.xexp1
+decrypt.fs.entry.11.info=block=0x1E9 length=0xF000 timestamp=0x5D3A7405 file=0xF000 sha1:9946ae6c431bcd1966e4808191d7578cce66c732
+decrypt.fs.entry.12.name=nomnifwk.xexp1
+decrypt.fs.entry.12.info=block=0x1ED length=0x2000 timestamp=0x5D3A7405 file=0x2000 sha1:eda45c26077b067b541359e6e62f70b0668e5b12
+decrypt.fs.entry.13.name=nomnifwm.xexp1
+decrypt.fs.entry.13.info=block=0x1EE length=0x5000 timestamp=0x5D3A7405 file=0x5000 sha1:ca76a96835f8709d588dbc47f5fe83749f455356
+decrypt.fs.entry.14.name=SegoeXbox-Light.xtt
+decrypt.fs.entry.14.info=block=0x1F0 length=0x6000 timestamp=0x5D3A7405 file=0x6000 sha1:1553e1172c83db7edc563f3c318e9fc607ce4769
+decrypt.fs.entry.15.name=signin.xex
+decrypt.fs.entry.15.info=block=0x1F2 length=0x1A000 timestamp=0x5D3A7405 file=0x1A000 sha1:b135aad09174165b2e129700a8649d6f0aab3b8b
+decrypt.fs.entry.16.name=updater.xex
+decrypt.fs.entry.16.info=block=0x1F9 length=0x7000 timestamp=0x5D3A7405 file=0x7000 sha1:48c409fda2321e8c01c024b1319c5172be9d9174
+decrypt.fs.entry.17.name=vk.xex
+decrypt.fs.entry.17.info=block=0x1FB length=0xB000 timestamp=0x5D3A7405 file=0xB000 sha1:a5ec3c4a93f15298cc178d0bcf36d69e5aea0e52
+decrypt.fs.entry.18.name=xam.xex
+decrypt.fs.entry.18.info=block=0x1FE length=0x250000 timestamp=0x5D3A7405 file=0x250000 sha1:32eedaacc2c67efbe48c31ff9e63e634c026181e
+decrypt.fs.entry.19.name=xenonclatin.xtt
+decrypt.fs.entry.19.info=block=0x292 length=0x11B000 timestamp=0x5D3A7405 file=0x11B000 sha1:4b639a429853e4e85357b1c7bc93ca48b5e4e221
+decrypt.fs.entry.20.name=xenonclatin.xttp1
+decrypt.fs.entry.20.info=block=0x2D9 length=0x18000 timestamp=0x5D3A7405 file=0x18000 sha1:4232347a84dd0e69d650ddfacd4896ed9d5795cf
+decrypt.fs.entry.21.name=xenonjklatin.xtt
+decrypt.fs.entry.21.info=block=0x2DF length=0x1A8000 timestamp=0x5D3A7405 file=0x1A8000 sha1:56a0817000e498752d60671f890417ce8a23633d
+decrypt.fs.entry.22.name=xenonjklatin.xttp1
+decrypt.fs.entry.22.info=block=0x349 length=0x7000 timestamp=0x5D3A7405 file=0x7000 sha1:4030d06c26f1ba03f5dfb23e600f5fa9d1d03014
+decrypt.fs.entry.23.name=ximecore.xex
+decrypt.fs.entry.23.info=block=0x34B length=0x17000 timestamp=0x5D3A7405 file=0x17000 sha1:0728d06309f3197d107ceab5827c7ccf53f386d0
+decrypt.fs.entry.24.name=ximedic.xex
+decrypt.fs.entry.24.info=block=0x351 length=0x90000 timestamp=0x5D3A7405 file=0x90000 sha1:95f3d68c0269c06a7d9ac5337af7b26e434b7c30
+decrypt.fs.entry.25.name=ximedic.xexp1
+decrypt.fs.entry.25.info=block=0x375 length=0x2800 timestamp=0x5D3A7405 file=0x2800 sha1:53e58bc7432e0c265964b9d1b25c9bdbfac70b17
+decrypt.fs.entry.26.name=crl.bin
+decrypt.fs.entry.26.info=block=0x376 length=0xA00 timestamp=0x5D3A7405 file=0xA00 sha1:591b877c261a6b592485b47a03eb2c0f0cb5bd49
+decrypt.fs.entry.27.name=dae.bin
+decrypt.fs.entry.27.info=block=0x377 length=0x7090 timestamp=0x5D3A7405 file=0x7090 sha1:a467136aa42cc68d539891e9da66cd74147d9281
+decrypt.fs.entry.28.name=extended.bin
+decrypt.fs.entry.28.info=block=0x379 length=0x4000 timestamp=0x5D3A7405 file=0x4000 sha1:36a41afb41c10d7fd069b564e5ae48930e798cac
+decrypt.fs.entry.29.name=secdata.bin
+decrypt.fs.entry.29.info=block=0x37A length=0x400 timestamp=0x5D3A7405 file=0x400 sha1:1cc01b137803b4383140e343489dcc941c146ec3
+decrypt.fs.serialize_root_block=0x4000 sha1:c983b5e8f1b233dd2caa0283d812ebf25172db80
+decrypt.payloads.xell=absent
+decrypt.payloads.fuses=absent
+decrypt.payloads.payload=absent
+decrypt.payloads.rebooter=absent
+decrypt.payloads.patchset=absent
+decrypt.stage.extra_cb.present=0
+decrypt.stage.extra_cd.present=0
+decrypt.raw_patches=0x0
+roundtrip.encrypt_build_type=Retail
+roundtrip.size=0x1080000
+roundtrip.sha256=ce5ce7839bae10f3969ebc422518c480bc133fd3e9529aaceec481ac96571944
+roundtrip.identity=0
+info.keyvault.present=1
+info.keyvault.decrypted=1
+info.keyvault.serial_number_sha1=726da040fadb3726af052810dbc844b8880ec999
+info.keyvault.dvd_key_sha1=46018c81440e43ca84cd2cf1e3b073db6bebed32
+info.keyvault.console_id_raw_sha1=206449835d5dbba8a24cc653ee1ec3d0b1e2a464
+info.keyvault.console_id_friendly_sha1=88849aef19f3272aa3a1e2ee04a64dcb018280ef
+info.keyvault.osig_sha1=2eac0913fbe4524e5919ac0bc937e1db430f3ca8
+info.keyvault.mfr_date_sha1=f29154ca2e0a77b7db65d5c76cdda219c6a7eba9
+info.keyvault.region_name=NTSC/US
+info.keyvault.region_raw=0xFF
+info.keyvault.kv_type=0x2
+info.keyvault.fcrt_required=0
+info.raw_keyvault=0x4000 sha1:7b4e01d5977dbf8deafdb6e1544b8bced42e2f42
+info.smc.present=1
+info.smc.decrypted=1
+info.smc.version=4.1.2
+info.smc.motherboard_name=Jasper
+info.smc.type_name=Retail
+info.smc.size=0x3000
+info.flashfs.present=1
+info.flashfs.files=0x1E
+info.image_info.serial_match=1
+info.image_info.console_id_match=1

@@ -53,6 +53,7 @@ install_manifest.txt
 compile_commands.json
 
 # Temporary files
+/_temp/
 *.tmp
 *.log
 *.bak
@@ -64,13 +65,22 @@ vcpkg_installed/
 # debug information files
 *.dwo
 
-# test output & cache
-Testing/
 .cache/
 
-testdata
-gxbuild3_code_review.md
-parser.rs
+# flashimage test artifacts
+/tests/gxBuild-support-files/*.log
+/tests/gxBuild-support-files/17559_*.bin
+/tests/gxBuild-support-files/gxbuild
 
+# AI
+.qoder
+.superpowers
+AGENTS.md
+
+# Other
 logs
 gxbuild3
+_*.md
+*_.md
+*.json
+extra

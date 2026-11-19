@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Error.hpp"
+
 #include <cassert>
 #include <concepts>
 #include <cstdint>
@@ -7,32 +9,28 @@
 #include <fstream>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "Endian.hpp"
-
-namespace fs = std::filesystem;
-
 namespace gxbuild3::utils {
 
-    std::vector<uint8_t> hex_string_to_bytes(const std::string& hex_string);
+    namespace fs = std::filesystem;
 
-    std::optional<std::vector<uint8_t>> read_file(const fs::path& path);
-    std::optional<std::vector<uint8_t>> read_file(const fs::path& path, size_t max_length);
+    std::string bytes_to_hex(std::span<const uint8_t> bytes);
 
-    bool write_file(const fs::path& path, const std::vector<uint8_t>& data);
-    bool write_file(const fs::path& path, const uint8_t* data, size_t length);
+    // Reads a whole file. A missing file fails with NotFound, any other failure with IoError;
+    // the message carries the path and the OS reason.
+    [[nodiscard]] Result<std::vector<uint8_t>> read_file(const fs::path& path);
+    // As read_file, truncating the returned bytes to at most max_length.
+    [[nodiscard]] Result<std::vector<uint8_t>> read_file(const fs::path& path, size_t max_length);
 
-    bool directory_exists(const fs::path& path);
-    bool create_directory(const fs::path& path);
+    // Writes data to path, creating missing parent directories first. Fails with IoError.
+    [[nodiscard]] Result<void> write_file(const fs::path& path, const std::vector<uint8_t>& data);
 
-    std::optional<std::vector<fs::path>> list_files(const fs::path& path);
-    std::optional<std::vector<fs::path>> list_files_recursive(const fs::path& path);
+    [[nodiscard]] bool directory_exists(const fs::path& path);
+    // Creates path and any missing parents; an existing directory is a success.
+    [[nodiscard]] Result<void> create_directory(const fs::path& path);
 
 } // namespace gxbuild3::utils
-
-namespace Utils {
-    using namespace gxbuild3::utils;
-}

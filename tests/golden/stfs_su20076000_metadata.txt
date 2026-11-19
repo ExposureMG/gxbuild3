@@ -1,0 +1,43 @@
+magic PIRS
+signature live
+signature.package_signature.sha1 c09fb0eab23ea1a0ec449ee3f7f0c3e35b2e3aaf
+signature.padding.sha1 50f73ed0787bf5911bb907e487efbc84a9714e48
+license_entries.count 1
+license_entries[0] id=0xFFFFFFFFFFFFFFFF bits=0x00000000 flags=0x00000000
+header_sha1.sha1 bf32fcb4c6849320981f0357443283b348717544
+header_size 0x0000AD0E
+content_type 0x000B0000
+metadata_version 0
+content_size 0x0000000000B45000
+media_id 0x00000000
+version 0x20076000
+base_version 0x20076000
+title_id 0xFFFE07D1
+platform 0
+executable_type 0
+disc_number 0
+disc_in_set 0
+save_game_id 0x00000000
+console_id 0000000000
+profile_id 0000000000000000
+descriptor_type 0
+stfs.size 0x24
+stfs.block_separation 0x01
+stfs.file_table_block_count 1
+stfs.file_table_block_number 0
+stfs.top_hash_table_hash 0f7467376906be24746f11784e625a29e3652d16
+stfs.total_allocated_block_count 2867
+stfs.total_unallocated_block_count 0
+data_file_count 0
+data_file_combined_size 0x0000000000000000
+v2_extra absent
+device_id.sha1 6768033e216468247bd031a0a2d9876d79818f8f
+display_name "System Update"
+display_description ""
+publisher_name ""
+title_name ""
+transfer_flags 0x00
+thumbnail_image_size 0
+title_thumbnail_image_size 0
+thumbnail_image size=0x0 sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+title_thumbnail_image size=0x0 sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709

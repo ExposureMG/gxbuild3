@@ -1,39 +1,15 @@
 #pragma once
 
-#include "Args.hpp"
+#include "Error.hpp"
 
-#include <array>
-#include <expected>
+#include <cstdint>
 #include <filesystem>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <variant>
 #include <vector>
 
-namespace Ini {
-
-    enum class ParseError {
-        FileNotFound,
-        ReadError,
-        SectionNotFound,
-        MalformedEntry,
-    };
-
-    constexpr std::string_view ParseErrorString(ParseError e) {
-        switch (e) {
-            case ParseError::FileNotFound:
-                return "File not found";
-            case ParseError::ReadError:
-                return "Failed to read file";
-            case ParseError::SectionNotFound:
-                return "Section not found";
-            case ParseError::MalformedEntry:
-                return "Malformed entry";
-        }
-        return "Unknown";
-    }
+namespace gxbuild3::ini {
 
     struct Entry {
         std::string key;
@@ -48,31 +24,14 @@ namespace Ini {
         std::unordered_map<std::string, Section> sections;
 
         [[nodiscard]] const Section* get(std::string_view name) const;
-
-        [[nodiscard]] std::expected<const Section*, ParseError>
-        require(std::string_view name) const;
     };
 
-    [[nodiscard]] std::expected<Document, ParseError> Parse(std::string_view content);
-    [[nodiscard]] std::expected<Document, ParseError> ParseFile(const std::filesystem::path& path);
+    // Parsing is permissive: comments, entries before the first section and entries with an
+    // empty key are skipped rather than reported. Only real failures produce an Error.
+    [[nodiscard]] Result<Document> parse(std::string_view content);
 
-    enum class OptionsError {
-        BadFormat,
-    };
+    // Reads and parses an INI file. Fails with NotFound when the file does not exist and with
+    // IoError when it cannot be opened or read. The Error is returned, not logged.
+    [[nodiscard]] Result<Document> parse_file(const std::filesystem::path& path);
 
-    constexpr std::string_view OptionsErrorString(OptionsError e) {
-        switch (e) {
-            case OptionsError::BadFormat:
-                return "Incorrect formatting in options.ini";
-        }
-        return "Unknown";
-    }
-
-    void ApplyOption(OptionsArgs& options, std::string_view key, std::string_view value);
-
-    [[nodiscard]] std::expected<OptionsArgs, OptionsError> ParseOptionsIni(std::string_view content);
-
-    using OptionsResult = std::expected<OptionsArgs, std::variant<ParseError, OptionsError>>;
-    [[nodiscard]] OptionsResult ParseOptionsIniFile(const std::filesystem::path& path);
-
-} // namespace Ini
+} // namespace gxbuild3::ini

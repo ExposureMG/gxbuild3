@@ -1,117 +1,90 @@
 #include "nand/bootloaders/4bl.hpp"
 
-#include "utils/Log.hpp"
-#include "utils/Utils.hpp"
-#include "excrypt.h"
 #include "nand/bootloaders/BootloaderPacker.hpp"
+#include "nand/bootloaders/Stage.hpp"
+#include "utils/Log.hpp"
 
 #include <algorithm>
-#include <cstring>
-#include <stdexcept>
+#include <string_view>
+#include <utility>
 
-BootloaderCd BootloaderCd::parse(const std::vector<uint8_t>& bytes) {
-    BootloaderCd cd;
-    if (bytes.size() < sizeof(cd_header))
-        throw std::runtime_error("CD/4BL data too short");
+namespace gxbuild3::nand {
 
-    std::memcpy(&cd.header, bytes.data(), sizeof(cd_header));
+    namespace {
 
-    cd.header.header.magic = bswap16(cd.header.header.magic);
-    cd.header.header.version = bswap16(cd.header.header.version);
-    cd.header.header.flags = bswap16(cd.header.header.flags);
-    cd.header.header.size = bswap32(cd.header.header.size);
-    cd.header.header.entrypoint = bswap32(cd.header.header.entrypoint);
+        constexpr std::string_view kStage = "CD/4BL";
 
-    cd.data = std::vector<uint8_t>(bytes.begin() + sizeof(cd_header), bytes.end());
-    cd.decrypted = cd.is_decrypted();
-    Log::Debug("Parsed 4BL/CD: version={}, size=0x{:X}, entrypoint=0x{:08X}",
-               cd.header.header.version, cd.header.header.size, cd.header.header.entrypoint);
-    return cd;
-}
+    } // namespace
 
-void BootloaderCd::decrypt(const uint8_t cb_b_key[16]) {
-    if (decrypted)
-        return;
-    uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-    size_t required_data_size = size_aligned - sizeof(cd_header);
+    Result<BootloaderCd> BootloaderCd::parse(std::span<const uint8_t> bytes) {
+        auto parsed = stage::parse_stage<cd_header>(bytes, kStage);
+        if (!parsed)
+            return std::unexpected(std::move(parsed.error()));
 
-    if (data.size() + sizeof(cd_header) < header.header.size)
-        throw std::runtime_error("CD/4BL payload too short");
-
-    if (data.size() < required_data_size) {
-        data.resize(required_data_size, 0x00);
+        BootloaderCd cd;
+        cd.header = parsed->header;
+        cd.data = std::move(parsed->data);
+        cd.decrypted = cd.is_decrypted();
+        Log::Debug("Parsed 4BL/CD: version={}, size=0x{:X}, entrypoint=0x{:08X}",
+                   cd.header.header.version, cd.header.header.size, cd.header.header.entrypoint);
+        return cd;
     }
 
-    uint8_t cur_key[16];
-    std::memcpy(cur_key, cb_b_key, 16);
-
-    std::vector<uint8_t> buffer(sizeof(cd_header) + data.size());
-    cd_header temp_hdr = header;
-    std::memcpy(buffer.data(), &temp_hdr, sizeof(cd_header));
-    std::memcpy(buffer.data() + sizeof(cd_header), data.data(), data.size());
-
-    gxbuild3::bootloaders::crypt_single_bl(buffer, gxbuild3::bootloaders::HmacType::Default,
-                                           cur_key, nullptr, nullptr, 0x20);
-
-    std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
-                sizeof(cd_header) - 0x20);
-    std::memcpy(data.data(), buffer.data() + sizeof(cd_header), data.size());
-
-    decrypted = true;
-}
-
-void BootloaderCd::encrypt(const uint8_t cb_b_key[16]) {
-    if (!decrypted)
-        return;
-    uint32_t size_aligned = (header.header.size + 0xF) & ~0xF;
-    size_t required_data_size = size_aligned - sizeof(cd_header);
-    if (data.size() < required_data_size) {
-        data.resize(required_data_size, 0x00);
+    Result<void> BootloaderCd::crypt_stage(const uint8_t parent_key[16],
+                                           const uint8_t cpu_key[16]) {
+        // With a CPU key the CD key is bound to the console: HMAC(cpu_key, HMAC(parent, nonce)).
+        const auto hmac_type = cpu_key ? HmacType::Hmac1920 : HmacType::Default;
+        auto key =
+            stage::crypt_stage_record(header, data, hmac_type, parent_key, cpu_key, 0x20, kStage);
+        if (!key)
+            return std::unexpected(std::move(key.error()));
+        derived_key = *key;
+        return {};
     }
 
-    bool is_zero = true;
-    for (size_t i = 0; i < 16; ++i) {
-        if (header.key[i] != 0) {
-            is_zero = false;
-            break;
-        }
+    Result<void> BootloaderCd::decrypt(const uint8_t parent_key[16], const uint8_t cpu_key[16]) {
+        if (decrypted)
+            return {};
+        auto payload_size = stage::stage_payload_size(header, kStage);
+        if (!payload_size)
+            return std::unexpected(std::move(payload_size.error()));
+
+        if (data.size() + sizeof(cd_header) < header.header.size)
+            return fail(ErrorCode::Truncated, "CD/4BL payload too short");
+
+        stage::pad_payload(data, *payload_size);
+
+        if (auto crypted = crypt_stage(parent_key, cpu_key); !crypted)
+            return crypted;
+        decrypted = true;
+        return {};
     }
-    if (is_zero) {
-        ExCryptRandom(header.key, 16);
+
+    Result<void> BootloaderCd::encrypt(const uint8_t parent_key[16], const uint8_t cpu_key[16]) {
+        if (!decrypted)
+            return {};
+        auto payload_size = stage::stage_payload_size(header, kStage);
+        if (!payload_size)
+            return std::unexpected(std::move(payload_size.error()));
+        stage::pad_payload(data, *payload_size);
+
+        stage::randomize_zero_nonce(header.key);
+
+        if (auto crypted = crypt_stage(parent_key, cpu_key); !crypted)
+            return crypted;
+        decrypted = false;
+        return {};
     }
 
-    uint8_t cur_key[16];
-    std::memcpy(cur_key, cb_b_key, 16);
+    bool BootloaderCd::is_decrypted() const {
+        // A sealed CD is told from a plaintext one by its 6BL salt, which only a plaintext CD
+        // shows as the ROM constant. The first nonce byte and the CE hash are ciphertext in a
+        // sealed CD, so testing them mistook about 1 in 256 sealed CDs for plaintext.
+        return decrypted || std::ranges::equal(header.salt_6bl, kRomSalt6bl);
+    }
 
-    std::vector<uint8_t> buffer(sizeof(cd_header) + data.size());
-    cd_header temp_hdr = header;
-    std::memcpy(buffer.data(), &temp_hdr, sizeof(cd_header));
-    std::memcpy(buffer.data() + sizeof(cd_header), data.data(), data.size());
+    std::vector<uint8_t> BootloaderCd::serialize() const {
+        return stage::serialize_stage(header, data);
+    }
 
-    gxbuild3::bootloaders::crypt_single_bl(buffer, gxbuild3::bootloaders::HmacType::Default,
-                                           cur_key, nullptr, nullptr, 0x20);
-
-    std::memcpy(reinterpret_cast<uint8_t*>(&header) + 0x20, buffer.data() + 0x20,
-                sizeof(cd_header) - 0x20);
-    std::memcpy(data.data(), buffer.data() + sizeof(cd_header), data.size());
-
-    decrypted = false;
-}
-
-bool BootloaderCd::is_decrypted() const {
-    return decrypted || (header.cg_key[0] == 0x00 && header.ce_hash[0] != 0x00);
-}
-
-std::vector<uint8_t> BootloaderCd::serialize() const {
-    std::vector<uint8_t> out(sizeof(cd_header));
-    cd_header temp_hdr = header;
-    temp_hdr.header.magic = bswap16(temp_hdr.header.magic);
-    temp_hdr.header.version = bswap16(temp_hdr.header.version);
-    temp_hdr.header.flags = bswap16(temp_hdr.header.flags);
-    temp_hdr.header.size = bswap32(temp_hdr.header.size);
-    temp_hdr.header.entrypoint = bswap32(temp_hdr.header.entrypoint);
-
-    std::memcpy(out.data(), &temp_hdr, sizeof(cd_header));
-    out.insert(out.end(), data.begin(), data.end());
-    return out;
-}
+} // namespace gxbuild3::nand

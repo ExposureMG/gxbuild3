@@ -1,4 +1,5 @@
 #include "nand/objects/XeLL.hpp"
+
 #include "utils/Log.hpp"
 
 #include <algorithm>
@@ -6,7 +7,7 @@
 #include <cstring>
 #include <string_view>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
     namespace {
 
@@ -49,7 +50,7 @@ namespace gxbuild3::NAND {
                     if (i > 0) {
                         size_t v_end = i;
                         while (v_end > 0 &&
-                                std::isspace(static_cast<unsigned char>(raw[v_end - 1]))) {
+                               std::isspace(static_cast<unsigned char>(raw[v_end - 1]))) {
                             --v_end;
                         }
                         size_t v_start = v_end;
@@ -99,27 +100,31 @@ namespace gxbuild3::NAND {
 
     } // namespace
 
-    std::optional<XeLL> XeLL::parse(std::span<const uint8_t> bytes) {
+    Result<XeLL> XeLL::parse(std::span<const uint8_t> bytes) {
         if (bytes.size() != kSize) {
-            return std::nullopt;
+            return fail(bytes.size() < kSize ? ErrorCode::Truncated : ErrorCode::OutOfRange,
+                        "XeLL is 0x{:X} bytes, expected 0x{:X}", bytes.size(), kSize);
         }
 
-        auto it =
-            std::search(bytes.begin(), bytes.end(), std::begin(kElfMagic), std::end(kElfMagic));
-        if (it == bytes.end()) {
-            return std::nullopt;
+        // NAND XeLL starts with PPC exception-vector branches, not an ELF container.
+        constexpr uint8_t raw_entry[] = {0x48, 0, 0, 0x20, 0x48, 0, 0, 0xEC,
+                                         0x48, 0, 0, 0,    0x48, 0, 0, 0};
+        if (!std::equal(std::begin(raw_entry), std::end(raw_entry), bytes.begin()) &&
+            !std::equal(std::begin(kElfMagic), std::end(kElfMagic), bytes.begin())) {
+            return fail(ErrorCode::Malformed,
+                        "XeLL starts with neither the exception vectors nor an ELF header");
         }
 
         XeLL xell;
         xell.data.assign(bytes.begin(), bytes.end());
         extract_metadata(bytes, xell.metadata);
-        Log::Debug("Parsed XeLL: version='{}', author='{}', date='{}'",
-                   xell.metadata.version, xell.metadata.author, xell.metadata.date);
+        Log::Debug("Parsed XeLL: version='{}', author='{}', date='{}'", xell.metadata.version,
+                   xell.metadata.author, xell.metadata.date);
         return xell;
     }
 
-    std::optional<XeLL> XeLL::parse(const std::vector<uint8_t>& bytes) {
+    Result<XeLL> XeLL::parse(const std::vector<uint8_t>& bytes) {
         return parse(std::span<const uint8_t>(bytes.data(), bytes.size()));
     }
 
-} // namespace gxbuild3::NAND
+} // namespace gxbuild3::nand

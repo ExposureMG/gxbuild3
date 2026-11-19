@@ -1,172 +1,189 @@
 #pragma once
 
+#include "Error.hpp"
+#include "Wire.hpp"
 #include "excrypt.h"
 #include "exkeys.h"
 
 #include <array>
+#include <cstddef>
+#include <limits>
 #include <optional>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string_view>
+#include <utility>
 #include <vector>
 
-void ExCryptRandom(uint8_t* dest, size_t size);
+namespace gxbuild3::nand {
 
-inline constexpr uint8_t key_1bl[0x10] = {0xDD, 0x88, 0xAD, 0x0C, 0x9E, 0xD6, 0x69, 0xE7,
-                                          0xB5, 0x67, 0x94, 0xFB, 0x68, 0x56, 0x3E, 0xFA};
+    void ExCryptRandom(uint8_t* dest, size_t size);
 
-inline constexpr uint8_t rsa_1bl[0x110] = {
-    0x00, 0x00, 0x00, 0x20,
-    0x00, 0x01, 0x00, 0x01,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0xE9, 0x8D, 0xB5, 0xDC, 0xAF, 0x38, 0x8E, 0xF1, 0x38, 0x9E, 0x28, 0xCB, 0x4A, 0x11, 0xC8, 0x22,
-    0x52, 0xE1, 0x1F, 0x53, 0x45, 0x56, 0x60, 0xA2, 0x52, 0xD4, 0xD1, 0x68, 0x4E, 0xCC, 0x80, 0x99,
-    0xD7, 0x5C, 0x40, 0xC5, 0xAF, 0x73, 0x0C, 0xCF, 0x44, 0x06, 0xB0, 0x6D, 0x16, 0x91, 0x08, 0x38,
-    0xB3, 0x00, 0x2D, 0xBC, 0xEB, 0x1D, 0x0C, 0x1D, 0xC5, 0xC6, 0x68, 0x0B, 0x80, 0x4C, 0x62, 0x0B,
-    0x7E, 0xE8, 72, 0x0C, 0xCF, 0x1D, 0xB4, 0xBD, 0xEE, 0x4B, 0x11, 0x36, 0xD1, 0xC9, 0x92, 0x1F,
-    0xE9, 0xAE, 0xC0, 0x51, 0x52, 0x51, 0xF7, 0x23, 0xD6, 0xBC, 0xF4, 0xE9, 0x58, 0x87, 0x40, 0xB1,
-    0x02, 0x66, 0x5A, 0x43, 0xEB, 0x67, 0x5F, 0x50, 0x94, 0x32, 0x34, 0x7A, 0xA7, 0x50, 0xD9, 0xB4,
-    0x14, 0x4E, 0xB0, 0x02, 0x31, 0x8B, 0xA7, 0x00, 0x9A, 0x12, 0xC8, 0x3B, 0x8F, 0x76, 0xE4, 0x8F,
-    0x33, 0xB5, 0xCD, 0x0C, 0x24, 0x6D, 0x2A, 0xE5, 0x57, 0xA0, 0x44, 0x76, 0x78, 0x41, 0xF4, 0x8F,
-    0xCB, 0x3A, 0xB5, 0x0E, 0xA1, 0xA2, 0x56, 0x6D, 0x17, 0xDB, 0x32, 0xCC, 0xB8, 0x5A, 0x5F, 0xAE,
-    0xED, 0x9A, 0x62, 0x31, 0x5D, 0x88, 0x7F, 0x6D, 0x9A, 0x53, 0x80, 0xB0, 0x34, 0xC7, 0x42, 0x51,
-    0x2D, 0x94, 0x4D, 0x86, 0x09, 0x32, 0x8F, 0x71, 0xA7, 0xBA, 0x16, 0x6C, 0xE6, 0xDC, 0x6B, 0x64,
-    0x61, 0x7D, 0x16, 0xB5, 0x20, 0x51, 0xD0, 0xB1, 0x1F, 0xFE, 0x1E, 0x35, 0x56, 0x9A, 0x76, 0x4D,
-    0x62, 0x7F, 0x5D, 0xF4, 0xB8, 0x7D, 0xC4, 0x18, 0x2C, 0x81, 0xB7, 0xAF, 0xE4, 0x7D, 0x13, 0x5D,
-    0xF4, 0x0F, 0x63, 0x05, 0x3F, 0x1A, 0xED, 0xED, 0x4B, 0xEE, 0xFD, 0x6D, 0x74, 0xE6, 0xA5, 0x92,
-    0xA7, 0x99, 0x81, 0x73, 0x95, 0xD8, 0xC7, 0xA5, 0xA1, 0xC7, 0x7B, 0x09, 0x05, 0x85, 0x41, 0x04};
+    inline constexpr uint8_t key_1bl[0x10] = {0xDD, 0x88, 0xAD, 0x0C, 0x9E, 0xD6, 0x69, 0xE7,
+                                              0xB5, 0x67, 0x94, 0xFB, 0x68, 0x56, 0x3E, 0xFA};
 
-enum NANDBootloaderMagic : uint16_t {
-    FlashHeader = 0xFF4F,
-    _1BL = 0x0341,
-    CB = 0x4342,
-    CD = 0x4344,
-    CE = 0x4345,
-    CF = 0x4346,
-    CG = 0x4347,
-    SB = 0x5342,
-    SC = 0x5343,
-    SD = 0x5344,
-    SE = 0x5345,
-    SF = 0x5346,
-    SG = 0x5347
-};
+    enum NANDBootloaderMagic : uint16_t {
+        FlashHeader = 0xFF4F,
+        _1BL = 0x0341,
+        CB = 0x4342,
+        CD = 0x4344,
+        CE = 0x4345,
+        CF = 0x4346,
+        CG = 0x4347,
+        SB = 0x5342,
+        SC = 0x5343,
+        SD = 0x5344,
+        SE = 0x5345,
+        SF = 0x5346,
+        SG = 0x5347
+    };
 
-#pragma pack(push, 1)
+    // Bootloader stage records are wire structs (include/Wire.hpp): they hold their numeric fields
+    // in on-disk big-endian order, so sizeof and offsetof are the on-disk layout and a stage header
+    // is serialized by copying its bytes.
+    struct generic_header {
+        wire::be16 magic;
+        wire::be16 version;
+        wire::be16 pairing;
+        wire::be16 flags;
+        wire::be32 entrypoint;
+        wire::be32 size;
+    };
+    static_assert(wire::WireLayout<generic_header>);
 
-typedef struct generic_header {
-    uint16_t magic;
-    uint16_t version;
-    uint16_t pairing;
-    uint16_t flags;
-    uint32_t entrypoint;
-    uint32_t size;
-} generic_header;
+    struct cb_perbox {
+        uint8_t pairing_data[3];
+        uint8_t lockdown_value;
+        uint8_t reserved[0xC];
+        uint8_t per_box_digest[0x10];
+    };
+    static_assert(wire::WireLayout<cb_perbox>);
 
-typedef struct _cb_perbox {
-    uint8_t pairing_data[3];
-    uint8_t lockdown_value;
-    uint8_t reserved[0xC];
-    uint8_t per_box_digest[0x10];
-} cb_perbox;
+    struct ConsoleTypeSeqAllow {
+        uint8_t console_type;
+        uint8_t console_sequence;
+        wire::be16 console_sequence_allow;
+    };
+    static_assert(wire::WireLayout<ConsoleTypeSeqAllow>);
 
-typedef struct _console_type_seq_allow {
-    uint8_t console_type;
-    uint8_t console_sequence;
-    uint16_t console_sequence_allow;
+    struct cb_header {
+        generic_header header;
+        uint8_t key[0x10];
+        uint8_t padding_or_args[0x20];
+        uint8_t signature[0x100];
+        uint8_t globals[0x128];
+        uint8_t dev_pub_key[0x110];
+        uint8_t nonce_3bl[0x10];
+        char salt_3bl[10];
+        char salt_4bl[10];
+        uint8_t next_hash[0x14];
+        ConsoleTypeSeqAllow console_seq_allow;
+        uint8_t reserved[0xC];
+    };
+    static_assert(wire::WireLayout<cb_header>);
 
-    [[nodiscard]] bool console_type_is_allowed(uint64_t fuseline) const noexcept {
-        if ((fuseline & 0xF) == 0) {
-            return console_type == 0;
+    struct sc_header {
+        generic_header header;
+        uint8_t key[0x10];
+        uint8_t signature[0x100];
+    };
+    static_assert(wire::WireLayout<sc_header>);
+
+    // The salt a CD stores at 0x240 for the 6BL key derivation. It lies in the encrypted part of
+    // the stage, so it reads as this constant only in a plaintext CD (the 42 tracked plaintext
+    // CD/SD images all carry it; ciphertext matches it with probability 2^-80).
+    inline constexpr std::array<char, 10> kRomSalt6bl{'X', 'B', 'O', 'X', '_',
+                                                      'R', 'O', 'M', '_', '6'};
+
+    struct cd_header {
+        generic_header header;
+        uint8_t key[0x10];
+        uint8_t signature[0x100];
+        uint8_t rsa_pub_key[0x110];
+        uint8_t nonce_6bl[0x10];
+        char salt_6bl[10];
+        wire::be16 padding;
+        uint8_t ce_hash[0x14];
+    };
+    static_assert(wire::WireLayout<cd_header>);
+
+    struct ce_header {
+        generic_header header;
+        uint8_t key[0x10];
+        wire::be64 address;
+        wire::be32 size;
+        wire::be32 padding;
+    };
+    static_assert(wire::WireLayout<ce_header>);
+
+    struct cf_perbox {
+        uint8_t reserved_per_box[0x2B];
+        uint8_t update_slot;
+        uint8_t pairing_data[3];
+        uint8_t lockdown_value;
+        uint8_t per_box_digest[0x10];
+    };
+    static_assert(wire::WireLayout<cf_perbox>);
+
+    struct cf_header {
+        generic_header header;
+        wire::be16 source_version;
+        wire::be16 source_qfe;
+        wire::be16 target_version;
+        wire::be16 target_qfe;
+        wire::be32 reserved;
+        wire::be32 cg_size;
+        uint8_t fixpoint_nonce[0x10]; // CF+0x20: self-referential HMAC fixpoint, not the CG key
+    };
+    static_assert(wire::WireLayout<cf_header>);
+
+    // The CG/7BL RC4 key is HMAC-SHA1 of the 7BL nonce stored in the decrypted CF payload
+    // at absolute offset 0x330 (cf_header is 0x30 bytes, so this is payload offset 0x300),
+    // never the header fixpoint above. RGBuild/build360/nandtool/J-Runner agree on 0x330.
+    inline constexpr size_t kCfCgNonceOffset = 0x330;
+
+    // A CG too long for its update slot spills its tail into logical 16 KiB FlashFS clusters.
+    // The decrypted CF payload opens (CF + 0x30) with the table naming them in order: a count
+    // and up to kMaxCgClusters cluster numbers, the rest zero. The record is a lossless codec;
+    // the cap and the needed-count checks stay with the callers.
+    inline constexpr size_t kMaxCgClusters = 223;
+    inline constexpr size_t kCgClusterSize = 0x4000;
+
+    struct cf_continuation_table {
+        wire::be16 count;
+        wire::be16 clusters[kMaxCgClusters];
+    };
+    static_assert(wire::WireLayout<cf_continuation_table>);
+
+    inline constexpr size_t kCfTableSize = sizeof(cf_continuation_table);
+    static_assert(kCfTableSize == 0x1C0);
+
+    struct cg_header {
+        generic_header header;
+        uint8_t key[0x10];
+        wire::be32 source_size;
+        uint8_t source_hash[0x14];
+        wire::be32 target_size;
+        uint8_t target_hash[0x14];
+    };
+    static_assert(wire::WireLayout<cg_header>);
+
+    // A stage's declared size rounded up to the 16-byte crypt granularity. It fails when the
+    // declared size cannot hold `min_size` bytes (the stage's own header), which keeps the
+    // payload arithmetic of every parse, decrypt and encrypt from underflowing.
+    [[nodiscard]] inline Result<size_t> aligned_stage_size(uint32_t declared_size, size_t min_size,
+                                                           std::string_view stage) {
+        const uint64_t aligned = (uint64_t{declared_size} + 0xF) & ~uint64_t{0xF};
+        if (aligned > std::numeric_limits<uint32_t>::max()) {
+            return fail(ErrorCode::Malformed, "{} declared size 0x{:X} overflows when aligned",
+                        stage, declared_size);
         }
-        return console_type == 1;
+        if (aligned < min_size) {
+            return fail(ErrorCode::Malformed,
+                        "{} declared size 0x{:X} is smaller than its 0x{:X}-byte header", stage,
+                        declared_size, min_size);
+        }
+        return static_cast<size_t>(aligned);
     }
 
-    [[nodiscard]] bool console_sequence_is_allowed(uint64_t fuseline) const noexcept {
-        if (fuseline == 0) {
-            return true;
-        }
-        int i = 0;
-        for (i = 0; i < 0x10; ++i) {
-            if ((fuseline & 0xF) == 0xF) {
-                break;
-            }
-            fuseline >>= 4;
-        }
-
-        if (i == 0 || (0x10 - i) == console_sequence) {
-            return true;
-        }
-
-        return ((1 << ((0x10 - i) - 1)) & console_sequence_allow) > 0;
-    }
-} ConsoleTypeSeqAllow, ConsoleTypeAllowSec;
-
-typedef struct _cb_header {
-    generic_header header;
-    uint8_t key[0x10];
-    uint64_t padding_or_args[4];
-    EXCRYPT_SIG signature;
-    uint8_t globals[0x128];
-    EXCRYPT_RSAPUB_2048 dev_pub_key;
-    uint8_t nonce_3bl[0x10];
-    char salt_3bl[10];
-    char salt_4bl[10];
-    uint8_t next_hash[0x14];
-    ConsoleTypeSeqAllow console_seq_allow;
-    uint8_t reserved[0xC];
-} cb_header;
-
-typedef struct _sc_header {
-    generic_header header;
-    uint8_t key[0x10];
-    EXCRYPT_SIG signature;
-} sc_header;
-
-typedef struct _cd_header {
-    generic_header header;
-    uint8_t key[0x10];
-    EXCRYPT_SIG signature;
-    EXCRYPT_RSAPUB_2048 rsa_pub_key;
-    uint8_t cg_key[0x10];
-    char cg_salt[10];
-    uint16_t padding;
-    uint8_t ce_hash[0x14];
-} cd_header;
-
-typedef struct _ce_header {
-    generic_header header;
-    uint8_t key[0x10];
-    uint64_t address;
-    uint32_t size;
-    uint32_t padding;
-} ce_header;
-
-typedef struct _cf_perbox {
-    uint8_t reserved_per_box[0x2B];
-    uint8_t update_slot;
-    uint8_t pairing_data[3];
-    uint8_t lockdown_value;
-    uint8_t per_box_digest[0x10];
-} cf_perbox;
-
-typedef struct _cf_header {
-    generic_header header;
-    uint16_t source_version;
-    uint16_t source_qfe;
-    uint16_t target_version;
-    uint16_t target_qfe;
-    uint32_t reserved;
-    uint32_t cg_size;
-    uint8_t cg_key[0x10];
-} cf_header;
-
-typedef struct _cg_header {
-    generic_header header;
-    uint8_t key[0x10];
-    uint32_t source_size;
-    uint8_t source_hash[0x14];
-    uint32_t target_size;
-    uint8_t target_hash[0x14];
-} cg_header;
-
-#pragma pack(pop)
+} // namespace gxbuild3::nand

@@ -1,9 +1,10 @@
 #include "utils/FusesetGenerator.hpp"
-#include "utils/Log.hpp"
+
+#include "Wire.hpp"
+
 #include <algorithm>
 #include <array>
-#include <cctype>
-#include <string>
+#include <utility>
 
 namespace gxbuild3::utils {
     namespace {
@@ -11,36 +12,6 @@ namespace gxbuild3::utils {
         constexpr std::array<uint8_t, kFuseLineSize> kFuseLine00 = {
             0xC0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
         };
-
-        constexpr std::array<uint8_t, 6> kFuseLine01Prefix = {
-            0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
-        };
-
-        constexpr std::array<uint8_t, 2> fuse_line01_suffix(FuseConsoleType console_type) {
-            switch (console_type) {
-                case FuseConsoleType::RetailPhat:
-                    return {0x0F, 0xF0};
-                case FuseConsoleType::RetailSlim:
-                    return {0xF0, 0xF0};
-                case FuseConsoleType::TestKit:
-                    return {0xF0, 0x0F};
-                case FuseConsoleType::Devkit:
-                    return {0x0F, 0x0F};
-            }
-
-            return {0x00, 0x00};
-        }
-
-        bool is_retail_slim(ConsoleType console_type) {
-            switch (console_type) {
-                case ConsoleType::Trinity:
-                case ConsoleType::Corona:
-                case ConsoleType::Winchester:
-                    return true;
-                default:
-                    return false;
-            }
-        }
 
         void set_fuse_line(std::vector<uint8_t>& fuse_data, size_t line_index,
                            const std::array<uint8_t, kFuseLineSize>& line) {
@@ -58,74 +29,57 @@ namespace gxbuild3::utils {
 
     } // namespace
 
-    std::optional<FuseConsoleType> resolve_fuse_console_type(ConsoleType console_type,
-                                                             BuildType build_type) {
-        if (build_type == BuildType::Devkit) {
-            return FuseConsoleType::Devkit;
+    Result<uint32_t> read_cb_word(std::span<const uint8_t> cb) {
+        if (cb.size() < kCbWordOffset + sizeof(uint32_t)) {
+            return fail(ErrorCode::Truncated,
+                        "CB of 0x{:X} bytes is too short to carry its console word at 0x{:X}",
+                        cb.size(), kCbWordOffset);
         }
-
-        return is_retail_slim(console_type) ? FuseConsoleType::RetailSlim
-                                            : FuseConsoleType::RetailPhat;
+        // The size check above keeps its own message; the read cannot fail after it.
+        const auto word = wire::read<wire::be32>(cb, kCbWordOffset, "CB console word");
+        if (!word) {
+            return std::unexpected(word.error());
+        }
+        return word->get();
     }
 
-    std::optional<std::array<uint8_t, kFuseLineSize>> parse_fuse_line(std::string_view hex_line) {
-        std::string cleaned;
-        cleaned.reserve(hex_line.size());
-
-        for (const char c : hex_line) {
-            if (std::isxdigit(static_cast<unsigned char>(c))) {
-                cleaned.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-            }
+    Result<std::array<uint8_t, kFuseLineSize>> encode_console_type_line(uint8_t console_type) {
+        // Six 0x0F bytes, then two naming the type: devkit, retail, testkit, retail slim.
+        constexpr std::array<std::array<uint8_t, 2>, 4> kTypeSuffixes = {{
+            {0x0F, 0x0F},
+            {0x0F, 0xF0},
+            {0xF0, 0x0F},
+            {0xF0, 0xF0},
+        }};
+        if (console_type >= kTypeSuffixes.size()) {
+            return fail(ErrorCode::Unsupported, "CB console type 0x{:02X} has no fuse encoding",
+                        console_type);
         }
 
-        if (cleaned.size() != (kFuseLineSize * 2)) {
-            Log::Error("Expected {} hex digits for fuse line, got {}", kFuseLineSize * 2,
-                       cleaned.size());
-            return std::nullopt;
-        }
-
-        std::array<uint8_t, kFuseLineSize> line = {};
-        for (size_t i = 0; i < kFuseLineSize; ++i) {
-            try {
-                line[i] = static_cast<uint8_t>(std::stoul(cleaned.substr(i * 2, 2), nullptr, 16));
-            } catch (const std::exception&) {
-                Log::Error("Invalid fuse byte at index {}", i);
-                return std::nullopt;
-            }
-        }
-
+        std::array<uint8_t, kFuseLineSize> line = {0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F};
+        line[6] = kTypeSuffixes[console_type][0];
+        line[7] = kTypeSuffixes[console_type][1];
         return line;
     }
 
-    std::optional<std::array<uint8_t, kFuseLineSize>> encode_cb_ldv_line(uint8_t cb_ldv) {
-        constexpr size_t kCbNibbleCount = kFuseLineSize * 2;
-
-        if (cb_ldv > kCbNibbleCount) {
-            Log::Error("CB LDV {} exceeds supported nibble capacity {}", cb_ldv,
-                       kCbNibbleCount);
-            return std::nullopt;
-        }
-
+    std::array<uint8_t, kFuseLineSize> encode_sequence_allow_line(uint16_t sequence_allow) {
+        // One 0xF nibble per allow bit, bit 0 in the line's top nibble.
         std::array<uint8_t, kFuseLineSize> line = {};
-
-        for (size_t nibble_index = 0; nibble_index < cb_ldv; ++nibble_index) {
-            const size_t byte_index = nibble_index / 2;
-            const bool high_nibble = (nibble_index % 2) == 0;
-            line[byte_index] |= high_nibble ? 0xF0 : 0x0F;
+        for (size_t bit = 0; bit < 16; ++bit) {
+            if ((sequence_allow & (1U << bit)) != 0) {
+                line[bit / 2] |= (bit % 2) == 0 ? 0xF0 : 0x0F;
+            }
         }
-
         return line;
     }
 
-    std::optional<std::array<uint8_t, kDashboardFuseRegionSize>>
+    Result<std::array<uint8_t, kDashboardFuseRegionSize>>
     encode_dashboard_ldv_region(uint8_t cf_ldv) {
         constexpr size_t kDashboardNibbleCount = kDashboardFuseRegionSize * 2;
 
         if (cf_ldv > kDashboardNibbleCount) {
-            Log::Error(
-                "CF LDV {} exceeds supported nibble capacity {}",
-                cf_ldv, kDashboardNibbleCount);
-            return std::nullopt;
+            return fail(ErrorCode::OutOfRange, "CF LDV {} exceeds supported nibble capacity {}",
+                        cf_ldv, kDashboardNibbleCount);
         }
 
         std::array<uint8_t, kDashboardFuseRegionSize> region = {};
@@ -139,28 +93,19 @@ namespace gxbuild3::utils {
         return region;
     }
 
-    std::optional<std::vector<uint8_t>> generate_fuseset(const FusesetGenerationRequest& request) {
-        std::array<uint8_t, kFuseLineSize> cb_line = {};
-        if (request.cb_fuseline) {
-            cb_line = *request.cb_fuseline;
-        } else if (request.cb_ldv) {
-            auto encoded = encode_cb_ldv_line(*request.cb_ldv);
-            if (!encoded) {
-                return std::nullopt;
-            }
-            cb_line = *encoded;
+    Result<std::vector<uint8_t>> generate_fuseset(const FusesetGenerationRequest& request) {
+        const auto type_line =
+            encode_console_type_line(static_cast<uint8_t>(request.cb_word >> 24));
+        if (!type_line) {
+            return std::unexpected(std::move(type_line.error()));
         }
+        const auto cb_line = request.cb_fuseline.value_or(
+            encode_sequence_allow_line(static_cast<uint16_t>(request.cb_word & 0xFFFF)));
 
         std::vector<uint8_t> fuse_data(kFuseRegionSize, 0x00);
 
         set_fuse_line(fuse_data, 0, kFuseLine00);
-
-        std::array<uint8_t, kFuseLineSize> line01 = {};
-        std::copy(kFuseLine01Prefix.begin(), kFuseLine01Prefix.end(), line01.begin());
-        const auto line01_suffix = fuse_line01_suffix(request.console_type);
-        std::copy(line01_suffix.begin(), line01_suffix.end(), line01.begin() + 6);
-        set_fuse_line(fuse_data, 1, line01);
-
+        set_fuse_line(fuse_data, 1, *type_line);
         set_fuse_line(fuse_data, 2, cb_line);
 
         std::array<uint8_t, kFuseLineSize> cpu_key_hi = {};
@@ -178,7 +123,7 @@ namespace gxbuild3::utils {
         } else if (request.cf_ldv) {
             auto dashboard_region = encode_dashboard_ldv_region(*request.cf_ldv);
             if (!dashboard_region) {
-                return std::nullopt;
+                return std::unexpected(std::move(dashboard_region.error()));
             }
             set_dashboard_region(fuse_data, *dashboard_region);
         }
@@ -186,33 +131,19 @@ namespace gxbuild3::utils {
         return fuse_data;
     }
 
-    std::optional<std::vector<uint8_t>> generate_fuseset(FuseConsoleType console_type,
-                                                         std::span<const uint8_t> cpu_key,
-                                                         uint8_t cb_ldv, uint8_t cf_ldv) {
+    Result<std::vector<uint8_t>>
+    generate_fuseset(uint32_t cb_word, std::span<const uint8_t> cpu_key, uint8_t cf_ldv) {
         if (cpu_key.size() != 16) {
-            Log::Error("CPU key must be exactly 16 bytes, got {}",
-                       cpu_key.size());
-            return std::nullopt;
+            return fail(ErrorCode::InvalidArgument, "CPU key must be exactly 16 bytes, got {}",
+                        cpu_key.size());
         }
 
         FusesetGenerationRequest req{};
-        req.console_type = console_type;
+        req.cb_word = cb_word;
         std::copy_n(cpu_key.data(), 16, req.cpu_key.begin());
-        req.cb_ldv = cb_ldv;
         req.cf_ldv = cf_ldv;
 
         return generate_fuseset(req);
-    }
-
-    std::optional<std::vector<uint8_t>> generate_fuseset(ConsoleType console_type,
-                                                         BuildType build_type,
-                                                         std::span<const uint8_t> cpu_key,
-                                                         uint8_t cb_ldv, uint8_t cf_ldv) {
-        auto resolved_type = resolve_fuse_console_type(console_type, build_type);
-        if (!resolved_type) {
-            return std::nullopt;
-        }
-        return generate_fuseset(*resolved_type, cpu_key, cb_ldv, cf_ldv);
     }
 
 } // namespace gxbuild3::utils

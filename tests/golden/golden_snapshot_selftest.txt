@@ -1,0 +1,19 @@
+# GoldenSnapshot self-test golden.
+# Regenerate: gxbuild3_golden_snapshot_tests --update
+must.value: 42
+must.move_only: 7
+must.void: ok
+error.describe: outer: inner: planted failure
+
+error_code[0]: invalid argument
+error_code[1]: truncated
+error_code[2]: malformed
+error_code[3]: unsupported
+error_code[4]: not found
+error_code[5]: I/O error
+error_code[6]: authentication failed
+error_code[7]: hash mismatch
+error_code[8]: signature mismatch
+error_code[9]: out of range
+error_code[10]: exhausted
+error_code[11]: internal error

@@ -1,74 +1,88 @@
 #include "nand/objects/CoronaConfig.hpp"
-#include "utils/Log.hpp"
-#include "utils/Utils.hpp"
+
 #include "excrypt.h"
+#include "utils/Log.hpp"
 
 #include <cstring>
+#include <utility>
 
-namespace gxbuild3::NAND {
+namespace gxbuild3::nand {
 
-std::optional<CoronaConfig> CoronaConfig::parse(std::span<const uint8_t> bytes) {
-    if (bytes.size() < sizeof(XE_CORONA_FS_DATA)) {
-        Log::Error("Invalid Corona config size: expected {} bytes, got {}",
-                   sizeof(XE_CORONA_FS_DATA), bytes.size());
-        return std::nullopt;
+    namespace {
+
+        constexpr size_t kDigestLength = 0x14;
+
+        void digest_of(const uint8_t* block, uint8_t* out) {
+            ExCryptSha(block + kDigestLength, CoronaConfig::kSize - kDigestLength, nullptr, 0,
+                       nullptr, 0, out, kDigestLength);
+        }
+
+    } // namespace
+
+    Result<CoronaConfig> CoronaConfig::parse(std::span<const uint8_t> bytes) {
+        if (bytes.size() < kSize) {
+            return fail(ErrorCode::Truncated, "anchor block is 0x{:X} bytes, need 0x{:X}",
+                        bytes.size(), kSize);
+        }
+
+        uint8_t digest[kDigestLength];
+        digest_of(bytes.data(), digest);
+        if (std::memcmp(digest, bytes.data(), kDigestLength) != 0) {
+            return fail(ErrorCode::HashMismatch,
+                        "anchor block digest does not match what follows it");
+        }
+
+        auto anchor = wire::read<corona_anchor>(bytes, 0, "anchor block");
+        if (!anchor) {
+            return std::unexpected(std::move(anchor.error()));
+        }
+
+        CoronaConfig cfg;
+        cfg.number = anchor->number;
+        cfg.table = anchor->table;
+        for (size_t slot = 0; slot < kBlobSlots; ++slot) {
+            cfg.blobs[slot].block = anchor->blobs[slot].block;
+            cfg.blobs[slot].length = anchor->blobs[slot].length;
+        }
+
+        Log::Debug("Parsed anchor block {}: filesystem table at block {}", cfg.number, cfg.table);
+        return cfg;
     }
 
-    XE_CORONA_FS_DATA raw{};
-    std::memcpy(&raw, bytes.data(), sizeof(XE_CORONA_FS_DATA));
-
-    CoronaConfig cfg;
-    std::memcpy(cfg.data.bSectionDigest, raw.bSectionDigest, sizeof(raw.bSectionDigest));
-    cfg.data.dwUnknown = bswap32(raw.dwUnknown);
-    cfg.data.dwFSVersion = bswap32(raw.dwFSVersion);
-    cfg.data.wFSBlockIdx = bswap16(raw.wFSBlockIdx);
-    cfg.data.wUnknown = bswap16(raw.wUnknown);
-    cfg.data.wMobile1BlockIdx = bswap16(raw.wMobile1BlockIdx);
-    cfg.data.wMobile1Length = bswap16(raw.wMobile1Length);
-    std::memcpy(cfg.data.bUnknown2, raw.bUnknown2, sizeof(raw.bUnknown2));
-    cfg.data.wMobile2BlockIdx = bswap16(raw.wMobile2BlockIdx);
-    cfg.data.wMobile2Length = bswap16(raw.wMobile2Length);
-    std::memcpy(cfg.data.bUnknown, raw.bUnknown, sizeof(raw.bUnknown));
-
-    Log::Debug("Parsed Corona config: FSVersion={}, FSBlock={}, Mobile1Block={}, Mobile2Block={}",
-               cfg.data.dwFSVersion, cfg.data.wFSBlockIdx, cfg.data.wMobile1BlockIdx, cfg.data.wMobile2BlockIdx);
-
-    return cfg;
-}
-
-std::optional<CoronaConfig> CoronaConfig::parse(const std::vector<uint8_t>& bytes) {
-    return parse(std::span<const uint8_t>(bytes.data(), bytes.size()));
-}
-
-std::vector<uint8_t> CoronaConfig::serialize() const {
-    XE_CORONA_FS_DATA raw{};
-    raw.dwUnknown = bswap32(data.dwUnknown);
-    raw.dwFSVersion = bswap32(data.dwFSVersion);
-    raw.wFSBlockIdx = bswap16(data.wFSBlockIdx);
-    raw.wUnknown = bswap16(data.wUnknown);
-    raw.wMobile1BlockIdx = bswap16(data.wMobile1BlockIdx);
-    raw.wMobile1Length = bswap16(data.wMobile1Length);
-    std::memcpy(raw.bUnknown2, data.bUnknown2, sizeof(data.bUnknown2));
-    raw.wMobile2BlockIdx = bswap16(data.wMobile2BlockIdx);
-    raw.wMobile2Length = bswap16(data.wMobile2Length);
-    std::memcpy(raw.bUnknown, data.bUnknown, sizeof(data.bUnknown));
-
-    ExCryptSha(reinterpret_cast<const uint8_t*>(&raw) + 0x14, 0x1EC,
-               nullptr, 0, nullptr, 0,
-               raw.bSectionDigest, 0x14);
-
-    std::vector<uint8_t> out(sizeof(XE_CORONA_FS_DATA));
-    std::memcpy(out.data(), &raw, sizeof(XE_CORONA_FS_DATA));
-    return out;
-}
-
-bool CoronaConfig::verify_digest() const {
-    auto raw_bytes = serialize();
-    bool valid = (std::memcmp(raw_bytes.data(), data.bSectionDigest, 0x14) == 0);
-    if (!valid) {
-        Log::Warn("Corona config SHA digest mismatch");
+    Result<CoronaConfig> CoronaConfig::parse(const std::vector<uint8_t>& bytes) {
+        return parse(std::span<const uint8_t>(bytes.data(), bytes.size()));
     }
-    return valid;
-}
 
-} // namespace gxbuild3::NAND
+    std::optional<CoronaConfig>
+    CoronaConfig::choose(const std::array<std::span<const uint8_t>, 2>& copies) {
+        std::optional<CoronaConfig> best;
+        for (const auto& copy : copies) {
+            if (copy.size() < kSize) {
+                continue;
+            }
+            auto parsed = parse(copy);
+            if (!parsed) {
+                Log::Debug("Anchor block copy skipped: {}", parsed.error().describe());
+                continue;
+            }
+            if (!best || parsed->number > best->number) {
+                best = std::move(*parsed);
+            }
+        }
+        return best;
+    }
+
+    std::vector<uint8_t> CoronaConfig::serialize() const {
+        corona_anchor anchor{};
+        anchor.number = number;
+        anchor.table = table;
+        for (size_t slot = 0; slot < kBlobSlots; ++slot) {
+            anchor.blobs[slot].block = blobs[slot].block;
+            anchor.blobs[slot].length = blobs[slot].length;
+        }
+        auto image = wire::encode(anchor);
+        digest_of(image.data(), image.data());
+        return {image.begin(), image.end()};
+    }
+
+} // namespace gxbuild3::nand

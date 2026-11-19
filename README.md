@@ -1,17 +1,38 @@
 # gxbuild3
 
-C++ 23 Cross-Platform Xbox 360 Image Builder, Patcher and Extractor
+C++ 23 Cross-Platform Xbox 360 Image Builder
 
-Available standalone or built-in to Genexis
+Available as a CLI app (gxbuild), a library (libgxbuild), or built directly into [Genexis](https://github.com/ExposureMG/Genexis.git)
+
+## Licensing
+
+gxbuild3 is brought to you under the **GNU General Public License Version 2.0**.
+
+See [LICENSE](LICENSE) for more information.
+
 
 ## Credits
-* ExposureMG - Bootloaders, Patchers, and NAND parsing / building
-* erorn - Project Base, STFS, XConfig
----
-**References**
-* Free60Project - The best documentation on the Xbox 360 NAND
-* XorLoser - The original XeCrypt
-* [c0z] - Patching Format, Filetree format, INI format, CLI design; Basically the entire UX
-* Visual Studio / GoobyCorp - SMC and Keyvault Crypto, Shadowboots
-* emoose - Filesystems, FlashBlockDriver and Keyvault (Via RGBuildPP)
-* InvoxiPlayGames - Header Types and Reversing of xeBuild patches (Via xenon-bltool and x360-research)
+
+Big thanks to all contributors and all those who release their Xbox 360 projects FOSS.
+
+### Developers
+
+
+* **ExposureMG** - Lead Developer and Maintainer; Bootloaders, Patching, UI, NAND Parsing / Building
+
+* **erorn** - Co-maintainer; STFS, XConfig, and GxCrypt
+
+
+### Dependencies and References
+
+Have tried to include everyone here. If I missed you please let me know!
+
+* **emoose** - ExCrypt, Filesystems, FlashBlockDriver and Keyvault (Via RGBuildPP)
+
+* **InvoxiPlayGames** - Header Types (Via xenon-bltool)
+
+* **[c0z]**, **Redline99**, **Ikari** - FreeBOOT Rebooter, Patches, and much more.
+
+* **Visual Studio** - SMC and Keyvault Crypto, Shadowboots
+
+* **Free60Project** - The best documentation on the Xbox 360 NAND

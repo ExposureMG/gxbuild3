@@ -1,0 +1,21 @@
+logs
+extract-*
+mydata_*
+nanddump.bin
+nanddump1.bin
+updflash.bin
+kv.bin
+KV.bin
+keyvault.bin
+KeyVault.bin
+fcrt.bin
+FCRT.bin
+gxbuild
+gxbuild.exe
+cpukey.txt
+CPUKey.txt
+cpukey.bin
+CPUKey.bin
+keys
+# Tracked fixture whose name matches the key-material patterns above.
+!/mydata/fcrt.bin

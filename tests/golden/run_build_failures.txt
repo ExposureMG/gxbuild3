@@ -1,0 +1,49 @@
+validate.cpu-key-length code=InvalidInput message=CPU key must contain exactly 16 bytes
+validate.devgl-without-sb-key code=InvalidInput message=A devgl image's patched SD is signed again, which needs the SB private key
+devgl.malformed-sb-key code=InvalidInput message=The SB private key is not a well-formed XeCrypt RSA-2048 private key: RSA private key has 0x0 digits; only RSA-2048 (0x20) is supported
+donor.not-a-nand code=InvalidDonor message=Failed to parse donor NAND dump: the NAND image has no blocks
+donor.wrong-cpu-key code=InvalidDonor message=Failed to decrypt donor NAND dump components: decrypting the Keyvault with the provided CPU key: decrypting the keyvault: Keyvault authentication failed
+smc.too-short code=InvalidSmc message=Failed to parse input SMC: SMC is 0x10 bytes, need at least 0x108
+smc.jtag-over-a-clean-smc code=InvalidSmc message=Clean SMC binary found: a JTAG image needs a hacked SMC (the smcnocheck option builds with this one anyway)
+keyvault.wrong-length code=InvalidKeyvault message=Failed to parse input keyvault: Invalid Keyvault size: expected 0x4000 bytes, got 0x10
+chain.orphan-cg0 code=InvalidInput message=CG0 was supplied without its required CF0 parent
+chain.orphan-cg1 code=InvalidInput message=CG1 was supplied without its required CF1 parent
+bootloaders.malformed-cb code=InvalidBootloader message=Failed to parse CB/A: CB data too short
+bootloaders.malformed-cf0 code=InvalidBootloader message=Failed to parse CF0: CF/6BL data too short
+bootloaders.cd-without-payload code=InvalidBootloader message=Required CD bootloader has no payload and cannot be serialized
+bootloaders.glitch3-without-cb-x code=InvalidBootloader message=Glitch3 requires CB_A, CB_X (15432), and CB_B
+bootloaders.glitch1-with-cb-b code=InvalidBootloader message=glitch1/RGH1 does not support a CB_B (use glitch2) or a CB_X (use glitch3)
+patch.malformed-patch-file code=PatchFailure message=automatic patchset automatic: Glitch patchset must have 3 sections [CB_B][CD][KHV], found 1
+patch.glitch2-without-cb-b code=PatchFailure message=Automatic patchset targets CBB, but no CBB was supplied
+patch.cb-past-32-bit-space code=PatchFailure message=CB patch exceeds the 32-bit address space
+patch.cd-past-32-bit-space code=PatchFailure message=CD patch exceeds the 32-bit address space
+patch.chain-over-capacity code=PatchFailure message=Patched bootloader chain exceeds the space before patch slots
+extra.malformed-jtag-cb code=InvalidBootloader message=Failed to parse JTAG extra CB: CB data too short
+extra.malformed-jtag-cd code=InvalidBootloader message=Failed to parse JTAG extra CD: CD/4BL data too short
+metadata.cb-without-per-box code=InvalidBootloader message=Could not decrypt replacement CB/A for metadata application: CB declared size 0x10 is smaller than its 0x20-byte header
+slots.jtag-patch-over-0x4000 code=PatchFailure message=JTAG patch payload exceeds the 0x4000-byte region
+slots.khv-over-its-slot code=PatchFailure message=Glitch KHV payload exceeds its patch-slot region
+payloads.malformed-xell code=InvalidBootloader message=Failed to parse XeLL payload: XeLL starts with neither the exception vectors nor an ELF header
+layout.xell-over-the-rebooter code=InvalidInput message=Payload layout collision: XeLL overlaps rebooter
+flashfs.add-a-257th-file code=SerializationFailure message=Failed to add a Flash File System file: FlashFS directory is full (maximum 256 entries)
+encrypt.invalid-cpu-key code=EncryptionFailure message=Failed to encrypt NAND image components: encrypting the Keyvault with the provided CPU key: encrypting the keyvault: Invalid CPU key
+write.mobile-over-a-block code=SerializationFailure message=Failed to write/serialize built NAND image: Mobile data type 0x32 is 0x4001 bytes; one copy holds at most 0x4000
+not-covered donor.read: FlashImage::read refuses only an empty dump, which run_build skips
+not-covered chain.clear-donor-records: needs a parsed donor whose boot chain runs past its own image; none is built
+not-covered smc.reboot-patch: apply_signature_patch fails only on a null buffer or a bad built-in pattern
+not-covered patch.missing-section: the glitch patch file parser always yields the first, CD and KHV sections
+not-covered patch.cb-apply: the chain capacity check bounds the patched CB, and an aligned patched stage always parses again
+not-covered patch.cb-b-apply: as patch.cb-apply, for the CB_B
+not-covered patch.cd-apply: as patch.cb-apply, for the CD
+not-covered sd.sign: a key that parses (n = pq, consistent exponents) signs and verifies, and an SD is never shorter than its 0x260-byte header
+not-covered sd.reparse: the signed SD keeps the size it parsed with
+not-covered nonces.open-cg: a CG that parsed opens: prepare_payload repeats the parse's check
+not-covered slots.khv-missing: the glitch patch file parser always yields a KHV section
+not-covered flashfs.data-limit: every layout leaves 1..0xFFFF FlashFS blocks
+not-covered flashfs.first-block: no layout lays its fixed payloads past the FlashFS data limit
+not-covered flashfs.format: every layout's block count fits the FlashFS block map
+not-covered flashfs.reserve-tail: the tail lies inside the formatted block map
+not-covered flashfs.reserve-bad-block: a freshly formatted map holds only free or reserved blocks below the data limit
+not-covered flashfs.reserve-payload-blocks: the fixed payload ranges lie inside the formatted block map
+not-covered flashfs.seal-secured-file: sealing fails only on a CPU key that is not 16 bytes, which validation refuses
+not-covered internal.std-exception: run_build's catch: only a std exception (an allocation failure) reaches it
