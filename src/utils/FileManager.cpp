@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <array>
 #include <cstddef>
 #include <format>
 #include <memory>
@@ -758,21 +759,29 @@ namespace gxbuild3::utils {
                 std::move(error).add_context(std::format("INI asset '{}'", entry)));
         };
         IniFilesResult result{};
-        const bool is_jtag = build_type == BuildType::Jtag;
-        std::unordered_map<std::string, size_t> chain_counters;
+        // [...bl] lines map positionally, as in xeBuild's blRetail/blJtag/blDevk/blDevgl
+        // tables; a "none" line still takes its slot.
+        enum class Slot { CbA, CbB, Sc, Cd, Ce, Cf0, Cg0, ExtraCb, ExtraCd, Cf1, Cg1 };
+        static constexpr std::array<Slot, 6> kRetailSlots{Slot::CbA, Slot::CbB, Slot::Cd,
+                                                          Slot::Ce,  Slot::Cf0, Slot::Cg0};
+        static constexpr std::array<Slot, 6> kKitSlots{Slot::CbA, Slot::Sc,  Slot::Cd,
+                                                       Slot::Ce,  Slot::Cf0, Slot::Cg0};
+        static constexpr std::array<Slot, 9> kJtagSlots{
+            Slot::CbA, Slot::Cd,      Slot::Ce,      Slot::Cf0, Slot::Cg0,
+            Slot::ExtraCb, Slot::ExtraCd, Slot::Cf1, Slot::Cg1};
+        std::span<const Slot> slots = kRetailSlots;
+        if (build_type == BuildType::Jtag)
+            slots = kJtagSlots;
+        else if (build_type == BuildType::Devkit || build_type == BuildType::Devgl)
+            slots = kKitSlots;
+        size_t position = 0;
         for (const auto& entry : *bl_sec) {
+            const size_t index = position++;
             const auto key = normalize_file_key(entry.key);
             if (key.empty() || key == "none")
                 continue;
-            // IniParser counts prefixes of the original key, including any
-            // directory. Use the normalized family, including numeric aliases.
-            const auto stem = std::filesystem::path(key).stem().string();
-            auto prefix = key.substr(0, std::min(key.find('_'), key.find('.')));
-            if (key.starts_with("cf") || stem == "6bl")
-                prefix = "cf";
-            else if (key.starts_with("cg") || stem == "7bl")
-                prefix = "cg";
-            const auto chain = chain_counters[prefix]++;
+            if (index >= slots.size())
+                continue;
             auto found = search(entry.key, options, AssetKind::Bootloader);
             if (!found)
                 return escaped(entry.key, std::move(found).error());
@@ -780,46 +789,29 @@ namespace gxbuild3::utils {
                 return fail(ErrorCode::NotFound, "Required bootloader file '{}' not found",
                             entry.key);
             auto data = std::move((*found)->file.data);
-            if (key.starts_with("cba") || key.starts_with("cb_a") || key.starts_with("sb") ||
-                key == "2bl") {
-                result.bootloaders.cb_or_a = std::move(data);
-            } else if (key.starts_with("cbx") || key.starts_with("cb_x")) {
+            if (key.starts_with("cbx") || key.starts_with("cb_x")) {
                 result.bootloaders.cb_x = std::move(data);
-            } else if (key.starts_with("cbb") || key.starts_with("cb_b")) {
-                result.bootloaders.cb_b = std::move(data);
-            } else if (key.starts_with("cb_") || key == "cb") {
-                if (chain == 0 || result.bootloaders.cb_or_a.empty())
-                    result.bootloaders.cb_or_a = std::move(data);
-                else if (is_jtag)
-                    result.bootloaders.extra_cb = std::move(data);
-                else
-                    result.bootloaders.cb_b = std::move(data);
-            } else if (key.starts_with("sc") || stem == "3bl") {
-                result.bootloaders.sc = std::move(data);
-            } else if (key.starts_with("sd")) {
-                // A devkit chain's SD and SE take the CD and CE positions.
-                result.bootloaders.cd = std::move(data);
-            } else if (key.starts_with("se")) {
-                result.bootloaders.ce = std::move(data);
-            } else if (key.starts_with("cd") || key == "4bl") {
-                if (chain == 0 || result.bootloaders.cd.empty())
-                    result.bootloaders.cd = std::move(data);
-                else if (is_jtag)
-                    result.bootloaders.extra_cd = std::move(data);
-                else
-                    result.bootloaders.cd = std::move(data);
-            } else if (key.starts_with("ce") || key == "5bl") {
-                result.bootloaders.ce = std::move(data);
-            } else if (key.starts_with("cf") || stem == "6bl") {
-                if (chain == 0 || !result.bootloaders.cf0)
-                    result.bootloaders.cf0 = std::move(data);
-                else
+                continue;
+            }
+            switch (slots[index]) {
+            case Slot::CbA: result.bootloaders.cb_or_a = std::move(data); break;
+            case Slot::CbB: result.bootloaders.cb_b = std::move(data); break;
+            case Slot::Sc: result.bootloaders.sc = std::move(data); break;
+            case Slot::Cd: result.bootloaders.cd = std::move(data); break;
+            case Slot::Ce: result.bootloaders.ce = std::move(data); break;
+            case Slot::Cf0: result.bootloaders.cf0 = std::move(data); break;
+            case Slot::Cg0: result.bootloaders.cg0 = std::move(data); break;
+            case Slot::ExtraCb: result.bootloaders.extra_cb = std::move(data); break;
+            case Slot::ExtraCd: result.bootloaders.extra_cd = std::move(data); break;
+            case Slot::Cf1:
+                if (build_type == BuildType::Jtag && data.size() >= 2 && data[0] == 'S' &&
+                    data[1] == 'E') {
+                    result.bootloaders.extra_se = std::move(data);
+                } else {
                     result.bootloaders.cf1 = std::move(data);
-            } else if (key.starts_with("cg") || stem == "7bl") {
-                if (chain == 0 || !result.bootloaders.cg0)
-                    result.bootloaders.cg0 = std::move(data);
-                else
-                    result.bootloaders.cg1 = std::move(data);
+                }
+                break;
+            case Slot::Cg1: result.bootloaders.cg1 = std::move(data); break;
             }
         }
 
@@ -882,7 +874,7 @@ namespace gxbuild3::utils {
             }
         }
         // [rawpatch] lists "file,offset": the file goes into the image as it is at that clean
-        // offset. A file no root supplies is skipped with a warning.
+        // offset. A file no root supplies fails the build, as in xeBuild.
         if (const auto* rawpatch = doc.get("rawpatch")) {
             for (const auto& entry : *rawpatch) {
                 const auto key = normalize_file_key(entry.key);
@@ -906,10 +898,9 @@ namespace gxbuild3::utils {
                 auto found = find_listed(entry.key);
                 if (!found)
                     return escaped(entry.key, std::move(found).error());
-                if (!*found) {
-                    Log::Warn("[rawpatch] file '{}' was not found; it is skipped", entry.key);
-                    continue;
-                }
+                if (!*found)
+                    return fail(ErrorCode::NotFound, "[rawpatch] file '{}' not found",
+                                entry.key);
                 result.raw_patches.push_back(InputRawPatch{display_basename(entry.key), offset,
                                                            std::move((*found)->file.data)});
             }

@@ -53,7 +53,7 @@ namespace gxbuild3::cli {
         }
 
         TEST_F(ResolverLooseDonor, IniScBootloaderReachesTheResolvedInput) {
-            ASSERT_OK_AND_ASSIGN(const auto args, tree().complete_loose_args());
+            ASSERT_OK_AND_ASSIGN(const auto args, tree().complete_loose_args(BuildType::Devkit));
             const auto sc = *test::valid_bootloaders().sc;
             write("first/sc_1.bin", sc);
             write("working/build.ini", "[falconbl]\ncb_1.bin\nsc_1.bin\ncd.bin\n");
@@ -81,7 +81,7 @@ namespace gxbuild3::cli {
             ASSERT_TRUE(donor->input.metadata.nand_image.has_value())
                 << "INI SC replaces donor SC while preserving donor backing";
 
-            write("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+            write("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n");
             const auto without_sc = resolve(args);
             ASSERT_OK(without_sc) << "INI chain omitting SC resolves";
             EXPECT_FALSE(without_sc->input.bootloaders.sc.has_value())
@@ -92,7 +92,7 @@ namespace gxbuild3::cli {
             auto args = minimum_args();
             write("first/cb_1.bin", Bytes{0xCB});
             write("first/cd.bin", Bytes{0xCD});
-            write("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+            write("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n");
             args.build_ini = "build.ini";
             args.section = "falcon";
 
@@ -181,7 +181,7 @@ namespace gxbuild3::cli {
             write("first/nanddump.bin", donor);
             write("first/cb_1.bin", Bytes{0xCB});
             write("first/cd.bin", Bytes{0xCD});
-            write("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+            write("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n");
             auto args = minimum_args();
             args.build_ini = "build.ini";
             args.section = "falcon";

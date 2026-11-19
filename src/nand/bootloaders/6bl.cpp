@@ -120,7 +120,15 @@ namespace gxbuild3::nand {
     }
 
     bool BootloaderCf::is_decrypted() const {
-        return decrypted || (data.size() >= 0x10 && data[0] == 0x00 && data[1] == 0x00);
+        // Same test as xeBuild's cfDecrypt: 32 zero bytes at file offset 0x1F0 (data 0x1C0).
+        // Ciphertext never has that run; the patch-slot count at 0x30 is not a safe marker.
+        if (decrypted)
+            return true;
+        constexpr size_t kZeroOff = 0x1F0 - sizeof(cf_header);
+        if (data.size() < kZeroOff + 32)
+            return false;
+        return std::all_of(data.begin() + kZeroOff, data.begin() + kZeroOff + 32,
+                           [](uint8_t b) { return b == 0; });
     }
 
     std::optional<std::array<uint8_t, 16>> BootloaderCf::cg_key() const {

@@ -135,17 +135,17 @@ namespace gxbuild3::cli {
             return std::tie(o.cbldv, o.pairing_data, o.cfldv, o.xellbutton, o.xellbutton2, o.cygnos,
                             o.demon, o.olddvd, o.nodvd, o.dualboot, o.nomobile, o.nofcrt, o.noremap,
                             o.noecdremap, o.nandmu, o.nosecurity, o.nosusecurity, o.smcnocheck,
-                            o.noblpatch, o.nopatch, o.cputemp, o.gputemp, o.edramtemp,
+                            o.noblpatch, o.patchsmc, o.nopatch, o.cputemp, o.gputemp, o.edramtemp,
                             o.overcputemp, o.overgputemp, o.overedramtemp, o.cpufan, o.gpufan,
                             o.dvdkey, o.avregion, o.gameregion, o.dvdregion, o.macid);
         }
 
         // The names of the options_fields members, in the same order.
-        constexpr std::array<std::string_view, 33> kOptionsFieldNames{
+        constexpr std::array<std::string_view, 34> kOptionsFieldNames{
             "cbldv",       "pairing_data",  "cfldv",   "xellbutton", "xellbutton2",  "cygnos",
             "demon",       "olddvd",        "nodvd",   "dualboot",   "nomobile",     "nofcrt",
             "noremap",     "noecdremap",    "nandmu",  "nosecurity", "nosusecurity", "smcnocheck",
-            "noblpatch",   "nopatch",       "cputemp", "gputemp",    "edramtemp",    "overcputemp",
+            "noblpatch",   "patchsmc",      "nopatch",       "cputemp", "gputemp",    "edramtemp",    "overcputemp",
             "overgputemp", "overedramtemp", "cpufan",  "gpufan",     "dvdkey",       "avregion",
             "gameregion",  "dvdregion",     "macid"};
         static_assert(std::tuple_size_v<decltype(options_fields(std::declval<OptionsArgs>()))> ==

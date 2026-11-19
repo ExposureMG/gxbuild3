@@ -220,7 +220,7 @@ int main(int argc, char* argv[]) {
         !write_bytes(source / "validation.bin",
                      std::array<uint8_t, 8>{0x47, 0x58, 0x42, 0x33, 0x00, 0xff, 0x10, 0x7e}) ||
         !write_text(root / "build.ini",
-                    "[falconbl]\ncb_1.bin\nsc.bin\ncd.bin\nce.bin\ncf_1.bin\ncg_1.bin\n"
+                    "[falconbl]\ncb_1.bin\nnone\ncd.bin\nce.bin\ncf_1.bin\ncg_1.bin\n"
                     "cf_2.bin\ncg_2.bin\n[flashfs]\nvalidation.bin\n")) {
         std::cerr << "could not write CLI integration fixture files\n";
         return 6;

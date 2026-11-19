@@ -55,6 +55,7 @@ namespace gxbuild3::nand {
         std::optional<ParsedPatchSet> patchset;
         std::optional<BootloaderCb> extra_cb;
         std::optional<BootloaderCd> extra_cd;
+        std::optional<BootloaderCe> extra_se;
     };
 
     // Everything a FlashImage holds, kept apart from its operations so FlashImage can copy and

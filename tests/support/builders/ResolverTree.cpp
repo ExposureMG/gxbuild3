@@ -115,6 +115,8 @@ namespace gxbuild3::test {
                     return written;
                 }
                 ini += "cbb_1.bin\n";
+            } else if (build_type != BuildType::Jtag) {
+                ini += "none\n";
             }
             ini += "cd.bin\n";
             if (build_type == BuildType::Jtag) {
@@ -122,7 +124,7 @@ namespace gxbuild3::test {
                     !written) {
                     return written;
                 }
-                ini += "cb_2.bin\n";
+                ini += "none\nnone\nnone\ncb_2.bin\n";
             }
             if (auto written = write_text("working/build.ini", ini); !written) {
                 return written;

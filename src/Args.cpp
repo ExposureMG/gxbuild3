@@ -99,7 +99,7 @@ namespace gxbuild3 {
                key == "nomobile" || key == "nofcrt" || key == "noremap" || key == "noecdremap" ||
                key == "nandmu" || key == "nosecurity" || key == "nosusecurity" ||
                key == "smcnocheck" || key == "nochecksmc" || key == "noblpatch" ||
-               key == "nopatch" || key == "cbldv" || key == "pairing_data" ||
+               key == "patchsmc" || key == "nopatch" || key == "cbldv" || key == "pairing_data" ||
                key == "pairingdata" || key == "pd" || key == "cfldv" || key == "xellbutton" ||
                key == "xellbutton2" || key == "dualboot" || key == "cputemp" || key == "gputemp" ||
                key == "edramtemp" || key == "overcputemp" || key == "overgputemp" ||
@@ -112,7 +112,8 @@ namespace gxbuild3 {
         return key == "cygnos" || key == "demon" || key == "olddvd" || key == "nodvd" ||
                key == "nomobile" || key == "nofcrt" || key == "noremap" || key == "noecdremap" ||
                key == "nandmu" || key == "nosecurity" || key == "nosusecurity" ||
-               key == "smcnocheck" || key == "nochecksmc" || key == "noblpatch";
+               key == "smcnocheck" || key == "nochecksmc" || key == "noblpatch" ||
+               key == "patchsmc";
     }
 
     std::optional<uint8_t> OptionsManager::power_on_reason(std::string_view name) {
@@ -171,6 +172,8 @@ namespace gxbuild3 {
             return m_args.smcnocheck.has_value();
         if (key == "noblpatch")
             return m_args.noblpatch.has_value();
+        if (key == "patchsmc")
+            return m_args.patchsmc.has_value();
         if (key == "nopatch")
             return m_args.nopatch.has_value();
 
@@ -264,6 +267,10 @@ namespace gxbuild3 {
         }
         if (key == "smcnocheck" || key == "nochecksmc") {
             m_args.smcnocheck = value;
+            return true;
+        }
+        if (key == "patchsmc") {
+            m_args.patchsmc = value;
             return true;
         }
         if (key == "noblpatch") {
@@ -412,6 +419,8 @@ namespace gxbuild3 {
             return m_args.smcnocheck;
         if (key == "noblpatch")
             return m_args.noblpatch;
+        if (key == "patchsmc")
+            return m_args.patchsmc;
 
         return std::nullopt;
     }

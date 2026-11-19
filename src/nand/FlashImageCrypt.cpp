@@ -470,6 +470,18 @@ namespace gxbuild3::nand {
                     return with_context(std::move(sealed), "encrypting the JTAG second CD");
                 }
             }
+            if (payloads.extra_se && !payloads.extra_se->data.empty() &&
+                payloads.extra_se->is_decrypted()) {
+                if (!payloads.extra_cd || !payloads.extra_cd->derived_key) {
+                    return fail(ErrorCode::Malformed,
+                                "Cannot encrypt the JTAG second SE: its CD key is missing");
+                }
+                if (auto sealed =
+                        payloads.extra_se->encrypt(payloads.extra_cd->derived_key->data());
+                    !sealed) {
+                    return with_context(std::move(sealed), "encrypting the JTAG second SE");
+                }
+            }
             return {};
         }
 

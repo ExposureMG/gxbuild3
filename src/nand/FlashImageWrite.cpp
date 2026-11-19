@@ -731,6 +731,7 @@ namespace gxbuild3::nand {
             const auto extra = jtag_extra_offsets(ctx.plan.window_base, payloads);
             std::optional<std::vector<uint8_t>> cb_bytes;
             std::optional<std::vector<uint8_t>> cd_bytes;
+            std::optional<std::vector<uint8_t>> se_bytes;
             if (payloads.extra_cb) {
                 cb_bytes = payloads.extra_cb->serialize();
                 if (auto laid = write_or_fail(driver, extra.cb, *cb_bytes, "JTAG second CB");
@@ -745,7 +746,15 @@ namespace gxbuild3::nand {
                     return laid;
                 }
             }
-            const size_t second_chain_end = cd_bytes   ? extra.cd + cd_bytes->size()
+            if (payloads.extra_se) {
+                se_bytes = payloads.extra_se->serialize();
+                if (auto laid = write_or_fail(driver, extra.se, *se_bytes, "JTAG second SE");
+                    !laid) {
+                    return laid;
+                }
+            }
+            const size_t second_chain_end = se_bytes   ? extra.se + se_bytes->size()
+                                            : cd_bytes ? extra.cd + cd_bytes->size()
                                             : cb_bytes ? extra.cb + cb_bytes->size()
                                                        : 0;
             if (second_chain_end != 0) {

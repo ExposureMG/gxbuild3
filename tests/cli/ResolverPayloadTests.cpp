@@ -95,7 +95,7 @@ namespace gxbuild3::cli {
         TEST_F(ResolverPayload, IniPayloadLookupFailureIsTerminal) {
             ASSERT_OK_AND_ASSIGN(auto args, tree().complete_loose_args());
             args.source_dirs = {path("first"), path("second")};
-            write("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n[security]\nsecdata.bin\n");
+            write("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n[security]\nsecdata.bin\n");
             std::error_code error;
             ASSERT_TRUE(std::filesystem::create_directory(path("first/secdata.bin"), error))
                 << "a directory stands in the first root's secdata.bin: " << error.message();
@@ -130,7 +130,7 @@ namespace gxbuild3::cli {
             write("first/nanddump.bin", *donor_bytes);
             write("first/cb_1.bin", Bytes{0xCB});
             write("first/cd.bin", Bytes{0xCD});
-            write("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n[flashfs]\ndonor-only.bin\n");
+            write("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n[flashfs]\ndonor-only.bin\n");
 
             auto args = minimum_args();
             args.build_ini = "build.ini";
@@ -146,17 +146,13 @@ namespace gxbuild3::cli {
                 << "donor fallback uses the lowercase basename and preserves its bytes";
 
             write("working/build.ini",
-                  "[falconbl]\ncb_1.bin\ncd.bin\n[security]\nsub/missing-security.bin\n");
+                  "[falconbl]\ncb_1.bin\nnone\ncd.bin\n[security]\nsub/missing-security.bin\n");
             const auto missing_security = resolve(args);
-            ASSERT_ERROR(missing_security, ResolutionErrorCode::AssetNotFound)
-                << "a missing named security payload is an exact error";
-            ASSERT_EQ(missing_security.error().path, path("working/build.ini"))
-                << "a missing named security payload is an exact error";
-            ASSERT_EQ(missing_security.error().item, "sub/missing-security.bin")
-                << "a missing named security payload is an exact error";
+            ASSERT_OK(missing_security)
+                << "a missing [security] payload is optional, as in xeBuild";
 
             write("working/build.ini",
-                  "[falconbl]\ncb_1.bin\ncd.bin\n[flashfs]\ndonor-only.bin\nsub/missing.bin\n");
+                  "[falconbl]\ncb_1.bin\nnone\ncd.bin\n[flashfs]\ndonor-only.bin\nsub/missing.bin,12345678\n");
             const auto missing = resolve(args);
             ASSERT_ERROR(missing, ResolutionErrorCode::AssetNotFound)
                 << "a named INI payload absent from donor and roots is an exact error";
@@ -254,7 +250,7 @@ namespace gxbuild3::cli {
         TEST_F(ResolverPayload, Glitch2mWithoutCbBIsRefused) {
             ASSERT_OK_AND_ASSIGN(auto args, tree().complete_loose_args(BuildType::Glitch2m));
             args.patch_extension = "test";
-            write("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+            write("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n");
             write("first/bin/patches_g2mfalcon_test.bin", test::valid_glitch_patchset());
             write("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
 
@@ -392,7 +388,7 @@ namespace gxbuild3::cli {
             write("first/nanddump.bin", *donor);
             write("first/cb_1.bin", Bytes{0xCB});
             write("first/cd.bin", Bytes{0xCD});
-            write("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+            write("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n");
             auto args = minimum_args();
             args.build_ini = "build.ini";
             args.section = "falcon";

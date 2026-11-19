@@ -46,7 +46,7 @@ namespace gxbuild3::cli {
             write("first/nanddump.bin", donor);
             write("first/cb_1.bin", Bytes{0xCB});
             write("first/cd.bin", Bytes{0xCD});
-            write("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+            write("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n");
             write("working/options.ini", "cbldv=7\ncfldv=8\npairing_data=010203\nnofcrt=true\n");
             write("first/kv.bin", test::encrypted_keyvault(key, 0x44));
             write("first/smc.bin", test::make_smc(0x45));
@@ -134,7 +134,7 @@ namespace gxbuild3::cli {
             write("first/new.bin", Bytes{0x61});
             write("first/aac.xexp", Bytes{0x62});
             write("working/build.ini",
-                  "[falconbl]\ncb_1.bin\ncd.bin\n[security]\nsecdata.bin\nextended.bin\n"
+                  "[falconbl]\ncb_1.bin\nnone\ncd.bin\n[security]\nsecdata.bin\nextended.bin\n"
                   "[flashfs]\nlaunch.ini\nnew.bin\nlisted.bin\naac.xexp\n");
 
             auto args = minimum_args();
@@ -159,18 +159,16 @@ namespace gxbuild3::cli {
                 const auto file = find(name);
                 return file != files.end() && file->second == contents;
             };
-            // xeBuild 1.21 order: [flashfs] in INI order, then [security] in INI order, then the
-            // console's secured files the INI does not name.
-            const std::array<std::string_view, 8> order{"launch.ini", "new.bin",     "listed.bin",
-                                                        "aac.xexp1",  "secdata.bin", "extended.bin",
-                                                        "crl.bin",    "fcrt.bin"};
+            // xeBuild 1.21 order: [flashfs] in INI order, then [security] in INI order;
+            // donor secured files omitted from [security] are not carried.
+            const std::array<std::string_view, 6> order{"launch.ini", "new.bin",     "listed.bin",
+                                                        "aac.xexp1",  "secdata.bin", "extended.bin"};
             bool ordered = files.size() == order.size();
             for (size_t i = 0; ordered && i < order.size(); ++i) {
                 ordered = find(order[i]) == files.begin() + static_cast<std::ptrdiff_t>(i);
             }
-            EXPECT_EQ(files.size(), 8U) << "the FlashFS holds exactly the expected files";
-            EXPECT_TRUE(ordered) << "the FlashFS lists [flashfs], then [security], then the "
-                                    "console's other secured files";
+            EXPECT_EQ(files.size(), 6U) << "the FlashFS holds exactly the expected files";
+            EXPECT_TRUE(ordered) << "the FlashFS lists [flashfs], then [security]";
             EXPECT_TRUE(has("launch.ini", Bytes{0x41}))
                 << "an INI file from the source roots replaces the donor basename";
             EXPECT_TRUE(has("secdata.bin", plaintext_secdata))
@@ -179,10 +177,10 @@ namespace gxbuild3::cli {
                 << "an INI security file missing from the roots comes from the donor";
             EXPECT_TRUE(has("extended.bin", donor_extended))
                 << "an INI security file missing from the roots comes from the donor";
-            EXPECT_TRUE(has("crl.bin", Bytes{0x23}))
-                << "donor secured files are carried without an INI entry";
-            EXPECT_TRUE(has("fcrt.bin", Bytes{0x24}))
-                << "donor secured files are carried without an INI entry";
+            EXPECT_EQ(find("crl.bin"), files.end())
+                << "donor secured files omitted from [security] are not carried";
+            EXPECT_EQ(find("fcrt.bin"), files.end())
+                << "donor secured files omitted from [security] are not carried";
             EXPECT_TRUE(has("listed.bin", Bytes{0x25}))
                 << "an INI file missing from the roots comes from the donor";
             EXPECT_TRUE(has("new.bin", Bytes{0x61})) << "a new INI file is added";
@@ -202,7 +200,7 @@ namespace gxbuild3::cli {
         TEST_F(ResolverMetadata, UnsuppliedSecurityFilesReachTheBuild) {
             ASSERT_OK_AND_ASSIGN(const auto args, tree().complete_loose_args());
             write("working/build.ini",
-                  "[falconbl]\ncb_1.bin\ncd.bin\n[security]\nextended.bin\nsecdata.bin\n");
+                  "[falconbl]\ncb_1.bin\nnone\ncd.bin\n[security]\nextended.bin\nsecdata.bin\n");
             write("first/extended.bin", Bytes(5, 0x45));
             const auto result = resolve(args);
             ASSERT_OK(result) << "a build whose security files are missing resolves";
@@ -247,7 +245,7 @@ namespace gxbuild3::cli {
                             ASSERT_OK(own.write_binary("first/kv.bin", sealed));
                             ASSERT_OK(own.write_text(
                                 "working/build.ini",
-                                std::string("[falconbl]\ncb_1.bin\ncd.bin\n[security]\n") +
+                                std::string("[falconbl]\ncb_1.bin\nnone\ncd.bin\n[security]\n") +
                                     (listed ? "fcrt.bin\n" : ";fcrt.bin,\n")));
                             const Bytes fcrt(0x4000, 0x46);
                             if (supplied) {
@@ -308,7 +306,7 @@ namespace gxbuild3::cli {
             write("first/nanddump.bin", donor_image);
             write("first/cb_1.bin", Bytes{0xCB});
             write("first/cd.bin", Bytes{0xCD});
-            write("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+            write("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n");
             write("working/options.ini", "cbldv=bad\ncfldv=bad\npairing_data=bad\n");
             auto donor_args = minimum_args();
             donor_args.build_ini = "build.ini";
@@ -346,7 +344,7 @@ namespace gxbuild3::cli {
             write("first/nanddump.bin", donor_image);
             write("first/cb_1.bin", Bytes{0xCB});
             write("first/cd.bin", Bytes{0xCD});
-            write("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+            write("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n");
             auto args = minimum_args();
             args.build_ini = "build.ini";
             args.section = "falcon";

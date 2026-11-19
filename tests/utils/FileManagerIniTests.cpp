@@ -53,12 +53,12 @@ namespace gxbuild3::utils {
         }
 
         TEST_F(FileManagerIni, LookupFallsBackToAnyCase) {
-            write("version/_test.ini", "[testbl]\nsc_17489.bin\n[flashfs]\nSegoe.XTT\nexact.bin\n");
+            write("version/_test.ini", "[testbl]\nnone\nsc_17489.bin\n[flashfs]\nSegoe.XTT\nexact.bin\n");
             write("mydata/SC_17489.bin", Bytes{0x53, 0x43});
             write("mydata/segoe.xtt", Bytes{0x07});
             write("mydata/EXACT.bin", Bytes{0x01});
             write("mydata/exact.bin", Bytes{0x02});
-            const auto result = read_ini_files("version", "test", "test");
+            const auto result = read_ini_files("version", "test", "test", {}, {}, BuildType::Devkit);
             ASSERT_OK(result) << "a bootloader named in another case is found";
             EXPECT_EQ(result->bootloaders.sc, (Bytes{0x53, 0x43}))
                 << "a bootloader named in another case is found";
@@ -88,9 +88,15 @@ namespace gxbuild3::utils {
             write("mydata/rrbkgnd.bmp", Bytes{0x42});
             write("mydata/rglXam.rglp", Bytes{0x43});
             write("mydata/reason.bin", Bytes{0x12});
+            const auto missing_raw = read_ini_files("version", "test", "test");
+            ASSERT_ERROR(missing_raw, ErrorCode::NotFound)
+                << "a missing [rawpatch] file fails the build";
+
+            write("version/_test.ini",
+                  "[testbl]\nnone\n[flashfs]\n..\\data\\xell.bin,;\n..\\launch.xex,0\n"
+                  "rrbkgnd.bmp ,6850A07F\nrglXam.rglp\n[rawpatch]\nreason.bin,0x4E\n");
             const auto result = read_ini_files("version", "test", "test");
-            ASSERT_OK(result) << "a missing file from outside the release and a missing "
-                                 "[rawpatch] file are skipped";
+            ASSERT_OK(result) << "a missing file from outside the release is skipped";
             EXPECT_EQ(payload(*result, "xell.bin"), (Bytes{0x7F, 'E'}))
                 << "..\\data\\xell.bin is found under data/ in a root and stored by its basename";
             EXPECT_TRUE(std::ranges::none_of(result->flashfs_sec, [](const auto& file) {
@@ -101,7 +107,7 @@ namespace gxbuild3::utils {
             EXPECT_EQ(payload(*result, "rglXam.rglp"), Bytes{0x43})
                 << "a name ending in p without a checksum is stored as it is";
             ASSERT_EQ(result->raw_patches.size(), 1u)
-                << "a [rawpatch] file is read with its offset; a missing one is skipped";
+                << "a [rawpatch] file is read with its offset";
             EXPECT_EQ(result->raw_patches[0].name, "reason.bin")
                 << "a [rawpatch] file is read with its offset; a missing one is skipped";
             EXPECT_EQ(result->raw_patches[0].offset, 0x4Eu)

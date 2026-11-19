@@ -190,6 +190,7 @@ namespace GxBuild {
         // JTAG payload window as "extra bootloaders"; they are not part of the boot chain.
         std::optional<std::vector<uint8_t>> extra_cb;
         std::optional<std::vector<uint8_t>> extra_cd;
+        std::optional<std::vector<uint8_t>> extra_se;
     };
 
     struct InputPayloads {
@@ -226,6 +227,8 @@ namespace GxBuild {
         std::optional<bool> nosusecurity;
         std::optional<bool> smcnocheck;
         std::optional<bool> noblpatch;
+        // Glitch builds only: patch the retail SMC reset limit (xeBuild's patchsmc; off by default).
+        std::optional<bool> patchsmc;
         // Stages whose automatic patches are skipped: any of cb, cd, khv, joined with '+'.
         std::optional<std::string> nopatch;
 

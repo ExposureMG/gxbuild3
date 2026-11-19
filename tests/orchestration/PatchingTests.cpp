@@ -141,6 +141,7 @@ namespace gxbuild3::orchestration {
                 SCOPED_TRACE(name);
                 auto input = test::fresh_input(ImageType::SmallBlock);
                 input.build_type = build_type;
+                input.options.patchsmc = true;
                 input.metadata.smc = test::clean_retail_smc();
                 if (build_type != BuildType::Glitch) {
                     input.bootloaders.cb_b = input.bootloaders.cb_or_a;

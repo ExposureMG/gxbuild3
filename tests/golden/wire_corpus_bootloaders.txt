@@ -6,25 +6,25 @@ context smc size=0x3000 sha1=9b56219e415900233f94c44f3f09f222ef712302
 SB_10375.bin input size=0x4100 sha1=aa215bbcf24bee8aa0eb32e39b142f3847995f22
 SB_10375.bin parse ok
 SB_10375.bin serialize identity=yes size=0x4100 sha1=aa215bbcf24bee8aa0eb32e39b142f3847995f22
-SB_10375.bin state is_decrypted=true decrypted=false
+SB_10375.bin state is_decrypted=true decrypted=true
 SB_10375.bin header magic=0x5342 version=10375 pairing=0x0000 flags=0x0000 entrypoint=0x000003C0 size=0x4100
 SB_10375.bin fields console_type=0 console_sequence=0 sequence_allow=0x0000
-SB_10375.bin perbox none
+SB_10375.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
 SB_10375.bin cb.requires_cpu_key_for_cd false
 SB_10375.bin cb.rgh3_v1 patched=false sha1=aa215bbcf24bee8aa0eb32e39b142f3847995f22
-SB_10375.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=true sha1=2a75c8e0e06a8ee69f9fe9c688d2dde4752a0c3d derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=false sha1=088bdae6a369fb4103836048b08a73c6fb5fed01
-SB_10375.bin cb.encrypt_retail nonce=pinned result=err=invalid argument msg="Retail CB authentication requires plaintext per-box data, a CPU key, and an aligned encrypted SMC"
+SB_10375.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=2a75c8e0e06a8ee69f9fe9c688d2dde4752a0c3d derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=088bdae6a369fb4103836048b08a73c6fb5fed01
+SB_10375.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=62d7f246664d74d987ea30d8e14bd7ec2f5de475 digest=3895a29b466f8294776d4e64e7095c94
 SB_14352.bin input size=0x40E0 sha1=9e293f37dd9ece21395e02867151d8a26770cacc
 SB_14352.bin parse ok
 SB_14352.bin serialize identity=yes size=0x40E0 sha1=9e293f37dd9ece21395e02867151d8a26770cacc
-SB_14352.bin state is_decrypted=true decrypted=false
+SB_14352.bin state is_decrypted=true decrypted=true
 SB_14352.bin header magic=0x5342 version=14352 pairing=0x0000 flags=0x0000 entrypoint=0x000003D0 size=0x40E0
 SB_14352.bin fields console_type=0 console_sequence=0 sequence_allow=0x0000
-SB_14352.bin perbox none
+SB_14352.bin perbox 0000000000000000000000000000000000000000000000000000000000000000
 SB_14352.bin cb.requires_cpu_key_for_cd false
 SB_14352.bin cb.rgh3_v1 patched=false sha1=9e293f37dd9ece21395e02867151d8a26770cacc
-SB_14352.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=true sha1=fc09d8e0aea6c67d78f781914c5b7e592c0a0273 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=false sha1=edf4b26fe9c6dae756a413a2b8f0163e0dc94419
-SB_14352.bin cb.encrypt_retail nonce=pinned result=err=invalid argument msg="Retail CB authentication requires plaintext per-box data, a CPU key, and an aligned encrypted SMC"
+SB_14352.bin cb.crypt_1bl nonce=pinned encrypt=ok decrypted=false sha1=fc09d8e0aea6c67d78f781914c5b7e592c0a0273 derived_sha1=1cab307948d5b92a2fba6c04e78f05d43d9c8a02 decrypt=ok decrypted=true sha1=edf4b26fe9c6dae756a413a2b8f0163e0dc94419
+SB_14352.bin cb.encrypt_retail nonce=pinned result=ok decrypted=false sha1=18bb85422bca4b9ad6fadca40da32d5679211069 digest=3895a29b466f8294776d4e64e7095c94
 SC_12625_slim.bin input size=0x4700 sha1=61f64531fc390d749c30970694704e66d4c00d34
 SC_12625_slim.bin parse ok
 SC_12625_slim.bin serialize identity=yes size=0x4700 sha1=61f64531fc390d749c30970694704e66d4c00d34

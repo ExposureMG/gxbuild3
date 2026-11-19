@@ -208,6 +208,9 @@ namespace gxbuild3::nand {
             if (payloads.extra_cd) {
                 add_range(extra.cd, payloads.extra_cd->serialize().size());
             }
+            if (payloads.extra_se) {
+                add_range(extra.se, payloads.extra_se->serialize().size());
+            }
         }
         return ranges;
     }
@@ -344,6 +347,13 @@ namespace gxbuild3::nand {
                 if (payloads.extra_cd) {
                     if (auto added =
                             add("JTAG extra CD", extra.cd, payloads.extra_cd->serialize().size());
+                        !added) {
+                        return std::unexpected(std::move(added.error()));
+                    }
+                }
+                if (payloads.extra_se) {
+                    if (auto added =
+                            add("JTAG extra SE", extra.se, payloads.extra_se->serialize().size());
                         !added) {
                         return std::unexpected(std::move(added.error()));
                     }

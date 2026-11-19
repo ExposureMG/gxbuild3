@@ -211,9 +211,6 @@ int main(int argc, char* argv[]) {
 
     bool valid = true;
     valid = verify_stage("CB", &image->cb_section.cb_or_A, NANDBootloaderMagic::CB, 1) && valid;
-    valid = verify_stage("SC", image->cb_section.sc ? &*image->cb_section.sc : nullptr,
-                         NANDBootloaderMagic::SC, 2) &&
-            valid;
     valid = verify_stage("CD", &image->kernel_section.cd, NANDBootloaderMagic::CD, 3) && valid;
     valid = verify_stage("CE", image->kernel_section.ce ? &*image->kernel_section.ce : nullptr,
                          NANDBootloaderMagic::CE, 4) &&
@@ -224,16 +221,13 @@ int main(int argc, char* argv[]) {
     valid = verify_stage("CG0", image->system_update_0.cg ? &*image->system_update_0.cg : nullptr,
                          NANDBootloaderMagic::CG, 6) &&
             valid;
-    valid = verify_stage("CF1", image->system_update_1.cf ? &*image->system_update_1.cf : nullptr,
-                         NANDBootloaderMagic::CF, 7) &&
-            valid;
-    valid = verify_stage("CG1", image->system_update_1.cg ? &*image->system_update_1.cg : nullptr,
-                         NANDBootloaderMagic::CG, 8) &&
-            valid;
 
-    valid = verify_literal_payload("CB", &image->cb_section.cb_or_A, 0x380, 0x00) && valid;
-    valid = verify_literal_payload("SC", image->cb_section.sc ? &*image->cb_section.sc : nullptr,
-                                   0x20, 0x53) &&
+    valid = require(image->cb_section.cb_or_A.data.size() == 0x380,
+                    "CB has the wrong plaintext payload size") &&
+            require(std::all_of(image->cb_section.cb_or_A.data.begin() + 0x10,
+                                image->cb_section.cb_or_A.data.end(),
+                                [](uint8_t byte) { return byte == 0x00; }),
+                    "CB has the wrong plaintext payload bytes") &&
             valid;
     valid = verify_literal_payload("CD", &image->kernel_section.cd, 0x20, 0x42) && valid;
     valid = verify_literal_payload("CE",
@@ -246,13 +240,6 @@ int main(int argc, char* argv[]) {
             valid;
     valid = verify_cg_plaintext(
                 "CG0", image->system_update_0.cg ? &*image->system_update_0.cg : nullptr, 0x60) &&
-            valid;
-    valid = verify_cf_plaintext("CF1",
-                                image->system_update_1.cf ? &*image->system_update_1.cf : nullptr,
-                                expected_cf_nonce, 0x70) &&
-            valid;
-    valid = verify_cg_plaintext(
-                "CG1", image->system_update_1.cg ? &*image->system_update_1.cg : nullptr, 0x80) &&
             valid;
 
     valid = require(image->filesystem.has_value(), "FlashFS is absent") && valid;

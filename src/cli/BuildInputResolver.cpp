@@ -356,6 +356,11 @@ namespace gxbuild3::cli {
                 case BuildType::Jtag:
                     return patch_name(args.section, args.patch_extension);
                 case BuildType::Glitch:
+                    // As xeBuild: the 2010+ boards have their own glitch1 patch file, the
+                    // earlier ones share patches_fat.
+                    if (args.section == "trinity" || args.section == "corona" ||
+                        args.section == "winchester")
+                        return patch_name(args.section, args.patch_extension);
                     return patch_name("fat", args.patch_extension);
                 case BuildType::Glitch2:
                     return patch_name("g2" + args.section, args.patch_extension);
@@ -413,14 +418,6 @@ namespace gxbuild3::cli {
                 return std::optional<DirectFile>{DirectFile{candidate, std::move(*data)}};
             }
             return std::optional<DirectFile>{};
-        }
-
-        // Console-bound FlashFS files a build carries from the donor even when the INI
-        // does not list them.
-        bool is_donor_secured_file(std::string_view lowercase_name) {
-            static constexpr std::array<std::string_view, 5> kNames{
-                "crl.bin", "dae.bin", "extended.bin", "secdata.bin", "fcrt.bin"};
-            return std::find(kNames.begin(), kNames.end(), lowercase_name) != kNames.end();
         }
 
         // The SB private key a devgl build signs its SD with: SB_priv.bin, or SB_prv.bin as
@@ -851,7 +848,24 @@ namespace gxbuild3::cli {
                     const bool made_up = std::string_view(section_name) == "security" &&
                                          !scan_options.nosusecurity &&
                                          (key == "extended.bin" || key == "secdata.bin");
-                    const bool optional = outside || key == "fcrt.bin" || made_up;
+                    // xeBuild skips any missing [security] entry, and a missing [flashfs]
+                    // entry that states no CRC.
+                    const bool is_security = std::string_view(section_name) == "security";
+                    uint32_t listed_crc = 0;
+                    {
+                        auto digits = std::string_view(entry.value);
+                        while (!digits.empty() && std::isspace(static_cast<unsigned char>(digits.front())))
+                            digits.remove_prefix(1);
+                        while (!digits.empty() && std::isspace(static_cast<unsigned char>(digits.back())))
+                            digits.remove_suffix(1);
+                        if (digits.starts_with("0x") || digits.starts_with("0X"))
+                            digits.remove_prefix(2);
+                        if (!digits.empty())
+                            std::from_chars(digits.data(), digits.data() + digits.size(), listed_crc,
+                                            16);
+                    }
+                    const bool optional =
+                        outside || is_security || key == "fcrt.bin" || made_up || listed_crc == 0;
                     if (!*found && !optional && !donor_flashfs_names.contains(key)) {
                         return std::unexpected(error(
                             ResolutionErrorCode::AssetNotFound,
@@ -965,6 +979,10 @@ namespace gxbuild3::cli {
 
             input.bootloaders = ini_files->bootloaders;
             input.raw_patches = ini_files->raw_patches;
+            // When an SE replaces CF1 in a JTAG chain (seReplacesCf), xeBuild zeroes cfLdv.
+            if (input.bootloaders.extra_se) {
+                input.metadata.cf_ldv = 0;
+            }
 
             // The FlashFS holds the INI [security] and [flashfs] files plus the console's
             // secured files. From the donor it takes only those secured files and the
@@ -987,7 +1005,7 @@ namespace gxbuild3::cli {
             if (input.flashfs_sec) {
                 for (auto& file : *input.flashfs_sec) {
                     const auto key = lowercase_basename(file.first);
-                    if (is_donor_secured_file(key) || ini_flashfs_names.contains(key)) {
+                    if (ini_flashfs_names.contains(key)) {
                         overlay_flashfs(flashfs, std::move(file), flashfs_positions);
                     }
                 }
@@ -1170,8 +1188,12 @@ namespace gxbuild3::cli {
                                                          cb_word.error().describe(),
                                                      {}, "fuses"));
                     }
+                    // When SE replaces CF1 in a JTAG chain (seReplacesCf), xeBuild zeroes
+                    // fuseset 02 and sets fuseset 01 to devkit (0x01000000).
+                    const uint32_t fuse_word =
+                        input.bootloaders.extra_se ? uint32_t{0x00000000} : *cb_word;
                     auto fuses = gxbuild3::utils::generate_fuseset(
-                        *cb_word, foundations->cpu_key, input.metadata.cf_ldv.value_or(0));
+                        fuse_word, foundations->cpu_key, input.metadata.cf_ldv.value_or(0));
                     if (!fuses) {
                         return std::unexpected(error(ResolutionErrorCode::InvalidInput,
                                                      "Could not generate the virtual fuseset: " +

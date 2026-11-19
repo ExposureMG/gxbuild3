@@ -1,4 +1,5 @@
 #include "BuildRunner.hpp"
+#include "nand/FlashImageLayout.hpp"
 
 #include "InputValidator.hpp"
 #include "Wire.hpp"
@@ -467,7 +468,11 @@ namespace gxbuild3 {
                                                              BuildType build_type) {
             const bool zero_key = is_zero_cpu_key(metadata.cpu_key);
             const bool zero_paired_cb_b = zero_key && flash_image.cb_section.cb_B.has_value();
-            const bool paired = build_type != BuildType::Glitch && !zero_paired_cb_b;
+            // A glitch1 chain with a CB_B (CB_A + CB_B, as the trinity INIs list) is paired like a
+            // glitch2 one; only the single-CB glitch1 chain is zero-paired.
+            const bool single_cb_glitch =
+                build_type == BuildType::Glitch && !flash_image.cb_section.cb_B.has_value();
+            const bool paired = !single_cb_glitch && !zero_paired_cb_b;
             const bool main_cb_paired =
                 paired && build_type != BuildType::Jtag && build_type != BuildType::Devgl;
             const auto cf_ldv = zero_key ? std::optional<uint8_t>{0} : metadata.cf_ldv;
@@ -752,6 +757,11 @@ namespace gxbuild3 {
                     cd_nonce = donor_or_random(stage(2));
                 }
                 std::copy(cd_nonce->begin(), cd_nonce->end(), std::begin(extra_cd->header.key));
+            }
+            if (auto& extra_se = image.payloads.extra_se;
+                extra_se && extra_se->decrypted && !extra_se->data.empty()) {
+                const auto se_nonce = donor_or_random(stage(3));
+                std::copy(se_nonce.begin(), se_nonce.end(), std::begin(extra_se->header.key));
             }
 
             for (auto* slot : {&image.system_update_0, &image.system_update_1}) {
@@ -1117,10 +1127,13 @@ namespace gxbuild3 {
         }
 
         // A clean retail SMC gets the glitch reboot patch on every glitch type whose SMC it
-        // suits: glitch, glitch2 and glitch2m. Glitch3 writes the donor's or smc.bin's SMC as
-        // supplied, without checking its type.
-        if ((input.build_type == BuildType::Glitch || input.build_type == BuildType::Glitch2 ||
-             input.build_type == BuildType::Glitch2m) &&
+        // suits: glitch, glitch2 and glitch2m, when the patchsmc option is on (as in xeBuild,
+        // it is off otherwise). Glitch3 writes the donor's or smc.bin's SMC as supplied,
+        // without checking its type.
+        if (input.options.patchsmc.value_or(false) &&
+            (input.build_type == BuildType::Glitch || input.build_type == BuildType::Glitch2 ||
+             input.build_type == BuildType::Glitch2m || input.build_type == BuildType::Devgl ||
+             input.build_type == BuildType::Jtag) &&
             flash_image.smc->variant == SmcType::Retail) {
 
             flash_image.smc->decrypt();
@@ -1219,12 +1232,12 @@ namespace gxbuild3 {
                 {ErrorCode::InvalidArgument, "Glitch3 requires CB_A, CB_X (15432), and CB_B"});
         }
 
-        if (input.build_type == BuildType::Glitch &&
-            (flash_image.cb_section.cb_B || flash_image.cb_section.cb_x)) {
+        // glitch1 may carry a CB_B (xeBuild builds the trinity 13604/17559 _glitch.ini with
+        // CB_A + CB_B); only a CB_X is out of place there.
+        if (input.build_type == BuildType::Glitch && flash_image.cb_section.cb_x) {
             return to_build_error(BuildErrorCode::InvalidBootloader,
                                   {ErrorCode::Unsupported,
-                                   "glitch1/RGH1 does not support a CB_B (use glitch2) or a CB_X "
-                                   "(use glitch3)"});
+                                   "glitch1/RGH1 does not support a CB_X (use glitch3)"});
         }
 
         std::optional<ParsedPatchSet> parsed_patchset;
@@ -1251,6 +1264,11 @@ namespace gxbuild3 {
         }
         if (parsed_patchset && parsed_patchset->kind == PatchSetKind::Glitch &&
             !(no_patch.cb && no_patch.cd)) {
+            // A single-CB glitch1 patches its CB; with a CB_B (CB_A + CB_B, as the trinity
+            // glitch1 INIs list) the first section goes to the CB_B, as in glitch2 and xeBuild.
+            // (the patchset parser labels glitch1's first section Cb either way).
+            const bool glitch1_cbb =
+                input.build_type == BuildType::Glitch && flash_image.cb_section.cb_B;
             const auto first_target = input.build_type == BuildType::Glitch
                                           ? PatchSectionTarget::Cb
                                           : PatchSectionTarget::Cbb;
@@ -1289,11 +1307,18 @@ namespace gxbuild3 {
                 flash_image.kernel_section.ce ? flash_image.kernel_section.ce->serialize().size()
                                               : 0,
             };
-            const size_t first_index = first_target == PatchSectionTarget::Cb ? CbA : CbB;
+            // A chain that already runs past XeLL's slot (a hybrid glitch2m with an SB/SD/SE
+            // chain) is laid as xeBuild lays it: XeLL is skipped and the update slots follow
+            // the chain, so the usual limit does not apply to it.
+            size_t unpatched_total = 0;
+            for (const size_t size : stage_sizes)
+                unpatched_total += align_16(size);
+            const size_t first_index =
+                (first_target == PatchSectionTarget::Cb && !glitch1_cbb) ? CbA : CbB;
             if (first_section) {
                 const auto first_size =
                     patched_bootloader_size(stage_sizes[first_index], *first_section,
-                                            first_target == PatchSectionTarget::Cb ? "CB" : "CBB");
+                                            (first_target == PatchSectionTarget::Cb && !glitch1_cbb) ? "CB" : "CBB");
                 if (!first_size) {
                     return to_build_error(BuildErrorCode::PatchFailure, first_size.error());
                 }
@@ -1321,12 +1346,18 @@ namespace gxbuild3 {
             for (const size_t size : stage_sizes) {
                 aligned_total += align_16(size);
             }
-            if (aligned_total > boot_chain_capacity) {
+            if (aligned_total > boot_chain_capacity && unpatched_total <= boot_chain_capacity) {
                 return to_build_error(
                     BuildErrorCode::PatchFailure,
                     {ErrorCode::OutOfRange,
                      "Patched bootloader chain exceeds the space before patch slots"});
             }
+            const size_t effective_capacity =
+                unpatched_total > boot_chain_capacity
+                    ? flash_image.flash_driver.block_size_clean() *
+                              flash_image.flash_driver.block_count() -
+                          boot_chain_start
+                    : boot_chain_capacity;
             const auto target_capacity = [&](size_t target_index) {
                 size_t other_total = 0;
                 for (size_t index = 0; index < stage_sizes.size(); ++index) {
@@ -1334,7 +1365,7 @@ namespace gxbuild3 {
                         other_total += align_16(stage_sizes[index]);
                     }
                 }
-                return boot_chain_capacity - other_total;
+                return effective_capacity - other_total;
             };
 
             auto patch_and_reparse = [&](auto& bootloader, PatchSectionTarget target,
@@ -1359,7 +1390,13 @@ namespace gxbuild3 {
                 return {};
             };
 
-            if (first_section && first_target == PatchSectionTarget::Cb) {
+            if (first_section && first_target == PatchSectionTarget::Cb && glitch1_cbb) {
+                if (auto patched = patch_and_reparse(*flash_image.cb_section.cb_B, first_target,
+                                                     target_capacity(CbB), "CBB");
+                    !patched) {
+                    return to_build_error(BuildErrorCode::PatchFailure, patched.error());
+                }
+            } else if (first_section && first_target == PatchSectionTarget::Cb) {
                 if (auto patched = patch_and_reparse(flash_image.cb_section.cb_or_A, first_target,
                                                      target_capacity(CbA), "CB");
                     !patched) {
@@ -1433,6 +1470,13 @@ namespace gxbuild3 {
                 return to_build_error(BuildErrorCode::InvalidBootloader, parsed.error());
             }
         }
+        if (input.bootloaders.extra_se) {
+            if (auto parsed = parse_stage_into<BootloaderCe>(
+                    flash_image.payloads.extra_se, *input.bootloaders.extra_se, "JTAG extra SE");
+                !parsed) {
+                return to_build_error(BuildErrorCode::InvalidBootloader, parsed.error());
+            }
+        }
 
         // Patching reparses its targets. Apply the resolved metadata only after that
         // replacement step so the final CB/CF objects, rather than a discarded parse,
@@ -1477,7 +1521,12 @@ namespace gxbuild3 {
         }
 
         if (input.payloads) {
-            if (input.payloads->xell && !input.payloads->xell->empty()) {
+            const bool chain_past_xell =
+                input.build_type == BuildType::Glitch2m &&
+                nand::detail::laid_boot_chain_end(flash_image) > nand::detail::kXellOffset;
+            if (chain_past_xell && input.payloads->xell && !input.payloads->xell->empty()) {
+                Log::Warn("Skipping XeLL: the boot chain runs past its slot, there is not enough room");
+            } else if (input.payloads->xell && !input.payloads->xell->empty()) {
                 auto xell_parsed = XeLL::parse(*input.payloads->xell);
                 if (!xell_parsed) {
                     return to_build_error(

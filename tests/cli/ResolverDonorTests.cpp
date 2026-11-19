@@ -59,7 +59,7 @@ namespace gxbuild3::cli {
             args.section = "falcon";
             write("first/cb_1.bin", Bytes{0xCB});
             write("first/cd.bin", Bytes{0xCD});
-            write("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+            write("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n");
             const auto absolute = resolve(args);
             ASSERT_OK(absolute) << "absolute explicit NAND and output paths remain absolute";
             EXPECT_EQ(absolute->input.image_type, ImageType::BigBlock)

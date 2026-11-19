@@ -42,12 +42,12 @@ namespace gxbuild3::utils {
         }
 
         TEST_F(FileManagerBootloader, IniPreservesBothCfCgChains) {
-            write("version/_test.ini", "[testbl]\ncf_1.bin\ncf_2.bin\ncg_1.bin\ncg_2.bin\n");
+            write("version/_test.ini", "[testbl]\nnone\nnone\nnone\ncf_1.bin\ncg_1.bin\nnone\nnone\ncf_2.bin\ncg_2.bin\n");
             write("mydata/cf_1.bin", Bytes{1});
             write("mydata/cf_2.bin", Bytes{2});
             write("mydata/cg_1.bin", Bytes{3});
             write("mydata/cg_2.bin", Bytes{4});
-            const auto result = read_ini_files("version", "test", "test");
+            const auto result = read_ini_files("version", "test", "test", {}, {}, BuildType::Jtag);
             ASSERT_OK(result) << "deduplication must preserve both CF/CG chains";
             const auto& bl = result->bootloaders;
             EXPECT_EQ(bl.cf0, Bytes{1}) << "deduplication must preserve both CF/CG chains";
@@ -126,7 +126,7 @@ namespace gxbuild3::utils {
         TEST_F(FileManagerBootloader, IniNonJtagSecondCbStaysCbB) {
             // Synthetic: a non-JTAG INI with two plain cb_ files keeps the historical
             // mapping (second cb_ -> CB_B). This is the branch the JTAG gate protects.
-            write("version/_test.ini", "[testbl]\ncb_1.bin\ncd_1.bin\ncb_2.bin\n");
+            write("version/_test.ini", "[testbl]\ncb_1.bin\ncb_2.bin\ncd_1.bin\n");
             write("mydata/cb_1.bin", Bytes{0x11});
             write("mydata/cd_1.bin", Bytes{0x22});
             write("mydata/cb_2.bin", Bytes{0x33});
@@ -145,13 +145,13 @@ namespace gxbuild3::utils {
         }
 
         TEST_F(FileManagerBootloader, EarlierStfsDerivedPartsBeatLaterLooseFilesAndAliasesFollow) {
-            write("version/_test.ini", "[testbl]\ncf_1.bin\ncg_1.bin\ncf.bin\ncg.bin\n");
+            write("version/_test.ini", "[testbl]\nnone\nnone\nnone\ncf_1.bin\ncg_1.bin\nnone\nnone\ncf.bin\ncg.bin\n");
             const Bytes xboxupd = make_xboxupd();
             const Bytes cf = xboxupd_cf(xboxupd);
             const Bytes cg = xboxupd_cg(xboxupd);
             write_stfs("mydata/su_test", {{"xboxupd.bin", xboxupd}});
             write("version/cf_1.bin", Bytes{9});
-            const auto result = read_ini_files("version", "test", "test");
+            const auto result = read_ini_files("version", "test", "test", {}, {}, BuildType::Jtag);
             ASSERT_OK(result) << "earlier STFS-derived bootloaders beat later loose files and "
                                  "populate both chains";
             EXPECT_EQ(result->bootloaders.cf0, cf)
@@ -168,23 +168,23 @@ namespace gxbuild3::utils {
                    "chains";
 
             const auto secured =
-                read_ini_files("version", "test", "test", {}, {.nosusecurity = true});
+                read_ini_files("version", "test", "test", {}, {.nosusecurity = true}, BuildType::Jtag);
             ASSERT_OK(secured) << "nosusecurity must retain xboxupd bootloader splitting";
             EXPECT_EQ(secured->bootloaders.cf0, cf)
                 << "nosusecurity must retain xboxupd bootloader splitting";
             EXPECT_EQ(secured->bootloaders.cg0, cg)
                 << "nosusecurity must retain xboxupd bootloader splitting";
-            EXPECT_FALSE(read_ini_files("version", "test", "test", {}, {.nosu = true}).has_value())
+            EXPECT_FALSE(read_ini_files("version", "test", "test", {}, {.nosu = true}, BuildType::Jtag).has_value())
                 << "nosu must disable derived bootloaders and preserve required-file failure";
 
             write_stfs("mydata/su_test", {{"xboxupd.bin", xboxupd}, {"cf_1.bin", {4}}});
-            const auto direct = read_ini_files("version", "test", "test");
+            const auto direct = read_ini_files("version", "test", "test", {}, {}, BuildType::Jtag);
             ASSERT_OK(direct) << "direct STFS entry wins over derived CF";
             EXPECT_EQ(direct->bootloaders.cf0, Bytes{4})
                 << "direct STFS entry wins over derived CF";
 
             write("mydata/cf_1.bin", Bytes{5});
-            const auto loose = read_ini_files("version", "test", "test");
+            const auto loose = read_ini_files("version", "test", "test", {}, {}, BuildType::Jtag);
             ASSERT_OK(loose) << "loose bootloader wins within a root";
             EXPECT_EQ(loose->bootloaders.cf0, Bytes{5}) << "loose bootloader wins within a root";
 
@@ -272,7 +272,7 @@ namespace gxbuild3::utils {
                 << "an in-memory package does not answer a CF naming another release";
 
             write("version/_test.ini",
-                  "[testbl]\ncf_4532.bin\ncg_4532.bin\ncf_17559.bin\ncg_17559.bin\n");
+                  "[testbl]\nnone\nnone\nnone\ncf_4532.bin\ncg_4532.bin\nnone\nnone\ncf_17559.bin\ncg_17559.bin\n");
             const auto jtag =
                 read_ini_files(root() / "version/_test.ini", "test", roots, {}, BuildType::Jtag);
             ASSERT_OK(jtag)
@@ -289,14 +289,12 @@ namespace gxbuild3::utils {
 
         TEST_F(FileManagerBootloader, ChainNumberingFollowsBasenamesNotParentDirectories) {
             write("version/_test.ini",
-                  "[testbl]\nfirst/cb_1.bin\nsecond/cb_2.bin\nfirst/cf_1.bin\nsecond/cf_2.bin\n"
-                  "first/cg_1.bin\nsecond/cg_2.bin\n");
+                  "[testbl]\nfirst/cb_1.bin\nsecond/cb_2.bin\nnone\nnone\nfirst/cf_1.bin\n"
+                  "first/cg_1.bin\n");
             write("mydata/first/cb_1.bin", Bytes{1});
             write("mydata/second/cb_2.bin", Bytes{2});
             write("mydata/first/cf_1.bin", Bytes{3});
-            write("mydata/second/cf_2.bin", Bytes{4});
             write("mydata/first/cg_1.bin", Bytes{5});
-            write("mydata/second/cg_2.bin", Bytes{6});
             const auto result = read_ini_files("version", "test", "test");
             ASSERT_OK(result)
                 << "chain numbering must follow bootloader basenames, not their parent directories";
@@ -307,16 +305,12 @@ namespace gxbuild3::utils {
                 << "chain numbering must follow bootloader basenames, not their parent directories";
             EXPECT_EQ(bl.cf0, Bytes{3})
                 << "chain numbering must follow bootloader basenames, not their parent directories";
-            EXPECT_EQ(bl.cf1, Bytes{4})
-                << "chain numbering must follow bootloader basenames, not their parent directories";
             EXPECT_EQ(bl.cg0, Bytes{5})
-                << "chain numbering must follow bootloader basenames, not their parent directories";
-            EXPECT_EQ(bl.cg1, Bytes{6})
                 << "chain numbering must follow bootloader basenames, not their parent directories";
         }
 
         TEST_F(FileManagerBootloader, NumericAliasesPopulateAndShareTheCfCgChains) {
-            write("version/_test.ini", "[testbl]\n6bl.bin\n7bl.bin\n");
+            write("version/_test.ini", "[testbl]\nnone\nnone\nnone\nnone\n6bl.bin\n7bl.bin\n");
             const Bytes xboxupd = make_xboxupd();
             write_stfs("mydata/su_test", {{"xboxupd.bin", xboxupd}});
             const auto result = read_ini_files("version", "test", "test");
@@ -327,10 +321,10 @@ namespace gxbuild3::utils {
             EXPECT_EQ(result->bootloaders.cg0, xboxupd_cg(xboxupd))
                 << "numeric bootloader aliases with extensions must populate CF and CG slots";
 
-            write("version/_test.ini", "[testbl]\ncf_1.bin\ncg_1.bin\n6bl.bin\n7bl.bin\n");
+            write("version/_test.ini", "[testbl]\nnone\nnone\nnone\ncf_1.bin\ncg_1.bin\nnone\nnone\n6bl.bin\n7bl.bin\n");
             write("mydata/cf_1.bin", Bytes{1});
             write("mydata/cg_1.bin", Bytes{2});
-            const auto mixed = read_ini_files("version", "test", "test");
+            const auto mixed = read_ini_files("version", "test", "test", {}, {}, BuildType::Jtag);
             ASSERT_OK(mixed) << "numeric aliases must share chain numbering with their CF/CG "
                                 "families";
             EXPECT_EQ(mixed->bootloaders.cf0, Bytes{1})
@@ -344,16 +338,16 @@ namespace gxbuild3::utils {
         }
 
         TEST_F(FileManagerBootloader, IniRecognizesScAnd3blBootloaders) {
-            write("version/_test.ini", "[testbl]\nfirmware/sc_1.bin\n");
+            write("version/_test.ini", "[testbl]\nnone\nfirmware/sc_1.bin\n");
             write("mydata/firmware/sc_1.bin", Bytes{0x53, 0x43, 0x01});
-            const auto sc = read_ini_files("version", "test", "test");
+            const auto sc = read_ini_files("version", "test", "test", {}, {}, BuildType::Devkit);
             ASSERT_OK(sc) << "SC-family INI entry populates the SC bootloader slot";
             EXPECT_EQ(sc->bootloaders.sc, (Bytes{0x53, 0x43, 0x01}))
                 << "SC-family INI entry populates the SC bootloader slot";
 
-            write("version/_test.ini", "[testbl]\n3bl.bin\n");
+            write("version/_test.ini", "[testbl]\nnone\n3bl.bin\n");
             write("mydata/3bl.bin", Bytes{0x33, 0x42, 0x4C});
-            const auto numeric = read_ini_files("version", "test", "test");
+            const auto numeric = read_ini_files("version", "test", "test", {}, {}, BuildType::Devkit);
             ASSERT_OK(numeric) << "3BL INI alias populates the SC bootloader slot";
             EXPECT_EQ(numeric->bootloaders.sc, (Bytes{0x33, 0x42, 0x4C}))
                 << "3BL INI alias populates the SC bootloader slot";
@@ -365,7 +359,7 @@ namespace gxbuild3::utils {
             write("mydata/SC_1.bin", Bytes{0x53, 0x43});
             write("mydata/SD_1.bin", Bytes{0x53, 0x44});
             write("mydata/SE_1.bin", Bytes{0x53, 0x45});
-            const auto result = read_ini_files("version", "test", "test");
+            const auto result = read_ini_files("version", "test", "test", {}, {}, BuildType::Devkit);
             ASSERT_OK(result) << "SB, SC, SD and SE take the CB, SC, CD and CE positions";
             const auto& bl = result->bootloaders;
             EXPECT_EQ(bl.cb_or_a, (Bytes{0x53, 0x42}))

@@ -12,7 +12,6 @@ bootloaders.malformed-cb code=InvalidBootloader message=Failed to parse CB/A: CB
 bootloaders.malformed-cf0 code=InvalidBootloader message=Failed to parse CF0: CF/6BL data too short
 bootloaders.cd-without-payload code=InvalidBootloader message=Required CD bootloader has no payload and cannot be serialized
 bootloaders.glitch3-without-cb-x code=InvalidBootloader message=Glitch3 requires CB_A, CB_X (15432), and CB_B
-bootloaders.glitch1-with-cb-b code=InvalidBootloader message=glitch1/RGH1 does not support a CB_B (use glitch2) or a CB_X (use glitch3)
 patch.malformed-patch-file code=PatchFailure message=automatic patchset automatic: Glitch patchset must have 3 sections [CB_B][CD][KHV], found 1
 patch.glitch2-without-cb-b code=PatchFailure message=Automatic patchset targets CBB, but no CBB was supplied
 patch.cb-past-32-bit-space code=PatchFailure message=CB patch exceeds the 32-bit address space

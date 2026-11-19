@@ -72,6 +72,12 @@ namespace gxbuild3::nand {
         if (data.size() < 0x380)
             return false;
 
+        // Devkit SB carries its 0x80000200 HRMOR base at file offset 0x250 (data 0x240)
+        // rather than a zeroed retail signature block.
+        if (data[0x240] == 0x80 && data[0x241] == 0x00 && data[0x242] == 0x02 &&
+            data[0x243] == 0x00)
+            return true;
+
         for (size_t i = 0x260; i < 0x380; i++)
             if (data[i] != 0)
                 return false;

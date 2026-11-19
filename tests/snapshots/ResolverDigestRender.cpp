@@ -183,7 +183,7 @@ namespace gxbuild3::snapshots::resolver_build_requests {
             fixture.write_binary("first/launch.ini", Bytes{0x41, 0x42});
             fixture.write_binary("first/mobileB.bin", Bytes{0xB2});
             fixture.write_text("working/build.ini",
-                               "[falconbl]\ncb_1.bin\ncd.bin\n[flashfs]\nlaunch.ini\n");
+                               "[falconbl]\ncb_1.bin\nnone\ncd.bin\n[flashfs]\nlaunch.ini\n");
             fixture.write_text("working/options.ini", "nofcrt=true\ncbldv=3\n");
             auto args = fixture.minimum_args();
             args.build_ini = "build.ini";
@@ -209,7 +209,7 @@ namespace gxbuild3::snapshots::resolver_build_requests {
             fixture.write_binary("first/secdata.bin", secdata);
             fixture.write_binary("first/launch.ini", Bytes{0x43});
             fixture.write_binary("first/mobileA.bin", Bytes{0xA1, 0xA2});
-            fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n[flashfs]\n"
+            fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n[flashfs]\n"
                                                     "launch.ini\n[security]\nsecdata.bin\n");
             return digest_resolve(label, fixture, *args);
         }
@@ -255,7 +255,7 @@ namespace gxbuild3::snapshots::resolver_build_requests {
             fixture.write_binary("first/nanddump.bin", *donor);
             fixture.write_binary("first/cb_1.bin", Bytes{0xCB});
             fixture.write_binary("first/cd.bin", Bytes{0xCD});
-            fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\ncd.bin\n");
+            fixture.write_text("working/build.ini", "[falconbl]\ncb_1.bin\nnone\ncd.bin\n");
             auto args = fixture.minimum_args();
             args.build_ini = "build.ini";
             args.section = "falcon";

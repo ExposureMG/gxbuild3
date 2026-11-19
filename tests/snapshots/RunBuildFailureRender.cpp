@@ -187,13 +187,6 @@ namespace gxbuild3::snapshots::run_build_failures {
                      input.bootloaders.cb_b = input.bootloaders.cb_or_a;
                      return input;
                  }},
-            Case{"bootloaders.glitch1-with-cb-b",
-                 []() -> Result<Input> {
-                     auto input = glitch_input(BuildType::Glitch,
-                                               glitch_patchset(0x20, 0, 0x30, 0, Bytes{0xA0}));
-                     input.bootloaders.cb_b = input.bootloaders.cb_or_a;
-                     return input;
-                 }},
             Case{"patch.malformed-patch-file",
                  []() -> Result<Input> {
                      Bytes patchset;

@@ -166,7 +166,7 @@ namespace gxbuild3::utils {
             EXPECT_EQ(detailed.error().source, AssetSource::Xboxupd)
                 << "detailed bootloader lookup reports failed xboxupd derivation with provenance";
 
-            write("version/_test.ini", "[testbl]\ncf_1.bin\n");
+            write("version/_test.ini", "[testbl]\nnone\nnone\nnone\nnone\ncf_1.bin\n");
             const auto ini = read_ini_files(root() / "version/_test.ini", "test", roots);
             ASSERT_OK(ini) << "an INI bootloader lookup skips failed xboxupd derivation and uses "
                               "later loose data";

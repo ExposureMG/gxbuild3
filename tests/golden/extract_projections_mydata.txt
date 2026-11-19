@@ -327,14 +327,14 @@ mydata.glitch2.extract_some_info bl.cg_0 name="CG_0" present=1 decrypted=0 versi
 mydata.glitch2.extract_some_info bl.cf_1 none
 mydata.glitch2.extract_some_info bl.cg_1 none
 mydata.glitch2.extract_some_info chain cb_ldv=0 cb_pairing=000000 cf0_ldv=none cf0_pairing=none cf1_ldv=none cf1_pairing=none
-mydata.glitch2.extract_some_info smc present=1 decrypted=0 size=0x3000 version="4.1.2" motherboard="Jasper" type="RGH3 v2"
+mydata.glitch2.extract_some_info smc present=1 decrypted=0 size=0x3000 version="4.1.2" motherboard="Jasper" type="Retail"
 mydata.glitch2.extract_some_info flashfs present=0 files=0
 mydata.glitch2.extract_some_info keyvault present=0 decrypted=0 kv_type=0 fcrt_required=0 region_raw=0x0 region_name=""
 mydata.glitch2.extract_some_info keyvault.identity serial=empty console_id_raw=empty console_id_friendly=empty osig=empty mfr_date=empty dvd_key=empty
 mydata.glitch2.extract_some_info cpu_key none
 mydata.glitch2.extract_some_info raw_keyvault none
 mydata.glitch2.extract_metadata cpu_key size=0x10 sha1=574bc75e22334a2f0f7a6259c55850b89f9e26fe
-mydata.glitch2.extract_metadata nand_image size=0x1080000 sha1=933605868668579a0fcc1355115fec84d51618bf
+mydata.glitch2.extract_metadata nand_image size=0x1080000 sha1=19a11b20e344d29c6fdcd5529d9dae42beb294e1
 mydata.glitch2.extract_metadata keyvault size=0x4000 sha1=7b4e01d5977dbf8deafdb6e1544b8bced42e2f42
 mydata.glitch2.extract_metadata smc none
 mydata.glitch2.extract_metadata cb_ldv=0 pairing=343169 cf_ldv=26 cf_pairing=343169
@@ -363,7 +363,7 @@ mydata.glitch2.extract_all_info bl.cg_0 name="CG_0" present=1 decrypted=1 versio
 mydata.glitch2.extract_all_info bl.cf_1 none
 mydata.glitch2.extract_all_info bl.cg_1 none
 mydata.glitch2.extract_all_info chain cb_ldv=12 cb_pairing=343169 cf0_ldv=26 cf0_pairing=343169 cf1_ldv=none cf1_pairing=none
-mydata.glitch2.extract_all_info smc present=1 decrypted=1 size=0x3000 version="4.1.2" motherboard="Jasper" type="RGH3 v2"
+mydata.glitch2.extract_all_info smc present=1 decrypted=1 size=0x3000 version="4.1.2" motherboard="Jasper" type="Retail"
 mydata.glitch2.extract_all_info flashfs present=1 files=30
 mydata.glitch2.extract_all_info flashfs.file "sysupdate.xexp1" block=0x34 length=0x6bfe0 timestamp=0x5d444ac3
 mydata.glitch2.extract_all_info flashfs.file "aac.xexp1" block=0x4f length=0x14000 timestamp=0x5d444ac3
@@ -404,9 +404,9 @@ mydata.glitch2.extract_all options cbldv=unset pairing_data=unset cfldv=unset xe
 mydata.glitch2.extract_all options nomobile=unset nofcrt=unset noremap=unset noecdremap=unset nandmu=unset nosecurity=unset nosusecurity=unset smcnocheck=unset noblpatch=unset nopatch=unset
 mydata.glitch2.extract_all options cputemp=unset gputemp=unset edramtemp=unset overcputemp=unset overgputemp=unset overedramtemp=unset cpufan=unset gpufan=unset dvdkey=unset avregion=unset gameregion=unset dvdregion=unset macid=unset
 mydata.glitch2.extract_all.metadata cpu_key size=0x10 sha1=574bc75e22334a2f0f7a6259c55850b89f9e26fe
-mydata.glitch2.extract_all.metadata nand_image size=0x1080000 sha1=933605868668579a0fcc1355115fec84d51618bf
+mydata.glitch2.extract_all.metadata nand_image size=0x1080000 sha1=19a11b20e344d29c6fdcd5529d9dae42beb294e1
 mydata.glitch2.extract_all.metadata keyvault size=0x4000 sha1=7b4e01d5977dbf8deafdb6e1544b8bced42e2f42
-mydata.glitch2.extract_all.metadata smc size=0x3000 sha1=6daba5cf344317ea8aeb2bf6f9204270e3cf5129
+mydata.glitch2.extract_all.metadata smc size=0x3000 sha1=872468a38c42c4d340755e00389c089f06cf2143
 mydata.glitch2.extract_all.metadata cb_ldv=0 pairing=343169 cf_ldv=26 cf_pairing=343169
 mydata.glitch2.extract_all.metadata console_type=0x1 console_sequence=0xc console_sequence_allow=0xad0
 mydata.glitch2.extract_all.metadata donor_nonces.stage0=bcebf93dfeb4e09ee4dcb94c25a0e486
@@ -424,12 +424,12 @@ mydata.glitch2.extract_all.metadata console_secured_file "dae.bin" size=0x7090 s
 mydata.glitch2.extract_all.metadata console_secured_file "secdata.bin" size=0x400 sha1=0a218843ba2945b295b3d7ab31d05e5a195f406d
 mydata.glitch2.extract_all.bootloaders cb_or_a size=0x2000 sha1=bd505aaf85feb0832219bb1d44faf33d2dd09f48
 mydata.glitch2.extract_all.bootloaders cb_x none
-mydata.glitch2.extract_all.bootloaders cb_b size=0x96c0 sha1=0bcaf43287803ff45f9aaaf9ad0101e0a499b9b7
+mydata.glitch2.extract_all.bootloaders cb_b size=0x96c0 sha1=f27de32b7ca832cf8bebe791f4a445ecb96fa51e
 mydata.glitch2.extract_all.bootloaders sc none
 mydata.glitch2.extract_all.bootloaders cd size=0x5290 sha1=6d44613f9329944a0944df851072d9e1aaff1c9a
 mydata.glitch2.extract_all.bootloaders ce size=0x56070 sha1=748a97900900d3667b5bd9dbba36f54cc3816fb5
-mydata.glitch2.extract_all.bootloaders cf0 size=0x4560 sha1=807718eed2b57fba4452694994daa738a1abe62b
-mydata.glitch2.extract_all.bootloaders cg0 size=0x77a80 sha1=3d76b5bc7e36bfde8be6afb489ca60f390384083
+mydata.glitch2.extract_all.bootloaders cf0 size=0x4560 sha1=d44a3e7ba2272843045ff0445d1d57b33d2f9861
+mydata.glitch2.extract_all.bootloaders cg0 size=0x77a80 sha1=289cb8de0f3b1742a915e749bd7a5aa9e1d432fd
 mydata.glitch2.extract_all.bootloaders cf1 none
 mydata.glitch2.extract_all.bootloaders cg1 none
 mydata.glitch2.extract_all.bootloaders extra_cb none
@@ -450,7 +450,7 @@ mydata.glitch2.extract_all.payloads fuses none
 mydata.glitch2.extract_all.payloads patches none
 mydata.glitch2.extract_all.payloads payload none
 mydata.glitch2.extract_all.flashfs_sec files=30
-mydata.glitch2.extract_all.flashfs_sec "sysupdate.xexp1" size=0x6bfe0 sha1=3d813523f235d366e5bf078745e93a10e0cb8257
+mydata.glitch2.extract_all.flashfs_sec "sysupdate.xexp1" size=0x6bfe0 sha1=216fc754f4407720071f26b5647bf49fdcfc27f1
 mydata.glitch2.extract_all.flashfs_sec "aac.xexp1" size=0x14000 sha1=600b902eede2e7a66c82600ad95305ac37eb5f35
 mydata.glitch2.extract_all.flashfs_sec "bootanim.xex" size=0x61000 sha1=3c1bf1edc06a385455e74876c3aa28280e8f363c
 mydata.glitch2.extract_all.flashfs_sec "createprofile.xex" size=0xc000 sha1=3583aaa574eb64007d0d3967eff0785d22a85633

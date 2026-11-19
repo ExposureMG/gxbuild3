@@ -130,16 +130,20 @@ namespace gxbuild3::nand::detail {
     struct JtagExtraOffsets {
         size_t cb;
         size_t cd;
+        size_t se;
     };
 
-    // The JTAG second CB/CD sit in the window tail, directly past the fixed-size XeLL, with
-    // the CD following a 16-byte-aligned CB.
+    // The JTAG second CB/CD (and optional SE replacing CF1) sit in the window tail, directly
+    // past the fixed-size XeLL, each 16-byte aligned.
     inline JtagExtraOffsets jtag_extra_offsets(uint32_t window_base, const Payloads& payloads) {
         const size_t cb = window_base + 0x5060 + XeLL::kSize;
-        if (!payloads.extra_cb) {
-            return {cb, cb};
-        }
-        return {cb, cb + align_16(static_cast<uint32_t>(payloads.extra_cb->serialize().size()))};
+        const size_t cd = payloads.extra_cb
+                              ? cb + align_16(static_cast<uint32_t>(payloads.extra_cb->serialize().size()))
+                              : cb;
+        const size_t se = payloads.extra_cd
+                              ? cd + align_16(static_cast<uint32_t>(payloads.extra_cd->serialize().size()))
+                              : cd;
+        return {cb, cd, se};
     }
 
     inline uint32_t xell_offset(bool is_jtag_patchset, bool is_glitch_patchset,
@@ -231,6 +235,11 @@ namespace gxbuild3::nand::detail {
         // block).
         if (image.build_type == BuildType::Devgl) {
             return round_up(kDevglSlotOffset, slot_round(mode));
+        }
+        // A glitch chain that runs past XeLL's slot (XeLL is then left out) puts its first
+        // update slot at the next step after the chain, as xeBuild's setPatchSlot does.
+        if (image.build_type == BuildType::Glitch2m && laid_boot_chain_end(image) > kXellOffset) {
+            return round_up(static_cast<uint32_t>(laid_boot_chain_end(image)), slot_round(mode));
         }
         const uint32_t slot_base = jtag ? kJtagSlotOffset : retail_slot_offset(mode);
         return system_update_base(slot_base, slot_round(mode), jtag, glitch, image.payloads);
