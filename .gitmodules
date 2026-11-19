@@ -1,0 +1,12 @@
+[submodule "extern/spdlog"]
+	path = extern/spdlog
+	url = https://github.com/gabime/spdlog.git
+[submodule "extern/GxCrypt"]
+	path = extern/GxCrypt
+	url = https://github.com/GxOSS/GxCrypt.git
+[submodule "extern/stfs"]
+	path = extern/stfs
+	url = https://github.com/GxOSS/stfs.git
+[submodule "extern/CLI11"]
+	path = extern/CLI11
+	url = https://github.com/CLIUtils/CLI11.git
