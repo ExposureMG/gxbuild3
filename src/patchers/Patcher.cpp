@@ -1,7 +1,7 @@
 #include "patchers/Patcher.hpp"
 
-#include "Log.hpp"
-#include "Utils.hpp"
+#include "utils/Log.hpp"
+#include "utils/Utils.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -30,7 +30,7 @@ namespace XePatch {
     bool ApplyPatch(uint8_t* data, uint32_t dataSize, uint32_t address, uint32_t length,
                     const uint32_t* patchWords) {
         if (!data || !patchWords) {
-            Log::Error("xepatch: invalid patch arguments (data={}, words={})", data != nullptr,
+            Log::Error("Invalid patch arguments (data={}, words={})", data != nullptr,
                        patchWords != nullptr);
             return false;
         }
@@ -38,8 +38,8 @@ namespace XePatch {
         uint64_t endOffset = static_cast<uint64_t>(address) + static_cast<uint64_t>(length) * 4;
         if (endOffset > dataSize) {
             Log::Error(
-                "xepatch: patch write out of range (address=0x{:x}, length_words=0x{:x}, length_bytes=0x{:x}, end=0x{:x}, buffer=0x{:x})",
-                address, length, length * 4U, endOffset, dataSize);
+                "Patch write out of range (address=0x{:X}, length=0x{:X} words, end=0x{:X}, buffer=0x{:X})",
+                address, length, endOffset, dataSize);
             return false;
         }
 
@@ -56,7 +56,7 @@ namespace XePatch {
     bool ApplyPatchEntry(uint8_t* data, uint32_t dataSize, const XePatchEntry& entry) {
         if (entry.words.size() < entry.length) {
             Log::Error(
-                "xepatch: entry word count mismatch (address=0x{:x}, length_words=0x{:x}, words_available=0x{:x})",
+                "Entry word count mismatch (address=0x{:X}, length_words=0x{:X}, words_available=0x{:X})",
                 entry.address, entry.length, entry.words.size());
             return false;
         }
@@ -65,25 +65,24 @@ namespace XePatch {
     }
 
     bool ApplyPatchSection(uint8_t* data, uint32_t dataSize, const XePatchSection& section) {
-        Log::Info("xepatch: applying section '{}' with {} entries to buffer 0x{:x} bytes",
+        Log::Info("Applying section '{}' with {} entries to buffer 0x{:X} bytes",
                   section.identifier, section.entries.size(), dataSize);
 
         for (size_t entry_index = 0; entry_index < section.entries.size(); ++entry_index) {
             const auto& entry = section.entries[entry_index];
-            Log::Info(
-                "xepatch: section '{}' entry {} -> address 0x{:x}, length_words 0x{:x}, length_bytes 0x{:x}",
+            Log::Debug(
+                "Section '{}' entry {} -> address 0x{:X}, length_words 0x{:X}, length_bytes 0x{:X}",
                 section.identifier, entry_index, entry.address, entry.length, entry.length * 4U);
 
             if (!ApplyPatchEntry(data, dataSize, entry)) {
                 Log::Error(
-                    "xepatch: section '{}' failed at entry {} (address=0x{:x}, length_words=0x{:x}, length_bytes=0x{:x}, buffer=0x{:x})",
-                    section.identifier, entry_index, entry.address, entry.length,
-                    entry.length * 4U, dataSize);
+                    "Section '{}' failed at entry {} (address=0x{:X}, length_words=0x{:X}, buffer=0x{:X})",
+                    section.identifier, entry_index, entry.address, entry.length, dataSize);
                 return false;
             }
         }
 
-        Log::Info("xepatch: section '{}' applied successfully", section.identifier);
+        Log::Info("Section '{}' applied successfully", section.identifier);
         return true;
     }
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "BinaryParser.hpp"
+#include "nand/objects/Patchset.hpp"
 
 #include <cstdint>
 

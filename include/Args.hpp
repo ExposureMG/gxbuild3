@@ -4,6 +4,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 enum class BuildType {
@@ -21,24 +22,24 @@ enum class ConsoleType {
     Zephyr,
     Falcon,
     Jasper,
-    Jasper256,
-    Jasper512,
-    JasperBB,
-    JasperBigFFS,
     Trinity,
-    TrinityBB,
-    TrinityBigFFS,
     Corona,
-    Corona4G,
     Winchester,
-    Winchester4G,
 };
 
-inline const std::map<std::string, BuildType> kBuildTypeMap = {
-    {"retail", BuildType::Retail},     {"jtag", BuildType::Jtag},
-    {"glitch", BuildType::Glitch},     {"glitch2", BuildType::Glitch2},
-    {"glitch2m", BuildType::Glitch2m}, {"glitch3", BuildType::Glitch3},
-    {"devkit", BuildType::Devkit},
+enum class ImageType {
+    SmallBlock,
+    NewSmallBlock,
+    BigBlock,
+    Emmc,
+};
+
+inline const std::map<std::string, BuildType>
+    kBuildTypeMap = {
+        {"retail", BuildType::Retail},     {"jtag", BuildType::Jtag},
+        {"glitch", BuildType::Glitch},     {"glitch2", BuildType::Glitch2},
+        {"glitch2m", BuildType::Glitch2m}, {"glitch3", BuildType::Glitch3},
+        {"devkit", BuildType::Devkit},
 };
 
 inline const std::map<std::string, ConsoleType> kConsoleTypeMap = {
@@ -46,74 +47,98 @@ inline const std::map<std::string, ConsoleType> kConsoleTypeMap = {
     {"zephyr", ConsoleType::Zephyr},
     {"falcon", ConsoleType::Falcon},
     {"jasper", ConsoleType::Jasper},
-    {"jasper256", ConsoleType::Jasper256},
-    {"jasper512", ConsoleType::Jasper512},
-    {"jasperbb", ConsoleType::JasperBB},
-    {"jasperbigffs", ConsoleType::JasperBigFFS},
+    {"jasper256", ConsoleType::Jasper},
+    {"jasper512", ConsoleType::Jasper},
+    {"jasperbb", ConsoleType::Jasper},
+    {"jasperbigffs", ConsoleType::Jasper},
     {"trinity", ConsoleType::Trinity},
-    {"trinitybb", ConsoleType::TrinityBB},
-    {"trinitybigffs", ConsoleType::TrinityBigFFS},
+    {"trinitybb", ConsoleType::Trinity},
+    {"trinitybigffs", ConsoleType::Trinity},
     {"corona", ConsoleType::Corona},
-    {"corona4g", ConsoleType::Corona4G},
+    {"corona4g", ConsoleType::Corona},
     {"winchester", ConsoleType::Winchester},
-    {"winchester4g", ConsoleType::Winchester4G},
+    {"winchester4g", ConsoleType::Winchester},
 };
 
-struct GxArgs {
-    std::string mode;
-    std::optional<BuildType> build_type;
-    std::optional<ConsoleType> console;
-    std::optional<std::string> cpu_key;
-    std::optional<std::string> bl_key;
-    std::optional<std::filesystem::path> data_dir;
-    std::optional<std::filesystem::path> common_dir;
-    std::optional<std::filesystem::path> fw_dir;
-    std::optional<std::filesystem::path> sha_file;
-    std::optional<std::filesystem::path> source_nand;
-    std::optional<std::filesystem::path> stfs_package;
-    std::optional<std::filesystem::path> ecc;
-    std::optional<std::filesystem::path> xboxupd;
-    std::optional<std::filesystem::path> output_dir;
-    std::optional<std::filesystem::path> output;
-    std::optional<std::string> ini_ext;
-    std::optional<std::string> bl_ext;
-    std::optional<std::string> preset;
-    std::optional<std::string> cmd;
-    std::optional<std::string> format;
-    std::vector<std::pair<std::string, std::string>> options;
-    std::vector<std::string> addons;
-    std::vector<std::string> raw_patches;
-    bool xsb{false};
-    bool full_image{false};
-    bool bigblock{false};
-    bool verbose{false};
-    bool extract_all{false};
-    bool stfs_split_xboxupd{false};
-    bool license{false};
-    // ---- Library-facing extensions ----
-    // Inline INI content. When set RunBuild skips loading from disk.
-    std::optional<std::string> ini_content;
-    // Inline source NAND bytes (alternative to source_nand path).
-    std::optional<std::vector<uint8_t>> source_nand_bytes;
-    // Explicit file overrides (used by the library; CLI discovers these automatically).
-    std::optional<std::filesystem::path> kv_path;
-    std::optional<std::filesystem::path> smc_path;
-    std::optional<std::filesystem::path> smc_config_path;
+inline const std::map<std::string, ImageType> kImageTypeMap = {
+    {"xenon", ImageType::SmallBlock},
+    {"xenonbb", ImageType::BigBlock},
+    {"xenon4g", ImageType::Emmc},
+    {"zephyr", ImageType::SmallBlock},
+    {"zephyrbb", ImageType::BigBlock},
+    {"zephyr4g", ImageType::Emmc},
+    {"falcon", ImageType::SmallBlock},
+    {"falconbb", ImageType::BigBlock},
+    {"falcon4g", ImageType::Emmc},
+    {"jasper", ImageType::NewSmallBlock},
+    {"jasperbb", ImageType::BigBlock},
+    {"jasper4g", ImageType::Emmc},
+    {"trinity", ImageType::NewSmallBlock},
+    {"trinitybb", ImageType::BigBlock},
+    {"trinity4g", ImageType::Emmc},
+    {"corona", ImageType::NewSmallBlock},
+    {"coronabb", ImageType::BigBlock},
+    {"corona4g", ImageType::Emmc},
+    {"winchester", ImageType::NewSmallBlock},
+    {"winchesterbb", ImageType::BigBlock},
+    {"winchester4g", ImageType::Emmc},
+};
+
+struct InputMetadata {
+    std::vector<uint8_t> cpu_key;
+    std::optional<std::vector<uint8_t>> nand_image;
+    std::optional<std::vector<uint8_t>> keyvault;
+    uint8_t cb_ldv;
+    std::optional<uint8_t> cf_ldv;
+    uint8_t pairing_data[3];
+    uint8_t console_type;
+    uint8_t console_sequence;
+    uint16_t console_sequence_allow;
+};
+
+struct InputBootloaders {
+    std::vector<uint8_t> cb_or_a;
+    std::optional<std::vector<uint8_t>> cb_x;
+    std::optional<std::vector<uint8_t>> cb_b;
+    std::vector<uint8_t> cd;
+    std::optional<std::vector<uint8_t>> ce;
+    std::optional<std::vector<uint8_t>> cf0;
+    std::optional<std::vector<uint8_t>> cg0;
+    std::optional<std::vector<uint8_t>> cf1;
+    std::optional<std::vector<uint8_t>> cg1;
+};
+
+struct InputPayloads {
+    std::optional<std::vector<uint8_t>> xell;
+    std::optional<std::vector<uint8_t>> rebooter;
+    std::optional<std::vector<uint8_t>> fuses;
+    std::optional<std::vector<uint8_t>> patches;
+    std::optional<std::vector<uint8_t>> payload;
+};
+
+struct OverrideMetadata {
+    bool xsb_image = false; // old sfc
+    bool psb_image = false; // new sfc
+    bool ksb_image = false; // emmc
+};
+
+struct Input {
+    InputMetadata metadata;
+    InputBootloaders bootloaders;
+    std::optional<InputPayloads> payloads;
+    std::optional<std::vector<std::pair<std::string, std::vector<uint8_t>>>> flashfs_sec;
+    OverrideMetadata overrides;
 };
 
 struct OptionsArgs {
-    // Identity / keys
-    std::optional<std::string> type;
-    std::optional<std::string> rev;
-    std::optional<std::string> key_1bl;
-    std::optional<std::string> cpukey;
+    std::optional<std::string> cbldv;
+    std::optional<std::string> pairing_data;
     std::optional<std::string> cfldv;
-    std::optional<std::string> dvdkey;
+    
 
-    // Common boot behavior
+    // JTAG / glitch inputs
     std::optional<std::string> xellbutton;
     std::optional<std::string> xellbutton2;
-    std::vector<std::string> addons;
 
     // JTAG / glitch toggles
     std::optional<bool> cygnos;
@@ -143,9 +168,42 @@ struct OptionsArgs {
     std::optional<std::string> cpufan;
     std::optional<std::string> gpufan;
 
-    // KV / config overrides
+    // KV overrides
+    std::optional<std::string> dvdkey;
     std::optional<std::string> avregion;
     std::optional<std::string> gameregion;
     std::optional<std::string> dvdregion;
     std::optional<std::string> macid;
+};
+
+class OptionsManager {
+public:
+    OptionsManager() = default;
+    explicit OptionsManager(OptionsArgs args);
+    explicit OptionsManager(std::string_view raw_args);
+
+    bool parse(std::string_view raw_args);
+    bool parse(const std::vector<std::string>& raw_args_list);
+    bool parse_file(const std::filesystem::path& path);
+    bool parse_ini(std::string_view content);
+
+    static bool is_known_option(std::string_view name);
+    static bool is_bool_option(std::string_view name);
+    bool has(std::string_view name) const;
+
+    bool set_bool(std::string_view name, bool value);
+    bool set(std::string_view name, std::string_view value);
+    bool unset(std::string_view name);
+
+    bool toggle(std::string_view name);
+
+    std::optional<bool> get_bool(std::string_view name) const;
+    std::optional<std::string> get_string(std::string_view name) const;
+    std::optional<std::string> get(std::string_view name) const;
+
+    const OptionsArgs& data() const noexcept { return m_args; }
+    OptionsArgs& data() noexcept { return m_args; }
+
+private:
+    OptionsArgs m_args{};
 };

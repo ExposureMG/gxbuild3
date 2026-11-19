@@ -1,4 +1,5 @@
 #include "ini/IniParser.hpp"
+#include "utils/Log.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -129,118 +130,37 @@ namespace Ini {
     }
 
     std::expected<Document, ParseError> ParseFile(const std::filesystem::path& path) {
-        if (!std::filesystem::exists(path))
+        if (!std::filesystem::exists(path)) {
+            Log::Error("INI file not found: '{}'", path.string());
             return std::unexpected(ParseError::FileNotFound);
+        }
 
         std::ifstream file(path, std::ios::binary);
-        if (!file)
+        if (!file) {
+            Log::Error("Failed to open INI file: '{}'", path.string());
             return std::unexpected(ParseError::ReadError);
+        }
 
         std::ostringstream ss;
         ss << file.rdbuf();
-        if (file.fail() && !file.eof())
+        if (file.fail() && !file.eof()) {
+            Log::Error("Failed to read INI file: '{}'", path.string());
             return std::unexpected(ParseError::ReadError);
+        }
 
-        return Parse(ss.str());
+        auto res = Parse(ss.str());
+        if (res) {
+            Log::Debug("Parsed INI file '{}' ({} sections)", path.string(), res->sections.size());
+        }
+        return res;
     }
 
-    namespace {
 
-        bool ParseBool(std::string_view v) {
-            return v == "true" || v == "True" || v == "TRUE" || v == "1";
-        }
-
-    } // namespace
 
     void ApplyOption(OptionsArgs& opt, std::string_view key_sv, std::string_view value_sv) {
-        const std::string key = ToLower(std::string(Trim(key_sv)));
-        const std::string value{Trim(value_sv)};
-        const bool b = ParseBool(Trim(value_sv));
-
-        if (key == "type")
-            opt.type = value;
-        else if (key == "rev")
-            opt.rev = value;
-        else if (key == "1blkey")
-            opt.key_1bl = value;
-        else if (key == "cpukey")
-            opt.cpukey = value;
-        else if (key == "cfldv")
-            opt.cfldv = value;
-
-        else if (key == "nosecurity")
-            opt.nosecurity = b;
-        else if (key == "nosusecurity")
-            opt.nosusecurity = b;
-        else if (key == "nofcrt")
-            opt.nofcrt = b;
-        else if (key == "noremap")
-            opt.noremap = b;
-        else if (key == "nandmu")
-            opt.nandmu = b;
-        else if (key == "nomobile")
-            opt.nomobile = b;
-        else if (key == "noecdremap")
-            opt.noecdremap = b;
-        else if (key == "smcnocheck")
-            opt.smcnocheck = b;
-        else if (key == "noblpatch")
-            opt.noblpatch = b;
-        else if (key == "xellbutton")
-            opt.xellbutton = value;
-        else if (key == "xellbutton2")
-            opt.xellbutton2 = value;
-        else if (key == "addon") {
-            std::string_view rem = value_sv;
-            while (!rem.empty()) {
-                auto colon = rem.find(':');
-                std::string_view tok =
-                    Trim((colon != std::string_view::npos) ? rem.substr(0, colon) : rem);
-                rem = (colon != std::string_view::npos) ? rem.substr(colon + 1) : "";
-                if (!tok.empty()) {
-                    opt.addons.emplace_back(tok);
-                }
-            }
-        }
-
-        else if (key == "cygnos")
-            opt.cygnos = b;
-        else if (key == "demon")
-            opt.demon = b;
-        else if (key == "olddvd")
-            opt.olddvd = b;
-        else if (key == "nodvd")
-            opt.nodvd = b;
-        else if (key == "dualboot")
-            opt.dualboot = value;
-
-        else if (key == "cputemp")
-            opt.cputemp = value;
-        else if (key == "gputemp")
-            opt.gputemp = value;
-        else if (key == "edramtemp")
-            opt.edramtemp = value;
-        else if (key == "overcputemp")
-            opt.overcputemp = value;
-        else if (key == "overgputemp")
-            opt.overgputemp = value;
-        else if (key == "overedramtemp")
-            opt.overedramtemp = value;
-        else if (key == "cpufan")
-            opt.cpufan = value;
-        else if (key == "gpufan")
-            opt.gpufan = value;
-
-        else if (key == "avregion" || key == "region")
-            opt.avregion = value;
-        else if (key == "gameregion")
-            opt.gameregion = value;
-        else if (key == "dvdregion")
-            opt.dvdregion = value;
-        else if (key == "macid" || key == "mac")
-            opt.macid = value;
-        else if (key == "dvdkey")
-            opt.dvdkey = value;
+        OptionsManager mgr(opt);
+        mgr.set(key_sv, value_sv);
+        opt = mgr.data();
     }
 
     std::expected<OptionsArgs, OptionsError> ParseOptionsIni(std::string_view content) {
