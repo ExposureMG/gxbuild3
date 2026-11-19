@@ -1,9 +1,10 @@
 [submodule "extern/spdlog"]
 	path = extern/spdlog
 	url = https://github.com/gabime/spdlog.git
-[submodule "extern/GxCrypt"]
-	path = extern/GxCrypt
-	url = https://github.com/GxOSS/GxCrypt.git
 [submodule "extern/freeBOOT"]
 	path = extern/freeBOOT
 	url = https://github.com/ExposureMG/freeBOOT
+[submodule "extern/ExCrypt"]
+	path = extern/ExCrypt
+	url = https://github.com/ExposureMG/ExCrypt.git
+	branch = gxcrypt

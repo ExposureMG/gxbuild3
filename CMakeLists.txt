@@ -10,7 +10,7 @@ if(PROJECT_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYP
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-add_subdirectory(extern/GxCrypt)
+add_subdirectory(extern/ExCrypt)
 add_subdirectory(extern/spdlog)
 
 # Clang -O3 hangs on C++23 code such as FlashFileSystem.cpp. Cap Release at -O2 for
@@ -75,14 +75,14 @@ set(GXBUILD3_LIB_SOURCES
 )
 
 # Headers live in include/ and sources in src/, with the same relative paths. Only the public
-# API (Library.hpp, GxBuildTypes.hpp) is installed; GxCrypt and spdlog stay private.
+# API (Library.hpp, GxBuildTypes.hpp) is installed; ExCrypt and spdlog stay private.
 add_library(gxbuild3_lib STATIC ${GXBUILD3_LIB_SOURCES})
 target_include_directories(gxbuild3_lib
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/freeboot
 )
 target_link_libraries(gxbuild3_lib PRIVATE
-    GxCrypt
+    ExCrypt
     spdlog::spdlog
 )
 gxbuild3_enable_warnings(gxbuild3_lib)
@@ -91,7 +91,7 @@ gxbuild3_enable_warnings(gxbuild3_lib)
 add_library(gxbuild3_internal INTERFACE)
 target_link_libraries(gxbuild3_internal INTERFACE
     gxbuild3_lib
-    GxCrypt
+    ExCrypt
     spdlog::spdlog
 )
 
