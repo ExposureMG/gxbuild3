@@ -1019,9 +1019,191 @@ namespace gxbuild3 {
 
         // The donor's settings, statistics and manufacturing blocks, carried as bytes.
         void extract_settings_blocks(const FlashImage& img, InputMetadata& meta) {
-            meta.smc_config = img.smc_config;
-            meta.statistics = img.statistics;
-            meta.manufacturing = img.manufacturing;
+            if (img.smc_config) {
+                meta.smc_config = img.smc_config->serialize();
+            } else {
+                meta.smc_config.reset();
+            }
+            if (img.statistics) {
+                meta.statistics = img.statistics->serialize();
+            } else {
+                meta.statistics.reset();
+            }
+            if (img.manufacturing) {
+                meta.manufacturing = img.manufacturing->serialize();
+            } else {
+                meta.manufacturing.reset();
+            }
+        }
+
+        bool is_blank_option(const std::optional<std::string>& opt) {
+            return !opt || std::all_of(opt->begin(), opt->end(),
+                                       [](unsigned char c) { return std::isspace(c) != 0; });
+        }
+
+        // Applies xeBuild's 12 SMC config overrides to the parsed settings block, marking
+        // `reserialize` only when at least one field actually changes.
+        void apply_smc_config_options(std::optional<SmcConfigBlock>& smc_config,
+                                      const OptionsArgs& options) {
+            static constexpr std::array<std::optional<std::string> OptionsArgs::*, 12>
+                kSmcConfigOptions{{
+                    &OptionsArgs::cputemp,
+                    &OptionsArgs::gputemp,
+                    &OptionsArgs::edramtemp,
+                    &OptionsArgs::overcputemp,
+                    &OptionsArgs::overgputemp,
+                    &OptionsArgs::overedramtemp,
+                    &OptionsArgs::cpufan,
+                    &OptionsArgs::gpufan,
+                    &OptionsArgs::avregion,
+                    &OptionsArgs::gameregion,
+                    &OptionsArgs::dvdregion,
+                    &OptionsArgs::macid,
+                }};
+            const bool any_set =
+                std::any_of(kSmcConfigOptions.begin(), kSmcConfigOptions.end(),
+                            [&options](auto member) { return !is_blank_option(options.*member); });
+            if (!any_set) {
+                return;
+            }
+            if (!smc_config.has_value()) {
+                Log::Warn("SMC config options were supplied, but no SMC config block is present; "
+                          "skipping");
+                return;
+            }
+
+            constexpr uint32_t kSmcTempMin = 40;
+            constexpr uint32_t kSmcTempMax = 120;
+            constexpr uint32_t kSmcFanMin = 40;
+            constexpr uint32_t kSmcFanMax = 100;
+            constexpr uint8_t kFanOverride = 0x80;
+            constexpr uint8_t kFanAuto = 0x7F;
+
+            SmcConfigBlock& cfg = *smc_config;
+            bool modified = false;
+            struct FieldTarget {
+                std::string_view name;
+                const std::optional<std::string>* opt;
+                uint8_t* field;
+            };
+
+            const std::array<FieldTarget, 6> temp_targets{{
+                {"cputemp", &options.cputemp, &cfg.static_settings.smc.setpoint.cpu},
+                {"gputemp", &options.gputemp, &cfg.static_settings.smc.setpoint.gpu},
+                {"edramtemp", &options.edramtemp, &cfg.static_settings.smc.setpoint.edram},
+                {"overcputemp", &options.overcputemp, &cfg.static_settings.smc.overload.cpu},
+                {"overgputemp", &options.overgputemp, &cfg.static_settings.smc.overload.gpu},
+                {"overedramtemp", &options.overedramtemp, &cfg.static_settings.smc.overload.edram},
+            }};
+            for (const auto& target_item : temp_targets) {
+                if (is_blank_option(*target_item.opt)) {
+                    continue;
+                }
+                const auto parsed = OptionsManager::parse_u32(**target_item.opt);
+                if (!parsed || *parsed == 0) {
+                    continue;
+                }
+                if (*parsed < kSmcTempMin || *parsed > kSmcTempMax) {
+                    Log::Warn("Option {} value {} is out of range ({}-{}), ignoring",
+                              target_item.name, *parsed, kSmcTempMin, kSmcTempMax);
+                    continue;
+                }
+                const auto target = static_cast<uint8_t>(*parsed);
+                if (*target_item.field != target) {
+                    *target_item.field = target;
+                    modified = true;
+                }
+            }
+
+            const std::array<FieldTarget, 2> fan_targets{{
+                {"cpufan", &options.cpufan, &cfg.static_settings.smc.cpu_fan},
+                {"gpufan", &options.gpufan, &cfg.static_settings.smc.gpu_fan},
+            }};
+            for (const auto& target_item : fan_targets) {
+                if (is_blank_option(*target_item.opt)) {
+                    continue;
+                }
+                const auto parsed = OptionsManager::parse_u32(**target_item.opt);
+                if (!parsed) {
+                    continue;
+                }
+                if (*parsed == 0) {
+                    if (*target_item.field != kFanAuto) {
+                        *target_item.field = kFanAuto;
+                        modified = true;
+                    }
+                    continue;
+                }
+                if (*parsed < kSmcFanMin || *parsed > kSmcFanMax) {
+                    Log::Warn("Option {} value {} is out of range ({}-{}), ignoring",
+                              target_item.name, *parsed, kSmcFanMin, kSmcFanMax);
+                    continue;
+                }
+                const auto target = static_cast<uint8_t>(*parsed | kFanOverride);
+                if (*target_item.field != target) {
+                    *target_item.field = target;
+                    modified = true;
+                }
+            }
+
+            if (!is_blank_option(options.avregion)) {
+                if (const auto parsed = OptionsManager::parse_u32(*options.avregion);
+                    parsed && cfg.secured_settings.av_region.get() != *parsed) {
+                    cfg.secured_settings.av_region = *parsed;
+                    modified = true;
+                }
+            }
+            if (!is_blank_option(options.gameregion)) {
+                if (const auto parsed = OptionsManager::parse_u16(*options.gameregion);
+                    parsed && *parsed != 0 && cfg.secured_settings.game_region.get() != *parsed) {
+                    cfg.secured_settings.game_region = *parsed;
+                    modified = true;
+                }
+            }
+            if (!is_blank_option(options.dvdregion)) {
+                if (const auto parsed = OptionsManager::parse_u32(*options.dvdregion);
+                    parsed && cfg.secured_settings.dvd_region.get() != *parsed) {
+                    cfg.secured_settings.dvd_region = *parsed;
+                    modified = true;
+                }
+            }
+            if (!is_blank_option(options.macid)) {
+                if (const auto parsed = OptionsManager::parse_mac_id(*options.macid);
+                    parsed && !std::equal(parsed->begin(), parsed->end(),
+                                          std::begin(cfg.secured_settings.mac_address))) {
+                    std::copy(parsed->begin(), parsed->end(),
+                              std::begin(cfg.secured_settings.mac_address));
+                    modified = true;
+                }
+            }
+
+            if (modified) {
+                cfg.reserialize = true;
+                Log::Info("Patched SMC config block from build options");
+            }
+        }
+
+        // Patches the keyvault's DVD key on non-retail builds, setting `reserialize` only when
+        // the 16-byte key actually changes.
+        void apply_keyvault_options(Keyvault& keyvault, const OptionsArgs& options,
+                                    BuildType build_type) {
+            if (is_blank_option(options.dvdkey)) {
+                return;
+            }
+            const auto dvd_key = OptionsManager::parse_dvd_key(*options.dvdkey);
+            if (!dvd_key) {
+                return;
+            }
+            if (build_type == BuildType::Retail) {
+                Log::Info("Retail image: skipping dvdkey patch to preserve keyvault signature");
+                return;
+            }
+            if (!std::equal(dvd_key->begin(), dvd_key->end(),
+                            std::begin(keyvault.data.b1ADvdKey))) {
+                std::copy(dvd_key->begin(), dvd_key->end(), std::begin(keyvault.data.b1ADvdKey));
+                keyvault.reserialize = true;
+                Log::Info("Patched DVD key into keyvault");
+            }
         }
 
     } // namespace
@@ -1100,14 +1282,34 @@ namespace gxbuild3 {
 
         // The console's own blocks follow it into whatever layout is built.
         if (input.metadata.smc_config) {
-            flash_image.smc_config = *input.metadata.smc_config;
+            auto parsed = SmcConfigBlock::parse(*input.metadata.smc_config);
+            if (!parsed) {
+                return to_build_error(BuildErrorCode::InvalidInput,
+                                      std::move(parsed.error())
+                                          .add_context("Failed to parse input SMC config block"));
+            }
+            flash_image.smc_config = std::move(*parsed);
         }
         if (input.metadata.statistics) {
-            flash_image.statistics = *input.metadata.statistics;
+            auto parsed = StatisticsBlock::parse(*input.metadata.statistics);
+            if (!parsed) {
+                return to_build_error(BuildErrorCode::InvalidInput,
+                                      std::move(parsed.error())
+                                          .add_context("Failed to parse input statistics block"));
+            }
+            flash_image.statistics = std::move(*parsed);
         }
         if (input.metadata.manufacturing) {
-            flash_image.manufacturing = *input.metadata.manufacturing;
+            auto parsed = ManufacturingBlock::parse(*input.metadata.manufacturing);
+            if (!parsed) {
+                return to_build_error(BuildErrorCode::InvalidInput,
+                                      std::move(parsed.error())
+                                          .add_context("Failed to parse input manufacturing "
+                                                       "block"));
+            }
+            flash_image.manufacturing = std::move(*parsed);
         }
+        apply_smc_config_options(flash_image.smc_config, input.options);
 
         const auto smc = Smc::parse(*input.metadata.smc);
         if (!smc) {
@@ -1164,6 +1366,7 @@ namespace gxbuild3 {
         }
         flash_image.keyvault = *keyvault;
         flash_image.keyvault->encrypted = false;
+        apply_keyvault_options(*flash_image.keyvault, input.options, input.build_type);
 
         // Header 0x04 carries no pairing; console dumps and xeBuild images hold zero there, and a
         // devkit image 0x8000 (xeBuild 1.21).

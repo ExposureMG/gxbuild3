@@ -2,6 +2,7 @@
 
 #include "GxBuildTypes.hpp"
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -85,6 +86,10 @@ namespace gxbuild3 {
         // (any case): the device in the high nibble, the button in the low one, as xeBuild
         // writes it. Nothing for a name xeBuild does not take.
         static std::optional<uint8_t> power_on_reason(std::string_view name);
+        static std::optional<uint32_t> parse_u32(std::string_view raw);
+        static std::optional<uint16_t> parse_u16(std::string_view raw);
+        static std::optional<std::array<uint8_t, 6>> parse_mac_id(std::string_view raw);
+        static std::optional<std::array<uint8_t, 16>> parse_dvd_key(std::string_view raw);
         bool has(std::string_view name) const;
 
         bool set_bool(std::string_view name, bool value);

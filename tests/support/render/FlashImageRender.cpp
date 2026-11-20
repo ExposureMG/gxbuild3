@@ -409,9 +409,15 @@ namespace gxbuild3::test::render {
 
         render_smc(s, p, img.smc);
         render_keyvault(s, p, img.keyvault);
-        render_blob(s, p, "smc_config", img.smc_config);
-        render_blob(s, p, "statistics", img.statistics);
-        render_blob(s, p, "manufacturing", img.manufacturing);
+        const auto serialized_block = [](const auto& block) -> std::optional<std::vector<uint8_t>> {
+            if (!block) {
+                return std::nullopt;
+            }
+            return block->serialize();
+        };
+        render_blob(s, p, "smc_config", serialized_block(img.smc_config));
+        render_blob(s, p, "statistics", serialized_block(img.statistics));
+        render_blob(s, p, "manufacturing", serialized_block(img.manufacturing));
         s.flag(p, "corona_config.present", img.corona_config.has_value());
         render_mobile(s, p, img.mobile_data);
         render_filesystem(s, p, img.filesystem);

@@ -1,7 +1,11 @@
 #include "InputValidator.hpp"
 
+#include <algorithm>
+#include <array>
+#include <cctype>
 #include <expected>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace gxbuild3 {
@@ -26,6 +30,11 @@ namespace gxbuild3 {
 
         bool has_automatic_patchset(const Input& input) {
             return input.patches.has_value() && input.patches->automatic.has_value();
+        }
+
+        bool is_blank(std::string_view text) {
+            return std::all_of(text.begin(), text.end(),
+                               [](unsigned char c) { return std::isspace(c) != 0; });
         }
 
     } // namespace
@@ -103,6 +112,50 @@ namespace gxbuild3 {
                     InputError{InputErrorCode::InvalidOption,
                                std::string(name) + " names no known button: '" + **button + "'"});
             }
+        }
+        static constexpr std::array<
+            std::pair<std::string_view, std::optional<std::string> OptionsArgs::*>, 10>
+            kU32Options{{
+                {"cputemp", &OptionsArgs::cputemp},
+                {"gputemp", &OptionsArgs::gputemp},
+                {"edramtemp", &OptionsArgs::edramtemp},
+                {"overcputemp", &OptionsArgs::overcputemp},
+                {"overgputemp", &OptionsArgs::overgputemp},
+                {"overedramtemp", &OptionsArgs::overedramtemp},
+                {"cpufan", &OptionsArgs::cpufan},
+                {"gpufan", &OptionsArgs::gpufan},
+                {"avregion", &OptionsArgs::avregion},
+                {"dvdregion", &OptionsArgs::dvdregion},
+            }};
+        for (const auto& [name, member] : kU32Options) {
+            const auto& opt = input.options.*member;
+            if (opt && !is_blank(*opt) && !OptionsManager::parse_u32(*opt)) {
+                return std::unexpected(
+                    InputError{InputErrorCode::InvalidOption,
+                               std::string(name) +
+                                   " is not a valid unsigned 32-bit integer: '" + *opt + "'"});
+            }
+        }
+        if (input.options.gameregion && !is_blank(*input.options.gameregion) &&
+            !OptionsManager::parse_u16(*input.options.gameregion)) {
+            return std::unexpected(InputError{
+                InputErrorCode::InvalidOption,
+                "gameregion is not a valid unsigned 16-bit integer: '" +
+                    *input.options.gameregion + "'"});
+        }
+        if (input.options.macid && !is_blank(*input.options.macid) &&
+            !OptionsManager::parse_mac_id(*input.options.macid)) {
+            return std::unexpected(InputError{
+                InputErrorCode::InvalidOption,
+                "macid must contain 12 hexadecimal digits (with optional ':' separators): '" +
+                    *input.options.macid + "'"});
+        }
+        if (input.options.dvdkey && !is_blank(*input.options.dvdkey) &&
+            !OptionsManager::parse_dvd_key(*input.options.dvdkey)) {
+            return std::unexpected(
+                InputError{InputErrorCode::InvalidOption,
+                           "dvdkey must contain 32 hexadecimal digits: '" + *input.options.dvdkey +
+                               "'"});
         }
 
         return {};

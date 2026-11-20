@@ -146,6 +146,9 @@ namespace gxbuild3::nand {
 
         XE_KEYVAULT_DATA data{};
         bool encrypted{true};
+        // Kept as raw_data untouched on serialize()/encrypt() unless reserialize is set (or
+        // raw_data does not hold kSize bytes).
+        bool reserialize{false};
         std::vector<uint8_t> raw_data;
 
         // Truncated or Malformed for anything but kSize bytes.

@@ -11,6 +11,7 @@
 #include "nand/objects/FlashFileSystem.hpp"
 #include "nand/objects/Keyvault.hpp"
 #include "nand/objects/MobileData.hpp"
+#include "nand/objects/XConfig.hpp"
 #include "orchestration/RunBuildImage.hpp"
 #include "support/Expect.hpp"
 #include "support/builders/Inputs.hpp"
@@ -401,6 +402,140 @@ namespace gxbuild3::orchestration {
                                 driver.read_clean(target.settings - 2 * target.step, 0x1000))
                     << "the manufacturing block lands two erase blocks below it";
             }
+        }
+
+        TEST(RunBuildSettings, SmcConfigOptionsPatchParsedFieldsAndRecomputeChecksum) {
+            auto input = test::fresh_input(ImageType::NewSmallBlock);
+            const Bytes base_cfg = sound_smc_config();
+            input.metadata.smc_config = base_cfg;
+            input.options.cputemp = "65";
+            input.options.gputemp = "68";
+            input.options.edramtemp = "70";
+            input.options.overcputemp = "95";
+            input.options.overgputemp = "98";
+            input.options.overedramtemp = "100";
+            input.options.cpufan = "75";
+            input.options.gpufan = "80";
+            input.options.avregion = "0x300";
+            input.options.gameregion = "0x02FE";
+            input.options.dvdregion = "2";
+            input.options.macid = "00:22:48:F1:01:02";
+
+            const auto built = run_build(input);
+            ASSERT_OK(built) << "SMC config options build succeeds";
+            const auto parsed = parse_image(*built);
+            ASSERT_TRUE(parsed.has_value() && parsed->smc_config.has_value())
+                << "patched SMC config parses back out";
+            const auto& cfg = *parsed->smc_config;
+            EXPECT_TRUE(nand::SmcConfigBlock::checksum_valid(cfg.raw_data));
+            EXPECT_EQ(cfg.static_settings.smc.setpoint.cpu, 65u);
+            EXPECT_EQ(cfg.static_settings.smc.setpoint.gpu, 68u);
+            EXPECT_EQ(cfg.static_settings.smc.setpoint.edram, 70u);
+            EXPECT_EQ(cfg.static_settings.smc.overload.cpu, 95u);
+            EXPECT_EQ(cfg.static_settings.smc.overload.gpu, 98u);
+            EXPECT_EQ(cfg.static_settings.smc.overload.edram, 100u);
+            EXPECT_EQ(cfg.static_settings.smc.cpu_fan, static_cast<uint8_t>(75 | 0x80));
+            EXPECT_EQ(cfg.static_settings.smc.gpu_fan, static_cast<uint8_t>(80 | 0x80));
+            EXPECT_EQ(cfg.secured_settings.av_region.get(), 0x300u);
+            EXPECT_EQ(cfg.secured_settings.game_region.get(), 0x02FEu);
+            EXPECT_EQ(cfg.secured_settings.dvd_region.get(), 2u);
+            const std::array<uint8_t, 6> expected_mac{0x00, 0x22, 0x48, 0xF1, 0x01, 0x02};
+            EXPECT_TRUE(std::equal(expected_mac.begin(), expected_mac.end(),
+                                   std::begin(cfg.secured_settings.mac_address)));
+            EXPECT_EQ(cfg.raw_data[0x15], base_cfg[0x15]);
+            EXPECT_EQ(cfg.raw_data[0x180], base_cfg[0x180]);
+            EXPECT_EQ(cfg.raw_data[0x3FF], base_cfg[0x3FF]);
+
+            auto reset_fan = test::fresh_input(ImageType::NewSmallBlock);
+            reset_fan.metadata.nand_image = *built;
+            reset_fan.options.cpufan = "0";
+            reset_fan.options.gpufan = "0";
+            const auto reset_built = run_build(reset_fan);
+            ASSERT_OK(reset_built) << "donor rebuild resetting fans to auto succeeds";
+            const auto parsed_reset = parse_image(*reset_built);
+            ASSERT_TRUE(parsed_reset.has_value() && parsed_reset->smc_config.has_value());
+            EXPECT_TRUE(nand::SmcConfigBlock::checksum_valid(parsed_reset->smc_config->raw_data));
+            EXPECT_EQ(parsed_reset->smc_config->static_settings.smc.cpu_fan, uint8_t{0x7F});
+            EXPECT_EQ(parsed_reset->smc_config->static_settings.smc.gpu_fan, uint8_t{0x7F});
+            EXPECT_EQ(parsed_reset->smc_config->static_settings.smc.setpoint.cpu, 65u);
+            EXPECT_EQ(parsed_reset->smc_config->secured_settings.av_region.get(), 0x300u);
+        }
+
+        TEST(RunBuildSettings, NoOpAndOutOfRangeSmcConfigOptionsLeaveBlockUntouched) {
+            auto input = test::fresh_input(ImageType::NewSmallBlock);
+            const Bytes base_cfg = sound_smc_config();
+            input.metadata.smc_config = base_cfg;
+            input.options.cputemp = "0";
+            input.options.gputemp = " ";
+            input.options.overgputemp = "10";
+            input.options.overedramtemp = "150";
+            input.options.cpufan = "20";
+            input.options.gpufan = "120";
+            input.options.gameregion = "0";
+            input.options.macid = "A1:A6:AB:B0:B5:BA";
+
+            const auto built = run_build(input);
+            ASSERT_OK(built) << "no-op and out-of-range SMC config options still build";
+            const auto parsed = parse_image(*built);
+            ASSERT_TRUE(parsed.has_value() && parsed->smc_config.has_value());
+            EXPECT_BYTES_EQ(base_cfg, parsed->smc_config->raw_data)
+                << "unchanged or ignored options keep the raw SMC config block bit-identical";
+
+            auto no_cfg = test::fresh_input(ImageType::NewSmallBlock);
+            no_cfg.options.cputemp = "65";
+            const auto no_cfg_built = run_build(no_cfg);
+            ASSERT_OK(no_cfg_built) << "SMC config options with no block present skip cleanly";
+            const auto no_cfg_parsed = parse_image(*no_cfg_built);
+            ASSERT_TRUE(no_cfg_parsed.has_value());
+            EXPECT_FALSE(no_cfg_parsed->smc_config.has_value());
+
+            auto bad_mac = input;
+            bad_mac.options.macid = "00:22:48";
+            EXPECT_ERROR(run_build(bad_mac), BuildErrorCode::InvalidInput);
+
+            auto bad_dvd = input;
+            bad_dvd.options.dvdkey = "not-a-dvd-key";
+            EXPECT_ERROR(run_build(bad_dvd), BuildErrorCode::InvalidInput);
+        }
+
+        TEST(RunBuildSettings, DvdKeyPatchesNonRetailKeyvaultAndSkipsRetail) {
+            const std::string dvd_hex = "0123456789ABCDEF0123456789ABCDEF";
+            const Bytes expected_dvd{0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+                                     0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF};
+
+            auto devkit = test::devkit_input(ImageType::SmallBlock);
+            devkit.options.dvdkey = dvd_hex;
+            const auto devkit_built = run_build(devkit);
+            ASSERT_OK(devkit_built) << "devkit build with dvdkey succeeds";
+
+            const auto info = extract_all_info(*devkit_built, devkit.metadata.cpu_key);
+            ASSERT_OK(info);
+            EXPECT_TRUE(info->keyvault.present && info->keyvault.decrypted);
+            EXPECT_EQ(info->keyvault.dvd_key, dvd_hex);
+
+            auto parsed_devkit = parse_image(*devkit_built);
+            ASSERT_TRUE(parsed_devkit.has_value());
+            ASSERT_OK(parsed_devkit->decrypt_all(devkit.metadata.cpu_key));
+            ASSERT_TRUE(parsed_devkit->keyvault.has_value());
+            EXPECT_BYTES_EQ(expected_dvd, parsed_devkit->keyvault->data.b1ADvdKey);
+            const auto sealed_plain = parsed_devkit->keyvault->serialize();
+            ASSERT_EQ(sealed_plain.size(), devkit.metadata.keyvault->size());
+            EXPECT_TRUE(std::equal(devkit.metadata.keyvault->begin() + 0x10,
+                                   devkit.metadata.keyvault->begin() + 0x100,
+                                   sealed_plain.begin() + 0x10));
+            EXPECT_TRUE(std::equal(devkit.metadata.keyvault->begin() + 0x110,
+                                   devkit.metadata.keyvault->end(), sealed_plain.begin() + 0x110));
+
+            auto retail = test::fresh_input(ImageType::SmallBlock);
+            retail.options.dvdkey = dvd_hex;
+            const auto retail_built = run_build(retail);
+            ASSERT_OK(retail_built) << "retail build with dvdkey succeeds";
+            auto parsed_retail = parse_image(*retail_built);
+            ASSERT_TRUE(parsed_retail.has_value());
+            ASSERT_OK(parsed_retail->decrypt_all(retail.metadata.cpu_key));
+            ASSERT_TRUE(parsed_retail->keyvault.has_value());
+            EXPECT_BYTES_EQ(*retail.metadata.keyvault, parsed_retail->keyvault->serialize())
+                << "retail image leaves the keyvault untouched";
         }
 
     } // namespace

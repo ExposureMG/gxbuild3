@@ -350,22 +350,13 @@ namespace gxbuild3::nand::detail {
     // The settings block is 0x400 bytes laid in a 0x1000 span, the rest 0xFF. Its head holds
     // the one's complement of the byte sum over [0x10, 0x10C), little-endian. Checked
     // against the settings blocks of real small-block and big-block dumps.
-    inline constexpr size_t kSmcConfigLength = 0x400;
+    inline constexpr size_t kSmcConfigLength = SmcConfigBlock::kSize;
     // The settings, statistics and manufacturing blocks are each laid in 0x1000 bytes at
     // the head of their erase block; the rest of that block stays erased.
-    inline constexpr size_t kSettingsSpan = 0x1000;
+    inline constexpr size_t kSettingsSpan = StatisticsBlock::kSize;
 
     inline bool smc_config_sums(std::span<const uint8_t> block) {
-        if (block.size() < kSmcConfigLength) {
-            return false;
-        }
-        uint32_t sum = 0;
-        for (size_t i = 0x10; i < 0x10C; ++i) {
-            sum += block[i];
-        }
-        const uint16_t expected = static_cast<uint16_t>(~sum);
-        const auto stored = wire::read<wire::le16>(block, 0, "SMC config checksum");
-        return stored && stored->get() == expected;
+        return SmcConfigBlock::checksum_valid(block);
     }
 
     // Where the settings block sits: the last block before the reserved tail, which is

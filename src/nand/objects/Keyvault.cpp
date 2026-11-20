@@ -282,6 +282,7 @@ namespace gxbuild3::nand {
         kv.raw_data.assign(bytes.begin(), bytes.end());
         kv.data = *record;
         kv.encrypted = true;
+        kv.reserialize = false;
         Log::Debug("Parsed Keyvault (0x{:X} bytes)", bytes.size());
         return kv;
     }
@@ -310,6 +311,7 @@ namespace gxbuild3::nand {
         raw_data = std::move(*crypted);
         data = *record;
         encrypted = false;
+        reserialize = false;
         Log::Debug("Keyvault decrypted successfully");
         return {};
     }
@@ -318,7 +320,8 @@ namespace gxbuild3::nand {
         if (encrypted) {
             return {};
         }
-        auto crypted = keyvault_encrypt(cpu_key, raw_data);
+        const std::vector<uint8_t> plain = serialize();
+        auto crypted = keyvault_encrypt(cpu_key, plain);
         if (!crypted) {
             return std::unexpected(
                 std::move(crypted.error()).add_context("encrypting the keyvault"));
@@ -334,12 +337,13 @@ namespace gxbuild3::nand {
         raw_data = std::move(*crypted);
         data = *record;
         encrypted = true;
+        reserialize = false;
         Log::Debug("Keyvault encrypted successfully");
         return {};
     }
 
     std::vector<uint8_t> Keyvault::serialize() const {
-        if (raw_data.size() == kSize) {
+        if (!reserialize && raw_data.size() == kSize) {
             return raw_data;
         }
         const auto image = wire::encode(data);
@@ -369,7 +373,12 @@ namespace gxbuild3::nand {
                       static_cast<unsigned long long>(cid_val), last_digit);
         summary.console_id_friendly = cid_buf;
 
-        if (kv.raw_data.size() >= Keyvault::kOsigOffset + Keyvault::kOsigLength) {
+        if (kv.reserialize) {
+            const auto osig = std::span<const uint8_t>(kv.data.b37XeikaCertificate)
+                                  .subspan(0x122, Keyvault::kOsigLength);
+            const auto end = std::ranges::find(osig, uint8_t{0});
+            summary.osig = std::string(osig.begin(), end);
+        } else if (kv.raw_data.size() >= Keyvault::kOsigOffset + Keyvault::kOsigLength) {
             const auto osig = std::span<const uint8_t>(kv.raw_data)
                                   .subspan(Keyvault::kOsigOffset, Keyvault::kOsigLength);
             const auto end = std::ranges::find(osig, uint8_t{0});

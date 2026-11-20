@@ -12,6 +12,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <gtest/gtest.h>
 #include <ostream>
 #include <vector>
@@ -256,6 +257,53 @@ namespace gxbuild3::objects {
 
         INSTANTIATE_TEST_SUITE_P(Vector, KeyvaultVersionVector,
                                  ::testing::ValuesIn(kVersionVectors), test::RowName{});
+
+        TEST(KeyvaultReserialize, ReserializeFalseKeepsRawDataOnSerializeAndEncrypt) {
+            Bytes plain(nand::Keyvault::kSize, 0x33);
+            ASSERT_OK_AND_ASSIGN(const auto sealed, keyvault_encrypt(kCliFixtureCpuKey, plain));
+            ASSERT_OK_AND_ASSIGN(auto kv, nand::Keyvault::parse(sealed));
+            ASSERT_OK(kv.decrypt(kCliFixtureCpuKey));
+            ASSERT_FALSE(kv.reserialize);
+
+            const auto original_plain = kv.serialize();
+            kv.data.w16GameRegion = uint16_t{0x02FEu};
+            kv.data.b1ADvdKey[0] ^= 0xFFu;
+
+            EXPECT_BYTES_EQ(original_plain, kv.serialize());
+            ASSERT_OK(kv.encrypt(kCliFixtureCpuKey));
+            EXPECT_BYTES_EQ(sealed, kv.serialize());
+        }
+
+        TEST(KeyvaultReserialize, ReserializeTrueEncodesDataOnSerializeSummarizeAndEncrypt) {
+            Bytes plain(nand::Keyvault::kSize, 0x00);
+            ASSERT_OK_AND_ASSIGN(const auto sealed, keyvault_encrypt(kCliFixtureCpuKey, plain));
+            ASSERT_OK_AND_ASSIGN(auto kv, nand::Keyvault::parse(sealed));
+            ASSERT_OK(kv.decrypt(kCliFixtureCpuKey));
+
+            kv.data.w16GameRegion = uint16_t{0x02FEu};
+            kv.data.b1ADvdKey[0] = 0xABu;
+            const char osig[] = "PLDS    DG-16D4S        0225";
+            std::memcpy(kv.data.b37XeikaCertificate + 0x122, osig, nand::Keyvault::kOsigLength);
+            kv.reserialize = true;
+
+            const auto updated_plain = kv.serialize();
+            EXPECT_EQ(updated_plain[0xC8], 0x02u);
+            EXPECT_EQ(updated_plain[0xC9], 0xFEu);
+
+            const auto summary = nand::summarize_keyvault(kv);
+            EXPECT_EQ(summary.region_raw, 0x02FEu);
+            EXPECT_EQ(summary.osig, osig);
+
+            ASSERT_OK(kv.encrypt(kCliFixtureCpuKey));
+            EXPECT_FALSE(kv.reserialize);
+            EXPECT_TRUE(kv.encrypted);
+
+            ASSERT_OK_AND_ASSIGN(auto reparsed, nand::Keyvault::parse(kv.serialize()));
+            ASSERT_OK(reparsed.decrypt(kCliFixtureCpuKey));
+            EXPECT_EQ(reparsed.data.w16GameRegion.get(), 0x02FEu);
+            EXPECT_EQ(reparsed.data.b1ADvdKey[0], 0xABu);
+            EXPECT_EQ(nand::summarize_keyvault(reparsed).osig, osig);
+        }
 
     } // namespace
 } // namespace gxbuild3::objects

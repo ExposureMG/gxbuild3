@@ -218,12 +218,16 @@ namespace gxbuild3::snapshots::flashimage_failures {
             }
             {
                 auto f = bare(Driver::Small, BuildType::Retail);
-                f->smc_config = Bytes(0x200, 0);
+                nand::SmcConfigBlock cfg{};
+                cfg.raw_data = Bytes(0x200, 0);
+                f->smc_config = std::move(cfg);
                 t.add("smc_config_wrong_size.write", f->write());
             }
             {
                 auto f = bare(Driver::Small, BuildType::Retail);
-                f->statistics = Bytes(0x200, 0);
+                nand::StatisticsBlock stats{};
+                stats.raw_data = Bytes(0x200, 0);
+                f->statistics = std::move(stats);
                 t.add("statistics_wrong_size.write", f->write());
             }
             {

@@ -7,6 +7,7 @@
 #include "nand/objects/Keyvault.hpp"
 #include "nand/objects/MobileData.hpp"
 #include "nand/objects/SMC.hpp"
+#include "nand/objects/XConfig.hpp"
 #include "nand/objects/XeLL.hpp"
 #include "utils/Log.hpp"
 
@@ -394,17 +395,17 @@ namespace gxbuild3::nand {
             }
             const size_t block_size = driver.block_size_clean();
             auto cfg_bytes = driver.read_offset(*cfg_offset, kSmcConfigLength);
-            if (cfg_bytes.size() == kSmcConfigLength && smc_config_sums(cfg_bytes)) {
-                image.smc_config = std::vector<uint8_t>(cfg_bytes.begin(), cfg_bytes.end());
+            if (auto parsed = SmcConfigBlock::parse(cfg_bytes)) {
+                image.smc_config = std::move(*parsed);
             }
             if (*cfg_offset >= 2 * block_size) {
                 auto stats = driver.read_clean(*cfg_offset - block_size, kSettingsSpan);
-                if (stats.size() == kSettingsSpan) {
-                    image.statistics = std::move(stats);
+                if (auto parsed = StatisticsBlock::parse(stats)) {
+                    image.statistics = std::move(*parsed);
                 }
                 auto manu = driver.read_clean(*cfg_offset - 2 * block_size, kSettingsSpan);
-                if (manu.size() == kSettingsSpan) {
-                    image.manufacturing = std::move(manu);
+                if (auto parsed = ManufacturingBlock::parse(manu)) {
+                    image.manufacturing = std::move(*parsed);
                 }
             }
         }

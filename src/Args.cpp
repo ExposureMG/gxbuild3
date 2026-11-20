@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <charconv>
+#include <limits>
 #include <utility>
 
 namespace gxbuild3 {
@@ -26,14 +28,61 @@ namespace gxbuild3 {
             return result;
         }
 
-        std::string trim_str(std::string_view raw) {
+        std::string_view trim_view(std::string_view raw) {
             while (!raw.empty() && std::isspace(static_cast<unsigned char>(raw.front()))) {
                 raw.remove_prefix(1);
             }
             while (!raw.empty() && std::isspace(static_cast<unsigned char>(raw.back()))) {
                 raw.remove_suffix(1);
             }
-            return std::string(raw);
+            return raw;
+        }
+
+        std::string trim_str(std::string_view raw) {
+            return std::string(trim_view(raw));
+        }
+
+        template <size_t N>
+        std::optional<std::array<uint8_t, N>> decode_hex_bytes(std::string_view hex) {
+            if (hex.size() != N * 2) {
+                return std::nullopt;
+            }
+            const auto nibble = [](char c) -> std::optional<uint8_t> {
+                if (c >= '0' && c <= '9') {
+                    return static_cast<uint8_t>(c - '0');
+                }
+                if (c >= 'a' && c <= 'f') {
+                    return static_cast<uint8_t>(c - 'a' + 10);
+                }
+                if (c >= 'A' && c <= 'F') {
+                    return static_cast<uint8_t>(c - 'A' + 10);
+                }
+                return std::nullopt;
+            };
+            std::array<uint8_t, N> out{};
+            for (size_t i = 0; i < N; ++i) {
+                const auto hi = nibble(hex[i * 2]);
+                const auto lo = nibble(hex[i * 2 + 1]);
+                if (!hi || !lo) {
+                    return std::nullopt;
+                }
+                out[i] = static_cast<uint8_t>((*hi << 4) | *lo);
+            }
+            return out;
+        }
+
+        template <typename ParseFn>
+        bool set_validated_option(std::optional<std::string>& target, const std::string& val,
+                                  ParseFn&& parse_fn) {
+            if (val.empty()) {
+                target.reset();
+                return true;
+            }
+            if (!parse_fn(val)) {
+                return false;
+            }
+            target = val;
+            return true;
         }
 
         std::optional<bool> parse_bool_value(std::string_view val) {
@@ -142,6 +191,51 @@ namespace gxbuild3 {
             return std::nullopt;
         }
         return found->second;
+    }
+
+    std::optional<uint32_t> OptionsManager::parse_u32(std::string_view raw) {
+        std::string_view text = trim_view(raw);
+        if (text.empty()) {
+            return std::nullopt;
+        }
+        int base = 10;
+        if (text.starts_with("0x") || text.starts_with("0X")) {
+            base = 16;
+            text.remove_prefix(2);
+        }
+        if (text.empty()) {
+            return std::nullopt;
+        }
+        uint32_t value = 0;
+        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value, base);
+        if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size()) {
+            return std::nullopt;
+        }
+        return value;
+    }
+
+    std::optional<uint16_t> OptionsManager::parse_u16(std::string_view raw) {
+        const auto value = parse_u32(raw);
+        if (!value || *value > std::numeric_limits<uint16_t>::max()) {
+            return std::nullopt;
+        }
+        return static_cast<uint16_t>(*value);
+    }
+
+    std::optional<std::array<uint8_t, 6>> OptionsManager::parse_mac_id(std::string_view raw) {
+        const std::string_view trimmed = trim_view(raw);
+        std::string stripped;
+        stripped.reserve(trimmed.size());
+        for (char c : trimmed) {
+            if (c != ':') {
+                stripped.push_back(c);
+            }
+        }
+        return decode_hex_bytes<6>(stripped);
+    }
+
+    std::optional<std::array<uint8_t, 16>> OptionsManager::parse_dvd_key(std::string_view raw) {
+        return decode_hex_bytes<16>(trim_view(raw));
     }
 
     bool OptionsManager::has(std::string_view name) const {
@@ -335,57 +429,33 @@ namespace gxbuild3 {
             button = val;
             return true;
         }
-        if (key == "cputemp") {
-            m_args.cputemp = val;
-            return true;
-        }
-        if (key == "gputemp") {
-            m_args.gputemp = val;
-            return true;
-        }
-        if (key == "edramtemp") {
-            m_args.edramtemp = val;
-            return true;
-        }
-        if (key == "overcputemp") {
-            m_args.overcputemp = val;
-            return true;
-        }
-        if (key == "overgputemp") {
-            m_args.overgputemp = val;
-            return true;
-        }
-        if (key == "overedramtemp") {
-            m_args.overedramtemp = val;
-            return true;
-        }
-        if (key == "cpufan") {
-            m_args.cpufan = val;
-            return true;
-        }
-        if (key == "gpufan") {
-            m_args.gpufan = val;
-            return true;
-        }
-        if (key == "dvdkey") {
-            m_args.dvdkey = val;
-            return true;
-        }
-        if (key == "avregion") {
-            m_args.avregion = val;
-            return true;
+        static constexpr std::array<
+            std::pair<std::string_view, std::optional<std::string> OptionsArgs::*>, 10>
+            kU32Options{{
+                {"cputemp", &OptionsArgs::cputemp},
+                {"gputemp", &OptionsArgs::gputemp},
+                {"edramtemp", &OptionsArgs::edramtemp},
+                {"overcputemp", &OptionsArgs::overcputemp},
+                {"overgputemp", &OptionsArgs::overgputemp},
+                {"overedramtemp", &OptionsArgs::overedramtemp},
+                {"cpufan", &OptionsArgs::cpufan},
+                {"gpufan", &OptionsArgs::gpufan},
+                {"avregion", &OptionsArgs::avregion},
+                {"dvdregion", &OptionsArgs::dvdregion},
+            }};
+        for (const auto& [opt_name, member] : kU32Options) {
+            if (key == opt_name) {
+                return set_validated_option(m_args.*member, val, parse_u32);
+            }
         }
         if (key == "gameregion") {
-            m_args.gameregion = val;
-            return true;
-        }
-        if (key == "dvdregion") {
-            m_args.dvdregion = val;
-            return true;
+            return set_validated_option(m_args.gameregion, val, parse_u16);
         }
         if (key == "macid") {
-            m_args.macid = val;
-            return true;
+            return set_validated_option(m_args.macid, val, parse_mac_id);
+        }
+        if (key == "dvdkey") {
+            return set_validated_option(m_args.dvdkey, val, parse_dvd_key);
         }
 
         return false;

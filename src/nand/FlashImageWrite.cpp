@@ -5,6 +5,7 @@
 #include "nand/objects/Keyvault.hpp"
 #include "nand/objects/MobileData.hpp"
 #include "nand/objects/SMC.hpp"
+#include "nand/objects/XConfig.hpp"
 #include "nand/objects/XeLL.hpp"
 #include "utils/Log.hpp"
 
@@ -312,43 +313,41 @@ namespace gxbuild3::nand {
                 if (!smc_cfg_offset) {
                     return fail(ErrorCode::Unsupported, "this NAND shape has no SMC config block");
                 }
-                if (image.smc_config->size() != kSmcConfigLength ||
-                    !smc_config_sums(*image.smc_config)) {
+                const auto serialized = image.smc_config->serialize();
+                if (serialized.size() != kSmcConfigLength || !smc_config_sums(serialized)) {
                     return fail(ErrorCode::Malformed,
                                 "SMC config block is not 0x{:X} bytes with a sound checksum",
                                 kSmcConfigLength);
                 }
                 std::vector<uint8_t> cfg_bytes(kSettingsSpan, 0xFF);
-                std::copy(image.smc_config->begin(), image.smc_config->end(), cfg_bytes.begin());
+                std::copy(serialized.begin(), serialized.end(), cfg_bytes.begin());
                 if (auto laid =
                         lay_settings_block(driver, *smc_cfg_offset, cfg_bytes, "SMC config block");
                     !laid) {
                     return laid;
                 }
             }
-            const std::array<std::pair<const std::optional<std::vector<uint8_t>>*, size_t>, 2>
-                console_blocks{{{&image.statistics, 1}, {&image.manufacturing, 2}}};
-            for (const auto& [bytes, steps] : console_blocks) {
-                if (!*bytes) {
-                    continue;
+            const auto lay_aux_block = [&](const auto& block, size_t steps,
+                                           std::string_view name) -> Result<void> {
+                if (!block) {
+                    return {};
                 }
-                const std::string_view name =
-                    steps == 1 ? "statistics block" : "manufacturing block";
                 if (!smc_cfg_offset || *smc_cfg_offset < steps * block_size) {
                     return fail(ErrorCode::Unsupported, "this NAND shape has no {}", name);
                 }
-                if ((*bytes)->size() != kSettingsSpan) {
+                const auto serialized = block->serialize();
+                if (serialized.size() != kSettingsSpan) {
                     return fail(ErrorCode::Malformed,
                                 "Statistics and manufacturing blocks must be 0x{:X} bytes",
                                 kSettingsSpan);
                 }
-                if (auto laid = lay_settings_block(driver, *smc_cfg_offset - steps * block_size,
-                                                   **bytes, name);
-                    !laid) {
-                    return laid;
-                }
+                return lay_settings_block(driver, *smc_cfg_offset - steps * block_size, serialized,
+                                          name);
+            };
+            if (auto laid = lay_aux_block(image.statistics, 1, "statistics block"); !laid) {
+                return laid;
             }
-            return {};
+            return lay_aux_block(image.manufacturing, 2, "manufacturing block");
         }
 
         // Every older blob copy goes: a donor's mobile blocks are erased before the blobs are
