@@ -26,10 +26,10 @@ jobs:
           submodules: false
 
       # Only the submodules wired into CMake are fetched; extern/freeBOOT is not needed.
-      - name: Fetch GxCrypt and spdlog submodules
+      - name: Fetch ExCrypt and spdlog submodules
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git submodule update --init --recursive --depth 1 extern/GxCrypt extern/spdlog
+          git submodule update --init --recursive --depth 1 extern/ExCrypt extern/spdlog
 
       - name: Configure
         run: >
