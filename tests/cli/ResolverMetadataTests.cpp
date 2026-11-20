@@ -18,6 +18,7 @@
 #include "support/Bytes.hpp"
 #include "support/Expect.hpp"
 #include "support/Keys.hpp"
+#include "support/builders/Patchsets.hpp"
 #include "support/builders/ResolverTree.hpp"
 #include "support/builders/Stages.hpp"
 
@@ -94,6 +95,94 @@ namespace gxbuild3::cli {
                 << "CLI metadata overrides donor and options.ini";
             EXPECT_EQ(result->input.options.nofcrt, std::optional<bool>{false})
                 << "an explicit false CLI value remains present and wins";
+        }
+
+        TEST_F(ResolverMetadata, SmcDiscoveryFollowsPrecedenceAndBuildTypeNames) {
+            ASSERT_OK_AND_ASSIGN(auto args, tree().complete_loose_args(BuildType::Glitch2));
+            args.source_dirs = {path("first"), path("second")};
+            args.patch_extension = "cr4";
+            write("first/bin/patches_g2falcon_cr4.bin", test::valid_glitch_patchset());
+            write("first/xell-gggggg.bin", Bytes(0x40000, 0x5A));
+
+            // Remove the default smc.bin from complete_loose_args to test fallback discovery.
+            std::error_code ec;
+            ASSERT_TRUE(std::filesystem::remove(path("first/smc.bin"), ec));
+
+            // 1. Furthest fallback has a type token (no smc_<section>.bin fallback).
+            write("first/smc_falcon.bin", test::make_smc(0x10));
+            EXPECT_ERROR(resolve(args), ResolutionErrorCode::IncompleteLooseDonor)
+                << "smc_<section>.bin without a type token is not used";
+
+            // 2. Glitch1 and Glitch2 fall back to smc_<section>_retail[_<ext>].bin and patch it unless nosmcpatch.
+            const auto clean = test::clean_retail_smc();
+            auto patched_clean = clean;
+            patched_clean[test::kSmcRebootSite] = 0x00;
+            patched_clean[test::kSmcRebootSite + 1] = 0x00;
+
+            write("first/smc_falcon_retail.bin", clean);
+            auto retail_fallback = resolve(args);
+            ASSERT_OK(retail_fallback) << "Glitch2 falls back to smc_<section>_retail.bin and patches it";
+            ASSERT_TRUE(retail_fallback->input.metadata.smc.has_value());
+            EXPECT_BYTES_EQ(patched_clean, *retail_fallback->input.metadata.smc);
+
+            // nosmcpatch keeps the retail fallback SMC unpatched.
+            args.config = {"nosmcpatch=true"};
+            auto retail_unpatched = resolve(args);
+            ASSERT_OK(retail_unpatched) << "nosmcpatch leaves the retail fallback SMC unpatched";
+            ASSERT_TRUE(retail_unpatched->input.metadata.smc.has_value());
+            EXPECT_BYTES_EQ(clean, *retail_unpatched->input.metadata.smc);
+            args.config.clear();
+
+            // Specific retail fallback with extension in a later root beats extensionless retail fallback.
+            auto clean_ext = clean;
+            clean_ext[0] = 0x22;
+            auto patched_clean_ext = clean_ext;
+            patched_clean_ext[test::kSmcRebootSite] = 0x00;
+            patched_clean_ext[test::kSmcRebootSite + 1] = 0x00;
+            write("second/smc_falcon_retail_cr4.bin", clean_ext);
+            auto retail_ext_fallback = resolve(args);
+            ASSERT_OK(retail_ext_fallback) << "later-root smc_<section>_retail_<ext>.bin beats earlier-root smc_<section>_retail.bin";
+            ASSERT_TRUE(retail_ext_fallback->input.metadata.smc.has_value());
+            EXPECT_BYTES_EQ(patched_clean_ext, *retail_ext_fallback->input.metadata.smc);
+
+            // Glitch3 does not fall back to smc_<section>_retail*.bin.
+            auto g3_args = args;
+            g3_args.build_type = BuildType::Glitch3;
+            EXPECT_ERROR(resolve(g3_args), ResolutionErrorCode::IncompleteLooseDonor)
+                << "Glitch3 does not fall back to retail SMC";
+
+            // 3. Fallback without extension: smc_<section>_gg.bin beats retail fallback and is not patched.
+            write("first/smc_falcon_gg.bin", clean);
+            auto without_ext = resolve(args);
+            ASSERT_OK(without_ext) << "smc_<section>_gg.bin resolves and is not auto-patched";
+            ASSERT_TRUE(without_ext->input.metadata.smc.has_value());
+            EXPECT_BYTES_EQ(clean, *without_ext->input.metadata.smc);
+
+            // 4. Specific extension candidate in a later root beats extensionless fallback in an earlier root.
+            write("second/smc_falcon_gg_cr4.bin", test::make_smc(0x30));
+            auto with_ext = resolve(args);
+            ASSERT_OK(with_ext) << "later-root smc_<section>_<type>_<ext>.bin beats earlier-root fallback";
+            ASSERT_TRUE(with_ext->input.metadata.smc.has_value());
+            EXPECT_BYTES_EQ(test::make_smc(0x30), *with_ext->input.metadata.smc);
+
+            // 5. smc.bin in a later root beats specific named SMC in an earlier root.
+            write("first/smc_falcon_gg_cr4.bin", test::make_smc(0x31));
+            write("second/smc.bin", test::make_smc(0x40));
+            auto plain_smc = resolve(args);
+            ASSERT_OK(plain_smc) << "later-root smc.bin beats earlier-root named SMC";
+            ASSERT_TRUE(plain_smc->input.metadata.smc.has_value());
+            EXPECT_BYTES_EQ(test::make_smc(0x40), *plain_smc->input.metadata.smc);
+
+            // 6. Devkit and Jtag type tokens.
+            ASSERT_TRUE(std::filesystem::remove(path("second/smc.bin"), ec));
+            ASSERT_TRUE(std::filesystem::remove(path("first/smc_falcon_retail.bin"), ec));
+            args.build_type = BuildType::Devkit;
+            args.patch_extension.reset();
+            write("second/smc_falcon_retail.bin", test::make_smc(0x50));
+            auto devkit_smc = resolve(args);
+            ASSERT_OK(devkit_smc) << "devkit uses the retail SMC token";
+            ASSERT_TRUE(devkit_smc->input.metadata.smc.has_value());
+            EXPECT_BYTES_EQ(test::make_smc(0x50), *devkit_smc->input.metadata.smc);
         }
 
         TEST_F(ResolverMetadata, FlashFsHoldsIniFilesAndDonorSecuredFilesOnly) {

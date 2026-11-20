@@ -132,40 +132,6 @@ namespace gxbuild3::orchestration {
                 << "CBB declared size is the patched end rounded up to 0x10";
         }
 
-        // Glitch, glitch2 and glitch2m take the reboot patch on a clean retail SMC: the two bytes
-        // at the site become zero and nothing else changes.
-        TEST(RunBuildPatching, GlitchTypesPatchACleanRetailSmc) {
-            for (const auto& [build_type, name] :
-                 {std::pair{BuildType::Glitch, "glitch"}, std::pair{BuildType::Glitch2, "glitch2"},
-                  std::pair{BuildType::Glitch2m, "glitch2m"}}) {
-                SCOPED_TRACE(name);
-                auto input = test::fresh_input(ImageType::SmallBlock);
-                input.build_type = build_type;
-                input.options.patchsmc = true;
-                input.metadata.smc = test::clean_retail_smc();
-                if (build_type != BuildType::Glitch) {
-                    input.bootloaders.cb_b = input.bootloaders.cb_or_a;
-                }
-                InputPatches patches{};
-                patches.automatic = InputPatchFile{
-                    "automatic", test::glitch_patchset(0x20, 0, 0x30, 0, Bytes{0x94})};
-                input.patches = std::move(patches);
-
-                const auto built = run_build(input);
-                ASSERT_OK(built) << name << " image builds with an SMC";
-                auto image = FlashImage::read(*built);
-                ASSERT_TRUE(image.has_value()) << name << " image builds with an SMC";
-                ASSERT_OK(image->parse()) << name << " image builds with an SMC";
-                ASSERT_TRUE(image->smc.has_value()) << name << " image builds with an SMC";
-                image->smc->decrypt();
-                auto expected = test::clean_retail_smc();
-                expected[test::kSmcRebootSite] = 0x00;
-                expected[test::kSmcRebootSite + 1] = 0x00;
-                EXPECT_BYTES_EQ(expected, image->smc->data)
-                    << name << " zeroes the two reboot-site bytes and nothing else";
-            }
-        }
-
         TEST(RunBuildPatching, NoblpatchSkipsBootloaderMutationButWritesKhv) {
             auto input = test::fresh_input(ImageType::SmallBlock);
             input.build_type = BuildType::Glitch;

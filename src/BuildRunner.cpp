@@ -1328,36 +1328,6 @@ namespace gxbuild3 {
                                    "(the smcnocheck option builds with this one anyway)"});
         }
 
-        // A clean retail SMC gets the glitch reboot patch on every glitch type whose SMC it
-        // suits: glitch, glitch2 and glitch2m, when the patchsmc option is on (as in xeBuild,
-        // it is off otherwise). Glitch3 writes the donor's or smc.bin's SMC as supplied,
-        // without checking its type.
-        if (input.options.patchsmc.value_or(false) &&
-            (input.build_type == BuildType::Glitch || input.build_type == BuildType::Glitch2 ||
-             input.build_type == BuildType::Glitch2m || input.build_type == BuildType::Devgl ||
-             input.build_type == BuildType::Jtag) &&
-            flash_image.smc->variant == SmcType::Retail) {
-
-            flash_image.smc->decrypt();
-
-            const auto hits = gxbuild3::patchers::apply_signature_patch(
-                flash_image.smc->data.data(), static_cast<uint32_t>(flash_image.smc->data.size()),
-                gxbuild3::patchers::Glitch.addr, gxbuild3::patchers::Glitch.value);
-
-            if (!hits) {
-                return to_build_error(
-                    BuildErrorCode::InvalidSmc,
-                    Error(hits.error()).add_context("Failed to apply the SMC reboot patch"));
-            }
-            if (*hits == 0) {
-                Log::Warn("SMC reboot patch site not found - "
-                          "SMC may not be a supported retail variant");
-            } else {
-                Log::Info("Applied glitch reboot patch to retail SMC");
-                flash_image.smc->variant = SmcType::Glitch;
-            }
-        }
-
         const auto keyvault = Keyvault::parse(*input.metadata.keyvault);
         if (!keyvault) {
             return to_build_error(

@@ -5,7 +5,10 @@
 #include "ini/IniParser.hpp"
 #include "nand/objects/Freeboot.hpp"
 #include "nand/objects/Keyvault.hpp"
+#include "nand/objects/SMC.hpp"
 #include "nand/objects/SecuredFiles.hpp"
+#include "patchers/Patches.hpp"
+#include "patchers/Signature.hpp"
 #include "utils/FileManager.hpp"
 #include "utils/FusesetGenerator.hpp"
 #include "utils/Log.hpp"
@@ -372,6 +375,87 @@ namespace gxbuild3::cli {
                                       args.patch_extension);
             }
             return std::nullopt;
+        }
+
+        std::string_view smc_type_token(BuildType build_type) {
+            switch (build_type) {
+                case BuildType::Retail:
+                case BuildType::Devkit:
+                case BuildType::Devgl:
+                    return "retail";
+                case BuildType::Jtag:
+                    return "jtag";
+                case BuildType::Glitch:
+                case BuildType::Glitch2:
+                case BuildType::Glitch2m:
+                case BuildType::Glitch3:
+                    return "gg";
+            }
+            return "retail";
+        }
+
+        struct SmcCandidate {
+            std::string name;
+            bool retail_fallback = false;
+        };
+
+        std::vector<SmcCandidate> smc_candidates(const BuildArgs& args) {
+            std::vector<SmcCandidate> candidates;
+            candidates.push_back({"smc.bin", false});
+            const auto add_group = [&](std::string_view type_token, bool retail_fallback) {
+                const std::string base =
+                    "smc_" + args.section + "_" + std::string(type_token);
+                if (args.patch_extension) {
+                    candidates.push_back(
+                        {base + "_" + *args.patch_extension + ".bin", retail_fallback});
+                }
+                candidates.push_back({base + ".bin", retail_fallback});
+            };
+            add_group(smc_type_token(args.build_type), false);
+            if (args.build_type == BuildType::Glitch || args.build_type == BuildType::Glitch2) {
+                add_group("retail", true);
+            }
+            return candidates;
+        }
+
+        std::expected<std::optional<gxbuild3::utils::ResolvedFile>, ResolutionError>
+        find_smc(const BuildArgs& args, const std::vector<std::filesystem::path>& roots,
+                 gxbuild3::utils::ScanOptions options, bool nosmcpatch) {
+            for (const auto& candidate : smc_candidates(args)) {
+                auto found = find_asset(candidate.name, roots, options);
+                if (!found) {
+                    return std::unexpected(found.error());
+                }
+                if (!*found) {
+                    continue;
+                }
+                if (candidate.retail_fallback && !nosmcpatch && !(**found).data.empty()) {
+                    const bool was_encrypted = gxbuild3::nand::smc_is_encrypted((**found).data);
+                    auto plain = was_encrypted ? gxbuild3::nand::smc_decrypt((**found).data)
+                                               : (**found).data;
+                    if (gxbuild3::nand::smc_get_type(plain) == gxbuild3::nand::SmcType::Retail) {
+                        const auto hits = gxbuild3::patchers::apply_signature_patch(
+                            plain.data(), static_cast<uint32_t>(plain.size()),
+                            gxbuild3::patchers::Glitch.addr, gxbuild3::patchers::Glitch.value);
+                        if (!hits) {
+                            return std::unexpected(error(
+                                ResolutionErrorCode::InvalidInput,
+                                "Failed to apply the SMC reboot patch: " + hits.error().describe(),
+                                (**found).source_path, candidate.name));
+                        }
+                        if (*hits == 0) {
+                            Log::Warn("SMC reboot patch site not found - "
+                                      "SMC may not be a supported retail variant");
+                        } else {
+                            Log::Info("Applied glitch reboot patch to retail SMC");
+                        }
+                        (**found).data =
+                            was_encrypted ? gxbuild3::nand::smc_encrypt(plain) : std::move(plain);
+                    }
+                }
+                return std::move(*found);
+            }
+            return std::optional<gxbuild3::utils::ResolvedFile>{};
         }
 
         struct DirectFile {
@@ -902,7 +986,8 @@ namespace gxbuild3::cli {
             if (!keyvault) {
                 return std::unexpected(keyvault.error());
             }
-            auto smc = find_asset("smc.bin", roots, scan_options);
+            auto smc = find_smc(args, roots, scan_options,
+                                foundations->options.nosmcpatch.value_or(false));
             if (!smc) {
                 return std::unexpected(smc.error());
             }

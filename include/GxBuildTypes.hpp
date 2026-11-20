@@ -227,8 +227,8 @@ namespace GxBuild {
         std::optional<bool> nosusecurity;
         std::optional<bool> smcnocheck;
         std::optional<bool> noblpatch;
-        // Glitch builds only: patch the retail SMC reset limit (xeBuild's patchsmc; off by default).
-        std::optional<bool> patchsmc;
+        // Glitch and Glitch2 builds: skip patching a retail fallback SMC (off by default).
+        std::optional<bool> nosmcpatch;
         // Stages whose automatic patches are skipped: any of cb, cd, khv, joined with '+'.
         std::optional<std::string> nopatch;
 
