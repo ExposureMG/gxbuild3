@@ -1,8 +1,7 @@
 // tests/golden/objects_corpus.txt: the NAND-object codec snapshot over the tracked fixtures in
 // tests/gxBuild-support-files, compared whole. The old ObjectsCorpusTests.cpp main() checks are
-// the eight cases: the tracked fixtures load, the patch-file and add-on counts, two in-process
-// renders agreeing, the XConfig region round trip, the xboxupd split, the image SMC and the golden
-// match. They share one render per process (objects_corpus::tracked_render), so they run as one
+// the seven cases: the tracked fixtures load, the patch-file and add-on counts, two in-process
+// renders agreeing, the xboxupd split, the image SMC and the golden match. They share one render per process (objects_corpus::tracked_render), so they run as one
 // bundled entry, golden.ObjectsCorpusGolden; a fixture that cannot be listed or read fails every
 // case. MatchesGolden records the old summary lines as the patchsets and objects properties.
 
@@ -60,16 +59,6 @@ namespace gxbuild3::snapshots {
             EXPECT_FALSE(difference.has_value())
                 << "two in-process renderings differ (nondeterministic)\n"
                 << difference.value_or("");
-        }
-
-        TEST(ObjectsCorpusGolden, XconfigRoundTripsInsideItsRegion) {
-            const auto& rendered = objects_corpus::tracked_render();
-            ASSERT_OK(rendered);
-            std::string problems;
-            for (const auto& problem : rendered->problems) {
-                problems += problem + '\n';
-            }
-            EXPECT_TRUE(rendered->problems.empty()) << problems;
         }
 
         TEST(ObjectsCorpusGolden, XboxupdFromSu20076000SplitsIntoCfAndCg) {

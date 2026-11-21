@@ -12,6 +12,7 @@
 #include "nand/objects/XeLL.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -54,6 +55,8 @@ namespace gxbuild3::nand::detail {
     // overlap.
     [[nodiscard]] Result<void> check_overlaps(std::span<const PayloadRange> ranges);
 
+    inline constexpr uint32_t kSmcPayloadOffset = 0x200;
+    inline constexpr uint32_t kJtagPatchSize = 0x4000;
     inline constexpr uint32_t kKeyvaultOffset = 0x4000;
     inline constexpr uint32_t kEntryOffset = 0x8000;
     // XeLL sits at 0x70000 on every shape and is 0x40000 long. The slots follow it, rounded
@@ -201,22 +204,30 @@ namespace gxbuild3::nand::detail {
     // whose header was never parsed would move it.
     inline size_t laid_boot_chain_end(const FlashImage& image) {
         size_t end = kEntryOffset;
-        const auto add = [&end](const auto& bootloader) {
-            end += align_16(static_cast<uint32_t>(bootloader.serialize().size()));
-        };
-        if (!image.cb_section.cb_or_A.data.empty())
-            add(image.cb_section.cb_or_A);
-        if (image.cb_section.cb_x)
-            add(*image.cb_section.cb_x);
-        if (image.cb_section.cb_B)
-            add(*image.cb_section.cb_B);
-        if (image.cb_section.sc)
-            add(*image.cb_section.sc);
-        if (!image.kernel_section.cd.data.empty())
-            add(image.kernel_section.cd);
-        if (image.kernel_section.ce)
-            add(*image.kernel_section.ce);
+        FlashImage::for_each_present_stage(
+            image, [&end](BootStageId, std::string_view, const auto& bootloader) {
+                end += align_16(static_cast<uint32_t>(bootloader.serialize().size()));
+            });
         return end;
+    }
+
+    // The update slot whose CF states the largest LDV; slot 0 on a tie.
+    inline std::optional<size_t> max_ldv_slot(const FlashImage& image) {
+        std::optional<size_t> best;
+        uint8_t best_ldv = 0;
+        const std::array<const SystemUpdate*, 2> slots{&image.system_update_0,
+                                                       &image.system_update_1};
+        for (size_t index = 0; index < slots.size(); ++index) {
+            const auto& cf = slots[index]->cf;
+            if (!cf || cf->data.empty() || !cf->perbox) {
+                continue;
+            }
+            if (!best || cf->perbox->lockdown_value > best_ldv) {
+                best = index;
+                best_ldv = cf->perbox->lockdown_value;
+            }
+        }
+        return best;
     }
 
     inline uint32_t update_base(const FlashImage& image, bool jtag, bool glitch) {
@@ -278,6 +289,19 @@ namespace gxbuild3::nand::detail {
         uint32_t fuse_offset;
         size_t khv_prefix;
         bool manufacturing;
+
+        [[nodiscard]] constexpr uint32_t patch_slot_offset() const noexcept {
+            return update_base + slot_stride;
+        }
+        [[nodiscard]] constexpr uint32_t jtag_patch_offset() const noexcept {
+            return window_base + 0x1000;
+        }
+        [[nodiscard]] constexpr size_t khv_offset() const noexcept {
+            return size_t(update_base) + slot_stride + khv_prefix;
+        }
+        [[nodiscard]] constexpr size_t khv_capacity() const noexcept {
+            return slot_stride - khv_prefix;
+        }
     };
 
     inline LayoutPlan make_plan(const FlashImage& image, bool glitch, bool jtag) {

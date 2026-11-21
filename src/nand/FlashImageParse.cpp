@@ -26,65 +26,7 @@ namespace gxbuild3::nand {
 
     namespace {
 
-        template <class T> struct StageOf {
-            using type = T;
-        };
-        template <class T> struct StageOf<std::optional<T>> {
-            using type = T;
-        };
-
-        // Parses one bootloader record into `target` (a stage or an optional stage).
-        template <class Target>
-        [[nodiscard]] Result<void> parse_section(Target& target, std::span<const uint8_t> bytes,
-                                                 std::string_view name, size_t offset) {
-            auto parsed = StageOf<Target>::type::parse(bytes);
-            if (!parsed) {
-                return std::unexpected(std::move(parsed.error())
-                                           .add_context(std::format("{} at 0x{:X}", name, offset)));
-            }
-            target = std::move(*parsed);
-            return {};
-        }
-
-        // A KHV patch stream: records of a 4-aligned big-endian address and a non-zero
-        // big-endian word count followed by that many words, closed by 0xFFFFFFFF. Reads
-        // `length` bytes at `offset` and returns the stream through its terminator when at
-        // least one record precedes it and every record fits; nothing otherwise.
-        std::optional<std::vector<uint8_t>> find_khv_stream(const Driver& driver, size_t offset,
-                                                            size_t length) {
-            const std::vector<uint8_t> bytes = driver.read_clean(offset, length);
-            wire::Cursor cursor(bytes, offset);
-            size_t records = 0;
-            while (true) {
-                const auto address = cursor.take<wire::be32>("KHV patch address");
-                if (!address) {
-                    return std::nullopt;
-                }
-                const uint32_t target = address->get();
-                if (target == 0xFFFFFFFF) {
-                    if (records == 0) {
-                        return std::nullopt;
-                    }
-                    const auto stream = cursor.consumed();
-                    return std::vector<uint8_t>(stream.begin(), stream.end());
-                }
-                if ((target & 3) != 0) {
-                    return std::nullopt;
-                }
-                const auto count = cursor.take<wire::be32>("KHV patch word count");
-                if (!count) {
-                    return std::nullopt;
-                }
-                const uint32_t words = count->get();
-                if (words == 0 || words > cursor.remaining() / 4) {
-                    return std::nullopt;
-                }
-                if (!cursor.skip(size_t(words) * 4, "KHV patch words")) {
-                    return std::nullopt;
-                }
-                ++records;
-            }
-        }
+        // ---- Header & Secure Head -------------------------------------------------------------
 
         // Checks the image is large enough to hold a NAND header and decodes it.
         [[nodiscard]] Result<nand_header> decode_nand_header(const Driver& driver) {
@@ -136,6 +78,28 @@ namespace gxbuild3::nand {
                     Log::Warn("The NAND's Keyvault is not kept: {}", parsed.error().describe());
                 }
             }
+        }
+
+        // ---- Boot Chain -----------------------------------------------------------------------
+
+        template <class T> struct StageOf {
+            using type = T;
+        };
+        template <class T> struct StageOf<std::optional<T>> {
+            using type = T;
+        };
+
+        // Parses one bootloader record into `target` (a stage or an optional stage).
+        template <class Target>
+        [[nodiscard]] Result<void> parse_section(Target& target, std::span<const uint8_t> bytes,
+                                                 std::string_view name, size_t offset) {
+            auto parsed = StageOf<Target>::type::parse(bytes);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error())
+                                           .add_context(std::format("{} at 0x{:X}", name, offset)));
+            }
+            target = std::move(*parsed);
+            return {};
         }
 
         // The CB build that marks a glitch3 CB_X.
@@ -230,6 +194,8 @@ namespace gxbuild3::nand {
             }
             return {};
         }
+
+        // ---- Update Slots & CG Continuation ---------------------------------------------------
 
         // Reads a CG that runs past its update slot: the prefix inside the slot, then the 16 KiB
         // clusters the CF's continuation table names, in table order. Each cluster read is
@@ -352,6 +318,66 @@ namespace gxbuild3::nand {
             return parse_section(slot.cg, cg_data, "CG", cg_offset);
         }
 
+        [[nodiscard]] Result<void> parse_update_slots(FlashImage& image, size_t image_size,
+                                                      uint32_t patchslot_base,
+                                                      uint32_t slot_stride) {
+            const std::array<std::pair<SystemUpdate*, const char*>, 2> slots{{
+                {&image.system_update_0, "update slot 0"},
+                {&image.system_update_1, "update slot 1"},
+            }};
+            for (size_t index = 0; index < slots.size(); ++index) {
+                const uint32_t base = patchslot_base + static_cast<uint32_t>(index) * slot_stride;
+                if (auto slot = parse_update_slot(image.flash_driver, image_size, base, slot_stride,
+                                                  *slots[index].first);
+                    !slot) {
+                    return with_context(std::move(slot), slots[index].second);
+                }
+            }
+            return {};
+        }
+
+        // ---- Build-Type & KHV Inference -------------------------------------------------------
+
+        // A KHV patch stream: records of a 4-aligned big-endian address and a non-zero
+        // big-endian word count followed by that many words, closed by 0xFFFFFFFF. Reads
+        // `length` bytes at `offset` and returns the stream through its terminator when at
+        // least one record precedes it and every record fits; nothing otherwise.
+        std::optional<std::vector<uint8_t>> find_khv_stream(const Driver& driver, size_t offset,
+                                                            size_t length) {
+            const std::vector<uint8_t> bytes = driver.read_clean(offset, length);
+            wire::Cursor cursor(bytes, offset);
+            size_t records = 0;
+            while (true) {
+                const auto address = cursor.take<wire::be32>("KHV patch address");
+                if (!address) {
+                    return std::nullopt;
+                }
+                const uint32_t target = address->get();
+                if (target == 0xFFFFFFFF) {
+                    if (records == 0) {
+                        return std::nullopt;
+                    }
+                    const auto stream = cursor.consumed();
+                    return std::vector<uint8_t>(stream.begin(), stream.end());
+                }
+                if ((target & 3) != 0) {
+                    return std::nullopt;
+                }
+                const auto count = cursor.take<wire::be32>("KHV patch word count");
+                if (!count) {
+                    return std::nullopt;
+                }
+                const uint32_t words = count->get();
+                if (words == 0 || words > cursor.remaining() / 4) {
+                    return std::nullopt;
+                }
+                if (!cursor.skip(size_t(words) * 4, "KHV patch words")) {
+                    return std::nullopt;
+                }
+                ++records;
+            }
+        }
+
         // What the second update slot says about the chain: the build type it names, if any,
         // and the KHV stream found there.
         struct KhvInference {
@@ -385,6 +411,8 @@ namespace gxbuild3::nand {
             return inferred;
         }
 
+        // ---- Console Settings Blocks ----------------------------------------------------------
+
         // Reads the settings block when its checksum holds, and the statistics and
         // manufacturing blocks one and two erase blocks below it. A block that does not read
         // leaves its member as it was.
@@ -409,6 +437,8 @@ namespace gxbuild3::nand {
                 }
             }
         }
+
+        // ---- Storage Area (eMMC Anchors vs. NAND Spare Scan) ----------------------------------
 
         // An eMMC has no spare bytes to scan, so two anchor blocks at fixed offsets say where
         // the settings blobs and the filesystem table went. A filesystem that does not load is
@@ -554,6 +584,22 @@ namespace gxbuild3::nand {
             }
         }
 
+        void read_storage_area(FlashImage& image) {
+            if (image.flash_driver.driver_mode() == Driver::DriverMode::Emmc) {
+                read_emmc_anchors(image);
+                return;
+            }
+            if (auto mob = scan_mobile_copies(image.flash_driver)) {
+                image.mobile_data = std::move(*mob);
+            }
+            // The filesystem is sized by the build type inferred above.
+            if (const auto root = find_fs_root(image.flash_driver)) {
+                load_fs_root(image, *root);
+            }
+        }
+
+        // ---- Payload Inference ----------------------------------------------------------------
+
         // The XeLL at `offset`, or nothing when it does not fit the image or does not parse.
         std::optional<XeLL> parse_xell_at(const Driver& driver, size_t image_size, size_t offset) {
             if (offset > image_size || XeLL::kSize > image_size - offset) {
@@ -675,16 +721,9 @@ namespace gxbuild3::nand {
         const uint32_t slot_stride = header_slot_stride(header);
         const uint32_t patchslot_base = donor_update_base(header, slot_mode);
 
-        if (auto slot = parse_update_slot(flash_driver, image_bytes.size(), patchslot_base,
-                                          slot_stride, system_update_0);
-            !slot) {
-            return with_context(std::move(slot), "update slot 0");
-        }
-        if (auto slot =
-                parse_update_slot(flash_driver, image_bytes.size(), patchslot_base + slot_stride,
-                                  slot_stride, system_update_1);
-            !slot) {
-            return with_context(std::move(slot), "update slot 1");
+        if (auto slots = parse_update_slots(*this, image_bytes.size(), patchslot_base, slot_stride);
+            !slots) {
+            return slots;
         }
 
         const size_t overlay = size_t(patchslot_base) + slot_stride;
@@ -695,19 +734,7 @@ namespace gxbuild3::nand {
         }
 
         read_console_blocks(flash_driver, *this);
-
-        if (flash_driver.driver_mode() == Driver::DriverMode::Emmc) {
-            read_emmc_anchors(*this);
-        } else {
-            if (auto mob = scan_mobile_copies(flash_driver)) {
-                mobile_data = std::move(*mob);
-            }
-            // The filesystem is sized by the build type inferred above.
-            if (const auto root = find_fs_root(flash_driver)) {
-                load_fs_root(*this, *root);
-            }
-        }
-
+        read_storage_area(*this);
         infer_payloads(*this, inferred.khv, overlay);
 
         return {};

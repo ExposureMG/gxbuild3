@@ -1325,19 +1325,6 @@ freeboot.rebooter_for."17559" size=0xD40 sha1=35f97373b1cc816241ad454dc65af1eedf
 freeboot.rebooter_for."17489" size=0xD40 sha1=0212b6ca8373dc980d20ec5ed4ef803fa61aa65d
 freeboot.rebooter_for."" size=0xD40 sha1=8f15d7df0b9786711195451897975d002a6b5d0f
 freeboot.rebooter_for."0123456789ABCDEF0123456789ABCDEF-overflow" size=0xD40 sha1=04ddf50ca4a446b455b2b937f6ef6b0513b4dfeb
-xconfig.input size=0x10000 sha1=a1cca882a3d01a8dc1a538828d6a69b4ec08aab0
-xconfig.base_0x0.parse ok
-xconfig.base_0x0.serialize size=0x10000 sha1=76f9eb3dd901ca1e0fa075ce23570716abc332a9 inside_equal=0x1A18/0x1A18 outside_zero=0xE5E8/0xE5E8
-xconfig.base_0x0.namespace_same yes
-xconfig.base_0xC000.parse ok
-xconfig.base_0xC000.serialize size=0x10000 sha1=88312179f0ce1643314e85e3668e678b6d382e01 inside_equal=0x1A18/0x1A18 outside_zero=0xE5E8/0xE5E8
-xconfig.base_0xC000.namespace_same yes
-xconfig.namespace_default_base ok size=0x10000 sha1=88312179f0ce1643314e85e3668e678b6d382e01
-xconfig.parse.short err=truncated
-xconfig.parse.exact ok
-xconfig.parse.base_past_end err=truncated
-xconfig.parse.base_0xF000 err=truncated
-xconfig.serialize.default_small_total size=0x1A38 sha1=a6a4e0b0e9e97af77033a641ac515fbb4e2c9493
 smc.image.as_parsed.input size=0x3000 sha1=26f752efaff58714ce5221ae1186016676f0b6fa
 smc.image.as_parsed.classify is_encrypted=yes type=Retail jtag_mark=no
 smc.image.as_parsed.parse ok encrypted=yes motherboard=Jasper version=4.1.2 variant=Retail

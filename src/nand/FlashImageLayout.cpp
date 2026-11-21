@@ -6,6 +6,7 @@
 #include "nand/objects/XeLL.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -117,6 +118,14 @@ namespace gxbuild3::nand {
         return *this;
     }
 
+    FlashImage FlashImage::create(Driver::ImageSize size, Driver::DriverMode mode,
+                                  std::optional<BuildType> type) {
+        FlashImage image{};
+        image.flash_driver = Driver(size, mode);
+        image.build_type = type;
+        return image;
+    }
+
     bool FlashImage::devkit_chain() const {
         return cb_section.cb_or_A.header.header.magic == NANDBootloaderMagic::SB;
     }
@@ -163,7 +172,7 @@ namespace gxbuild3::nand {
     }
 
     uint32_t FlashImage::patch_slot_offset() const {
-        return update_slots_end() - slot_size(*this);
+        return plan_layout(*this).patch_slot_offset();
     }
 
     uint32_t FlashImage::update_slots_end() const {
@@ -181,7 +190,7 @@ namespace gxbuild3::nand {
         };
 
         if (payloads.payload) {
-            add_range(0x200, payloads.payload->size());
+            add_range(kSmcPayloadOffset, payloads.payload->size());
         }
         if (payloads.rebooter) {
             add_range(plan.window_base, payloads.rebooter->size());
@@ -193,10 +202,10 @@ namespace gxbuild3::nand {
             add_range(plan.xell_offset, payloads.xell->data.size());
         }
         if (plan.glitch)
-            add_range(plan.update_base + plan.slot_stride, plan.slot_stride);
+            add_range(plan.patch_slot_offset(), plan.slot_stride);
         if (payloads.patchset) {
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
-                add_range(plan.window_base + 0x1000,
+                add_range(plan.jtag_patch_offset(),
                           serialize_patch_set(*payloads.patchset).size());
             }
         }
@@ -318,7 +327,8 @@ namespace gxbuild3::nand {
                 }
             }
             if (payloads.payload) {
-                if (auto added = add("SMC payload", 0x200, payloads.payload->size()); !added) {
+                if (auto added = add("SMC payload", kSmcPayloadOffset, payloads.payload->size());
+                    !added) {
                     return std::unexpected(std::move(added.error()));
                 }
             }
@@ -401,18 +411,18 @@ namespace gxbuild3::nand {
             if (payloads.patchset) {
                 if (payloads.patchset->kind == PatchSetKind::Jtag) {
                     const auto patch_bytes = serialize_patch_set(*payloads.patchset);
-                    if (auto added = add("JTAG patch payload", plan.window_base + 0x1000,
+                    if (auto added = add("JTAG patch payload", plan.jtag_patch_offset(),
                                          patch_bytes.size());
                         !added) {
                         return std::unexpected(std::move(added.error()));
                     }
                 } else if (const auto* khv =
                                find_patch_section(*payloads.patchset, PatchSectionTarget::Khv)) {
-                    if (serialize_khv_payload(*khv).size() > plan.slot_stride - plan.khv_prefix)
+                    if (serialize_khv_payload(*khv).size() > plan.khv_capacity())
                         return fail(ErrorCode::OutOfRange,
                                     "Glitch KHV payload exceeds its patch-slot region");
                     if (auto added = add("Glitch KHV payload", slot1_base + plan.khv_prefix,
-                                         plan.slot_stride - plan.khv_prefix);
+                                         plan.khv_capacity());
                         !added) {
                         return std::unexpected(std::move(added.error()));
                     }
@@ -463,6 +473,108 @@ namespace gxbuild3::nand {
             return std::unexpected(ranges.error());
         }
         return detail::check_overlaps(*ranges);
+    }
+
+    Result<FlashFileSystem*> FlashImage::format_filesystem(uint32_t timestamp) {
+        const BuildType type = build_type.value_or(BuildType::Retail);
+        FlashFileSystem fs{};
+        fs.set_driver(&flash_driver);
+        fs.set_larger_filesystem(type == BuildType::Devkit);
+        fs.set_timestamp(timestamp);
+        // A big-block filesystem's spare states the system area: all of the first 2 MB on
+        // every image but a retail one, whose system area ends with its update slots
+        // (xeBuild 1.21: 6 blocks of 0x20000 on a jasperbb retail image).
+        fs.set_big_system_blocks(type == BuildType::Retail
+                                     ? static_cast<uint8_t>(update_slots_end() / 0x20000)
+                                     : uint8_t{0x10});
+
+        const size_t total_blocks = flash_driver.block_count();
+        const size_t data_limit = flash_driver.data_block_limit();
+        if (data_limit == 0 || data_limit > std::numeric_limits<uint16_t>::max()) {
+            return fail(ErrorCode::Exhausted,
+                        "No usable blocks remain for the Flash File System");
+        }
+
+        // A new FlashFS starts at root sequence 1. The image writer clears every older root
+        // block's metadata, so no donor root can outrank it.
+        constexpr uint32_t version = 1;
+        // The files start on the first block past the update slots and every payload laid
+        // after them, as xeBuild 1.21 lays them: block 0x24 (0x90000) on a 16 MB retail image,
+        // 0x34 on a glitch one, past the second chain on a JTAG one, and the filesystem's base
+        // on big block, where that is higher.
+        const size_t block_size = flash_driver.block_size_clean();
+        const auto payload_ranges = active_payload_block_ranges();
+        size_t first_block = (update_slots_end() + block_size - 1) / block_size;
+        for (const auto& range : payload_ranges) {
+            first_block = std::max(first_block, range.start_block + range.block_count);
+        }
+        if (first_block > data_limit) {
+            return fail(ErrorCode::Exhausted,
+                        "No usable blocks remain for the Flash File System");
+        }
+        const auto reserved_boundary = static_cast<uint32_t>(first_block);
+        // Defer root placement so serialize allocates it once, last, from the same free
+        // pool as the files and mobile data. Reserving a root here double-counts it and
+        // starves a full image of the final block the root needs.
+        if (auto formatted = fs.format(total_blocks, FlashFileSystem::kDeferRoot, version,
+                                       reserved_boundary);
+            !formatted) {
+            return std::unexpected(
+                std::move(formatted.error()).add_context("Failed to format the Flash File System"));
+        }
+        // Past the last usable block, xeBuild's table reserves the settings blocks of a 16 MB
+        // part (four) and never names its remap pool after them; a big-block part's settings
+        // sit outside the filesystem's numbering, so it names nothing from there on. An eMMC
+        // part or a 64 MB small-block devkit part, which keep no pool, reserve every block to
+        // the end.
+        if (data_limit < total_blocks) {
+            const auto mode = flash_driver.driver_mode();
+            const bool pool =
+                mode == Driver::DriverMode::Big ||
+                ((mode == Driver::DriverMode::Small || mode == Driver::DriverMode::NewSmall) &&
+                 total_blocks <= 0x400);
+            const size_t held =
+                pool ? (mode == Driver::DriverMode::Big
+                            ? 0
+                            : std::min<size_t>(4, total_blocks - data_limit))
+                     : total_blocks - data_limit;
+            Result<void> tail;
+            if (held > 0) {
+                tail = fs.reserve_blocks(data_limit, held);
+            }
+            if (tail && data_limit + held < total_blocks) {
+                tail = fs.withhold_blocks(data_limit + held, total_blocks - data_limit - held,
+                                          BlockMapStatus::Unnamed);
+            }
+            if (!tail) {
+                return std::unexpected(
+                    std::move(tail.error())
+                        .add_context("Failed to reserve geometry tail blocks for the Flash File "
+                                     "System"));
+            }
+        }
+        for (size_t block = 0; block < data_limit; ++block) {
+            if (!flash_driver.is_bad_block(block)) {
+                continue;
+            }
+            if (auto reserved = fs.reserve_blocks(block, 1); !reserved) {
+                return std::unexpected(
+                    std::move(reserved.error())
+                        .add_context("Failed to reserve a bad block in the Flash File System"));
+            }
+        }
+        for (const auto& range : payload_ranges) {
+            if (auto reserved = fs.reserve_blocks(range.start_block, range.block_count);
+                !reserved) {
+                return std::unexpected(
+                    std::move(reserved.error())
+                        .add_context("Failed to reserve fixed payload blocks in the Flash File "
+                                     "System"));
+            }
+        }
+        filesystem = std::move(fs);
+        filesystem->set_driver(&flash_driver);
+        return &*filesystem;
     }
 
 } // namespace gxbuild3::nand

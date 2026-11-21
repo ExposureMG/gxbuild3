@@ -24,10 +24,13 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
 namespace gxbuild3::nand {
+
+    enum class BootStageId : uint8_t { CbA, CbX, CbB, Sc, Cd, Ce };
 
     struct CbSection {
         BootloaderCb cb_or_A;
@@ -104,10 +107,36 @@ namespace gxbuild3::nand {
 
         // Empty input is absent, not a failure.
         static std::optional<FlashImage> read(std::vector<uint8_t> raw_image);
+        static FlashImage create(Driver::ImageSize size, Driver::DriverMode mode,
+                                 std::optional<BuildType> type = std::nullopt);
         // Reads the header, the boot chain, the update slots and the console's blocks out of the
         // driver. A malformed bootloader record or CG continuation fails the parse; the object is
         // left partly filled.
         [[nodiscard]] Result<void> parse();
+
+        // Calls `fn(BootStageId id, std::string_view name, Stage& stage)` for each present stage
+        // in laid boot-chain order: CB_A (or SB), CB_X, CB_B, SC, CD (or SD), CE (or SE).
+        template <class Self, class Fn>
+        static void for_each_present_stage(Self& image, Fn&& fn) {
+            if (!image.cb_section.cb_or_A.data.empty()) {
+                fn(BootStageId::CbA, std::string_view{"CB_A"}, image.cb_section.cb_or_A);
+            }
+            if (image.cb_section.cb_x) {
+                fn(BootStageId::CbX, std::string_view{"CB_X"}, *image.cb_section.cb_x);
+            }
+            if (image.cb_section.cb_B) {
+                fn(BootStageId::CbB, std::string_view{"CB_B"}, *image.cb_section.cb_B);
+            }
+            if (image.cb_section.sc) {
+                fn(BootStageId::Sc, std::string_view{"SC"}, *image.cb_section.sc);
+            }
+            if (!image.kernel_section.cd.data.empty()) {
+                fn(BootStageId::Cd, std::string_view{"CD"}, image.kernel_section.cd);
+            }
+            if (image.kernel_section.ce) {
+                fn(BootStageId::Ce, std::string_view{"CE"}, *image.kernel_section.ce);
+            }
+        }
 
         // A devkit chain: SB, SC, SD and SE, held in the CB, SC, CD and CE positions. SB is keyed
         // from the 1BL key like a single CB, SC from sixteen zero bytes, SD from SC and SE from SD.
@@ -129,6 +158,11 @@ namespace gxbuild3::nand {
         // the chain is zeroed and the CF/CG records in the update slots are erased (0xFF). This
         // deliberately leaves the donor's non-bootloader payloads intact.
         [[nodiscard]] Result<void> clear_bootloader_chain();
+        [[nodiscard]] std::optional<DonorNonces> collect_nonces() const;
+        [[nodiscard]] Result<void>
+        apply_nonces(const std::optional<DonorNonces>& donor = std::nullopt);
+        [[nodiscard]] Result<void> apply_bootloader_metadata(const InputMetadata& metadata,
+                                                             BuildType target_type);
 
         [[nodiscard]] std::vector<BlockRange> active_payload_block_ranges() const;
 
@@ -142,6 +176,10 @@ namespace gxbuild3::nand {
         // Fails, describing the collision, when the resolved layout is unsafe: a required record
         // with no payload, a slot overrun or two payload writers that overlap.
         [[nodiscard]] Result<void> payload_layout() const;
+
+        // Formats and attaches a fresh FlashFileSystem with xeBuild block reservations
+        // (system area boundary, payload block ranges, bad blocks, and geometry tail / remap pool).
+        [[nodiscard]] Result<FlashFileSystem*> format_filesystem(uint32_t timestamp = 0);
 
         // Lays the image into the driver. Unless preserve_layout is set (a parsed dump written
         // back), every good block is erased first, so what the writer does not lay stays erased.

@@ -41,11 +41,9 @@ set(catch_all_allowlist
     src/Main.cpp
 )
 
-# WireConventionGuard inventories. XConfig.hpp keeps its packed bitfields on purpose; every other
-# entry goes away as its records move to include/Wire.hpp. include/Wire.hpp itself stays: it
-# declares the deleted bswap* overloads that reject a manual swap on a wire field.
+# WireConventionGuard inventories. include/Wire.hpp stays: it declares the deleted bswap*
+# overloads that reject a manual swap on a wire field.
 set(pragma_pack_allowlist
-    include/nand/objects/XConfig.hpp
 )
 
 set(byte_swap_allowlist

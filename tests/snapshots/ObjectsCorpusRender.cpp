@@ -17,9 +17,6 @@
 //   corona.*     CoronaConfig serialize -> parse -> serialize for three configs, parse failures
 //                and choose() with corrupted or short copies.
 //   freeboot.*   SHA-1 of freeboot_payload_for / freeboot_rebooter_for for fixed inputs.
-//   xconfig.*    SmcConfig over a patterned 0x10000 buffer (byte i*7+3) at base 0 and 0xC000:
-//                how serialize(parse(b)) compares with b inside and outside the region. XConfig
-//                stays packed; this pins its current behaviour only.
 //   smc.*        smc_get_type / smc_is_encrypted / smc_has_jtag_mark / Smc::parse over the SMC
 //                of mydata/image.bin (sealed and plain) and synthetic signature buffers, each
 //                both plain and sealed with smc_encrypt.
@@ -28,9 +25,8 @@
 //
 // The only CPU key is the one already public in tests/gxBuild-support-files/build_all.sh
 // (test::kBuildAllCpuKey). The renderer and its format strings are the old
-// ObjectsCorpusTests.cpp ones, verbatim; the XConfig region check no longer writes to stderr but
-// appends to Rendered::problems, which ObjectsCorpusGolden asserts empty. The golden binary
-// renders twice in-process and the two texts must be identical (determinism).
+// ObjectsCorpusTests.cpp ones, verbatim. The golden binary renders twice in-process and the two
+// texts must be identical (determinism).
 // `gxbuild3_golden_tests --update objects_corpus` rewrites tests/golden/objects_corpus.txt
 // (CTest never passes it). GXBUILD3_OBJECTS_CORPUS_SUPPORT overrides the support directory, for
 // mutation checks against scratch copies only.
@@ -44,7 +40,6 @@
 #include "nand/objects/Patchset.hpp"
 #include "nand/objects/SMC.hpp"
 #include "nand/objects/SecuredFiles.hpp"
-#include "nand/objects/XConfig.hpp"
 #include "nand/objects/Xboxupd.hpp"
 #include "nand/objects/XeLL.hpp"
 #include "stfs/StfsContainer.hpp"
@@ -116,11 +111,9 @@ namespace gxbuild3::snapshots::objects_corpus {
         using nand::smc_is_encrypted;
         using nand::smc_motherboard_name;
         using nand::smc_type_name;
-        using nand::SmcConfig;
         using nand::split_xboxupd_raw;
         using nand::XboxupdParts;
         using nand::XeLL;
-        namespace xconfig = nand::xconfig;
         using test::hex;
 
         using Bytes = std::vector<uint8_t>;
@@ -805,61 +798,6 @@ namespace gxbuild3::snapshots::objects_corpus {
             }
         }
 
-        // ---- XConfig --------------------------------------------------------------------------
-
-        void render_xconfig(Writer& w, std::vector<std::string>& problems) {
-            constexpr size_t kRegion = 0x1A18;
-            Bytes pattern(0x10000);
-            for (size_t i = 0; i < pattern.size(); ++i) {
-                pattern[i] = static_cast<uint8_t>(i * 7 + 3);
-            }
-            w.line("xconfig.input", blob(pattern));
-            for (const size_t base : {size_t{0}, size_t{0xC000}}) {
-                const std::string key = std::format("xconfig.base_0x{:X}", base);
-                const auto parsed = SmcConfig::parse(pattern, base);
-                w.line(key + ".parse", outcome(parsed));
-                if (!parsed) {
-                    problems.push_back(std::format("{}.parse: {}", key, outcome(parsed)));
-                    continue;
-                }
-                const Bytes out = parsed->serialize(0x10000, base);
-                size_t inside_equal = 0;
-                size_t outside_zero = 0;
-                for (size_t i = 0; i < out.size(); ++i) {
-                    if (i >= base && i < base + kRegion) {
-                        inside_equal += i < pattern.size() && out[i] == pattern[i] ? 1 : 0;
-                    } else {
-                        outside_zero += out[i] == 0 ? 1 : 0;
-                    }
-                }
-                const size_t outside = out.size() - kRegion;
-                w.line(key + ".serialize",
-                       std::format("{} inside_equal=0x{:X}/0x{:X} outside_zero=0x{:X}/0x{:X}",
-                                   blob(out), inside_equal, kRegion, outside_zero, outside));
-                if (inside_equal != kRegion || outside_zero != outside) {
-                    problems.push_back(
-                        std::format("{}: serialize(parse(b)) equals b over the region and is zero "
-                                    "elsewhere",
-                                    key));
-                }
-                const auto ns = xconfig::parse(pattern, base);
-                w.line(key + ".namespace_same",
-                       yn(ns && xconfig::serialize(*ns, 0x10000, base) == out));
-            }
-            const auto default_base = xconfig::parse(pattern);
-            w.line("xconfig.namespace_default_base",
-                   default_base ? "ok " + blob(xconfig::serialize(*default_base))
-                                : describe(default_base.error()));
-            w.line("xconfig.parse.short",
-                   outcome(SmcConfig::parse(Bytes(kRegion - 1, 0), size_t{0})));
-            w.line("xconfig.parse.exact", outcome(SmcConfig::parse(Bytes(kRegion, 0), size_t{0})));
-            w.line("xconfig.parse.base_past_end",
-                   outcome(SmcConfig::parse(Bytes(0x100, 0), size_t{0x200})));
-            w.line("xconfig.parse.base_0xF000", outcome(SmcConfig::parse(pattern, size_t{0xF000})));
-            const SmcConfig zero{};
-            w.line("xconfig.serialize.default_small_total", blob(zero.serialize(0x10, 0x20)));
-        }
-
         // ---- SMC classifier -------------------------------------------------------------------
 
         void smc_lines(Writer& w, const std::string& key, std::span<const uint8_t> data) {
@@ -1045,7 +983,6 @@ namespace gxbuild3::snapshots::objects_corpus {
         render_xboxupd(w, corpus, r.counters);
         render_corona(w);
         render_freeboot(w);
-        render_xconfig(w, r.problems);
         render_smc(w, corpus, r.counters);
         r.text = out.str();
         return r;

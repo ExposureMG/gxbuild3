@@ -25,13 +25,25 @@ namespace gxbuild3::nand {
 
     namespace {
 
-        // Everything in the JTAG window is counted from kJtagWindowOffset.
-        constexpr uint32_t kJTAGPatchesSize = 0x4000;
-
         // xeBuild lays a built image in 16 KiB blocks on erased flash: the block holding the
         // end of the boot chain is programmed zero past it, and every byte nothing lays stays
         // erased.
         constexpr size_t kLayBlockSize = 0x4000;
+
+        // A built image starts from erased flash, so whatever this writer does not lay (an
+        // unused update slot, free filesystem blocks, the remap pool, a donor's old data)
+        // stays erased: 0xFF data and, on NAND, an erased spare. A bad block keeps its marker.
+        // A parsed dump written back keeps its bytes.
+        void prepare_driver_blocks(Driver& driver, bool preserve_layout) {
+            if (preserve_layout) {
+                return;
+            }
+            for (size_t block = 0; block < driver.block_count(); ++block) {
+                if (!driver.is_bad_block(block)) {
+                    driver.erase_block(block);
+                }
+            }
+        }
 
         // Lays one of the console's 0x1000-byte blocks (settings, statistics, manufacturing) at
         // the head of its erase block, as xeBuild does: the erase block is erased, the bytes
@@ -146,10 +158,15 @@ namespace gxbuild3::nand {
         // Lays the NAND header, the zero fill up to the SMC on a built image, the SMC and the
         // keyvault, in that order.
         [[nodiscard]] Result<void> lay_header_and_secure_head(WriteContext& ctx,
-                                                              const FlashImage& image,
-                                                              uint32_t smc_len,
-                                                              uint32_t smc_offset) {
-            const auto encoded = encode_nand_header(image.header, ctx.plan, smc_len, smc_offset);
+                                                              const FlashImage& image) {
+            const size_t smc_len = image.smc ? image.smc->data.size() : 0x3000;
+            if (smc_len > kKeyvaultOffset - sizeof(nand_header)) {
+                return fail(ErrorCode::OutOfRange,
+                            "the SMC (0x{:X} bytes) does not fit before the keyvault", smc_len);
+            }
+            const uint32_t smc_offset = kKeyvaultOffset - static_cast<uint32_t>(smc_len);
+            const auto encoded = encode_nand_header(
+                image.header, ctx.plan, static_cast<uint32_t>(smc_len), smc_offset);
             if (auto laid = write_or_fail(ctx.driver, 0, encoded, "NAND header"); !laid) {
                 return laid;
             }
@@ -194,41 +211,19 @@ namespace gxbuild3::nand {
 
         // Lays the boot chain from kEntryOffset (CB/A and CD when they hold data, the rule
         // laid_boot_chain_end follows) and, on a built image, the zero fill to the end of the
-        // 16 KiB block holding its end. Returns where the chain ends.
-        [[nodiscard]] Result<size_t> lay_boot_chain(WriteContext& ctx, const FlashImage& image) {
+        // 16 KiB block holding its end. Updates ctx.highest_used_offset.
+        [[nodiscard]] Result<void> lay_boot_chain(WriteContext& ctx, const FlashImage& image) {
             auto& driver = ctx.driver;
-            const auto& cb_section = image.cb_section;
-            const auto& kernel_section = image.kernel_section;
             size_t cursor = kEntryOffset;
-            if (!cb_section.cb_or_A.data.empty()) {
-                if (auto laid = lay_stage(driver, cursor, cb_section.cb_or_A, "CB_A"); !laid) {
-                    return std::unexpected(std::move(laid.error()));
-                }
-            }
-            if (cb_section.cb_x) {
-                if (auto laid = lay_stage(driver, cursor, *cb_section.cb_x, "CB_X"); !laid) {
-                    return std::unexpected(std::move(laid.error()));
-                }
-            }
-            if (cb_section.cb_B) {
-                if (auto laid = lay_stage(driver, cursor, *cb_section.cb_B, "CB_B"); !laid) {
-                    return std::unexpected(std::move(laid.error()));
-                }
-            }
-            if (cb_section.sc) {
-                if (auto laid = lay_stage(driver, cursor, *cb_section.sc, "SC"); !laid) {
-                    return std::unexpected(std::move(laid.error()));
-                }
-            }
-            if (!kernel_section.cd.data.empty()) {
-                if (auto laid = lay_stage(driver, cursor, kernel_section.cd, "CD"); !laid) {
-                    return std::unexpected(std::move(laid.error()));
-                }
-            }
-            if (kernel_section.ce) {
-                if (auto laid = lay_stage(driver, cursor, *kernel_section.ce, "CE"); !laid) {
-                    return std::unexpected(std::move(laid.error()));
-                }
+            Result<void> status;
+            FlashImage::for_each_present_stage(
+                image, [&](BootStageId, std::string_view name, const auto& stage) {
+                    if (status) {
+                        status = lay_stage(driver, cursor, stage, name);
+                    }
+                });
+            if (!status) {
+                return status;
             }
             if (!image.preserve_layout) {
                 const size_t block_end =
@@ -237,26 +232,26 @@ namespace gxbuild3::nand {
                         write_or_fail(driver, cursor, std::vector<uint8_t>(block_end - cursor, 0),
                                       "boot chain block fill");
                     !laid) {
-                    return std::unexpected(std::move(laid.error()));
+                    return laid;
                 }
             }
-            return cursor;
+            ctx.highest_used_offset = cursor;
+            return {};
         }
 
         // Lays one update slot at `base_offset`: the CF, then the CG behind it, its prefix in
-        // the slot and the rest in its spill clusters. `end_offset` is where the slot's laid
-        // bytes end, and the context's highest offset follows it when the slot holds a CF.
+        // the slot and the rest in its spill clusters. Updates the context's highest offset when
+        // the slot holds a CF.
         [[nodiscard]] Result<void> lay_update_slot(WriteContext& ctx, uint32_t base_offset,
-                                                   const SystemUpdate& slot, size_t& end_offset) {
+                                                   const SystemUpdate& slot) {
             auto& driver = ctx.driver;
             const auto& plan = ctx.plan;
-            end_offset = base_offset;
             if (slot.cf) {
                 auto cf_bytes = slot.cf->serialize();
                 if (auto laid = write_or_fail(driver, base_offset, cf_bytes, "CF"); !laid) {
                     return laid;
                 }
-                end_offset = base_offset + align_16(static_cast<uint32_t>(cf_bytes.size()));
+                size_t end_offset = base_offset + align_16(static_cast<uint32_t>(cf_bytes.size()));
                 if (slot.cg) {
                     auto cg_bytes = slot.cg->serialize();
                     if (end_offset > base_offset + plan.slot_stride) {
@@ -303,11 +298,26 @@ namespace gxbuild3::nand {
             return {};
         }
 
+        // A CG longer than its slot continues in spill blocks, so each slot ends within its
+        // own stride.
+        [[nodiscard]] Result<void> lay_update_slots(WriteContext& ctx, const FlashImage& image) {
+            if (auto laid = lay_update_slot(ctx, ctx.plan.update_base, image.system_update_0);
+                !laid) {
+                return with_context(std::move(laid), "update slot 0");
+            }
+            if (auto laid = lay_update_slot(ctx, ctx.plan.patch_slot_offset(),
+                                            image.system_update_1);
+                !laid) {
+                return with_context(std::move(laid), "update slot 1");
+            }
+            return {};
+        }
+
         // Lays the console's settings block, then its statistics and manufacturing blocks one
         // and two erase blocks below it, each only when the image carries it.
-        [[nodiscard]] Result<void> lay_console_blocks(WriteContext& ctx, const FlashImage& image,
-                                                      std::optional<size_t> smc_cfg_offset) {
+        [[nodiscard]] Result<void> lay_console_blocks(WriteContext& ctx, const FlashImage& image) {
             auto& driver = ctx.driver;
+            const auto smc_cfg_offset = smc_config_offset(driver);
             const size_t block_size = driver.block_size_clean();
             if (image.smc_config) {
                 if (!smc_cfg_offset) {
@@ -533,7 +543,7 @@ namespace gxbuild3::nand {
             auto& layout = ctx.layout;
             // The JTAG patch buffer is programmed whole, its erased tail included.
             if (plan.jtag && payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag) {
-                layout.programmed_ranges.emplace_back(plan.window_base + 0x1000, kJTAGPatchesSize);
+                layout.programmed_ranges.emplace_back(plan.jtag_patch_offset(), kJtagPatchSize);
             }
             // xeBuild's JTAG image has 0x03 0x50 in spare bytes 10 and 11 of the page holding the
             // SMC payload, in every shape and with the same payload; nothing else stamps them.
@@ -568,6 +578,41 @@ namespace gxbuild3::nand {
             return {};
         }
 
+        // Purges stale mobile blocks and old FlashFS roots, then lays MobileData, the deferred
+        // FlashFileSystem, and the NAND spare layout or eMMC CoronaConfig anchors.
+        [[nodiscard]] Result<void> lay_storage_area(WriteContext& ctx, const FlashImage& image) {
+            auto& driver = ctx.driver;
+            const size_t block_size = driver.block_size_clean();
+            ctx.fs_blk_size =
+                (driver.driver_mode() == Driver::DriverMode::Emmc) ? 0x4000 : block_size;
+            const size_t min_blk =
+                (ctx.highest_used_offset + ctx.fs_blk_size - 1) / ctx.fs_blk_size;
+            ctx.current_blk = std::max<size_t>(ctx.plan.fs_base / ctx.fs_blk_size, min_blk);
+
+            if (ctx.fs) {
+                // A donor FlashImage may have been moved since parsing its filesystem.
+                // Rebind before checking allocation geometry, not just before saving.
+                ctx.fs->set_driver(&driver);
+            }
+
+            purge_stale_mobile_blocks(driver);
+            clear_stale_fs_roots(driver, ctx.fs != nullptr);
+
+            if (image.mobile_data) {
+                if (auto laid = lay_mobile_data(ctx, *image.mobile_data); !laid) {
+                    return laid;
+                }
+            }
+
+            if (ctx.fs) {
+                if (auto saved = place_and_save_filesystem(ctx, *ctx.fs); !saved) {
+                    return saved;
+                }
+            }
+
+            return record_spare_layout_or_anchors(ctx, image);
+        }
+
         // xeBuild programs the bytes after each JTAG window item zero, up to the next item or the
         // end of the 16 KiB block that holds the item's end.
         [[nodiscard]] Result<void> zero_fill(Driver& driver, size_t from, size_t to) {
@@ -583,20 +628,18 @@ namespace gxbuild3::nand {
         }
 
         // Lays the patch set: the JTAG patch buffer in the window or the KHV payload in the
-        // patch slot, after its capacity and its XeLL, rebooter and fuse overlap checks, then
-        // the JTAG buffer's zero and erased tail or the glitch slot's zero fill.
+        // patch slot, after its missing-KHV and capacity checks, then the JTAG buffer's zero and
+        // erased tail or the glitch slot's zero fill. Overlap checks already ran in payload_layout().
         [[nodiscard]] Result<void> lay_patch_payload(WriteContext& ctx, const Payloads& payloads) {
             auto& driver = ctx.driver;
             const auto& plan = ctx.plan;
-            const size_t glitch_patch_offset =
-                plan.update_base + plan.slot_stride + plan.khv_prefix;
             std::vector<uint8_t> patch_bytes;
             size_t patch_offset = 0;
             size_t patch_capacity = 0;
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
                 patch_bytes = serialize_patch_set(*payloads.patchset);
-                patch_offset = plan.window_base + 0x1000;
-                patch_capacity = kJTAGPatchesSize;
+                patch_offset = plan.jtag_patch_offset();
+                patch_capacity = kJtagPatchSize;
             } else {
                 const auto* khv = find_patch_section(*payloads.patchset, PatchSectionTarget::Khv);
                 if (!khv) {
@@ -604,28 +647,13 @@ namespace gxbuild3::nand {
                                 "the glitch patch set has no KHV section");
                 }
                 patch_bytes = serialize_khv_payload(*khv);
-                patch_offset = glitch_patch_offset;
-                patch_capacity = plan.slot_stride - plan.khv_prefix;
+                patch_offset = plan.khv_offset();
+                patch_capacity = plan.khv_capacity();
             }
             if (patch_bytes.size() > patch_capacity) {
                 return fail(ErrorCode::OutOfRange,
                             "Patch payload (0x{:X} bytes) exceeds its 0x{:X}-byte region",
                             patch_bytes.size(), patch_capacity);
-            }
-            if (payloads.xell && ranges_overlap(patch_offset, patch_bytes.size(), plan.xell_offset,
-                                                payloads.xell->data.size())) {
-                return fail(ErrorCode::InvalidArgument,
-                            "Patch payload overlaps the reserved XeLL region");
-            }
-            if (payloads.rebooter && ranges_overlap(patch_offset, patch_bytes.size(),
-                                                    plan.window_base, payloads.rebooter->size())) {
-                return fail(ErrorCode::InvalidArgument,
-                            "Patch payload overlaps the reserved rebooter region");
-            }
-            if (payloads.fuses && ranges_overlap(patch_offset, patch_bytes.size(), plan.fuse_offset,
-                                                 payloads.fuses->size())) {
-                return fail(ErrorCode::InvalidArgument,
-                            "Patch payload overlaps the reserved virtual-fuse region");
             }
             if (auto laid = write_or_fail(driver, patch_offset, patch_bytes, "patch payload");
                 !laid) {
@@ -649,14 +677,15 @@ namespace gxbuild3::nand {
                         return laid;
                     }
                 }
-            }
-            // xeBuild programs the rest of the patch slot's first 0x4000 bytes zero after the
-            // KHV terminator; the slot past them stays erased.
-            const size_t khv_end = patch_offset + patch_bytes.size();
-            const size_t zero_end = size_t(plan.update_base) + plan.slot_stride + kLayBlockSize;
-            if (payloads.patchset->kind != PatchSetKind::Jtag && khv_end < zero_end) {
-                if (auto filled = zero_fill(driver, khv_end, zero_end); !filled) {
-                    return filled;
+            } else {
+                // xeBuild programs the rest of the patch slot's first 0x4000 bytes zero after the
+                // KHV terminator; the slot past them stays erased.
+                const size_t khv_end = patch_offset + patch_bytes.size();
+                const size_t zero_end = size_t(plan.patch_slot_offset()) + kLayBlockSize;
+                if (khv_end < zero_end) {
+                    if (auto filled = zero_fill(driver, khv_end, zero_end); !filled) {
+                        return filled;
+                    }
                 }
             }
             return {};
@@ -672,14 +701,15 @@ namespace gxbuild3::nand {
             // Direct parsed images retain a recovered patchset, so it is rewritten below.
             if (plan.glitch && payloads.patchset) {
                 const std::vector<uint8_t> erased_overlay(plan.slot_stride, 0xFF);
-                if (auto laid = write_or_fail(driver, plan.update_base + plan.slot_stride,
-                                              erased_overlay, "erased patch slot");
+                if (auto laid = write_or_fail(driver, plan.patch_slot_offset(), erased_overlay,
+                                              "erased patch slot");
                     !laid) {
                     return laid;
                 }
             }
             if (payloads.payload) {
-                if (auto laid = write_or_fail(driver, 0x200, *payloads.payload, "SMC payload");
+                if (auto laid =
+                        write_or_fail(driver, kSmcPayloadOffset, *payloads.payload, "SMC payload");
                     !laid) {
                     return laid;
                 }
@@ -784,135 +814,68 @@ namespace gxbuild3::nand {
             return {};
         }
 
+        // Removes any donor CF/CG header and stale bytes from the owned overlay, then lays the
+        // payloads, the JTAG second chain and, last, the raw patches.
+        [[nodiscard]] Result<void> lay_payloads_and_patches(WriteContext& ctx,
+                                                            const FlashImage& image) {
+            if (auto laid = lay_payloads(ctx, image.payloads); !laid) {
+                return laid;
+            }
+            if (ctx.plan.jtag) {
+                if (auto laid = lay_jtag_extra_chain(ctx, image.payloads); !laid) {
+                    return laid;
+                }
+            }
+            const size_t clean_size = ctx.driver.block_count() * ctx.driver.block_size_clean();
+            return apply_raw_patches(ctx.driver, image.raw_patches, clean_size);
+        }
+
     } // namespace
 
     Result<void> FlashImage::write_to_driver() {
         if (flash_driver.block_count() == 0) {
             return fail(ErrorCode::InvalidArgument, "the NAND image has no blocks");
         }
-
         if (auto layout = payload_layout(); !layout) {
             return layout;
         }
 
         auto& driver = flash_driver;
+        prepare_driver_blocks(driver, preserve_layout);
 
-        // A built image starts from erased flash, so whatever this writer does not lay (an
-        // unused update slot, free filesystem blocks, the remap pool, a donor's old data)
-        // stays erased: 0xFF data and, on NAND, an erased spare. A bad block keeps its marker.
-        // A parsed dump written back keeps its bytes.
-        if (!preserve_layout) {
-            for (size_t block = 0; block < driver.block_count(); ++block) {
-                if (!driver.is_bad_block(block)) {
-                    driver.erase_block(block);
-                }
-            }
-        }
-
-        const LayoutPlan plan = plan_layout(*this);
-        const size_t total_blocks = driver.block_count();
-        const size_t block_size = driver.block_size_clean();
         const size_t data_block_limit = driver.data_block_limit();
         if (data_block_limit == 0) {
             return fail(ErrorCode::Exhausted,
                         "no usable NAND blocks remain below the geometry-reserved tail");
         }
 
-        auto payload_block_ranges = active_payload_block_ranges();
-
-        const size_t smc_len = smc ? smc->data.size() : 0x3000;
-        if (smc_len > kKeyvaultOffset - sizeof(nand_header)) {
-            return fail(ErrorCode::OutOfRange,
-                        "the SMC (0x{:X} bytes) does not fit before the keyvault", smc_len);
-        }
-        const uint32_t smc_offset = kKeyvaultOffset - static_cast<uint32_t>(smc_len);
-        const auto smc_cfg_offset = smc_config_offset(driver);
-
+        const LayoutPlan plan = plan_layout(*this);
         WriteContext ctx{.driver = driver,
                          .plan = plan,
                          .highest_used_offset = 0,
                          .data_block_limit = data_block_limit,
-                         .payload_ranges = std::move(payload_block_ranges),
+                         .payload_ranges = active_payload_block_ranges(),
                          .fs = filesystem ? &*filesystem : nullptr,
                          .fs_blk_size = 0,
                          .current_blk = 0,
                          .layout = {}};
-        if (auto laid =
-                lay_header_and_secure_head(ctx, *this, static_cast<uint32_t>(smc_len), smc_offset);
-            !laid) {
+
+        if (auto laid = lay_header_and_secure_head(ctx, *this); !laid) {
             return laid;
         }
-
-        const auto chain_end = lay_boot_chain(ctx, *this);
-        if (!chain_end) {
-            return std::unexpected(chain_end.error());
-        }
-        ctx.highest_used_offset = *chain_end;
-
-        // A CG longer than its slot continues in spill blocks, so each slot ends within its
-        // own stride.
-        size_t slot0_end = plan.update_base;
-        if (auto laid = lay_update_slot(ctx, plan.update_base, system_update_0, slot0_end); !laid) {
-            return with_context(std::move(laid), "update slot 0");
-        }
-        size_t slot1_end = plan.update_base + plan.slot_stride;
-        if (auto laid = lay_update_slot(ctx, plan.update_base + plan.slot_stride, system_update_1,
-                                        slot1_end);
-            !laid) {
-            return with_context(std::move(laid), "update slot 1");
-        }
-
-        if (auto laid = lay_console_blocks(ctx, *this, smc_cfg_offset); !laid) {
+        if (auto laid = lay_boot_chain(ctx, *this); !laid) {
             return laid;
         }
-
-        ctx.fs_blk_size = (driver.driver_mode() == Driver::DriverMode::Emmc) ? 0x4000 : block_size;
-        const size_t min_blk = (ctx.highest_used_offset + ctx.fs_blk_size - 1) / ctx.fs_blk_size;
-        ctx.current_blk = std::max<size_t>(plan.fs_base / ctx.fs_blk_size, min_blk);
-
-        if (ctx.fs) {
-            // A donor FlashImage may have been moved since parsing its filesystem.
-            // Rebind before checking allocation geometry, not just before saving.
-            ctx.fs->set_driver(&driver);
-        }
-
-        purge_stale_mobile_blocks(driver);
-        clear_stale_fs_roots(driver, ctx.fs != nullptr);
-
-        if (mobile_data) {
-            if (auto laid = lay_mobile_data(ctx, *mobile_data); !laid) {
-                return laid;
-            }
-        }
-
-        if (ctx.fs) {
-            if (auto saved = place_and_save_filesystem(ctx, *ctx.fs); !saved) {
-                return saved;
-            }
-        }
-
-        if (auto recorded = record_spare_layout_or_anchors(ctx, *this); !recorded) {
-            return recorded;
-        }
-
-        // Remove any donor CF/CG header and stale bytes from the owned overlay, then lay the
-        // payloads, the JTAG second chain and, last, the raw patches.
-        if (auto laid = lay_payloads(ctx, payloads); !laid) {
+        if (auto laid = lay_update_slots(ctx, *this); !laid) {
             return laid;
         }
-
-        if (plan.jtag) {
-            if (auto laid = lay_jtag_extra_chain(ctx, payloads); !laid) {
-                return laid;
-            }
+        if (auto laid = lay_console_blocks(ctx, *this); !laid) {
+            return laid;
         }
-
-        if (auto patched = apply_raw_patches(driver, raw_patches, total_blocks * block_size);
-            !patched) {
-            return patched;
+        if (auto laid = lay_storage_area(ctx, *this); !laid) {
+            return laid;
         }
-
-        return {};
+        return lay_payloads_and_patches(ctx, *this);
     }
 
     Result<std::vector<uint8_t>> FlashImage::write() {

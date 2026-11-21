@@ -22,17 +22,11 @@ namespace gxbuild3::nand {
 
     namespace {
 
-        // How many CG tails (sysupdate.xexpN) open the directory.
-        size_t leading_cg_tails(const FlashFileSystem& filesystem) {
-            const auto& entries = filesystem.entries();
-            const auto first_other =
-                std::find_if(entries.begin(), entries.end(), [](const FlashFileSystemEntry& entry) {
-                    const std::string_view name(entry.filename,
-                                                strnlen(entry.filename, kMaxFilenameLength));
-                    return !name.starts_with("sysupdate.xexp");
-                });
-            return static_cast<size_t>(first_other - entries.begin());
+        bool is_zero_nonce(std::span<const uint8_t> nonce) {
+            return std::all_of(nonce.begin(), nonce.end(), [](uint8_t byte) { return byte == 0; });
         }
+
+        // ---- Decryption (decrypt_all) ---------------------------------------------------------
 
         // Opens CB_A, CB_X, CB_B and SC in that order. CB_X's plaintext CB_B takes its key slot
         // as the handoff key before the CB_B check, so that CB_B is never opened again.
@@ -91,10 +85,7 @@ namespace gxbuild3::nand {
             // SC is keyed from sixteen zero bytes, not from its parent. One with a zero nonce
             // is taken as plaintext.
             if (cb_section.sc.has_value() && !cb_section.sc->data.empty() &&
-                !cb_section.sc->is_decrypted() &&
-                std::any_of(std::begin(cb_section.sc->header.key),
-                            std::end(cb_section.sc->header.key),
-                            [](uint8_t byte) { return byte != 0; })) {
+                !cb_section.sc->is_decrypted() && !is_zero_nonce(cb_section.sc->header.key)) {
                 if (auto opened = cb_section.sc->decrypt(BootloaderSc::kZeroSecret); !opened) {
                     return with_context(std::move(opened), "decrypting SC");
                 }
@@ -245,6 +236,20 @@ namespace gxbuild3::nand {
     }
 
     namespace {
+
+        // ---- Encryption & Sealing (encrypt_all) -----------------------------------------------
+
+        // How many CG tails (sysupdate.xexpN) open the directory.
+        size_t leading_cg_tails(const FlashFileSystem& filesystem) {
+            const auto& entries = filesystem.entries();
+            const auto first_other =
+                std::find_if(entries.begin(), entries.end(), [](const FlashFileSystemEntry& entry) {
+                    const std::string_view name(entry.filename,
+                                                strnlen(entry.filename, kMaxFilenameLength));
+                    return !name.starts_with("sysupdate.xexp");
+                });
+            return static_cast<size_t>(first_other - entries.begin());
+        }
 
         // What encrypt_all seals and binds for the type being sealed. The flags read the sealed
         // type, never the member build type.
@@ -687,23 +692,348 @@ namespace gxbuild3::nand {
         }
 
         const LayoutPlan seal_plan = plan_for_seal(*this, seal_type);
-        if (auto prepared = prepare_cg_tail(*this, system_update_0, "sysupdate.xexp1", seal_plan);
-            !prepared) {
-            return with_context(std::move(prepared), "update slot 0");
+        const std::array<std::pair<SystemUpdate*, std::string_view>, 2> slots{{
+            {&system_update_0, "sysupdate.xexp1"},
+            {&system_update_1, "sysupdate.xexp2"},
+        }};
+        for (size_t index = 0; index < slots.size(); ++index) {
+            if (auto prepared =
+                    prepare_cg_tail(*this, *slots[index].first, slots[index].second, seal_plan);
+                !prepared) {
+                return with_context(std::move(prepared), std::format("update slot {}", index));
+            }
         }
-        if (auto prepared = prepare_cg_tail(*this, system_update_1, "sysupdate.xexp2", seal_plan);
-            !prepared) {
-            return with_context(std::move(prepared), "update slot 1");
-        }
-
-        if (auto bound = bind_and_seal_cf(system_update_0, 0, cpu_key, seal_type); !bound) {
-            return bound;
-        }
-        if (auto bound = bind_and_seal_cf(system_update_1, 1, cpu_key, seal_type); !bound) {
-            return bound;
+        for (size_t index = 0; index < slots.size(); ++index) {
+            if (auto bound = bind_and_seal_cf(*slots[index].first, index, cpu_key, seal_type);
+                !bound) {
+                return bound;
+            }
         }
 
         return seal_smc_kv(smc, keyvault, cpu_key);
+    }
+
+    namespace {
+
+        // ---- Per-Box Metadata & Stage Nonces --------------------------------------------------
+
+        [[nodiscard]] Result<void> apply_cb_metadata(BootloaderCb& bootloader,
+                                                     const InputMetadata& metadata,
+                                                     std::string_view name) {
+            if (!bootloader.perbox.has_value()) {
+                if (auto parsed = bootloader.parse_perbox(); !parsed) {
+                    return std::unexpected(
+                        std::move(parsed.error())
+                            .add_context(std::format("{} has no writable per-box metadata", name)));
+                }
+            }
+            bootloader.perbox->lockdown_value = metadata.cb_ldv;
+            std::memcpy(bootloader.perbox->pairing_data, metadata.pairing_data.data(),
+                        metadata.pairing_data.size());
+            if (auto serialized = bootloader.serialize_perbox(); !serialized) {
+                return std::unexpected(
+                    std::move(serialized.error())
+                        .add_context(std::format("{} could not serialize per-box metadata", name)));
+            }
+            return {};
+        }
+
+        // A zero-paired CB states no pairing, no LDV and no digest: its whole per-box block is
+        // zero, and the CB then keys CD without the CPU key.
+        [[nodiscard]] Result<void> zero_pair_cb(BootloaderCb& bootloader, std::string_view name) {
+            if (!bootloader.perbox.has_value()) {
+                if (auto parsed = bootloader.parse_perbox(); !parsed) {
+                    return std::unexpected(
+                        std::move(parsed.error())
+                            .add_context(std::format("{} has no writable per-box metadata", name)));
+                }
+            }
+            *bootloader.perbox = cb_perbox{};
+            if (auto serialized = bootloader.serialize_perbox(); !serialized) {
+                return std::unexpected(
+                    std::move(serialized.error())
+                        .add_context(std::format("{} could not serialize per-box metadata", name)));
+            }
+            return {};
+        }
+
+        // A CF bound to the console states its update slot at 0x21B. A paired CF takes the
+        // console's pairing; an unpaired one states zero there. Either states the build's CF LDV
+        // when it has one.
+        [[nodiscard]] Result<void> apply_cf_metadata(BootloaderCf& bootloader,
+                                                     const InputMetadata& metadata,
+                                                     std::optional<uint8_t> cf_ldv, bool paired,
+                                                     uint8_t slot, std::string_view name) {
+            if (!bootloader.perbox.has_value()) {
+                return fail(ErrorCode::Malformed, "{} has no writable per-box metadata", name);
+            }
+            bootloader.perbox->update_slot = slot;
+            if (cf_ldv) {
+                bootloader.perbox->lockdown_value = *cf_ldv;
+            }
+            const auto pairing = paired ? metadata.cf_pairing_data.value_or(metadata.pairing_data)
+                                        : std::array<uint8_t, 3>{};
+            std::memcpy(bootloader.perbox->pairing_data, pairing.data(), pairing.size());
+            if (auto serialized = bootloader.serialize_perbox(); !serialized) {
+                return std::unexpected(
+                    std::move(serialized.error())
+                        .add_context(std::format("{} could not serialize per-box metadata", name)));
+            }
+            return {};
+        }
+
+        // Opens a replacement stage so its metadata can be applied.
+        [[nodiscard]] Result<void> open_for_metadata(Result<void> decrypted,
+                                                     std::string_view name) {
+            if (!decrypted) {
+                return std::unexpected(
+                    std::move(decrypted.error())
+                        .add_context(std::format("Could not decrypt replacement {} for metadata "
+                                                 "application",
+                                                 name)));
+            }
+            return {};
+        }
+
+        std::optional<BootloaderNonce> nonce_from(std::span<const uint8_t> bytes) {
+            if (bytes.size() < std::tuple_size_v<BootloaderNonce> ||
+                is_zero_nonce(bytes.first(16))) {
+                return std::nullopt;
+            }
+            BootloaderNonce nonce{};
+            std::copy_n(bytes.begin(), nonce.size(), nonce.begin());
+            return nonce;
+        }
+
+        BootloaderNonce donor_or_random(const std::optional<BootloaderNonce>& donor) {
+            if (donor) {
+                return *donor;
+            }
+            BootloaderNonce nonce{};
+            do {
+                ExCryptRandom(nonce.data(), nonce.size());
+            } while (is_zero_nonce(nonce));
+            return nonce;
+        }
+
+    } // namespace
+
+    // A glitch (RGH1) image boots a single zero-paired CB, so its CD is keyed without the
+    // CPU key, and its CFs state no pairing (xeBuild 1.21 glitch Jasper and Falcon). A JTAG
+    // image's main chain is zero-paired the same way; its second chain's CB carries the
+    // console's pairing and CB LDV instead, and its second CF is paired. A devgl image's SB
+    // is zero-paired too (xeBuild 1.21 devgl). Every other chain carries the console's pairing
+    // and CB LDV. A JTAG image's first update pair carries nothing of the console and keeps its
+    // CF's per-box block as supplied. Under the all-zero CPU key a chain with a CB_B is
+    // zero-paired: its CB_B per-box block is zero and its CFs state no pairing (xeBuild 1.21
+    // "zeropairing CB_B"); every CF then states LDV 0.
+    Result<void> FlashImage::apply_bootloader_metadata(const InputMetadata& metadata,
+                                                       BuildType target_type) {
+        const bool zero_key = is_zero_cpu_key(metadata.cpu_key);
+        const bool zero_paired_cb_b = zero_key && cb_section.cb_B.has_value();
+        // A glitch1 chain with a CB_B (CB_A + CB_B, as the trinity INIs list) is paired like a
+        // glitch2 one; only the single-CB glitch1 chain is zero-paired.
+        const bool single_cb_glitch =
+            target_type == BuildType::Glitch && !cb_section.cb_B.has_value();
+        const bool paired = !single_cb_glitch && !zero_paired_cb_b;
+        const bool main_cb_paired =
+            paired && target_type != BuildType::Jtag && target_type != BuildType::Devgl;
+        const auto cf_ldv = zero_key ? std::optional<uint8_t>{0} : metadata.cf_ldv;
+        auto& cb_a = cb_section.cb_or_A;
+        if (!cb_a.decrypted) {
+            if (auto opened = open_for_metadata(cb_a.decrypt(key_1bl), "CB/A"); !opened) {
+                return opened;
+            }
+        }
+        if (cb_section.cb_B.has_value()) {
+            auto& cb_b = *cb_section.cb_B;
+            if (!cb_b.decrypted) {
+                if (!cb_a.derived_key.has_value()) {
+                    return fail(ErrorCode::Malformed,
+                                "Could not derive CB_A key for replacement CB_B metadata");
+                }
+                if (auto opened = open_for_metadata(
+                        cb_b.decrypt_cb_b(cb_a.header, cb_a.derived_key->data(),
+                                          metadata.cpu_key.data()),
+                        "CB_B");
+                    !opened) {
+                    return opened;
+                }
+            }
+            if (auto applied = zero_paired_cb_b ? zero_pair_cb(cb_b, "CB_B")
+                                                : apply_cb_metadata(cb_b, metadata, "CB_B");
+                !applied) {
+                return applied;
+            }
+        } else if (auto applied = main_cb_paired ? apply_cb_metadata(cb_a, metadata, "CB/A")
+                                                 : zero_pair_cb(cb_a, "CB/A");
+                   !applied) {
+            return applied;
+        }
+
+        if (auto& extra_cb = payloads.extra_cb; extra_cb) {
+            if (!extra_cb->decrypted) {
+                if (auto opened = open_for_metadata(extra_cb->decrypt(key_1bl), "JTAG second CB");
+                    !opened) {
+                    return opened;
+                }
+            }
+            if (auto applied = apply_cb_metadata(*extra_cb, metadata, "JTAG second CB");
+                !applied) {
+                return applied;
+            }
+        }
+
+        const std::array<std::pair<SystemUpdate*, std::string_view>, 2> slots{
+            {{&system_update_0, "CF_0"}, {&system_update_1, "CF_1"}}};
+        for (uint8_t slot = 0; slot < slots.size(); ++slot) {
+            auto& [update, name] = slots[slot];
+            if (!update->cf.has_value()) {
+                continue;
+            }
+            auto& cf = *update->cf;
+            if (!cf.is_decrypted()) {
+                if (auto opened = open_for_metadata(cf.decrypt(key_1bl), name); !opened) {
+                    return opened;
+                }
+            }
+            if (update_slot_binds_console(target_type, slot)) {
+                if (auto applied = apply_cf_metadata(cf, metadata, cf_ldv, paired, slot, name);
+                    !applied) {
+                    return applied;
+                }
+            }
+        }
+        return {};
+    }
+
+    // Stage nonces sit in clear, so they are read without decrypting. A donor whose chain does
+    // not reach CE gives none, and every new stage then takes a random nonce.
+    std::optional<DonorNonces> FlashImage::collect_nonces() const {
+        const auto& cb_a = cb_section.cb_or_A;
+        const auto& cd = kernel_section.cd;
+        const auto& ce = kernel_section.ce;
+        if (cb_a.data.size() < 0x10 || cd.data.empty() || !ce || ce->data.empty()) {
+            return std::nullopt;
+        }
+
+        DonorNonces nonces{};
+        nonces.stages[0] = nonce_from(cb_a.data);
+        // A CB_B behind a CB_X carries its plaintext handoff key at +0x10, not a nonce.
+        if (!cb_section.cb_x && cb_section.cb_B && cb_section.cb_B->data.size() >= 0x10) {
+            nonces.stages[1] = nonce_from(cb_section.cb_B->data);
+        } else if (cb_section.sc) {
+            nonces.stages[1] = nonce_from(cb_section.sc->header.key);
+        }
+        nonces.stages[2] = nonce_from(cd.header.key);
+        nonces.stages[3] = nonce_from(ce->header.key);
+
+        const auto& slot =
+            max_ldv_slot(*this).value_or(0) == 0 ? system_update_0 : system_update_1;
+        if (slot.cf && !slot.cf->data.empty()) {
+            nonces.cf = nonce_from(slot.cf->header.fixpoint_nonce);
+        }
+        if (slot.cg && !slot.cg->data.empty()) {
+            nonces.cg = nonce_from(slot.cg->header.key);
+        }
+        return nonces;
+    }
+
+    // Sets the nonce of every stage run_build seals, before any key is derived from it. Each
+    // boot-chain key derives from its parent's, so a chain with any stage supplied already
+    // sealed keeps all its nonces. A CB_X chain keeps its CB_X and the handoff key its
+    // plaintext CB_B holds at +0x10. A devkit SC takes the CB_B nonce; any other SC is
+    // written as supplied. A JTAG image's second chain takes the first CB's and the CD's
+    // nonces again (xeBuild 1.21, xerunner build.py `_nonces`). An Error when an update
+    // package's CG does not open under its CF's key.
+    Result<void> FlashImage::apply_nonces(const std::optional<DonorNonces>& donor) {
+        const auto stage = [&donor](size_t index) {
+            return donor ? donor->stages[index] : std::optional<BootloaderNonce>{};
+        };
+        const auto cf_nonce = donor ? donor->cf : std::optional<BootloaderNonce>{};
+        const auto cg_nonce = donor ? donor->cg : std::optional<BootloaderNonce>{};
+
+        const auto set_cb = [](BootloaderCb& cb, const BootloaderNonce& nonce) {
+            std::copy(nonce.begin(), nonce.end(), cb.data.begin());
+            std::copy(nonce.begin(), nonce.end(), std::begin(cb.header.key));
+        };
+
+        auto& cb_a = cb_section.cb_or_A;
+        auto& cb_x = cb_section.cb_x;
+        auto& cb_b = cb_section.cb_B;
+        auto& sc = cb_section.sc;
+        auto& cd = kernel_section.cd;
+        auto& ce = kernel_section.ce;
+        // An SC counts as sealed as decrypt_all reads it: not plaintext, with a non-zero nonce.
+        const bool sc_sealed = sc && !sc->is_decrypted() && !is_zero_nonce(sc->header.key);
+        const bool chain_plaintext =
+            cb_a.decrypted && cb_a.data.size() >= 0x10 && (!cb_x || cb_x->decrypted) &&
+            (!cb_b || (cb_b->decrypted && cb_b->data.size() >= 0x10)) && !sc_sealed &&
+            cd.decrypted && !cd.data.empty() && (!ce || ce->decrypted);
+        std::optional<BootloaderNonce> cb_nonce;
+        std::optional<BootloaderNonce> cd_nonce;
+        if (chain_plaintext) {
+            cb_nonce = donor_or_random(stage(0));
+            set_cb(cb_a, *cb_nonce);
+            if (!cb_x && cb_b) {
+                set_cb(*cb_b, donor_or_random(stage(1)));
+            } else if (devkit_chain() && sc) {
+                // A devkit SC sits in the CB_B position (xeBuild 1.21 devkit).
+                const auto sc_nonce = donor_or_random(stage(1));
+                std::copy(sc_nonce.begin(), sc_nonce.end(), std::begin(sc->header.key));
+            }
+            cd_nonce = donor_or_random(stage(2));
+            std::copy(cd_nonce->begin(), cd_nonce->end(), std::begin(cd.header.key));
+            if (ce) {
+                const auto ce_nonce = donor_or_random(stage(3));
+                std::copy(ce_nonce.begin(), ce_nonce.end(), std::begin(ce->header.key));
+            }
+        }
+
+        auto& extra_cb = payloads.extra_cb;
+        auto& extra_cd = payloads.extra_cd;
+        if (extra_cb && extra_cb->decrypted && extra_cb->data.size() >= 0x10) {
+            if (!cb_nonce) {
+                cb_nonce = donor_or_random(stage(0));
+            }
+            set_cb(*extra_cb, *cb_nonce);
+        }
+        if (extra_cd && extra_cd->decrypted && !extra_cd->data.empty()) {
+            if (!cd_nonce) {
+                cd_nonce = donor_or_random(stage(2));
+            }
+            std::copy(cd_nonce->begin(), cd_nonce->end(), std::begin(extra_cd->header.key));
+        }
+        if (auto& extra_se = payloads.extra_se;
+            extra_se && extra_se->decrypted && !extra_se->data.empty()) {
+            const auto se_nonce = donor_or_random(stage(3));
+            std::copy(se_nonce.begin(), se_nonce.end(), std::begin(extra_se->header.key));
+        }
+
+        for (auto* slot : {&system_update_0, &system_update_1}) {
+            auto& cf = slot->cf;
+            if (cf && cf->decrypted && !cf->data.empty()) {
+                const auto nonce = donor_or_random(cf_nonce);
+                std::copy(nonce.begin(), nonce.end(), std::begin(cf->header.fixpoint_nonce));
+            }
+            // An update package's CG arrives sealed under its CF's 7BL nonce; it is opened
+            // here so it can be sealed again under the chosen nonce.
+            auto& cg = slot->cg;
+            if (cg && !cg->decrypted && !cg->data.empty() && cf && cf->is_decrypted()) {
+                if (const auto key = cf->cg_key()) {
+                    if (auto opened = cg->decrypt(key->data()); !opened) {
+                        return std::unexpected(std::move(opened.error())
+                                                   .add_context("Could not open the supplied "
+                                                                "CG to seal it again"));
+                    }
+                }
+            }
+            if (cg && cg->decrypted && !cg->data.empty()) {
+                const auto nonce = donor_or_random(cg_nonce);
+                std::copy(nonce.begin(), nonce.end(), std::begin(cg->header.key));
+            }
+        }
+        return {};
     }
 
 } // namespace gxbuild3::nand

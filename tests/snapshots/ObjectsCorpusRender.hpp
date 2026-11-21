@@ -53,9 +53,6 @@ namespace gxbuild3::snapshots::objects_corpus {
     struct Rendered {
         std::string text;
         Counters counters;
-        // What the render found wrong on its own (the XConfig region round trip); the old
-        // check() messages, empty when all is well. The text is the same either way.
-        std::vector<std::string> problems;
     };
 
     // The tracked fixtures under support_dir: patches_*.bin and the other *.bin add-ons of

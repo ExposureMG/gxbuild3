@@ -18,7 +18,6 @@
 
 namespace gxbuild3::test::flashimage_cells {
 
-    using nand::BlockMapStatus;
     using nand::BootloaderCb;
     using nand::BootloaderCd;
     using nand::BootloaderCe;
@@ -192,59 +191,15 @@ namespace gxbuild3::test::flashimage_cells {
     }
 
     Result<void> add_filesystem(FlashImage& f, BuildType type) {
-        FlashFileSystem fs{};
-        fs.set_driver(&f.flash_driver);
-        fs.set_larger_filesystem(type == BuildType::Devkit);
-        fs.set_timestamp(kFsTimestamp);
-        fs.set_big_system_blocks(type == BuildType::Retail
-                                     ? static_cast<uint8_t>(f.update_slots_end() / 0x20000)
-                                     : uint8_t{0x10});
-        const size_t total_blocks = f.flash_driver.block_count();
-        const size_t data_limit = f.flash_driver.data_block_limit();
-        const size_t block_size = f.flash_driver.block_size_clean();
-        size_t first_block = (f.update_slots_end() + block_size - 1) / block_size;
-        for (const auto& range : f.active_payload_block_ranges()) {
-            first_block = std::max(first_block, range.start_block + range.block_count);
+        f.build_type = type;
+        auto fs = f.format_filesystem(kFsTimestamp);
+        if (!fs) {
+            return std::unexpected(std::move(fs.error()));
         }
-        if (auto formatted = fs.format(total_blocks, FlashFileSystem::kDeferRoot, 1,
-                                       static_cast<uint32_t>(first_block));
-            !formatted) {
-            return with_context(std::move(formatted), "format");
-        }
-        if (data_limit < total_blocks) {
-            const auto mode = f.flash_driver.driver_mode();
-            const bool pool =
-                mode == Driver::Big ||
-                ((mode == Driver::Small || mode == Driver::NewSmall) && total_blocks <= 0x400);
-            const size_t held =
-                pool ? (mode == Driver::Big ? 0 : std::min<size_t>(4, total_blocks - data_limit))
-                     : total_blocks - data_limit;
-            if (held > 0) {
-                if (auto reserved = fs.reserve_blocks(data_limit, held); !reserved) {
-                    return with_context(std::move(reserved), "reserve tail");
-                }
-            }
-            if (data_limit + held < total_blocks) {
-                if (auto withheld =
-                        fs.withhold_blocks(data_limit + held, total_blocks - data_limit - held,
-                                           BlockMapStatus::Unnamed);
-                    !withheld) {
-                    return with_context(std::move(withheld), "withhold tail");
-                }
-            }
-        }
-        for (const auto& range : f.active_payload_block_ranges()) {
-            if (auto reserved = fs.reserve_blocks(range.start_block, range.block_count);
-                !reserved) {
-                return with_context(std::move(reserved), "reserve payload blocks");
-            }
-        }
-        f.filesystem = std::move(fs);
-        f.filesystem->set_driver(&f.flash_driver);
-        if (auto added = f.filesystem->add_file("gxb_alpha.bin", pattern(0x5123, 0x11)); !added) {
+        if (auto added = (*fs)->add_file("gxb_alpha.bin", pattern(0x5123, 0x11)); !added) {
             return with_context(std::move(added), "add gxb_alpha.bin");
         }
-        if (auto added = f.filesystem->add_file("gxb_beta.bin", pattern(0x1F0, 0x22)); !added) {
+        if (auto added = (*fs)->add_file("gxb_beta.bin", pattern(0x1F0, 0x22)); !added) {
             return with_context(std::move(added), "add gxb_beta.bin");
         }
         return {};
@@ -446,10 +401,8 @@ namespace gxbuild3::test::flashimage_cells {
     }
 
     std::unique_ptr<FlashImage> bare(Driver::DriverMode mode, BuildType type) {
-        auto f = std::make_unique<FlashImage>();
-        f->flash_driver = Driver(image_size_for(mode, type), mode);
-        f->build_type = type;
-        return f;
+        return std::make_unique<FlashImage>(
+            FlashImage::create(image_size_for(mode, type), mode, type));
     }
 
 } // namespace gxbuild3::test::flashimage_cells

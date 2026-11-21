@@ -42,6 +42,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace gxbuild3 {
@@ -376,245 +377,10 @@ namespace gxbuild3 {
             return bytes;
         }
 
-        [[nodiscard]] Result<void> apply_cb_metadata(BootloaderCb& bootloader,
-                                                     const InputMetadata& metadata,
-                                                     std::string_view name) {
-            if (!bootloader.perbox.has_value()) {
-                if (auto parsed = bootloader.parse_perbox(); !parsed) {
-                    return std::unexpected(
-                        std::move(parsed.error())
-                            .add_context(std::format("{} has no writable per-box metadata", name)));
-                }
-            }
-            bootloader.perbox->lockdown_value = metadata.cb_ldv;
-            std::memcpy(bootloader.perbox->pairing_data, metadata.pairing_data.data(),
-                        metadata.pairing_data.size());
-            if (auto serialized = bootloader.serialize_perbox(); !serialized) {
-                return std::unexpected(
-                    std::move(serialized.error())
-                        .add_context(std::format("{} could not serialize per-box metadata", name)));
-            }
-            return {};
-        }
-
-        // A zero-paired CB states no pairing, no LDV and no digest: its whole per-box block is
-        // zero, and the CB then keys CD without the CPU key.
-        [[nodiscard]] Result<void> zero_pair_cb(BootloaderCb& bootloader, std::string_view name) {
-            if (!bootloader.perbox.has_value()) {
-                if (auto parsed = bootloader.parse_perbox(); !parsed) {
-                    return std::unexpected(
-                        std::move(parsed.error())
-                            .add_context(std::format("{} has no writable per-box metadata", name)));
-                }
-            }
-            *bootloader.perbox = cb_perbox{};
-            if (auto serialized = bootloader.serialize_perbox(); !serialized) {
-                return std::unexpected(
-                    std::move(serialized.error())
-                        .add_context(std::format("{} could not serialize per-box metadata", name)));
-            }
-            return {};
-        }
-
-        // A CF bound to the console states its update slot at 0x21B. A paired CF takes the
-        // console's pairing; an unpaired one states zero there. Either states the build's CF LDV
-        // when it has one.
-        [[nodiscard]] Result<void> apply_cf_metadata(BootloaderCf& bootloader,
-                                                     const InputMetadata& metadata,
-                                                     std::optional<uint8_t> cf_ldv, bool paired,
-                                                     uint8_t slot, std::string_view name) {
-            if (!bootloader.perbox.has_value()) {
-                return fail(ErrorCode::Malformed, "{} has no writable per-box metadata", name);
-            }
-            bootloader.perbox->update_slot = slot;
-            if (cf_ldv) {
-                bootloader.perbox->lockdown_value = *cf_ldv;
-            }
-            const auto pairing = paired ? metadata.cf_pairing_data.value_or(metadata.pairing_data)
-                                        : std::array<uint8_t, 3>{};
-            std::memcpy(bootloader.perbox->pairing_data, pairing.data(), pairing.size());
-            if (auto serialized = bootloader.serialize_perbox(); !serialized) {
-                return std::unexpected(
-                    std::move(serialized.error())
-                        .add_context(std::format("{} could not serialize per-box metadata", name)));
-            }
-            return {};
-        }
-
-        // Opens a replacement stage so its metadata can be applied.
-        [[nodiscard]] Result<void> open_for_metadata(Result<void> decrypted,
-                                                     std::string_view name) {
-            if (!decrypted) {
-                return std::unexpected(
-                    std::move(decrypted.error())
-                        .add_context(std::format("Could not decrypt replacement {} for metadata "
-                                                 "application",
-                                                 name)));
-            }
-            return {};
-        }
-
-        // A glitch (RGH1) image boots a single zero-paired CB, so its CD is keyed without the
-        // CPU key, and its CFs state no pairing (xeBuild 1.21 glitch Jasper and Falcon). A JTAG
-        // image's main chain is zero-paired the same way; its second chain's CB carries the
-        // console's pairing and CB LDV instead, and its second CF is paired. A devgl image's SB
-        // is zero-paired too (xeBuild 1.21 devgl). Every other chain carries the console's pairing
-        // and CB LDV. A JTAG image's first update pair carries nothing of the console and keeps its
-        // CF's per-box block as supplied. Under the all-zero CPU key a chain with a CB_B is
-        // zero-paired: its CB_B per-box block is zero and its CFs state no pairing (xeBuild 1.21
-        // "zeropairing CB_B"); every CF then states LDV 0.
-        [[nodiscard]] Result<void> apply_bootloader_metadata(FlashImage& flash_image,
-                                                             const InputMetadata& metadata,
-                                                             BuildType build_type) {
-            const bool zero_key = is_zero_cpu_key(metadata.cpu_key);
-            const bool zero_paired_cb_b = zero_key && flash_image.cb_section.cb_B.has_value();
-            // A glitch1 chain with a CB_B (CB_A + CB_B, as the trinity INIs list) is paired like a
-            // glitch2 one; only the single-CB glitch1 chain is zero-paired.
-            const bool single_cb_glitch =
-                build_type == BuildType::Glitch && !flash_image.cb_section.cb_B.has_value();
-            const bool paired = !single_cb_glitch && !zero_paired_cb_b;
-            const bool main_cb_paired =
-                paired && build_type != BuildType::Jtag && build_type != BuildType::Devgl;
-            const auto cf_ldv = zero_key ? std::optional<uint8_t>{0} : metadata.cf_ldv;
-            auto& cb_a = flash_image.cb_section.cb_or_A;
-            if (!cb_a.decrypted) {
-                if (auto opened = open_for_metadata(cb_a.decrypt(key_1bl), "CB/A"); !opened) {
-                    return opened;
-                }
-            }
-            if (flash_image.cb_section.cb_B.has_value()) {
-                auto& cb_b = *flash_image.cb_section.cb_B;
-                if (!cb_b.decrypted) {
-                    if (!cb_a.derived_key.has_value()) {
-                        return fail(ErrorCode::Malformed,
-                                    "Could not derive CB_A key for replacement CB_B metadata");
-                    }
-                    if (auto opened = open_for_metadata(cb_b.decrypt_cb_b(cb_a.header,
-                                                                          cb_a.derived_key->data(),
-                                                                          metadata.cpu_key.data()),
-                                                        "CB_B");
-                        !opened) {
-                        return opened;
-                    }
-                }
-                if (auto applied = zero_paired_cb_b ? zero_pair_cb(cb_b, "CB_B")
-                                                    : apply_cb_metadata(cb_b, metadata, "CB_B");
-                    !applied) {
-                    return applied;
-                }
-            } else if (auto applied = main_cb_paired ? apply_cb_metadata(cb_a, metadata, "CB/A")
-                                                     : zero_pair_cb(cb_a, "CB/A");
-                       !applied) {
-                return applied;
-            }
-
-            if (auto& extra_cb = flash_image.payloads.extra_cb; extra_cb) {
-                if (!extra_cb->decrypted) {
-                    if (auto opened =
-                            open_for_metadata(extra_cb->decrypt(key_1bl), "JTAG second CB");
-                        !opened) {
-                        return opened;
-                    }
-                }
-                if (auto applied = apply_cb_metadata(*extra_cb, metadata, "JTAG second CB");
-                    !applied) {
-                    return applied;
-                }
-            }
-
-            const std::array<std::pair<SystemUpdate*, std::string_view>, 2> slots{
-                {{&flash_image.system_update_0, "CF_0"}, {&flash_image.system_update_1, "CF_1"}}};
-            for (uint8_t slot = 0; slot < slots.size(); ++slot) {
-                auto& [update, name] = slots[slot];
-                if (!update->cf.has_value()) {
-                    continue;
-                }
-                auto& cf = *update->cf;
-                if (!cf.is_decrypted()) {
-                    if (auto opened = open_for_metadata(cf.decrypt(key_1bl), name); !opened) {
-                        return opened;
-                    }
-                }
-                if (update_slot_binds_console(build_type, slot)) {
-                    if (auto applied = apply_cf_metadata(cf, metadata, cf_ldv, paired, slot, name);
-                        !applied) {
-                        return applied;
-                    }
-                }
-            }
-            return {};
-        }
-
-        bool is_zero_nonce(std::span<const uint8_t> nonce) {
-            return std::all_of(nonce.begin(), nonce.end(), [](uint8_t byte) { return byte == 0; });
-        }
-
-        std::optional<BootloaderNonce> nonce_from(std::span<const uint8_t> bytes) {
-            if (bytes.size() < std::tuple_size_v<BootloaderNonce> ||
-                is_zero_nonce(bytes.first(16))) {
-                return std::nullopt;
-            }
-            BootloaderNonce nonce{};
-            std::copy_n(bytes.begin(), nonce.size(), nonce.begin());
-            return nonce;
-        }
-
-        // The update slot whose CF states the largest LDV; slot 0 on a tie.
-        std::optional<size_t> max_ldv_slot(const FlashImage& image) {
-            std::optional<size_t> best;
-            uint8_t best_ldv = 0;
-            const std::array<const SystemUpdate*, 2> slots{&image.system_update_0,
-                                                           &image.system_update_1};
-            for (size_t index = 0; index < slots.size(); ++index) {
-                const auto& cf = slots[index]->cf;
-                if (!cf || cf->data.empty() || !cf->perbox) {
-                    continue;
-                }
-                if (!best || cf->perbox->lockdown_value > best_ldv) {
-                    best = index;
-                    best_ldv = cf->perbox->lockdown_value;
-                }
-            }
-            return best;
-        }
-
-        // Stage nonces sit in clear, so they are read without decrypting. A donor whose chain does
-        // not reach CE gives none, and every new stage then takes a random nonce.
-        std::optional<DonorNonces> collect_donor_nonces(const FlashImage& image) {
-            const auto& cb_a = image.cb_section.cb_or_A;
-            const auto& cd = image.kernel_section.cd;
-            const auto& ce = image.kernel_section.ce;
-            if (cb_a.data.size() < 0x10 || cd.data.empty() || !ce || ce->data.empty()) {
-                return std::nullopt;
-            }
-
-            DonorNonces nonces{};
-            nonces.stages[0] = nonce_from(cb_a.data);
-            // A CB_B behind a CB_X carries its plaintext handoff key at +0x10, not a nonce.
-            if (!image.cb_section.cb_x && image.cb_section.cb_B &&
-                image.cb_section.cb_B->data.size() >= 0x10) {
-                nonces.stages[1] = nonce_from(image.cb_section.cb_B->data);
-            } else if (image.cb_section.sc) {
-                nonces.stages[1] = nonce_from(image.cb_section.sc->header.key);
-            }
-            nonces.stages[2] = nonce_from(cd.header.key);
-            nonces.stages[3] = nonce_from(ce->header.key);
-
-            const auto& slot = max_ldv_slot(image).value_or(0) == 0 ? image.system_update_0
-                                                                    : image.system_update_1;
-            if (slot.cf && !slot.cf->data.empty()) {
-                nonces.cf = nonce_from(slot.cf->header.fixpoint_nonce);
-            }
-            if (slot.cg && !slot.cg->data.empty()) {
-                nonces.cg = nonce_from(slot.cg->header.key);
-            }
-            return nonces;
-        }
-
         // CF LDV and pairing come from the slot the console booted last: the one stating the
         // largest LDV.
         void extract_cf_metadata(const FlashImage& image, InputMetadata& metadata) {
-            const auto slot = max_ldv_slot(image);
+            const auto slot = nand::detail::max_ldv_slot(image);
             if (!slot) {
                 return;
             }
@@ -679,115 +445,6 @@ namespace gxbuild3 {
                 return *sequence;
             }
             return cb_b.perbox->lockdown_value;
-        }
-
-        BootloaderNonce donor_or_random(const std::optional<BootloaderNonce>& donor) {
-            if (donor) {
-                return *donor;
-            }
-            BootloaderNonce nonce{};
-            do {
-                ExCryptRandom(nonce.data(), nonce.size());
-            } while (is_zero_nonce(nonce));
-            return nonce;
-        }
-
-        // Sets the nonce of every stage run_build seals, before any key is derived from it. Each
-        // boot-chain key derives from its parent's, so a chain with any stage supplied already
-        // sealed keeps all its nonces. A CB_X chain keeps its CB_X and the handoff key its
-        // plaintext CB_B holds at +0x10. A devkit SC takes the CB_B nonce; any other SC is
-        // written as supplied. A JTAG image's second chain takes the first CB's and the CD's
-        // nonces again (xeBuild 1.21, xerunner build.py `_nonces`). An Error when an update
-        // package's CG does not open under its CF's key.
-        [[nodiscard]] Result<void> apply_nonces(FlashImage& image,
-                                                const std::optional<DonorNonces>& donor) {
-            const auto stage = [&donor](size_t index) {
-                return donor ? donor->stages[index] : std::optional<BootloaderNonce>{};
-            };
-            const auto cf_nonce = donor ? donor->cf : std::optional<BootloaderNonce>{};
-            const auto cg_nonce = donor ? donor->cg : std::optional<BootloaderNonce>{};
-
-            const auto set_cb = [](BootloaderCb& cb, const BootloaderNonce& nonce) {
-                std::copy(nonce.begin(), nonce.end(), cb.data.begin());
-                std::copy(nonce.begin(), nonce.end(), std::begin(cb.header.key));
-            };
-
-            auto& cb_a = image.cb_section.cb_or_A;
-            auto& cb_x = image.cb_section.cb_x;
-            auto& cb_b = image.cb_section.cb_B;
-            auto& sc = image.cb_section.sc;
-            auto& cd = image.kernel_section.cd;
-            auto& ce = image.kernel_section.ce;
-            // An SC counts as sealed as decrypt_all reads it: not plaintext, with a non-zero nonce.
-            const bool sc_sealed = sc && !sc->is_decrypted() && !is_zero_nonce(sc->header.key);
-            const bool chain_plaintext =
-                cb_a.decrypted && cb_a.data.size() >= 0x10 && (!cb_x || cb_x->decrypted) &&
-                (!cb_b || (cb_b->decrypted && cb_b->data.size() >= 0x10)) && !sc_sealed &&
-                cd.decrypted && !cd.data.empty() && (!ce || ce->decrypted);
-            std::optional<BootloaderNonce> cb_nonce;
-            std::optional<BootloaderNonce> cd_nonce;
-            if (chain_plaintext) {
-                cb_nonce = donor_or_random(stage(0));
-                set_cb(cb_a, *cb_nonce);
-                if (!cb_x && cb_b) {
-                    set_cb(*cb_b, donor_or_random(stage(1)));
-                } else if (image.devkit_chain() && sc) {
-                    // A devkit SC sits in the CB_B position (xeBuild 1.21 devkit).
-                    const auto sc_nonce = donor_or_random(stage(1));
-                    std::copy(sc_nonce.begin(), sc_nonce.end(), std::begin(sc->header.key));
-                }
-                cd_nonce = donor_or_random(stage(2));
-                std::copy(cd_nonce->begin(), cd_nonce->end(), std::begin(cd.header.key));
-                if (ce) {
-                    const auto ce_nonce = donor_or_random(stage(3));
-                    std::copy(ce_nonce.begin(), ce_nonce.end(), std::begin(ce->header.key));
-                }
-            }
-
-            auto& extra_cb = image.payloads.extra_cb;
-            auto& extra_cd = image.payloads.extra_cd;
-            if (extra_cb && extra_cb->decrypted && extra_cb->data.size() >= 0x10) {
-                if (!cb_nonce) {
-                    cb_nonce = donor_or_random(stage(0));
-                }
-                set_cb(*extra_cb, *cb_nonce);
-            }
-            if (extra_cd && extra_cd->decrypted && !extra_cd->data.empty()) {
-                if (!cd_nonce) {
-                    cd_nonce = donor_or_random(stage(2));
-                }
-                std::copy(cd_nonce->begin(), cd_nonce->end(), std::begin(extra_cd->header.key));
-            }
-            if (auto& extra_se = image.payloads.extra_se;
-                extra_se && extra_se->decrypted && !extra_se->data.empty()) {
-                const auto se_nonce = donor_or_random(stage(3));
-                std::copy(se_nonce.begin(), se_nonce.end(), std::begin(extra_se->header.key));
-            }
-
-            for (auto* slot : {&image.system_update_0, &image.system_update_1}) {
-                auto& cf = slot->cf;
-                if (cf && cf->decrypted && !cf->data.empty()) {
-                    const auto nonce = donor_or_random(cf_nonce);
-                    std::copy(nonce.begin(), nonce.end(), std::begin(cf->header.fixpoint_nonce));
-                }
-                // An update package's CG arrives sealed under its CF's 7BL nonce; it is opened
-                // here so it can be sealed again under the chosen nonce.
-                auto& cg = slot->cg;
-                if (cg && !cg->decrypted && !cg->data.empty() && cf && cf->is_decrypted()) {
-                    if (const auto key = cf->cg_key()) {
-                        if (auto opened = cg->decrypt(key->data()); !opened) {
-                            return std::unexpected(std::move(opened.error())
-                                                       .add_context("Could not open the supplied "
-                                                                    "CG to seal it again"));
-                        }
-                    }
-                }
-                if (cg && cg->decrypted && !cg->data.empty()) {
-                    const auto nonce = donor_or_random(cg_nonce);
-                    std::copy(nonce.begin(), nonce.end(), std::begin(cg->header.key));
-                }
-            }
-            return {};
         }
 
         // Parses one supplied stage into its place in the image; the stage's name goes on the
@@ -1206,6 +863,600 @@ namespace gxbuild3 {
             }
         }
 
+        using StepResult = std::expected<void, BuildError>;
+
+        // Initializes the target FlashImage (from a donor dump when present and shape-compatible,
+        // or fresh), parses the console's settings/SMC/keyvault, applies option overrides, and
+        // sets the NAND header metadata.
+        [[nodiscard]] StepResult init_build_image(const Input& input, FlashImage& flash_image,
+                                                  std::optional<DonorNonces>& donor_nonces) {
+            bool has_donor = false;
+            std::optional<ConsoleType> donor_console;
+
+            if (input.metadata.nand_image && !input.metadata.nand_image->empty()) {
+                Log::Info("Building image from donor NAND dump...");
+                auto donor_img = FlashImage::read(*input.metadata.nand_image);
+                if (!donor_img) {
+                    return to_build_error(
+                        BuildErrorCode::InvalidDonor,
+                        {ErrorCode::InvalidArgument, "Failed to parse donor NAND dump: it is empty"});
+                }
+                if (auto parsed = donor_img->parse(); !parsed) {
+                    return to_build_error(
+                        BuildErrorCode::InvalidDonor,
+                        std::move(parsed.error()).add_context("Failed to parse donor NAND dump"));
+                }
+                if (auto decrypted = donor_img->decrypt_all(input.metadata.cpu_key); !decrypted) {
+                    return to_build_error(BuildErrorCode::InvalidDonor,
+                                          std::move(decrypted.error())
+                                              .add_context("Failed to decrypt donor NAND dump "
+                                                           "components"));
+                }
+                if (!donor_nonces) {
+                    donor_nonces = donor_img->collect_nonces();
+                }
+                // A devkit image of another shape than its donor (the 64 MB image a 16 MB console
+                // takes) is laid fresh: the donor gives its nonces here and its console data
+                // through the Input.
+                const auto target = driver_config(input.image_type, input.build_type);
+                const bool donor_shape = donor_img->flash_driver.image_size() == target.first &&
+                                         donor_img->flash_driver.driver_mode() == target.second;
+                if (input.build_type != BuildType::Devkit || donor_shape) {
+                    has_donor = true;
+                    if (donor_img->smc) {
+                        donor_console = console_of(donor_img->smc->motherboard);
+                    }
+                    flash_image = std::move(*donor_img);
+                } else {
+                    Log::Debug("Laying the devkit image fresh beside its donor's shape");
+                    flash_image = FlashImage::create(target.first, target.second, input.build_type);
+                }
+            } else {
+                Log::Debug("Configuring fresh NAND image layout");
+                const auto [image_size, driver_mode] =
+                    driver_config(input.image_type, input.build_type);
+                flash_image = FlashImage::create(image_size, driver_mode, input.build_type);
+            }
+
+            flash_image.build_type = input.build_type;
+
+            // The console's own blocks follow it into whatever layout is built.
+            if (input.metadata.smc_config) {
+                auto parsed = SmcConfigBlock::parse(*input.metadata.smc_config);
+                if (!parsed) {
+                    return to_build_error(BuildErrorCode::InvalidInput,
+                                          std::move(parsed.error())
+                                              .add_context("Failed to parse input SMC config block"));
+                }
+                flash_image.smc_config = std::move(*parsed);
+            }
+            if (input.metadata.statistics) {
+                auto parsed = StatisticsBlock::parse(*input.metadata.statistics);
+                if (!parsed) {
+                    return to_build_error(BuildErrorCode::InvalidInput,
+                                          std::move(parsed.error())
+                                              .add_context("Failed to parse input statistics block"));
+                }
+                flash_image.statistics = std::move(*parsed);
+            }
+            if (input.metadata.manufacturing) {
+                auto parsed = ManufacturingBlock::parse(*input.metadata.manufacturing);
+                if (!parsed) {
+                    return to_build_error(BuildErrorCode::InvalidInput,
+                                          std::move(parsed.error())
+                                              .add_context("Failed to parse input manufacturing "
+                                                           "block"));
+                }
+                flash_image.manufacturing = std::move(*parsed);
+            }
+            apply_smc_config_options(flash_image.smc_config, input.options);
+
+            const auto smc = Smc::parse(*input.metadata.smc);
+            if (!smc) {
+                return to_build_error(BuildErrorCode::InvalidSmc,
+                                      Error(smc.error()).add_context("Failed to parse input SMC"));
+            }
+            flash_image.smc = *smc;
+
+            // A JTAG image boots through its SMC's hack, so an SMC carrying no JTAG mark is refused
+            // unless smcnocheck waives the check, as xeBuild 1.21 does.
+            if (input.build_type == BuildType::Jtag && !input.options.smcnocheck.value_or(false) &&
+                !smc_has_jtag_mark(flash_image.smc->data)) {
+                return to_build_error(BuildErrorCode::InvalidSmc,
+                                      {ErrorCode::Unsupported,
+                                       "Clean SMC binary found: a JTAG image needs a hacked SMC "
+                                       "(the smcnocheck option builds with this one anyway)"});
+            }
+
+            const auto keyvault = Keyvault::parse(*input.metadata.keyvault);
+            if (!keyvault) {
+                return to_build_error(
+                    BuildErrorCode::InvalidKeyvault,
+                    Error(keyvault.error()).add_context("Failed to parse input keyvault"));
+            }
+            flash_image.keyvault = *keyvault;
+            flash_image.keyvault->encrypted = false;
+            apply_keyvault_options(*flash_image.keyvault, input.options, input.build_type);
+
+            // Header 0x04 carries no pairing; console dumps and xeBuild images hold zero there, and a
+            // devkit image 0x8000 (xeBuild 1.21).
+            flash_image.header.pairing = input.build_type == BuildType::Devkit ? 0x8000 : 0;
+
+            // A donor of the same board keeps its own notice; any other image states the target's. A
+            // JTAG Jasper always states the year of the CB it boots, which no retail donor carries.
+            const bool donor_copyright_usable =
+                has_donor && !std::all_of(std::begin(flash_image.header.copyright),
+                                          std::begin(flash_image.header.copyright) + kCopyrightLength,
+                                          [](uint8_t byte) { return byte == 0; });
+            const bool jtag_jasper =
+                input.build_type == BuildType::Jtag && input.console == ConsoleType::Jasper;
+            if (input.build_type == BuildType::Devkit) {
+                write_copyright(flash_image.header, kDevkitCopyrightYear);
+            } else if (input.console &&
+                       (!donor_copyright_usable || donor_console != input.console || jtag_jasper)) {
+                write_copyright(flash_image.header, copyright_year(*input.console, input.build_type));
+            }
+            flash_image.header.hack_flags = is_hacked(input.build_type) ? 1 : 0;
+            flash_image.header.boot_flags = boot_flags(input.build_type, input.options);
+            return {};
+        }
+
+        // Clears donor bootloader records, parses and validates input bootloaders and automatic
+        // patches, patches CB/CB_B/CD, re-signs devgl SD, parses JTAG extra stages, and applies
+        // per-box bootloader metadata and nonces.
+        [[nodiscard]] StepResult populate_and_patch_bootloaders(
+            FlashImage& flash_image, const Input& input, const std::optional<DonorNonces>& donor_nonces,
+            const std::optional<gxbuild3::utils::XeRsaPrivateKey>& sd_signing_key,
+            std::optional<ParsedPatchSet>& parsed_patchset) {
+            const auto supplied = [](const std::optional<std::vector<uint8_t>>& bootloader) {
+                return bootloader && !bootloader->empty();
+            };
+            if (supplied(input.bootloaders.cg0) && !supplied(input.bootloaders.cf0)) {
+                return to_build_error(
+                    BuildErrorCode::InvalidInput,
+                    {ErrorCode::InvalidArgument, "CG0 was supplied without its required CF0 parent"});
+            }
+            if (supplied(input.bootloaders.cg1) && !supplied(input.bootloaders.cf1)) {
+                return to_build_error(
+                    BuildErrorCode::InvalidInput,
+                    {ErrorCode::InvalidArgument, "CG1 was supplied without its required CF1 parent"});
+            }
+
+            if (auto cleared = flash_image.clear_bootloader_chain(); !cleared) {
+                return to_build_error(
+                    BuildErrorCode::SerializationFailure,
+                    std::move(cleared.error()).add_context("Failed to clear donor bootloader records"));
+            }
+            flash_image.preserve_layout = false;
+            flash_image.cb_section.cb_x.reset();
+            flash_image.cb_section.cb_B.reset();
+            flash_image.cb_section.sc.reset();
+            flash_image.kernel_section.ce.reset();
+            flash_image.system_update_0 = SystemUpdate{};
+            flash_image.system_update_1 = SystemUpdate{};
+            if (auto parsed = parse_input_bootloaders(flash_image, input); !parsed) {
+                return to_build_error(BuildErrorCode::InvalidBootloader, parsed.error());
+            }
+
+            if (flash_image.kernel_section.cd.data.empty()) {
+                return to_build_error(
+                    BuildErrorCode::InvalidBootloader,
+                    {ErrorCode::Truncated,
+                     "Required CD bootloader has no payload and cannot be serialized"});
+            }
+
+            if (input.build_type == BuildType::Glitch3 &&
+                (!flash_image.cb_section.cb_x || flash_image.cb_section.cb_x->data.empty() ||
+                 flash_image.cb_section.cb_x->header.header.version != 15432 ||
+                 !flash_image.cb_section.cb_B || flash_image.cb_section.cb_B->data.empty())) {
+                return to_build_error(
+                    BuildErrorCode::InvalidBootloader,
+                    {ErrorCode::InvalidArgument, "Glitch3 requires CB_A, CB_X (15432), and CB_B"});
+            }
+
+            // glitch1 may carry a CB_B (xeBuild builds the trinity 13604/17559 _glitch.ini with
+            // CB_A + CB_B); only a CB_X is out of place there.
+            if (input.build_type == BuildType::Glitch && flash_image.cb_section.cb_x) {
+                return to_build_error(BuildErrorCode::InvalidBootloader,
+                                      {ErrorCode::Unsupported,
+                                       "glitch1/RGH1 does not support a CB_X (use glitch3)"});
+            }
+
+            if (input.patches && input.patches->automatic) {
+                auto parsed = parse_and_merge_patch_set(*input.patches, input.build_type);
+                if (!parsed) {
+                    return to_build_error(BuildErrorCode::PatchFailure, parsed.error());
+                }
+                parsed_patchset = std::move(*parsed);
+            }
+
+            // A devgl chain has no CB_B: the glitch2m patch file's first section is not applied, and
+            // its CD section patches the SD (xeBuild 1.21 devgl: SB, SC and SE as the release ships
+            // them).
+            const bool devgl = input.build_type == BuildType::Devgl;
+            const NoPatch no_patch = resolve_no_patch(input.options);
+            if (parsed_patchset && parsed_patchset->kind == PatchSetKind::Glitch && no_patch.khv) {
+                // The slot keeps its glitch layout and holds an empty KHV list, with no add-ons either.
+                for (auto& section : parsed_patchset->sections) {
+                    if (section.target == PatchSectionTarget::Khv) {
+                        section.raw_data.clear();
+                    }
+                }
+            }
+            if (parsed_patchset && parsed_patchset->kind == PatchSetKind::Glitch &&
+                !(no_patch.cb && no_patch.cd)) {
+                // A single-CB glitch1 patches its CB; with a CB_B (CB_A + CB_B, as the trinity
+                // glitch1 INIs list) the first section goes to the CB_B, as in glitch2 and xeBuild.
+                // (the patchset parser labels glitch1's first section Cb either way).
+                const bool glitch1_cbb =
+                    input.build_type == BuildType::Glitch && flash_image.cb_section.cb_B;
+                const auto first_target = input.build_type == BuildType::Glitch
+                                              ? PatchSectionTarget::Cb
+                                              : PatchSectionTarget::Cbb;
+                const auto* first_section =
+                    devgl || no_patch.cb ? nullptr : find_patch_section(*parsed_patchset, first_target);
+                const auto* cd_section =
+                    no_patch.cd ? nullptr
+                                : find_patch_section(*parsed_patchset, PatchSectionTarget::Cd);
+                if ((!devgl && !no_patch.cb && !first_section) || (!no_patch.cd && !cd_section)) {
+                    return to_build_error(BuildErrorCode::PatchFailure,
+                                          {ErrorCode::Malformed,
+                                           "Glitch patchset is missing a bootloader patch section"});
+                }
+                if (!devgl && !no_patch.cb && first_target == PatchSectionTarget::Cbb &&
+                    !flash_image.cb_section.cb_B) {
+                    return to_build_error(BuildErrorCode::PatchFailure,
+                                          {ErrorCode::InvalidArgument,
+                                           "Automatic patchset targets CBB, but no CBB was supplied"});
+                }
+
+                constexpr size_t kStageCount = 6;
+                std::array<size_t, kStageCount> stage_sizes{};
+                FlashImage::for_each_present_stage(
+                    flash_image,
+                    [&stage_sizes](BootStageId id, std::string_view, const auto& stage) {
+                        stage_sizes[static_cast<size_t>(id)] = stage.serialize().size();
+                    });
+                // A chain that already runs past XeLL's slot (a hybrid glitch2m with an SB/SD/SE
+                // chain) is laid as xeBuild lays it: XeLL is skipped and the update slots follow
+                // the chain, so the usual limit does not apply to it.
+                size_t unpatched_total = 0;
+                for (const size_t size : stage_sizes)
+                    unpatched_total += align_16(size);
+                const size_t cb_a_index = static_cast<size_t>(BootStageId::CbA);
+                const size_t cb_b_index = static_cast<size_t>(BootStageId::CbB);
+                const size_t cd_index = static_cast<size_t>(BootStageId::Cd);
+                const size_t first_index =
+                    (first_target == PatchSectionTarget::Cb && !glitch1_cbb) ? cb_a_index
+                                                                             : cb_b_index;
+                if (first_section) {
+                    const auto first_size = patched_bootloader_size(
+                        stage_sizes[first_index], *first_section,
+                        (first_target == PatchSectionTarget::Cb && !glitch1_cbb) ? "CB" : "CBB");
+                    if (!first_size) {
+                        return to_build_error(BuildErrorCode::PatchFailure, first_size.error());
+                    }
+                    stage_sizes[first_index] = *first_size;
+                }
+                if (cd_section) {
+                    const auto cd_size =
+                        patched_bootloader_size(stage_sizes[cd_index], *cd_section, "CD");
+                    if (!cd_size) {
+                        return to_build_error(BuildErrorCode::PatchFailure, cd_size.error());
+                    }
+                    stage_sizes[cd_index] = *cd_size;
+                }
+
+                const bool is_big_or_emmc =
+                    flash_image.flash_driver.driver_mode() == Driver::DriverMode::Big ||
+                    flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc;
+                // A devgl chain runs past its first update slot, which it never fills, up to the KHV
+                // patch slot.
+                const size_t boot_chain_limit = devgl            ? flash_image.patch_slot_offset()
+                                                : is_big_or_emmc ? 0xC0000
+                                                                 : 0x70000;
+                constexpr size_t boot_chain_start = 0x8000;
+                const size_t boot_chain_capacity = boot_chain_limit - boot_chain_start;
+                size_t aligned_total = 0;
+                for (const size_t size : stage_sizes) {
+                    aligned_total += align_16(size);
+                }
+                if (aligned_total > boot_chain_capacity && unpatched_total <= boot_chain_capacity) {
+                    return to_build_error(
+                        BuildErrorCode::PatchFailure,
+                        {ErrorCode::OutOfRange,
+                         "Patched bootloader chain exceeds the space before patch slots"});
+                }
+                const size_t effective_capacity =
+                    unpatched_total > boot_chain_capacity
+                        ? flash_image.flash_driver.block_size_clean() *
+                                  flash_image.flash_driver.block_count() -
+                              boot_chain_start
+                        : boot_chain_capacity;
+                const auto target_capacity = [&](size_t target_index) {
+                    size_t other_total = 0;
+                    for (size_t index = 0; index < stage_sizes.size(); ++index) {
+                        if (index != target_index) {
+                            other_total += align_16(stage_sizes[index]);
+                        }
+                    }
+                    return effective_capacity - other_total;
+                };
+
+                auto patch_and_reparse = [&](auto& bootloader, PatchSectionTarget target,
+                                             size_t capacity,
+                                             std::string_view stage_name) -> Result<void> {
+                    const auto* section = find_patch_section(*parsed_patchset, target);
+                    if (!section) {
+                        return {};
+                    }
+                    auto patched =
+                        apply_bootloader_patch(bootloader.serialize(), *section, capacity, stage_name);
+                    if (!patched) {
+                        return std::unexpected(std::move(patched.error()));
+                    }
+                    auto reparsed = std::decay_t<decltype(bootloader)>::parse(*patched);
+                    if (!reparsed) {
+                        return std::unexpected(
+                            std::move(reparsed.error())
+                                .add_context(std::format("Failed to reparse patched {}", stage_name)));
+                    }
+                    bootloader = std::move(*reparsed);
+                    return {};
+                };
+
+                if (first_section && first_target == PatchSectionTarget::Cb && glitch1_cbb) {
+                    if (auto patched = patch_and_reparse(*flash_image.cb_section.cb_B, first_target,
+                                                         target_capacity(cb_b_index), "CBB");
+                        !patched) {
+                        return to_build_error(BuildErrorCode::PatchFailure, patched.error());
+                    }
+                } else if (first_section && first_target == PatchSectionTarget::Cb) {
+                    if (auto patched = patch_and_reparse(flash_image.cb_section.cb_or_A, first_target,
+                                                         target_capacity(cb_a_index), "CB");
+                        !patched) {
+                        return to_build_error(BuildErrorCode::PatchFailure, patched.error());
+                    }
+                } else if (first_section) {
+                    if (auto patched = patch_and_reparse(*flash_image.cb_section.cb_B, first_target,
+                                                         target_capacity(cb_b_index), "CBB");
+                        !patched) {
+                        return to_build_error(BuildErrorCode::PatchFailure, patched.error());
+                    }
+                }
+                if (cd_section) {
+                    if (auto patched =
+                            patch_and_reparse(flash_image.kernel_section.cd, PatchSectionTarget::Cd,
+                                              target_capacity(cd_index), "CD");
+                        !patched) {
+                        return to_build_error(BuildErrorCode::PatchFailure, patched.error());
+                    }
+                }
+                // A development SD stays plaintext until it is sealed; the parser's test is for a
+                // retail CD.
+                if (flash_image.devkit_chain()) {
+                    flash_image.kernel_section.cd.decrypted = true;
+                }
+            }
+
+            // The patched SD no longer matches its signature, so it is signed again with the SB
+            // private key, as Xbox-360-Crypto sd_signer.py signs one (xeBuild 1.21 devgl: "SD_17489.bin
+            // failed signature check, attempting to resign"). The signature leaves the nonce out, so
+            // the donor nonce set below does not disturb it.
+            if (sd_signing_key) {
+                auto& sd = flash_image.kernel_section.cd;
+                auto sd_bytes = sd.serialize();
+                if (!gxbuild3::utils::verify_sd_signature(sd_bytes, sd_signing_key->public_key())) {
+                    Log::Info(
+                        "SD {} failed its signature check; signing it again with the SB private key",
+                        sd.header.header.version);
+                    auto signed_sd = gxbuild3::utils::sign_sd(sd_bytes, *sd_signing_key);
+                    if (signed_sd) {
+                        signed_sd = gxbuild3::utils::verify_sd_signature(
+                            sd_bytes, sd_signing_key->public_key());
+                    }
+                    if (!signed_sd) {
+                        return to_build_error(
+                            BuildErrorCode::PatchFailure,
+                            std::move(signed_sd.error())
+                                .add_context("Could not sign the SD with the SB private key"));
+                    }
+                    if (auto reparsed = parse_stage_into<BootloaderCd>(sd, sd_bytes, "the signed SD");
+                        !reparsed) {
+                        return to_build_error(BuildErrorCode::PatchFailure, reparsed.error());
+                    }
+                    sd.decrypted = true;
+                }
+            }
+
+            // The JTAG second CB/CD are captured by the INI reader and placed in the window tail. They
+            // are sealed with the main chain, so they are parsed before its metadata and nonces.
+            if (input.bootloaders.extra_cb) {
+                if (auto parsed = parse_stage_into<BootloaderCb>(
+                        flash_image.payloads.extra_cb, *input.bootloaders.extra_cb, "JTAG extra CB");
+                    !parsed) {
+                    return to_build_error(BuildErrorCode::InvalidBootloader, parsed.error());
+                }
+            }
+            if (input.bootloaders.extra_cd) {
+                if (auto parsed = parse_stage_into<BootloaderCd>(
+                        flash_image.payloads.extra_cd, *input.bootloaders.extra_cd, "JTAG extra CD");
+                    !parsed) {
+                    return to_build_error(BuildErrorCode::InvalidBootloader, parsed.error());
+                }
+            }
+            if (input.bootloaders.extra_se) {
+                if (auto parsed = parse_stage_into<BootloaderCe>(
+                        flash_image.payloads.extra_se, *input.bootloaders.extra_se, "JTAG extra SE");
+                    !parsed) {
+                    return to_build_error(BuildErrorCode::InvalidBootloader, parsed.error());
+                }
+            }
+
+            // Patching reparses its targets. Apply the resolved metadata only after that
+            // replacement step so the final CB/CF objects, rather than a discarded parse,
+            // are serialized and encrypted below.
+            if (const auto metadata =
+                    flash_image.apply_bootloader_metadata(input.metadata, input.build_type);
+                !metadata) {
+                return to_build_error(BuildErrorCode::InvalidBootloader, metadata.error());
+            }
+            if (const auto nonces = flash_image.apply_nonces(donor_nonces); !nonces) {
+                return to_build_error(BuildErrorCode::InvalidBootloader, nonces.error());
+            }
+            return {};
+        }
+
+        // Attaches the patchset, XeLL, rebooter, virtual fuses, SMC payload, and raw patches,
+        // then validates the resolved payload layout.
+        [[nodiscard]] StepResult populate_payloads(FlashImage& flash_image, const Input& input,
+                                                   std::optional<ParsedPatchSet> parsed_patchset) {
+            if (parsed_patchset) {
+                size_t patch_size = 0;
+                if (parsed_patchset->kind == PatchSetKind::Jtag) {
+                    patch_size = serialize_patch_set(*parsed_patchset).size();
+                    if (patch_size > nand::detail::kJtagPatchSize) {
+                        return to_build_error(
+                            BuildErrorCode::PatchFailure,
+                            {ErrorCode::OutOfRange,
+                             "JTAG patch payload exceeds the 0x4000-byte region"});
+                    }
+                } else {
+                    const auto* khv = find_patch_section(*parsed_patchset, PatchSectionTarget::Khv);
+                    if (!khv) {
+                        return to_build_error(
+                            BuildErrorCode::PatchFailure,
+                            {ErrorCode::Malformed, "Glitch patchset has no KHV payload section"});
+                    }
+                    patch_size = serialize_khv_payload(*khv).size();
+                    const bool is_big_or_emmc =
+                        flash_image.flash_driver.driver_mode() == Driver::DriverMode::Big ||
+                        flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc;
+                    const size_t slot_stride = is_big_or_emmc ? 0x20000 : 0x10000;
+                    if (patch_size > slot_stride - (parsed_patchset->manufacturing ? 0x60 : 0x10)) {
+                        return to_build_error(
+                            BuildErrorCode::PatchFailure,
+                            {ErrorCode::OutOfRange,
+                             "Glitch KHV payload exceeds its patch-slot region"});
+                    }
+                }
+                flash_image.payloads.patchset = std::move(parsed_patchset);
+            }
+
+            if (input.payloads) {
+                const bool chain_past_xell =
+                    input.build_type == BuildType::Glitch2m &&
+                    nand::detail::laid_boot_chain_end(flash_image) > nand::detail::kXellOffset;
+                if (chain_past_xell && input.payloads->xell && !input.payloads->xell->empty()) {
+                    Log::Warn(
+                        "Skipping XeLL: the boot chain runs past its slot, there is not enough room");
+                } else if (input.payloads->xell && !input.payloads->xell->empty()) {
+                    auto xell_parsed = XeLL::parse(*input.payloads->xell);
+                    if (!xell_parsed) {
+                        return to_build_error(
+                            BuildErrorCode::InvalidBootloader,
+                            std::move(xell_parsed.error()).add_context("Failed to parse XeLL payload"));
+                    }
+                    flash_image.payloads.xell = std::move(*xell_parsed);
+                    Log::Info("Adding XeLL payload (version='{}', size=0x{:X})",
+                              flash_image.payloads.xell->metadata.version,
+                              flash_image.payloads.xell->data.size());
+                }
+                if (input.payloads->rebooter) {
+                    flash_image.payloads.rebooter = input.payloads->rebooter;
+                    Log::Info("Adding Rebooter payload (size=0x{:X})",
+                              flash_image.payloads.rebooter->size());
+                }
+                if (input.payloads->fuses) {
+                    flash_image.payloads.fuses = input.payloads->fuses;
+                    Log::Info("Adding virtual fuses payload (size=0x{:X})",
+                              flash_image.payloads.fuses->size());
+                }
+                if (input.payloads->payload) {
+                    flash_image.payloads.payload = input.payloads->payload;
+                    Log::Info("Adding SMC payload (size=0x{:X})",
+                              flash_image.payloads.payload->size());
+                }
+            }
+
+            if (const auto layout = flash_image.payload_layout(); !layout) {
+                return to_build_error(BuildErrorCode::InvalidInput, layout.error());
+            }
+
+            flash_image.raw_patches = input.raw_patches;
+            return {};
+        }
+
+        // Formats the FlashFileSystem, seals secured files, and merges mobile data overrides.
+        [[nodiscard]] StepResult populate_storage(FlashImage& flash_image, const Input& input) {
+            if (input.flashfs_sec) {
+                Log::Info("Populating Flash File System ({} files)", input.flashfs_sec->size());
+                // Every directory entry, and crl.bin, dae.bin and secdata.bin within, carry the build's
+                // time (SOURCE_DATE_EPOCH when set): the entries on the local clock, as xeBuild stamps
+                // them, and the three files in UTC.
+                const int64_t build_seconds = gxbuild3::utils::build_epoch();
+                if (auto fs = flash_image.format_filesystem(
+                        gxbuild3::utils::flashfs_build_timestamp(build_seconds));
+                    !fs) {
+                    return to_build_error(BuildErrorCode::SerializationFailure, fs.error());
+                }
+
+                // xeBuild states 1 when no lockdown value is set anywhere, and 0 under the all-zero CPU
+                // key, as the CFs do.
+                const SecuredFileBuild secured_build{build_seconds,
+                                                     is_zero_cpu_key(input.metadata.cpu_key)
+                                                         ? uint8_t{0}
+                                                         : input.metadata.cf_ldv.value_or(1)};
+                for (const auto& [name, data] : *input.flashfs_sec) {
+                    const auto file_data = sealed_flashfs_file(name, data, input, secured_build);
+                    if (!file_data) {
+                        return to_build_error(
+                            BuildErrorCode::EncryptionFailure,
+                            Error(file_data.error())
+                                .add_context(
+                                    std::format("Failed to encrypt secure FlashFS file '{}'", name)));
+                    }
+                    Log::Debug("Adding FlashFS file: '{}' ({} bytes)", name, file_data->size());
+                    if (const auto added = flash_image.filesystem->add_file(name, *file_data); !added) {
+                        return to_build_error(
+                            BuildErrorCode::SerializationFailure,
+                            Error(added.error()).add_context("Failed to add a Flash File System file"));
+                    }
+                }
+            }
+
+            if (!flash_image.mobile_data) {
+                for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
+                    const auto* slot = input.mobiles.slot(block_type);
+                    if (slot && *slot) {
+                        flash_image.mobile_data = MobileData{};
+                        break;
+                    }
+                }
+            }
+            if (flash_image.mobile_data) {
+                for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
+                    const auto* override_slot = input.mobiles.slot(block_type);
+                    if (override_slot && *override_slot) {
+                        *flash_image.mobile_data->get_slot(block_type) = **override_slot;
+                    }
+                }
+                // An eMMC anchor names four blobs, types 0x31-0x34; the rest have nowhere to go.
+                if (flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc) {
+                    for (uint8_t block_type = 0x35; block_type <= 0x39; ++block_type) {
+                        auto* slot = flash_image.mobile_data->get_slot(block_type);
+                        if (*slot && !(*slot)->empty()) {
+                            Log::Warn("Mobile data type 0x{:02X} has no slot in an eMMC anchor block; "
+                                      "it is left out",
+                                      block_type);
+                        }
+                        slot->reset();
+                    }
+                }
+            }
+            return {};
+        }
+
     } // namespace
 
     BuildResult run_build(const Input& input) try {
@@ -1230,667 +1481,22 @@ namespace gxbuild3 {
 
         FlashImage flash_image{};
         std::optional<DonorNonces> donor_nonces = input.metadata.donor_nonces;
-        bool has_donor = false;
-        std::optional<ConsoleType> donor_console;
-
-        if (input.metadata.nand_image && !input.metadata.nand_image->empty()) {
-            Log::Info("Building image from donor NAND dump...");
-            auto donor_img = FlashImage::read(*input.metadata.nand_image);
-            if (!donor_img) {
-                return to_build_error(
-                    BuildErrorCode::InvalidDonor,
-                    {ErrorCode::InvalidArgument, "Failed to parse donor NAND dump: it is empty"});
-            }
-            if (auto parsed = donor_img->parse(); !parsed) {
-                return to_build_error(
-                    BuildErrorCode::InvalidDonor,
-                    std::move(parsed.error()).add_context("Failed to parse donor NAND dump"));
-            }
-            if (auto decrypted = donor_img->decrypt_all(input.metadata.cpu_key); !decrypted) {
-                return to_build_error(BuildErrorCode::InvalidDonor,
-                                      std::move(decrypted.error())
-                                          .add_context("Failed to decrypt donor NAND dump "
-                                                       "components"));
-            }
-            if (!donor_nonces) {
-                donor_nonces = collect_donor_nonces(*donor_img);
-            }
-            // A devkit image of another shape than its donor (the 64 MB image a 16 MB console
-            // takes) is laid fresh: the donor gives its nonces here and its console data
-            // through the Input.
-            const auto target = driver_config(input.image_type, input.build_type);
-            const bool donor_shape = donor_img->flash_driver.image_size() == target.first &&
-                                     donor_img->flash_driver.driver_mode() == target.second;
-            if (input.build_type != BuildType::Devkit || donor_shape) {
-                has_donor = true;
-                if (donor_img->smc) {
-                    donor_console = console_of(donor_img->smc->motherboard);
-                }
-                flash_image = std::move(*donor_img);
-            } else {
-                Log::Debug("Laying the devkit image fresh beside its donor's shape");
-                flash_image.flash_driver = Driver(target.first, target.second);
-            }
-        } else {
-            Log::Debug("Configuring fresh NAND image layout");
-            const auto [image_size, driver_mode] =
-                driver_config(input.image_type, input.build_type);
-            flash_image.flash_driver = Driver(image_size, driver_mode);
-        }
-
-        flash_image.build_type = input.build_type;
-
-        // The console's own blocks follow it into whatever layout is built.
-        if (input.metadata.smc_config) {
-            auto parsed = SmcConfigBlock::parse(*input.metadata.smc_config);
-            if (!parsed) {
-                return to_build_error(BuildErrorCode::InvalidInput,
-                                      std::move(parsed.error())
-                                          .add_context("Failed to parse input SMC config block"));
-            }
-            flash_image.smc_config = std::move(*parsed);
-        }
-        if (input.metadata.statistics) {
-            auto parsed = StatisticsBlock::parse(*input.metadata.statistics);
-            if (!parsed) {
-                return to_build_error(BuildErrorCode::InvalidInput,
-                                      std::move(parsed.error())
-                                          .add_context("Failed to parse input statistics block"));
-            }
-            flash_image.statistics = std::move(*parsed);
-        }
-        if (input.metadata.manufacturing) {
-            auto parsed = ManufacturingBlock::parse(*input.metadata.manufacturing);
-            if (!parsed) {
-                return to_build_error(BuildErrorCode::InvalidInput,
-                                      std::move(parsed.error())
-                                          .add_context("Failed to parse input manufacturing "
-                                                       "block"));
-            }
-            flash_image.manufacturing = std::move(*parsed);
-        }
-        apply_smc_config_options(flash_image.smc_config, input.options);
-
-        const auto smc = Smc::parse(*input.metadata.smc);
-        if (!smc) {
-            return to_build_error(BuildErrorCode::InvalidSmc,
-                                  Error(smc.error()).add_context("Failed to parse input SMC"));
-        }
-        flash_image.smc = *smc;
-
-        // A JTAG image boots through its SMC's hack, so an SMC carrying no JTAG mark is refused
-        // unless smcnocheck waives the check, as xeBuild 1.21 does.
-        if (input.build_type == BuildType::Jtag && !input.options.smcnocheck.value_or(false) &&
-            !smc_has_jtag_mark(flash_image.smc->data)) {
-            return to_build_error(BuildErrorCode::InvalidSmc,
-                                  {ErrorCode::Unsupported,
-                                   "Clean SMC binary found: a JTAG image needs a hacked SMC "
-                                   "(the smcnocheck option builds with this one anyway)"});
-        }
-
-        const auto keyvault = Keyvault::parse(*input.metadata.keyvault);
-        if (!keyvault) {
-            return to_build_error(
-                BuildErrorCode::InvalidKeyvault,
-                Error(keyvault.error()).add_context("Failed to parse input keyvault"));
-        }
-        flash_image.keyvault = *keyvault;
-        flash_image.keyvault->encrypted = false;
-        apply_keyvault_options(*flash_image.keyvault, input.options, input.build_type);
-
-        // Header 0x04 carries no pairing; console dumps and xeBuild images hold zero there, and a
-        // devkit image 0x8000 (xeBuild 1.21).
-        flash_image.header.pairing = input.build_type == BuildType::Devkit ? 0x8000 : 0;
-
-        // A donor of the same board keeps its own notice; any other image states the target's. A
-        // JTAG Jasper always states the year of the CB it boots, which no retail donor carries.
-        const bool donor_copyright_usable =
-            has_donor && !std::all_of(std::begin(flash_image.header.copyright),
-                                      std::begin(flash_image.header.copyright) + kCopyrightLength,
-                                      [](uint8_t byte) { return byte == 0; });
-        const bool jtag_jasper =
-            input.build_type == BuildType::Jtag && input.console == ConsoleType::Jasper;
-        if (input.build_type == BuildType::Devkit) {
-            write_copyright(flash_image.header, kDevkitCopyrightYear);
-        } else if (input.console &&
-                   (!donor_copyright_usable || donor_console != input.console || jtag_jasper)) {
-            write_copyright(flash_image.header, copyright_year(*input.console, input.build_type));
-        }
-        flash_image.header.hack_flags = is_hacked(input.build_type) ? 1 : 0;
-        flash_image.header.boot_flags = boot_flags(input.build_type, input.options);
-
-        const auto supplied = [](const std::optional<std::vector<uint8_t>>& bootloader) {
-            return bootloader && !bootloader->empty();
-        };
-        if (supplied(input.bootloaders.cg0) && !supplied(input.bootloaders.cf0)) {
-            return to_build_error(
-                BuildErrorCode::InvalidInput,
-                {ErrorCode::InvalidArgument, "CG0 was supplied without its required CF0 parent"});
-        }
-        if (supplied(input.bootloaders.cg1) && !supplied(input.bootloaders.cf1)) {
-            return to_build_error(
-                BuildErrorCode::InvalidInput,
-                {ErrorCode::InvalidArgument, "CG1 was supplied without its required CF1 parent"});
-        }
-
-        if (auto cleared = flash_image.clear_bootloader_chain(); !cleared) {
-            return to_build_error(
-                BuildErrorCode::SerializationFailure,
-                std::move(cleared.error()).add_context("Failed to clear donor bootloader records"));
-        }
-        flash_image.preserve_layout = false;
-        flash_image.cb_section.cb_x.reset();
-        flash_image.cb_section.cb_B.reset();
-        flash_image.cb_section.sc.reset();
-        flash_image.kernel_section.ce.reset();
-        flash_image.system_update_0 = SystemUpdate{};
-        flash_image.system_update_1 = SystemUpdate{};
-        if (auto parsed = parse_input_bootloaders(flash_image, input); !parsed) {
-            return to_build_error(BuildErrorCode::InvalidBootloader, parsed.error());
-        }
-
-        if (flash_image.kernel_section.cd.data.empty()) {
-            return to_build_error(
-                BuildErrorCode::InvalidBootloader,
-                {ErrorCode::Truncated,
-                 "Required CD bootloader has no payload and cannot be serialized"});
-        }
-
-        if (input.build_type == BuildType::Glitch3 &&
-            (!flash_image.cb_section.cb_x || flash_image.cb_section.cb_x->data.empty() ||
-             flash_image.cb_section.cb_x->header.header.version != 15432 ||
-             !flash_image.cb_section.cb_B || flash_image.cb_section.cb_B->data.empty())) {
-            return to_build_error(
-                BuildErrorCode::InvalidBootloader,
-                {ErrorCode::InvalidArgument, "Glitch3 requires CB_A, CB_X (15432), and CB_B"});
-        }
-
-        // glitch1 may carry a CB_B (xeBuild builds the trinity 13604/17559 _glitch.ini with
-        // CB_A + CB_B); only a CB_X is out of place there.
-        if (input.build_type == BuildType::Glitch && flash_image.cb_section.cb_x) {
-            return to_build_error(BuildErrorCode::InvalidBootloader,
-                                  {ErrorCode::Unsupported,
-                                   "glitch1/RGH1 does not support a CB_X (use glitch3)"});
+        if (auto init = init_build_image(input, flash_image, donor_nonces); !init) {
+            return std::unexpected(std::move(init.error()));
         }
 
         std::optional<ParsedPatchSet> parsed_patchset;
-        if (input.patches && input.patches->automatic) {
-            auto parsed = parse_and_merge_patch_set(*input.patches, input.build_type);
-            if (!parsed) {
-                return to_build_error(BuildErrorCode::PatchFailure, parsed.error());
-            }
-            parsed_patchset = std::move(*parsed);
+        if (auto boot = populate_and_patch_bootloaders(flash_image, input, donor_nonces,
+                                                       sd_signing_key, parsed_patchset);
+            !boot) {
+            return std::unexpected(std::move(boot.error()));
         }
-
-        // A devgl chain has no CB_B: the glitch2m patch file's first section is not applied, and
-        // its CD section patches the SD (xeBuild 1.21 devgl: SB, SC and SE as the release ships
-        // them).
-        const bool devgl = input.build_type == BuildType::Devgl;
-        const NoPatch no_patch = resolve_no_patch(input.options);
-        if (parsed_patchset && parsed_patchset->kind == PatchSetKind::Glitch && no_patch.khv) {
-            // The slot keeps its glitch layout and holds an empty KHV list, with no add-ons either.
-            for (auto& section : parsed_patchset->sections) {
-                if (section.target == PatchSectionTarget::Khv) {
-                    section.raw_data.clear();
-                }
-            }
+        if (auto payloads = populate_payloads(flash_image, input, std::move(parsed_patchset));
+            !payloads) {
+            return std::unexpected(std::move(payloads.error()));
         }
-        if (parsed_patchset && parsed_patchset->kind == PatchSetKind::Glitch &&
-            !(no_patch.cb && no_patch.cd)) {
-            // A single-CB glitch1 patches its CB; with a CB_B (CB_A + CB_B, as the trinity
-            // glitch1 INIs list) the first section goes to the CB_B, as in glitch2 and xeBuild.
-            // (the patchset parser labels glitch1's first section Cb either way).
-            const bool glitch1_cbb =
-                input.build_type == BuildType::Glitch && flash_image.cb_section.cb_B;
-            const auto first_target = input.build_type == BuildType::Glitch
-                                          ? PatchSectionTarget::Cb
-                                          : PatchSectionTarget::Cbb;
-            const auto* first_section =
-                devgl || no_patch.cb ? nullptr : find_patch_section(*parsed_patchset, first_target);
-            const auto* cd_section =
-                no_patch.cd ? nullptr
-                            : find_patch_section(*parsed_patchset, PatchSectionTarget::Cd);
-            if ((!devgl && !no_patch.cb && !first_section) || (!no_patch.cd && !cd_section)) {
-                return to_build_error(BuildErrorCode::PatchFailure,
-                                      {ErrorCode::Malformed,
-                                       "Glitch patchset is missing a bootloader patch section"});
-            }
-            if (!devgl && !no_patch.cb && first_target == PatchSectionTarget::Cbb &&
-                !flash_image.cb_section.cb_B) {
-                return to_build_error(BuildErrorCode::PatchFailure,
-                                      {ErrorCode::InvalidArgument,
-                                       "Automatic patchset targets CBB, but no CBB was supplied"});
-            }
-
-            enum StageIndex : size_t {
-                CbA,
-                CbX,
-                CbB,
-                Sc,
-                Cd,
-                Ce,
-                StageCount
-            };
-            std::array<size_t, StageCount> stage_sizes{
-                flash_image.cb_section.cb_or_A.serialize().size(),
-                flash_image.cb_section.cb_x ? flash_image.cb_section.cb_x->serialize().size() : 0,
-                flash_image.cb_section.cb_B ? flash_image.cb_section.cb_B->serialize().size() : 0,
-                flash_image.cb_section.sc ? flash_image.cb_section.sc->serialize().size() : 0,
-                flash_image.kernel_section.cd.serialize().size(),
-                flash_image.kernel_section.ce ? flash_image.kernel_section.ce->serialize().size()
-                                              : 0,
-            };
-            // A chain that already runs past XeLL's slot (a hybrid glitch2m with an SB/SD/SE
-            // chain) is laid as xeBuild lays it: XeLL is skipped and the update slots follow
-            // the chain, so the usual limit does not apply to it.
-            size_t unpatched_total = 0;
-            for (const size_t size : stage_sizes)
-                unpatched_total += align_16(size);
-            const size_t first_index =
-                (first_target == PatchSectionTarget::Cb && !glitch1_cbb) ? CbA : CbB;
-            if (first_section) {
-                const auto first_size =
-                    patched_bootloader_size(stage_sizes[first_index], *first_section,
-                                            (first_target == PatchSectionTarget::Cb && !glitch1_cbb) ? "CB" : "CBB");
-                if (!first_size) {
-                    return to_build_error(BuildErrorCode::PatchFailure, first_size.error());
-                }
-                stage_sizes[first_index] = *first_size;
-            }
-            if (cd_section) {
-                const auto cd_size = patched_bootloader_size(stage_sizes[Cd], *cd_section, "CD");
-                if (!cd_size) {
-                    return to_build_error(BuildErrorCode::PatchFailure, cd_size.error());
-                }
-                stage_sizes[Cd] = *cd_size;
-            }
-
-            const bool is_big_or_emmc =
-                flash_image.flash_driver.driver_mode() == Driver::DriverMode::Big ||
-                flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc;
-            // A devgl chain runs past its first update slot, which it never fills, up to the KHV
-            // patch slot.
-            const size_t boot_chain_limit = devgl            ? flash_image.patch_slot_offset()
-                                            : is_big_or_emmc ? 0xC0000
-                                                             : 0x70000;
-            constexpr size_t boot_chain_start = 0x8000;
-            const size_t boot_chain_capacity = boot_chain_limit - boot_chain_start;
-            size_t aligned_total = 0;
-            for (const size_t size : stage_sizes) {
-                aligned_total += align_16(size);
-            }
-            if (aligned_total > boot_chain_capacity && unpatched_total <= boot_chain_capacity) {
-                return to_build_error(
-                    BuildErrorCode::PatchFailure,
-                    {ErrorCode::OutOfRange,
-                     "Patched bootloader chain exceeds the space before patch slots"});
-            }
-            const size_t effective_capacity =
-                unpatched_total > boot_chain_capacity
-                    ? flash_image.flash_driver.block_size_clean() *
-                              flash_image.flash_driver.block_count() -
-                          boot_chain_start
-                    : boot_chain_capacity;
-            const auto target_capacity = [&](size_t target_index) {
-                size_t other_total = 0;
-                for (size_t index = 0; index < stage_sizes.size(); ++index) {
-                    if (index != target_index) {
-                        other_total += align_16(stage_sizes[index]);
-                    }
-                }
-                return effective_capacity - other_total;
-            };
-
-            auto patch_and_reparse = [&](auto& bootloader, PatchSectionTarget target,
-                                         size_t capacity,
-                                         std::string_view stage_name) -> Result<void> {
-                const auto* section = find_patch_section(*parsed_patchset, target);
-                if (!section) {
-                    return {};
-                }
-                auto patched =
-                    apply_bootloader_patch(bootloader.serialize(), *section, capacity, stage_name);
-                if (!patched) {
-                    return std::unexpected(std::move(patched.error()));
-                }
-                auto reparsed = std::decay_t<decltype(bootloader)>::parse(*patched);
-                if (!reparsed) {
-                    return std::unexpected(
-                        std::move(reparsed.error())
-                            .add_context(std::format("Failed to reparse patched {}", stage_name)));
-                }
-                bootloader = std::move(*reparsed);
-                return {};
-            };
-
-            if (first_section && first_target == PatchSectionTarget::Cb && glitch1_cbb) {
-                if (auto patched = patch_and_reparse(*flash_image.cb_section.cb_B, first_target,
-                                                     target_capacity(CbB), "CBB");
-                    !patched) {
-                    return to_build_error(BuildErrorCode::PatchFailure, patched.error());
-                }
-            } else if (first_section && first_target == PatchSectionTarget::Cb) {
-                if (auto patched = patch_and_reparse(flash_image.cb_section.cb_or_A, first_target,
-                                                     target_capacity(CbA), "CB");
-                    !patched) {
-                    return to_build_error(BuildErrorCode::PatchFailure, patched.error());
-                }
-            } else if (first_section) {
-                if (auto patched = patch_and_reparse(*flash_image.cb_section.cb_B, first_target,
-                                                     target_capacity(CbB), "CBB");
-                    !patched) {
-                    return to_build_error(BuildErrorCode::PatchFailure, patched.error());
-                }
-            }
-            if (cd_section) {
-                if (auto patched =
-                        patch_and_reparse(flash_image.kernel_section.cd, PatchSectionTarget::Cd,
-                                          target_capacity(Cd), "CD");
-                    !patched) {
-                    return to_build_error(BuildErrorCode::PatchFailure, patched.error());
-                }
-            }
-            // A development SD stays plaintext until it is sealed; the parser's test is for a
-            // retail CD.
-            if (flash_image.devkit_chain()) {
-                flash_image.kernel_section.cd.decrypted = true;
-            }
-        }
-
-        // The patched SD no longer matches its signature, so it is signed again with the SB
-        // private key, as Xbox-360-Crypto sd_signer.py signs one (xeBuild 1.21 devgl: "SD_17489.bin
-        // failed signature check, attempting to resign"). The signature leaves the nonce out, so
-        // the donor nonce set below does not disturb it.
-        if (sd_signing_key) {
-            auto& sd = flash_image.kernel_section.cd;
-            auto sd_bytes = sd.serialize();
-            if (!gxbuild3::utils::verify_sd_signature(sd_bytes, sd_signing_key->public_key())) {
-                Log::Info(
-                    "SD {} failed its signature check; signing it again with the SB private key",
-                    sd.header.header.version);
-                auto signed_sd = gxbuild3::utils::sign_sd(sd_bytes, *sd_signing_key);
-                if (signed_sd) {
-                    signed_sd = gxbuild3::utils::verify_sd_signature(sd_bytes,
-                                                                     sd_signing_key->public_key());
-                }
-                if (!signed_sd) {
-                    return to_build_error(
-                        BuildErrorCode::PatchFailure,
-                        std::move(signed_sd.error())
-                            .add_context("Could not sign the SD with the SB private key"));
-                }
-                if (auto reparsed = parse_stage_into<BootloaderCd>(sd, sd_bytes, "the signed SD");
-                    !reparsed) {
-                    return to_build_error(BuildErrorCode::PatchFailure, reparsed.error());
-                }
-                sd.decrypted = true;
-            }
-        }
-
-        // The JTAG second CB/CD are captured by the INI reader and placed in the window tail. They
-        // are sealed with the main chain, so they are parsed before its metadata and nonces.
-        if (input.bootloaders.extra_cb) {
-            if (auto parsed = parse_stage_into<BootloaderCb>(
-                    flash_image.payloads.extra_cb, *input.bootloaders.extra_cb, "JTAG extra CB");
-                !parsed) {
-                return to_build_error(BuildErrorCode::InvalidBootloader, parsed.error());
-            }
-        }
-        if (input.bootloaders.extra_cd) {
-            if (auto parsed = parse_stage_into<BootloaderCd>(
-                    flash_image.payloads.extra_cd, *input.bootloaders.extra_cd, "JTAG extra CD");
-                !parsed) {
-                return to_build_error(BuildErrorCode::InvalidBootloader, parsed.error());
-            }
-        }
-        if (input.bootloaders.extra_se) {
-            if (auto parsed = parse_stage_into<BootloaderCe>(
-                    flash_image.payloads.extra_se, *input.bootloaders.extra_se, "JTAG extra SE");
-                !parsed) {
-                return to_build_error(BuildErrorCode::InvalidBootloader, parsed.error());
-            }
-        }
-
-        // Patching reparses its targets. Apply the resolved metadata only after that
-        // replacement step so the final CB/CF objects, rather than a discarded parse,
-        // are serialized and encrypted below.
-        if (const auto metadata =
-                apply_bootloader_metadata(flash_image, input.metadata, input.build_type);
-            !metadata) {
-            return to_build_error(BuildErrorCode::InvalidBootloader, metadata.error());
-        }
-        if (const auto nonces = apply_nonces(flash_image, donor_nonces); !nonces) {
-            return to_build_error(BuildErrorCode::InvalidBootloader, nonces.error());
-        }
-
-        if (parsed_patchset) {
-            size_t patch_size = 0;
-            if (parsed_patchset->kind == PatchSetKind::Jtag) {
-                patch_size = serialize_patch_set(*parsed_patchset).size();
-                if (patch_size > 0x4000) {
-                    return to_build_error(BuildErrorCode::PatchFailure,
-                                          {ErrorCode::OutOfRange,
-                                           "JTAG patch payload exceeds the 0x4000-byte region"});
-                }
-            } else {
-                const auto* khv = find_patch_section(*parsed_patchset, PatchSectionTarget::Khv);
-                if (!khv) {
-                    return to_build_error(
-                        BuildErrorCode::PatchFailure,
-                        {ErrorCode::Malformed, "Glitch patchset has no KHV payload section"});
-                }
-                patch_size = serialize_khv_payload(*khv).size();
-                const bool is_big_or_emmc =
-                    flash_image.flash_driver.driver_mode() == Driver::DriverMode::Big ||
-                    flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc;
-                const size_t slot_stride = is_big_or_emmc ? 0x20000 : 0x10000;
-                if (patch_size > slot_stride - (parsed_patchset->manufacturing ? 0x60 : 0x10)) {
-                    return to_build_error(BuildErrorCode::PatchFailure,
-                                          {ErrorCode::OutOfRange,
-                                           "Glitch KHV payload exceeds its patch-slot region"});
-                }
-            }
-            flash_image.payloads.patchset = std::move(parsed_patchset);
-        }
-
-        if (input.payloads) {
-            const bool chain_past_xell =
-                input.build_type == BuildType::Glitch2m &&
-                nand::detail::laid_boot_chain_end(flash_image) > nand::detail::kXellOffset;
-            if (chain_past_xell && input.payloads->xell && !input.payloads->xell->empty()) {
-                Log::Warn("Skipping XeLL: the boot chain runs past its slot, there is not enough room");
-            } else if (input.payloads->xell && !input.payloads->xell->empty()) {
-                auto xell_parsed = XeLL::parse(*input.payloads->xell);
-                if (!xell_parsed) {
-                    return to_build_error(
-                        BuildErrorCode::InvalidBootloader,
-                        std::move(xell_parsed.error()).add_context("Failed to parse XeLL payload"));
-                }
-                flash_image.payloads.xell = std::move(*xell_parsed);
-                Log::Info("Adding XeLL payload (version='{}', size=0x{:X})",
-                          flash_image.payloads.xell->metadata.version,
-                          flash_image.payloads.xell->data.size());
-            }
-            if (input.payloads->rebooter) {
-                flash_image.payloads.rebooter = input.payloads->rebooter;
-                Log::Info("Adding Rebooter payload (size=0x{:X})",
-                          flash_image.payloads.rebooter->size());
-            }
-            if (input.payloads->fuses) {
-                flash_image.payloads.fuses = input.payloads->fuses;
-                Log::Info("Adding virtual fuses payload (size=0x{:X})",
-                          flash_image.payloads.fuses->size());
-            }
-            if (input.payloads->payload) {
-                flash_image.payloads.payload = input.payloads->payload;
-                Log::Info("Adding SMC payload (size=0x{:X})", flash_image.payloads.payload->size());
-            }
-        }
-
-        if (const auto layout = flash_image.payload_layout(); !layout) {
-            return to_build_error(BuildErrorCode::InvalidInput, layout.error());
-        }
-
-        flash_image.raw_patches = input.raw_patches;
-
-        if (input.flashfs_sec) {
-            Log::Info("Populating Flash File System ({} files)", input.flashfs_sec->size());
-            FlashFileSystem fs{};
-            fs.set_driver(&flash_image.flash_driver);
-            fs.set_larger_filesystem(input.build_type == BuildType::Devkit);
-            // Every directory entry, and crl.bin, dae.bin and secdata.bin within, carry the build's
-            // time (SOURCE_DATE_EPOCH when set): the entries on the local clock, as xeBuild stamps
-            // them, and the three files in UTC.
-            const int64_t build_seconds = gxbuild3::utils::build_epoch();
-            fs.set_timestamp(gxbuild3::utils::flashfs_build_timestamp(build_seconds));
-            // A big-block filesystem's spare states the system area: all of the first 2 MB on
-            // every image but a retail one, whose system area ends with its update slots
-            // (xeBuild 1.21: 6 blocks of 0x20000 on a jasperbb retail image).
-            fs.set_big_system_blocks(
-                input.build_type == BuildType::Retail
-                    ? static_cast<uint8_t>(flash_image.update_slots_end() / 0x20000)
-                    : uint8_t{0x10});
-            const size_t total_blocks = flash_image.flash_driver.block_count();
-            const size_t data_limit = flash_image.flash_driver.data_block_limit();
-            if (data_limit == 0 || data_limit > std::numeric_limits<uint16_t>::max()) {
-                return to_build_error(
-                    BuildErrorCode::SerializationFailure,
-                    {ErrorCode::Exhausted, "No usable blocks remain for the Flash File System"});
-            }
-
-            // A new FlashFS starts at root sequence 1. The image writer clears every older root
-            // block's metadata, so no donor root can outrank it.
-            constexpr uint32_t version = 1;
-            // The files start on the first block past the update slots and every payload laid
-            // after them, as xeBuild 1.21 lays them: block 0x24 (0x90000) on a 16 MB retail image,
-            // 0x34 on a glitch one, past the second chain on a JTAG one, and the filesystem's base
-            // on big block, where that is higher.
-            const size_t block_size = flash_image.flash_driver.block_size_clean();
-            size_t first_block = (flash_image.update_slots_end() + block_size - 1) / block_size;
-            for (const auto& range : flash_image.active_payload_block_ranges()) {
-                first_block = std::max(first_block, range.start_block + range.block_count);
-            }
-            if (first_block > data_limit) {
-                return to_build_error(
-                    BuildErrorCode::SerializationFailure,
-                    {ErrorCode::Exhausted, "No usable blocks remain for the Flash File System"});
-            }
-            const auto reserved_boundary = static_cast<uint32_t>(first_block);
-            // Defer root placement so serialize allocates it once, last, from the same free
-            // pool as the files and mobile data. Reserving a root here double-counts it and
-            // starves a full image of the final block the root needs.
-            if (const auto formatted = fs.format(total_blocks, FlashFileSystem::kDeferRoot, version,
-                                                 reserved_boundary);
-                !formatted) {
-                return to_build_error(
-                    BuildErrorCode::SerializationFailure,
-                    Error(formatted.error()).add_context("Failed to format the Flash File System"));
-            }
-            // Past the last usable block, xeBuild's table reserves the settings blocks of a 16 MB
-            // part (four) and never names its remap pool after them; a big-block part's settings
-            // sit outside the filesystem's numbering, so it names nothing from there on. An eMMC
-            // part or a 64 MB small-block devkit part, which keep no pool, reserve every block to
-            // the end.
-            if (data_limit < total_blocks) {
-                const auto mode = flash_image.flash_driver.driver_mode();
-                const bool pool =
-                    mode == Driver::DriverMode::Big ||
-                    ((mode == Driver::DriverMode::Small || mode == Driver::DriverMode::NewSmall) &&
-                     total_blocks <= 0x400);
-                const size_t held = pool ? (mode == Driver::DriverMode::Big
-                                                ? 0
-                                                : std::min<size_t>(4, total_blocks - data_limit))
-                                         : total_blocks - data_limit;
-                Result<void> tail;
-                if (held > 0) {
-                    tail = fs.reserve_blocks(data_limit, held);
-                }
-                if (tail && data_limit + held < total_blocks) {
-                    tail = fs.withhold_blocks(data_limit + held, total_blocks - data_limit - held,
-                                              BlockMapStatus::Unnamed);
-                }
-                if (!tail) {
-                    return to_build_error(BuildErrorCode::SerializationFailure,
-                                          std::move(tail.error())
-                                              .add_context("Failed to reserve geometry tail "
-                                                           "blocks for the Flash File System"));
-                }
-            }
-            for (size_t block = 0; block < data_limit; ++block) {
-                if (!flash_image.flash_driver.is_bad_block(block)) {
-                    continue;
-                }
-                if (const auto reserved = fs.reserve_blocks(block, 1); !reserved) {
-                    return to_build_error(BuildErrorCode::SerializationFailure,
-                                          Error(reserved.error())
-                                              .add_context("Failed to reserve a bad block in the "
-                                                           "Flash File System"));
-                }
-            }
-            for (const auto& range : flash_image.active_payload_block_ranges()) {
-                if (const auto reserved = fs.reserve_blocks(range.start_block, range.block_count);
-                    !reserved) {
-                    return to_build_error(BuildErrorCode::SerializationFailure,
-                                          Error(reserved.error())
-                                              .add_context("Failed to reserve fixed payload "
-                                                           "blocks in the Flash File System"));
-                }
-            }
-            fs.set_driver(&flash_image.flash_driver);
-            flash_image.filesystem = std::move(fs);
-
-            // xeBuild states 1 when no lockdown value is set anywhere, and 0 under the all-zero CPU
-            // key, as the CFs do.
-            const SecuredFileBuild secured_build{build_seconds,
-                                                 is_zero_cpu_key(input.metadata.cpu_key)
-                                                     ? uint8_t{0}
-                                                     : input.metadata.cf_ldv.value_or(1)};
-            for (const auto& [name, data] : *input.flashfs_sec) {
-                const auto file_data = sealed_flashfs_file(name, data, input, secured_build);
-                if (!file_data) {
-                    return to_build_error(
-                        BuildErrorCode::EncryptionFailure,
-                        Error(file_data.error())
-                            .add_context(
-                                std::format("Failed to encrypt secure FlashFS file '{}'", name)));
-                }
-                Log::Debug("Adding FlashFS file: '{}' ({} bytes)", name, file_data->size());
-                if (const auto added = flash_image.filesystem->add_file(name, *file_data); !added) {
-                    return to_build_error(
-                        BuildErrorCode::SerializationFailure,
-                        Error(added.error()).add_context("Failed to add a Flash File System file"));
-                }
-            }
-        }
-
-        if (!flash_image.mobile_data) {
-            for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
-                const auto* slot = input.mobiles.slot(block_type);
-                if (slot && *slot) {
-                    flash_image.mobile_data = MobileData{};
-                    break;
-                }
-            }
-        }
-        if (flash_image.mobile_data) {
-            for (uint8_t block_type = 0x31; block_type <= 0x39; ++block_type) {
-                const auto* override_slot = input.mobiles.slot(block_type);
-                if (override_slot && *override_slot) {
-                    *flash_image.mobile_data->get_slot(block_type) = **override_slot;
-                }
-            }
-            // An eMMC anchor names four blobs, types 0x31-0x34; the rest have nowhere to go.
-            if (flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc) {
-                for (uint8_t block_type = 0x35; block_type <= 0x39; ++block_type) {
-                    auto* slot = flash_image.mobile_data->get_slot(block_type);
-                    if (*slot && !(*slot)->empty()) {
-                        Log::Warn("Mobile data type 0x{:02X} has no slot in an eMMC anchor block; "
-                                  "it is left out",
-                                  block_type);
-                    }
-                    slot->reset();
-                }
-            }
+        if (auto storage = populate_storage(flash_image, input); !storage) {
+            return std::unexpected(std::move(storage.error()));
         }
 
         Log::Debug("Encrypting NAND image components");
@@ -1999,6 +1605,37 @@ namespace gxbuild3 {
             return summary;
         }
 
+        std::optional<BootloaderEntryInfo>& stage_entry_slot(BootloaderChainInfo& chain,
+                                                             BootStageId id) {
+            switch (id) {
+                case BootStageId::CbA:
+                    return chain.cb_a;
+                case BootStageId::CbX:
+                    return chain.cb_x;
+                case BootStageId::CbB:
+                    return chain.cb_b;
+                case BootStageId::Sc:
+                    return chain.sc;
+                case BootStageId::Cd:
+                    return chain.cd;
+                case BootStageId::Ce:
+                    return chain.ce;
+            }
+            std::unreachable();
+        }
+
+        void populate_extracted_metadata(const FlashImage& img, InputMetadata& meta) {
+            const auto cb = read_cb_metadata(img.cb_section);
+            meta.cb_ldv = cb.ldv;
+            meta.pairing_data = cb.pairing;
+            meta.console_type = cb.console_type;
+            meta.console_sequence = cb.console_sequence;
+            meta.console_sequence_allow = cb.console_sequence_allow;
+            extract_cf_metadata(img, meta);
+            meta.donor_nonces = img.collect_nonces();
+            extract_settings_blocks(img, meta);
+        }
+
     } // namespace
 
     Result<AllNandInfo> extract_some_info(std::span<const uint8_t> nand_image) {
@@ -2011,24 +1648,12 @@ namespace gxbuild3 {
         project_header(img.header, info);
         info.block_type = image_type_from_driver(img.flash_driver.driver_mode());
 
-        if (!img.cb_section.cb_or_A.data.empty()) {
-            info.bootloaders.cb_a = summarize_stage("CB_A", img.cb_section.cb_or_A);
-        }
-        if (img.cb_section.cb_x && !img.cb_section.cb_x->data.empty()) {
-            info.bootloaders.cb_x = summarize_stage("CB_X", *img.cb_section.cb_x);
-        }
-        if (img.cb_section.cb_B && !img.cb_section.cb_B->data.empty()) {
-            info.bootloaders.cb_b = summarize_stage("CB_B", *img.cb_section.cb_B);
-        }
-        if (img.cb_section.sc && !img.cb_section.sc->data.empty()) {
-            info.bootloaders.sc = summarize_stage("SC", *img.cb_section.sc);
-        }
-        if (!img.kernel_section.cd.data.empty()) {
-            info.bootloaders.cd = summarize_stage("CD", img.kernel_section.cd);
-        }
-        if (img.kernel_section.ce && !img.kernel_section.ce->data.empty()) {
-            info.bootloaders.ce = summarize_stage("CE", *img.kernel_section.ce);
-        }
+        FlashImage::for_each_present_stage(
+            img, [&info](BootStageId id, std::string_view name, const auto& stage) {
+                if (!stage.data.empty()) {
+                    stage_entry_slot(info.bootloaders, id) = summarize_stage(name, stage);
+                }
+            });
         if (img.system_update_0.cf && !img.system_update_0.cf->data.empty()) {
             info.bootloaders.cf_0 = summarize_stage("CF_0", *img.system_update_0.cf);
         }
@@ -2078,16 +1703,7 @@ namespace gxbuild3 {
         meta.nand_image = std::vector<uint8_t>(nand_image.begin(), nand_image.end());
         meta.keyvault = kv.serialize();
 
-        const auto cb = read_cb_metadata(img.cb_section);
-        meta.cb_ldv = cb.ldv;
-        meta.pairing_data = cb.pairing;
-        meta.console_type = cb.console_type;
-        meta.console_sequence = cb.console_sequence;
-        meta.console_sequence_allow = cb.console_sequence_allow;
-
-        extract_cf_metadata(img, meta);
-        meta.donor_nonces = collect_donor_nonces(img);
-        extract_settings_blocks(img, meta);
+        populate_extracted_metadata(img, meta);
 
         Log::Debug(
             "Extracted metadata: CB LDV={}, CF LDV={}, ConsoleType=0x{:02X}, Sequence=0x{:02X}",
@@ -2116,49 +1732,29 @@ namespace gxbuild3 {
 
         project_header(img.header, info);
 
-        if (!img.cb_section.cb_or_A.data.empty()) {
-            const auto& cb_a = img.cb_section.cb_or_A;
-            auto entry = summarize_stage("CB_A", cb_a);
-            if (cb_a.perbox.has_value()) {
-                const auto pd = std::to_array(cb_a.perbox->pairing_data);
-                entry.ldv = cb_a.perbox->lockdown_value;
-                entry.pairing_data = pd;
-                info.bootloaders.cb_ldv = cb_a.perbox->lockdown_value;
-                info.bootloaders.cb_pairing_data = pd;
-            }
-            info.bootloaders.cb_a = entry;
-        }
-
-        // CB_B's LDV and pairing override CB_A's at the chain level.
-        if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
-            const auto& cb_b = *img.cb_section.cb_B;
-            auto entry = summarize_stage("CB_B", cb_b);
-            if (cb_b.perbox.has_value()) {
-                const uint8_t ldv = cb_b_display_ldv(cb_b);
-                const auto pd = std::to_array(cb_b.perbox->pairing_data);
-                entry.ldv = ldv;
-                entry.pairing_data = pd;
-                info.bootloaders.cb_ldv = ldv;
-                info.bootloaders.cb_pairing_data = pd;
-            }
-            info.bootloaders.cb_b = entry;
-        }
-
-        if (img.cb_section.cb_x.has_value() && !img.cb_section.cb_x->data.empty()) {
-            info.bootloaders.cb_x = summarize_stage("CB_X", *img.cb_section.cb_x);
-        }
-
-        if (img.cb_section.sc.has_value() && !img.cb_section.sc->data.empty()) {
-            info.bootloaders.sc = summarize_stage("SC", *img.cb_section.sc, true);
-        }
-
-        if (!img.kernel_section.cd.data.empty()) {
-            info.bootloaders.cd = summarize_stage("CD", img.kernel_section.cd);
-        }
-
-        if (img.kernel_section.ce.has_value() && !img.kernel_section.ce->data.empty()) {
-            info.bootloaders.ce = summarize_stage("CE", *img.kernel_section.ce);
-        }
+        FlashImage::for_each_present_stage(
+            img, [&info](BootStageId id, std::string_view name, const auto& stage) {
+                if (stage.data.empty()) {
+                    return;
+                }
+                const std::optional<bool> decrypted_override =
+                    id == BootStageId::Sc ? std::optional<bool>{true} : std::nullopt;
+                auto entry = summarize_stage(name, stage, decrypted_override);
+                if constexpr (std::is_same_v<std::decay_t<decltype(stage)>, BootloaderCb>) {
+                    if ((id == BootStageId::CbA || id == BootStageId::CbB) &&
+                        stage.perbox.has_value()) {
+                        const uint8_t ldv = id == BootStageId::CbB
+                                                ? cb_b_display_ldv(stage)
+                                                : stage.perbox->lockdown_value;
+                        const auto pd = std::to_array(stage.perbox->pairing_data);
+                        entry.ldv = ldv;
+                        entry.pairing_data = pd;
+                        info.bootloaders.cb_ldv = ldv;
+                        info.bootloaders.cb_pairing_data = pd;
+                    }
+                }
+                stage_entry_slot(info.bootloaders, id) = std::move(entry);
+            });
 
         if (img.system_update_0.cf.has_value() && !img.system_update_0.cf->data.empty()) {
             const auto& cf_0 = *img.system_update_0.cf;
@@ -2249,29 +1845,33 @@ namespace gxbuild3 {
         out.metadata.nand_image = std::vector<uint8_t>(nand_image.begin(), nand_image.end());
         out.image_type = image_type_from_driver(img.flash_driver.driver_mode());
 
-        if (!img.cb_section.cb_or_A.data.empty()) {
-            out.bootloaders.cb_or_a = img.cb_section.cb_or_A.serialize();
-        }
-
-        if (img.cb_section.cb_B.has_value() && !img.cb_section.cb_B->data.empty()) {
-            out.bootloaders.cb_b = img.cb_section.cb_B->serialize();
-        }
-
-        if (img.cb_section.cb_x.has_value() && !img.cb_section.cb_x->data.empty()) {
-            out.bootloaders.cb_x = img.cb_section.cb_x->serialize();
-        }
-
-        if (img.cb_section.sc.has_value() && !img.cb_section.sc->data.empty()) {
-            out.bootloaders.sc = img.cb_section.sc->serialize();
-        }
-
-        if (!img.kernel_section.cd.data.empty()) {
-            out.bootloaders.cd = img.kernel_section.cd.serialize();
-        }
-
-        if (img.kernel_section.ce.has_value() && !img.kernel_section.ce->data.empty()) {
-            out.bootloaders.ce = img.kernel_section.ce->serialize();
-        }
+        FlashImage::for_each_present_stage(
+            img, [&out](BootStageId id, std::string_view, const auto& stage) {
+                if (stage.data.empty()) {
+                    return;
+                }
+                auto bytes = stage.serialize();
+                switch (id) {
+                    case BootStageId::CbA:
+                        out.bootloaders.cb_or_a = std::move(bytes);
+                        break;
+                    case BootStageId::CbX:
+                        out.bootloaders.cb_x = std::move(bytes);
+                        break;
+                    case BootStageId::CbB:
+                        out.bootloaders.cb_b = std::move(bytes);
+                        break;
+                    case BootStageId::Sc:
+                        out.bootloaders.sc = std::move(bytes);
+                        break;
+                    case BootStageId::Cd:
+                        out.bootloaders.cd = std::move(bytes);
+                        break;
+                    case BootStageId::Ce:
+                        out.bootloaders.ce = std::move(bytes);
+                        break;
+                }
+            });
 
         if (img.system_update_0.cf.has_value() && !img.system_update_0.cf->data.empty()) {
             out.bootloaders.cf0 = img.system_update_0.cf->serialize();
@@ -2289,15 +1889,7 @@ namespace gxbuild3 {
             out.bootloaders.cg1 = img.system_update_1.cg->serialize();
         }
 
-        const auto cb = read_cb_metadata(img.cb_section);
-        out.metadata.cb_ldv = cb.ldv;
-        out.metadata.pairing_data = cb.pairing;
-        out.metadata.console_type = cb.console_type;
-        out.metadata.console_sequence = cb.console_sequence;
-        out.metadata.console_sequence_allow = cb.console_sequence_allow;
-        extract_cf_metadata(img, out.metadata);
-        out.metadata.donor_nonces = collect_donor_nonces(img);
-        extract_settings_blocks(img, out.metadata);
+        populate_extracted_metadata(img, out.metadata);
 
         if (img.smc.has_value()) {
             out.metadata.smc = img.smc->data;
