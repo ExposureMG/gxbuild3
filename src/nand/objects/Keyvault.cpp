@@ -17,6 +17,7 @@ namespace gxbuild3::nand {
 
     namespace {
 
+        // counts set bits across the first 106 bits of the cpu key, which has to equal 0x35
         uint32_t cpu_key_hamming_weight(const uint8_t cpu_key[16]) {
             static constexpr uint8_t wght_mask[16] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
                                                       0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -44,8 +45,6 @@ namespace gxbuild3::nand {
             return result;
         }
 
-        // Sixteen zero bytes are no console's key, but an image bound to no console is built under
-        // them (a manufacturing console whose key is unknown), as xeBuild 1.21 builds one.
         if (is_zero_cpu_key(cpu_key)) {
             result.status = CpuKeyStatus::Valid;
             result.key.assign(cpu_key.begin(), cpu_key.end());
@@ -125,8 +124,6 @@ namespace gxbuild3::nand {
         return cpu_key_hamming_weight(key_copy) == 0x35;
     }
 
-    // Every byte comes from the system's cryptographic source (getrandom, /dev/urandom,
-    // RtlGenRandom or RDRAND, as the standard library selects), not from a seeded generator.
     void ExCryptRandom(uint8_t* dest, size_t size) {
         std::random_device source;
         for (size_t i = 0; i < size; i += sizeof(uint32_t)) {
@@ -157,6 +154,7 @@ namespace gxbuild3::nand {
                        static_cast<uint32_t>(out_data.size() - 0x10));
         }
 
+        // kv hmac covers the decrypted body with the 2-byte kv_version tacked onto the end
         const auto version_be = wire::encode(wire::be16{kv_version});
         uint8_t kv_digest[20];
         ExCryptHmacSha(cpu_key.data(), static_cast<uint32_t>(cpu_key.size()),
@@ -223,7 +221,6 @@ namespace gxbuild3::nand {
         if (!cpukey_valid(cpu_key)) {
             return fail(ErrorCode::InvalidArgument, "Invalid CPU key");
         }
-        // Only an authentication failure means the copy is not sealed under this key.
         auto opened = keyvault_decrypt(cpu_key, whole);
         if (opened) {
             return LooseKeyvault{std::move(*opened), LooseKeyvault::Form::Sealed};
@@ -236,12 +233,11 @@ namespace gxbuild3::nand {
                                whole.begin() + static_cast<std::ptrdiff_t>(to),
                                [](uint8_t byte) { return byte == 0; });
         };
-        // xeBuild's tests, in its order. A zero nonce is in the clear unless 0x58-0x5F say it is
-        // not; a nonce is the plaintext's own when sealing derives it again.
         const auto derived = keyvault_encrypt(cpu_key, whole);
         if (!derived) {
             return std::unexpected(derived.error());
         }
+        // checks zero-padded reserved regions to guess if a kv.bin that failed auth is already decrypted or belongs to another console
         auto form = LooseKeyvault::Form::Unopened;
         if (zero(0, 0x10)) {
             form = zero(0x58, 0x60) ? LooseKeyvault::Form::Clear : LooseKeyvault::Form::Unopened;
@@ -362,6 +358,7 @@ namespace gxbuild3::nand {
         summary.console_id_raw = utils::bytes_to_hex(kv.data.b36ConsoleCertificate.ConsoleId);
 
         const auto& console_id = kv.data.b36ConsoleCertificate.ConsoleId;
+        // unpacks the 5-byte console id into the 12-digit decimal string the dashboard displays
         const uint64_t cid_val = (static_cast<uint64_t>(console_id[0]) << 28) |
                                  (static_cast<uint64_t>(console_id[1]) << 20) |
                                  (static_cast<uint64_t>(console_id[2]) << 12) |
@@ -423,12 +420,11 @@ namespace gxbuild3::nand {
                 break;
         }
 
-        // A type-1 keyvault's special signature ends in eight bytes of 0x00 or 0xFF.
+        // type 1 kvs have all 0x00 or 0xFF in the last 8 bytes of the special kv signature
         const bool is_type1 = std::ranges::all_of(
             std::span<const uint8_t>(kv.data.b39SpecialKeyVaultSignature).last(8),
             [](uint8_t b) { return b == 0x00 || b == 0xFF; });
         summary.kv_type = is_type1 ? 1 : 2;
-        // xeBuild's test, on the big-endian word: the build reads the same flag.
         summary.fcrt_required = fcrt_requirement(kv.serialize()) != FcrtRequirement::NotRequired;
         return summary;
     }

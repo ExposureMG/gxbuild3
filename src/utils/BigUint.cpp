@@ -171,7 +171,7 @@ namespace gxbuild3::utils {
         return std::strong_ordering::equal;
     }
 
-    // Knuth's algorithm D (TAOCP 4.3.1), after Hacker's Delight's divmnu.
+    // standard multi-precision long division over 32-bit limbs
     std::pair<BigUint, BigUint> BigUint::divmod(const BigUint& dividend, const BigUint& divisor) {
         if (divisor.is_zero()) {
             throw std::domain_error("division by zero");
@@ -227,7 +227,6 @@ namespace gxbuild3::utils {
             quotient.limbs_[j] = static_cast<uint32_t>(qhat);
 
             if (top < 0) {
-                // qhat was one too large: add the divisor back once.
                 --quotient.limbs_[j];
                 uint64_t add_carry = 0;
                 for (size_t i = 0; i < n; ++i) {

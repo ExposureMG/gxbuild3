@@ -75,9 +75,9 @@ namespace gxbuild3::ini {
             auto comma_pos = line.find(',');
             auto equals_pos = line.find('=');
 
+            // handles both "file, crc, hash" and "key = value" ini lines
             if (comma_pos != std::string_view::npos &&
                 (equals_pos == std::string_view::npos || comma_pos < equals_pos)) {
-                // --- Format 1: key , value [, hash] ---
                 entry.key = std::string(trim(strip_inline_semicolon(line.substr(0, comma_pos))));
 
                 std::string_view rest = line.substr(comma_pos + 1);
@@ -92,7 +92,6 @@ namespace gxbuild3::ini {
                     entry.value = std::string(trim(strip_inline_semicolon(rest)));
                 }
             } else if (equals_pos != std::string_view::npos) {
-                // --- Format 2: key = value ---
                 entry.key = std::string(trim(line.substr(0, equals_pos)));
                 std::string_view val = trim(line.substr(equals_pos + 1));
                 entry.value = std::string(strip_inline_semicolon(val));
@@ -103,6 +102,7 @@ namespace gxbuild3::ini {
             if (entry.key.empty())
                 continue;
 
+            // counts how many times a prefix like "cb" or "cd" shows up in the section
             std::string key_lower = to_lower(entry.key);
             std::string prefix;
             {

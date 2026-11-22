@@ -11,13 +11,11 @@
 namespace gxbuild3::nand {
 
     namespace {
-        // An on-disk name fills all kMaxFilenameLength bytes when it has no terminator.
         std::string_view entry_name(const FlashFileSystemEntry& entry) {
             const char* end = std::find(entry.filename, entry.filename + kMaxFilenameLength, '\0');
             return {entry.filename, static_cast<size_t>(end - entry.filename)};
         }
 
-        // The name a path names: what follows its last '/' or '\\'.
         std::string_view clean_name(std::string_view filename) {
             if (const auto pos = filename.find_last_of("/\\"); pos != std::string_view::npos) {
                 return filename.substr(pos + 1);
@@ -28,7 +26,6 @@ namespace gxbuild3::nand {
         constexpr size_t kMapLinks = kRootDirectoryPages * kBlocksPerPage;
         constexpr size_t kPagesPerCluster = kCleanBlockSize / 512;
 
-        // Link `index` of the block map, counted from the filesystem's base cluster.
         wire::be16& map_link(flashfs_root_cluster& root, size_t index) {
             return root.pairs[index / kBlocksPerPage].map.links[index % kBlocksPerPage];
         }
@@ -45,8 +42,7 @@ namespace gxbuild3::nand {
             return root.pairs[index / kEntriesPerPage].dir.entries[index % kEntriesPerPage];
         }
 
-        // States every cluster from `base` on, rebased to it; a withheld cluster states what
-        // `stated` names for it.
+        // converts physical cluster links to be relative to base_cluster() and applies any stated status overrides
         Result<void> encode_block_map(const std::vector<uint16_t>& blockmap,
                                       const std::map<size_t, uint16_t>& stated, size_t base,
                                       flashfs_root_cluster& root) {
@@ -87,8 +83,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Fills `blockmap` from `base` on, rebasing every link; the clusters before `base` and
-        // past the root's map keep what they hold.
         Result<void> decode_block_map(const flashfs_root_cluster& root, size_t base,
                                       std::vector<uint16_t>& blockmap) {
             for (size_t index = 0; index < kMapLinks && base + index < blockmap.size(); ++index) {
@@ -107,8 +101,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Appends every valid entry, rebased to physical clusters; an unused slot (block 0xFFFF)
-        // is skipped before rebasing.
         Result<void> decode_directory(const flashfs_root_cluster& root, size_t base,
                                       size_t map_size, std::vector<FlashFileSystemEntry>& entries) {
             for (size_t index = 0; index < kMaxDirectoryEntries; ++index) {
@@ -223,8 +215,6 @@ namespace gxbuild3::nand {
         }
 
         if (defer_root) {
-            // serialize allocates the root once, last, from the same free pool the files
-            // and mobile data draw from, so no block is pre-consumed for it here
             m_root_placed = false;
             Log::Debug("Formatted Flash File System: total_blocks={}, root_block=deferred, "
                        "version={}",
@@ -237,8 +227,7 @@ namespace gxbuild3::nand {
         return {};
     }
 
-    // The root takes the first cluster of its erase block, which the table states as itself;
-    // the rest of that block is kept from allocation and stated free, as xeBuild states it.
+    // puts the root table in the first cluster of the erase block and withholds the rest of the block as free on disk
     void FlashFileSystem::place_root(uint16_t root_block) {
         const size_t ratio = clusters_per_block();
         const size_t first = static_cast<size_t>(root_block) * ratio;
@@ -472,11 +461,11 @@ namespace gxbuild3::nand {
         return {};
     }
 
+    // frees and re-allocates every file after the insertion point in directory order
     Result<void> FlashFileSystem::insert_file(size_t position, std::string_view filename,
                                               std::span<const uint8_t> data,
                                               std::optional<uint32_t> timestamp) {
         const std::string_view inserted_name = clean_name(filename);
-        // The data may be a view of the file being replaced, which deleting it frees.
         const std::vector<uint8_t> inserted(data.begin(), data.end());
         for (size_t index = 0; index < m_entries.size(); ++index) {
             if (m_entries[index].matches(inserted_name)) {
@@ -548,7 +537,6 @@ namespace gxbuild3::nand {
     std::vector<uint8_t> FlashFileSystem::read_chain(const Driver& driver,
                                                      const FlashFileSystemEntry& entry) const {
         const auto chain = get_chain(entry.block_number);
-        // A corrupt length cannot reserve more than the chain can hold.
         std::vector<uint8_t> data;
         data.reserve(std::min<size_t>(entry.length, chain.size() * kCleanBlockSize));
 
@@ -608,7 +596,6 @@ namespace gxbuild3::nand {
             return fail(ErrorCode::OutOfRange, "FlashFS directory holds {} entries; at most {} fit",
                         m_entries.size(), kMaxDirectoryEntries);
         }
-        // The map is encoded before the directory, so its errors take precedence.
         flashfs_root_cluster root{};
         if (auto encoded = encode_block_map(m_blockmap, m_stated, base_cluster(), root); !encoded) {
             return std::unexpected(std::move(encoded.error()));
@@ -633,8 +620,6 @@ namespace gxbuild3::nand {
         return root_cluster;
     }
 
-    // Small-block data blocks are plain type 0x00 blocks with no size or page count; big-block
-    // ones carry type 0x2A and the constant reference stamp, as the big-block root does.
     BlockMetadata FlashFileSystem::fs_metadata(BlockKind kind, uint32_t sequence,
                                                uint16_t block_id) const {
         const bool big_block = m_driver->driver_mode() == Driver::DriverMode::Big;
@@ -665,8 +650,6 @@ namespace gxbuild3::nand {
                 break;
             }
 
-            // The last cluster of a file is zero-padded to its end, so every page of a file
-            // cluster is programmed.
             const size_t chunk_len =
                 std::min<size_t>(bytes.size() - bytes_written, kCleanBlockSize);
             const auto chunk = bytes.subspan(bytes_written, chunk_len);
@@ -683,8 +666,7 @@ namespace gxbuild3::nand {
                 }
             }
 
-            // A big-block file of one cluster states its spare on the pages its bytes reach;
-            // the zero padding after them keeps erased fields (xeBuild 1.21).
+            // big-block files that fit in one cluster only stamp spare metadata on the pages their unpadded bytes actually touch
             size_t pages = kPagesPerCluster;
             if (big_block && bytes.size() <= kCleanBlockSize) {
                 pages = std::max<size_t>(1, (chunk_len + 511) / 512);
@@ -701,9 +683,6 @@ namespace gxbuild3::nand {
         return {};
     }
 
-    // File data blocks carry FS sequence 0. Only the 16 KiB clusters holding file data are
-    // stamped: the rest of a big block stays erased, as xeBuild leaves it, and so do the pages
-    // of a cluster past those its spare reaches.
     void FlashFileSystem::stamp_file_clusters(const ClusterPages& clusters) {
         const std::vector<uint8_t> erased_spare(16, 0xFF);
         for (const auto& [cluster, pages] : clusters) {
@@ -716,8 +695,6 @@ namespace gxbuild3::nand {
         }
     }
 
-    // Driver writes go in this order: the root bytes, every file's bytes in directory order,
-    // the file spares, and the root spare last.
     Result<void> FlashFileSystem::save() {
         if (!m_driver) {
             return fail(ErrorCode::InvalidArgument, "FlashFS save needs an attached driver");
@@ -750,8 +727,6 @@ namespace gxbuild3::nand {
 
     Result<void> FlashFileSystem::load(Driver& driver, uint16_t root_block,
                                        size_t cluster_in_block) {
-        // Read into a staged filesystem that carries only this one's settings, and commit it
-        // whole on success, so a failed load leaves this filesystem as it was.
         FlashFileSystem staged;
         staged.m_larger = m_larger;
         staged.m_big_system_blocks = m_big_system_blocks;

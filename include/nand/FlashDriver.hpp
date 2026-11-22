@@ -19,21 +19,13 @@ namespace gxbuild3::nand {
         bool is_bad = false;
     };
 
-    // FlashFS spare metadata values. Big-block images use a distinct block-type space
-    // (0x2C root, 0x2A data) and carry a constant fs_size/page_count stamp on every root
-    // and data block; small/new-small images use 0x30 for the root and leave data blocks
-    // as type 0x00 with sequence 0, as real 16 MB dumps and xeBuild do. The big constants
-    // were derived byte-for-byte from retail and xeBuild big-block references, whose
-    // filesystem the stock kernel only mounts when these values are present.
+    // spare block-type and size stamps for small-block vs big-block filesystems
     struct FlashFsMetadata {
         static constexpr uint8_t kRootTypeSmall = 0x30;
         static constexpr uint8_t kRootTypeBig = 0x2C;
         static constexpr uint8_t kDataTypeSmall = 0x00;
         static constexpr uint8_t kDataTypeBig = 0x2A;
         static constexpr uint16_t kBigFsSize = 0x2006;
-        // The stamp of the larger filesystem a big-block devkit image takes: spare byte 7
-        // states a 0x10-block system area and byte 8 the filesystem's 0xC00 blocks over 32
-        // (xeBuild 1.21 devkit jasperbb).
         static constexpr uint16_t kBigFsSizeLarger = 0x6010;
         static constexpr uint8_t kBigPageCount = 0x04;
     };
@@ -96,10 +88,6 @@ namespace gxbuild3::nand {
         std::span<uint8_t> read_page_spare(size_t page);
         void write_page_spare(size_t page, std::span<const uint8_t> spare);
 
-        // The block and offset accessors report a range error by a sentinel, not an Error: a
-        // write returns false and writes nothing when it would run past the image, and a read
-        // returns an empty span or vector. Callers turn a false write into an Error with their own
-        // context.
         [[nodiscard]] bool write_block(size_t block_idx, std::span<const uint8_t> data);
 
         std::span<const uint8_t> read_block_raw(size_t block_idx) const;
@@ -107,12 +95,9 @@ namespace gxbuild3::nand {
 
         BlockMetadata interpret_block(size_t block_idx) const;
         BlockMetadata interpret_cluster(size_t cluster_idx) const;
-        // One page's spare fields, read the way interpret_block reads a block's first page.
         BlockMetadata interpret_page(size_t page) const;
         void write_cluster_metadata(size_t cluster_idx, const BlockMetadata& meta);
-        // Stamps the spare of `page_count` pages from `first_page`, leaving their data alone.
         void write_page_metadata(size_t first_page, size_t page_count, const BlockMetadata& meta);
-        // Returns a block to the erased state: 0xFF data and, on NAND, 0xFF spare.
         void erase_block(size_t block_idx);
         bool is_bad_block(size_t block_idx) const;
         void mark_bad_block(size_t block_idx);

@@ -12,9 +12,6 @@ namespace GxBuild {
 
     namespace {
 
-        // The public extraction boundary, and the only place an extraction Error is logged: the
-        // core's reason is logged once and the caller sees std::nullopt. Only std (allocation)
-        // exceptions can still come out of a core; they are logged the same way.
         template <class Extract>
         auto extract_or_log(std::string_view what, Extract&& extract)
             -> std::optional<typename std::invoke_result_t<Extract>::value_type> try {

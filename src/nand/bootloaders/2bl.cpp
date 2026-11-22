@@ -18,24 +18,18 @@ namespace gxbuild3::nand {
 
     namespace {
 
-        // A header-only CB still parses, but the crypt needs the generic header and the 16-byte
-        // nonce. The rest of cb_header lives inside the encrypted payload.
         constexpr size_t kCbCryptMinimumSize = sizeof(generic_header) + 0x10;
 
         static_assert(sizeof(cb_header) == 0x3C0);
 
-        // The payload offset of the console sequence allowance: cb_header's console_seq_allow
-        // block, minus the generic header that is not part of the payload.
+        // offset of console_sequence_allow inside the payload (excludes the 0x10 generic header)
         constexpr size_t kConsoleAllowPayloadOffset =
             offsetof(cb_header, console_seq_allow) +
             offsetof(ConsoleTypeSeqAllow, console_sequence_allow) - sizeof(generic_header);
         static_assert(kConsoleAllowPayloadOffset == 0x3A2);
 
-        // The per-box block sits right after the 16-byte nonce at the start of the payload.
         constexpr size_t kPerboxPayloadOffset = 0x10;
 
-        // CB_A's generic header with its flag word cleared, as a CB_B keyed under flag 0x1000
-        // appends it to the HMAC input.
         std::array<uint8_t, sizeof(generic_header)> cb_a_hmac_head(const generic_header& cb_a) {
             generic_header head = cb_a;
             head.flags = 0;
@@ -72,8 +66,7 @@ namespace gxbuild3::nand {
         if (data.size() < 0x380)
             return false;
 
-        // Devkit SB carries its 0x80000200 HRMOR base at file offset 0x250 (data 0x240)
-        // rather than a zeroed retail signature block.
+        // checks for devkit sb magic bytes at 0x240 or a zeroed out retail block at 0x260..0x380
         if (data[0x240] == 0x80 && data[0x241] == 0x00 && data[0x242] == 0x02 &&
             data[0x243] == 0x00)
             return true;
@@ -89,6 +82,7 @@ namespace gxbuild3::nand {
         return decrypted || verify_decrypted() || (data.size() > 0x240 && data[0x240] == 0x80);
     }
 
+    // cb 1920+ with non-zero per-box data mixes the cpu key into cd's rc4 key
     bool BootloaderCb::requires_cpu_key_for_cd() const {
         if (header.header.version < 1920) {
             return false;
@@ -137,7 +131,6 @@ namespace gxbuild3::nand {
             populate_metadata();
     }
 
-    // CB / CB_A
     Result<void> BootloaderCb::decrypt(const uint8_t onebl_key[16]) {
         auto payload_len = prepare_payload();
         if (!payload_len)
@@ -149,7 +142,6 @@ namespace gxbuild3::nand {
         return {};
     }
 
-    // CB_B
     Result<void> BootloaderCb::decrypt_v1(const uint8_t cb_a_key[16], const uint8_t cpu_key[16]) {
         auto payload_len = prepare_payload();
         if (!payload_len)
@@ -161,7 +153,6 @@ namespace gxbuild3::nand {
         return {};
     }
 
-    // Other CB_B impl?
     Result<void> BootloaderCb::decrypt_v2(const cb_header& cb_a_hdr, const uint8_t cb_a_key[16],
                                           const uint8_t cpu_key[16]) {
         uint8_t digest[20];
@@ -194,8 +185,7 @@ namespace gxbuild3::nand {
                         "key, and an aligned encrypted SMC");
         }
 
-        // A CB_B under a manufacturing CB_A, or bound to an all-zero CPU key, binds no SMC:
-        // its digest slot is sixteen zeros (xeBuild "zeropairing CB_B").
+        // manufacturing chains and zero cpu keys just zero out the per-box digest instead of hashing the smc
         const bool unbound_cb_b = cb_a_header && (manufacturing_chain(*cb_a_header) ||
                                                   std::all_of(cpu_key.begin(), cpu_key.end(),
                                                               [](uint8_t b) { return b == 0; }));
@@ -207,7 +197,6 @@ namespace gxbuild3::nand {
             return encrypt_cb_b(*cb_a_header, parent_key, cpu_key.data());
         }
 
-        // Match the existing CB/CB_B encryption derivation, including the v2 CB_A header.
         uint8_t rc4_key[16];
         EXCRYPT_HMACSHA_STATE state;
         ExCryptHmacShaInit(&state, parent_key, 16);
@@ -221,7 +210,7 @@ namespace gxbuild3::nand {
         }
         ExCryptHmacShaFinal(&state, rc4_key, 16);
 
-        // The SMC checksum is two wrapping 64-bit accumulators over big-endian words.
+        // hashes the encrypted smc with two rotating 64-bit accumulators for the per-box hmac.
         uint64_t sum = 0, difference = 0;
         for (size_t offset = 0; offset < encrypted_smc.size(); offset += 4) {
             const uint32_t word = (uint32_t(encrypted_smc[offset]) << 24) |
@@ -280,13 +269,12 @@ namespace gxbuild3::nand {
             size_t offset;
             uint32_t value;
         };
-        // Offsets are from the start of the stage, header included.
         static constexpr Word kV1Marker{0x354, 0x646A0002};
         static constexpr std::array<Word, 4> kV1Fix{{
-            {0x354, 0x64690002}, // oris r9, r3, 2
-            {0x368, 0x7D8C482A}, // ldx r12, r12, r9
-            {0x370, 0x64690006}, // oris r9, r3, 6
-            {0x37C, 0xF8491010}, // std r2, 0x1010(r9)
+            {0x354, 0x64690002},
+            {0x368, 0x7D8C482A},
+            {0x370, 0x64690006},
+            {0x37C, 0xF8491010},
         }};
         constexpr size_t kHeaderSize = sizeof(generic_header);
 
@@ -312,21 +300,16 @@ namespace gxbuild3::nand {
         if (!is_decrypted() || data.size() < sizeof(cb_header) - sizeof(generic_header))
             return;
 
-        // The mirror is decoded from the generic header as it stands followed by the plaintext
-        // payload. It must not come from serialize(), which writes the stale console allowance
-        // of the old mirror over the value that was just decrypted.
+        // rebuilds the header struct from the newly decrypted payload without overwriting console_sequence_allow
         std::array<uint8_t, sizeof(cb_header)> image{};
         const auto head = wire::encode(header.header);
         std::copy(head.begin(), head.end(), image.begin());
         std::copy_n(data.begin(), sizeof(cb_header) - sizeof(generic_header),
                     image.begin() + sizeof(generic_header));
-        // Cannot fail: the image holds exactly one cb_header.
         auto mirror = wire::read<cb_header>(image, 0, "CB header");
         if (!mirror)
             return;
         header = *mirror;
-        // The size check above covers the per-box block, so this only degrades on an
-        // inconsistent stage; `perbox` then keeps its previous value.
         if (auto parsed = parse_perbox(); !parsed)
             Log::Debug("CB per-box data not parsed: {}", parsed.error().describe());
     }

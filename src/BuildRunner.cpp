@@ -51,8 +51,7 @@ namespace gxbuild3 {
 
     namespace {
 
-        // A devkit image on a small-block console is 64 MB with that console's spare layout
-        // (xeBuild 1.21: "NAND size: 64MiB (small block)"); every other shape is the console's own.
+        // small-block devkits use a 64mb image with the small-block spare layout
         std::pair<Driver::ImageSize, Driver::DriverMode> driver_config(ImageType type,
                                                                        BuildType build_type) {
             const auto small_size = build_type == BuildType::Devkit ? Driver::ImageSize::Bigordevkit
@@ -84,7 +83,6 @@ namespace gxbuild3 {
             std::unreachable();
         }
 
-        // FlashFS files sealed under the CPU key: plaintext inside Input, encrypted in the NAND.
         bool is_cpu_keyed_secfile(std::string_view name) {
             std::string lower{name};
             std::transform(lower.begin(), lower.end(), lower.begin(),
@@ -114,18 +112,7 @@ namespace gxbuild3 {
             return nullptr;
         }
 
-        // A FlashFS file as the image carries it. crl.bin, dae.bin, extended.bin and secdata.bin
-        // are sealed for this build as xeBuild 1.21 seals them: the content is the file supplied,
-        // the sealing the console's own copy's (or, with none, the supplied file's own when it is a
-        // console copy, or drawn), and crl.bin, dae.bin and secdata.bin state the build's time and
-        // the CF lockdown value. A crl.bin or dae.bin that does not open is written as supplied,
-        // and so is a secdata.bin that does not open unless it is the console's own copy. An
-        // extended.bin or secdata.bin that is empty (nothing supplied it) or of the wrong length,
-        // an extended.bin that does not open and the console's own secdata.bin when it does not
-        // open are replaced by a clean one, as xeBuild makes one up. fcrt.bin is sealed under the
-        // CPU key when it is in the clear, written as its failed opening when it opens under no key
-        // (the console's own copy is then carried as it stands) and otherwise written as supplied.
-        // Every other file is written as supplied. An Error when a file cannot be sealed at all.
+        // Re-encrypts console-bound flashfs files with the target cpu key, or generates clean ones if they're missing or broken.
         Result<std::vector<uint8_t>> sealed_flashfs_file(std::string_view name,
                                                          const std::vector<uint8_t>& data,
                                                          const Input& input,
@@ -196,9 +183,8 @@ namespace gxbuild3 {
                 Log::Debug("dae.bin not resealed: {}", sealed.error().describe());
                 return data;
             }
+            // grabs the 8-byte header from kv +0x10 if we have one
             if (lower == "extended.bin") {
-                // Its head is the keyvault's; with no keyvault, a copy that opens keeps its own and
-                // a clean one has a zero head.
                 const auto& keyvault = input.metadata.keyvault;
                 const bool keyvault_head = keyvault && keyvault->size() >= 0x18;
                 if (data.size() == kExtendedSize && extended_opened(data, cpu_key)) {
@@ -221,8 +207,6 @@ namespace gxbuild3 {
                 return clean_extended(cpu_key, head);
             }
             if (lower == "secdata.bin") {
-                // Its head is the console's own copy's; with none, a copy that opens keeps its own
-                // and a clean one takes a drawn head.
                 std::optional<std::array<uint8_t, 8>> own_head;
                 if (own && secdata_opened(*own, cpu_key)) {
                     if (auto head = secdata_head(*own)) {
@@ -232,8 +216,7 @@ namespace gxbuild3 {
                 if (data.size() == kSecdataSize && secdata_opened(data, cpu_key)) {
                     return reseal_secdata(data, cpu_key, own_head, build);
                 }
-                // The console's own copy is used only when it opens; a supplied copy of the right
-                // length that does not open is written as it stands.
+                // if a supplied secdata fails to decrypt, just re-encrypt it as-is under its existing nonce
                 const bool unopened_own = own && data == *own;
                 if (data.size() == kSecdataSize && !unopened_own) {
                     Log::Warn(
@@ -281,8 +264,6 @@ namespace gxbuild3 {
                             "as supplied");
                         break;
                     case FcrtSealing::Damaged:
-                        // The console's own copy is carried as it stands (xeBuild would discard
-                        // it).
                         if (own && data == *own) {
                             Log::Warn(
                                 "The console's fcrt.bin does not open under the CPU key; it is "
@@ -299,8 +280,6 @@ namespace gxbuild3 {
             return data;
         }
 
-        // The one point where an internal Error becomes the public BuildError: the context chain
-        // is flattened into the message, outermost layer first ("outer: inner: message").
         std::unexpected<BuildError> to_build_error(BuildErrorCode code, const Error& error) {
             return std::unexpected(BuildError{code, error.describe()});
         }
@@ -350,9 +329,7 @@ namespace gxbuild3 {
                             stage_name);
             }
 
-            // A patched stage is as long as its greatest patched end rounded up to 0x10, the
-            // rounding zero, and its header states that length (xeBuild: glitch2m CD 9452 0x52A8
-            // of patched bytes states 0x52B0). The padding is sealed with the stage.
+            // grows the stage to fit out-of-bounds patches and updates the header size.
             bytes.resize(align_16(*required_end), 0);
             const XePatchSection xe_section{section.identifier, section.entries};
             const auto applied = gxbuild3::patchers::apply_patch_section(
@@ -377,8 +354,7 @@ namespace gxbuild3 {
             return bytes;
         }
 
-        // CF LDV and pairing come from the slot the console booted last: the one stating the
-        // largest LDV.
+        // pulls cf ldv and pairing data from whichever update slot has the higher ldv
         void extract_cf_metadata(const FlashImage& image, InputMetadata& metadata) {
             const auto slot = nand::detail::max_ldv_slot(image);
             if (!slot) {
@@ -392,9 +368,6 @@ namespace gxbuild3 {
             metadata.cf_pairing_data = pairing;
         }
 
-        // The CB fields a donor's build metadata carries: the console type, sequence and allow
-        // word from CB_A's header, and the LDV and pairing from CB_A's per-box block, which CB_B's
-        // per-box block overrides when CB_B is present (whether or not CB_A parsed).
         struct CbMetadata {
             uint8_t ldv = 0;
             std::array<uint8_t, 3> pairing{};
@@ -417,9 +390,8 @@ namespace gxbuild3 {
                 metadata.console_sequence_allow =
                     cb_a.header.console_seq_allow.console_sequence_allow.get();
             }
+            // cbb per-box ldv and pairing override cba when present
             if (cb.cb_B.has_value() && !cb.cb_B->data.empty() && cb.cb_B->perbox.has_value()) {
-                // Build metadata keeps the per-box LDV; the byte cb_b_display_ldv shows is for
-                // display only and is never written into per-box data.
                 metadata.ldv = cb.cb_B->perbox->lockdown_value;
                 std::memcpy(metadata.pairing.data(), cb.cb_B->perbox->pairing_data,
                             metadata.pairing.size());
@@ -427,17 +399,12 @@ namespace gxbuild3 {
             return metadata;
         }
 
-        // The CB_B console-sequence byte (header 0x3B1), as an offset into the stage data, which
-        // starts after the generic header.
         constexpr std::size_t kCbConsoleSequenceInData =
             offsetof(cb_header, console_seq_allow) +
             offsetof(ConsoleTypeSeqAllow, console_sequence) - sizeof(generic_header);
         static_assert(kCbConsoleSequenceInData == 0x3A1);
 
-        // extract_all_info shows CB_B's LDV as its console-sequence byte when that byte reads as
-        // an LDV (16 or less), else the per-box LDV. Pinned quirk: the shown value can disagree
-        // with the per-box LDV that extract_metadata and extract_all report. Requires the per-box
-        // block.
+        // uses the console sequence byte as the display ldv if it's 16 or under, otherwise falls back to per-box
         uint8_t cb_b_display_ldv(const BootloaderCb& cb_b) {
             const auto sequence =
                 wire::read<uint8_t>(cb_b.data, kCbConsoleSequenceInData, "CB_B console sequence");
@@ -447,8 +414,6 @@ namespace gxbuild3 {
             return cb_b.perbox->lockdown_value;
         }
 
-        // Parses one supplied stage into its place in the image; the stage's name goes on the
-        // error.
         template <class Bootloader, class Target>
         [[nodiscard]] Result<void> parse_stage_into(Target& target, std::span<const uint8_t> bytes,
                                                     std::string_view name) {
@@ -461,7 +426,6 @@ namespace gxbuild3 {
             return {};
         }
 
-        // Parses the supplied boot chain and update slots into an image whose chain was cleared.
         [[nodiscard]] Result<void> parse_input_bootloaders(FlashImage& flash_image,
                                                            const Input& input) {
             const auto& bootloaders = input.bootloaders;
@@ -480,11 +444,9 @@ namespace gxbuild3 {
                     return parsed;
                 }
                 if (input.build_type == BuildType::Glitch3) {
-                    // Input CB_X is explicitly plaintext. It can contain instructions
-                    // in the region the retail-CB parser uses for plaintext detection.
+                    // forces cbx to be treated as decrypted and applies the v1 rgh3 register fix if needed
                     flash_image.cb_section.cb_x->decrypted = true;
                     flash_image.cb_section.cb_x->populate_metadata();
-                    // Its nonce stays as supplied, so it is sealed under the key its input names.
                     if (flash_image.cb_section.cb_x->patch_rgh3_v1_cb_x()) {
                         Log::Info("Applied the RGH2to3 v1 fix to the RGH3 CB_X");
                     }
@@ -544,9 +506,7 @@ namespace gxbuild3 {
                     return parsed;
                 }
             }
-            // A devkit chain is supplied plaintext, as a release ships it and extract_all returns
-            // it; the parsers' plaintext tests are for retail stages. The header states the SE
-            // build (xeBuild 1.21 devkit: 0x4451 for SE 17489).
+            // devkit stages are supplied in plaintext and the nand header takes se's build version.
             if (flash_image.devkit_chain()) {
                 auto& sb = flash_image.cb_section.cb_or_A;
                 sb.decrypted = true;
@@ -587,7 +547,6 @@ namespace gxbuild3 {
             return std::nullopt;
         }
 
-        // The year xeBuild states for each board. A JTAG Jasper boots the 2008 CB 6723.
         uint16_t copyright_year(ConsoleType console, BuildType build_type) {
             switch (console) {
                 case ConsoleType::Xenon:
@@ -605,14 +564,10 @@ namespace gxbuild3 {
             std::unreachable();
         }
 
-        // A devkit image states 2010 on every board (xeBuild 1.21 devkit Jasper).
         constexpr uint16_t kDevkitCopyrightYear = 2010;
 
-        // Header 0x10..0x47 holds the copyright notice; 0x48..0x4F are boot flags.
         constexpr size_t kCopyrightLength = sizeof(nand_header::copyright);
 
-        // The types whose CB/CD (devgl: SD) are patched: their header states 0x48 = 1 and the boot
-        // flags.
         bool is_hacked(BuildType build_type) {
             switch (build_type) {
                 case BuildType::Jtag:
@@ -629,11 +584,7 @@ namespace gxbuild3 {
             std::unreachable();
         }
 
-        // Header 0x4C..0x4F from the options, as xeBuild builds them (xerunner build.py
-        // boot_options): 0x4F is the XeLL button, eject unless one is named, none for nodvd or
-        // olddvd; 0x4E the second XeLL button, zero when it is the first; 0x4D is 1 for cygnos or
-        // demon, and on JTAG adds 2 for nodvd, otherwise 4 unless olddvd; 0x4C is the dualboot
-        // button, JTAG only, zero when it is either XeLL button. Zero on retail and devkit.
+        // packs dualboot, hardware flags, and xell buttons into the 32-bit header word at 0x4C
         uint32_t boot_flags(BuildType build_type, const OptionsArgs& options) {
             if (!is_hacked(build_type)) {
                 return 0;
@@ -666,7 +617,6 @@ namespace gxbuild3 {
                    uint32_t(second == reason ? 0 : second) << 8 | reason;
         }
 
-        // The Latin-1 copyright sign, the notice and zeros, over 0x10..0x47 only.
         void write_copyright(nand_header& header, uint16_t year) {
             const std::string text = "\xA9 2004-" + std::to_string(year) +
                                      " Microsoft Corporation. All rights reserved.";
@@ -674,7 +624,6 @@ namespace gxbuild3 {
             std::memcpy(header.copyright, text.data(), std::min(text.size(), kCopyrightLength - 1));
         }
 
-        // The donor's settings, statistics and manufacturing blocks, carried as bytes.
         void extract_settings_blocks(const FlashImage& img, InputMetadata& meta) {
             if (img.smc_config) {
                 meta.smc_config = img.smc_config->serialize();
@@ -698,8 +647,6 @@ namespace gxbuild3 {
                                        [](unsigned char c) { return std::isspace(c) != 0; });
         }
 
-        // Applies xeBuild's 12 SMC config overrides to the parsed settings block, marking
-        // `reserialize` only when at least one field actually changes.
         void apply_smc_config_options(std::optional<SmcConfigBlock>& smc_config,
                                       const OptionsArgs& options) {
             static constexpr std::array<std::optional<std::string> OptionsArgs::*, 12>
@@ -784,6 +731,7 @@ namespace gxbuild3 {
                 if (!parsed) {
                     continue;
                 }
+                // fan speed 0 means auto (0x7F), otherwise set bit 7 to force a fixed percentage
                 if (*parsed == 0) {
                     if (*target_item.field != kFanAuto) {
                         *target_item.field = kFanAuto;
@@ -840,8 +788,6 @@ namespace gxbuild3 {
             }
         }
 
-        // Patches the keyvault's DVD key on non-retail builds, setting `reserialize` only when
-        // the 16-byte key actually changes.
         void apply_keyvault_options(Keyvault& keyvault, const OptionsArgs& options,
                                     BuildType build_type) {
             if (is_blank_option(options.dvdkey)) {
@@ -865,9 +811,6 @@ namespace gxbuild3 {
 
         using StepResult = std::expected<void, BuildError>;
 
-        // Initializes the target FlashImage (from a donor dump when present and shape-compatible,
-        // or fresh), parses the console's settings/SMC/keyvault, applies option overrides, and
-        // sets the NAND header metadata.
         [[nodiscard]] StepResult init_build_image(const Input& input, FlashImage& flash_image,
                                                   std::optional<DonorNonces>& donor_nonces) {
             bool has_donor = false;
@@ -895,9 +838,7 @@ namespace gxbuild3 {
                 if (!donor_nonces) {
                     donor_nonces = donor_img->collect_nonces();
                 }
-                // A devkit image of another shape than its donor (the 64 MB image a 16 MB console
-                // takes) is laid fresh: the donor gives its nonces here and its console data
-                // through the Input.
+                // start from a fresh image if a devkit build changes the donor's nand size
                 const auto target = driver_config(input.image_type, input.build_type);
                 const bool donor_shape = donor_img->flash_driver.image_size() == target.first &&
                                          donor_img->flash_driver.driver_mode() == target.second;
@@ -920,7 +861,6 @@ namespace gxbuild3 {
 
             flash_image.build_type = input.build_type;
 
-            // The console's own blocks follow it into whatever layout is built.
             if (input.metadata.smc_config) {
                 auto parsed = SmcConfigBlock::parse(*input.metadata.smc_config);
                 if (!parsed) {
@@ -958,8 +898,6 @@ namespace gxbuild3 {
             }
             flash_image.smc = *smc;
 
-            // A JTAG image boots through its SMC's hack, so an SMC carrying no JTAG mark is refused
-            // unless smcnocheck waives the check, as xeBuild 1.21 does.
             if (input.build_type == BuildType::Jtag && !input.options.smcnocheck.value_or(false) &&
                 !smc_has_jtag_mark(flash_image.smc->data)) {
                 return to_build_error(BuildErrorCode::InvalidSmc,
@@ -978,12 +916,9 @@ namespace gxbuild3 {
             flash_image.keyvault->encrypted = false;
             apply_keyvault_options(*flash_image.keyvault, input.options, input.build_type);
 
-            // Header 0x04 carries no pairing; console dumps and xeBuild images hold zero there, and a
-            // devkit image 0x8000 (xeBuild 1.21).
             flash_image.header.pairing = input.build_type == BuildType::Devkit ? 0x8000 : 0;
 
-            // A donor of the same board keeps its own notice; any other image states the target's. A
-            // JTAG Jasper always states the year of the CB it boots, which no retail donor carries.
+            // keep the donor copyright string unless the board changed or we're building a jtag jasper
             const bool donor_copyright_usable =
                 has_donor && !std::all_of(std::begin(flash_image.header.copyright),
                                           std::begin(flash_image.header.copyright) + kCopyrightLength,
@@ -1001,9 +936,6 @@ namespace gxbuild3 {
             return {};
         }
 
-        // Clears donor bootloader records, parses and validates input bootloaders and automatic
-        // patches, patches CB/CB_B/CD, re-signs devgl SD, parses JTAG extra stages, and applies
-        // per-box bootloader metadata and nonces.
         [[nodiscard]] StepResult populate_and_patch_bootloaders(
             FlashImage& flash_image, const Input& input, const std::optional<DonorNonces>& donor_nonces,
             const std::optional<gxbuild3::utils::XeRsaPrivateKey>& sd_signing_key,
@@ -1054,8 +986,6 @@ namespace gxbuild3 {
                     {ErrorCode::InvalidArgument, "Glitch3 requires CB_A, CB_X (15432), and CB_B"});
             }
 
-            // glitch1 may carry a CB_B (xeBuild builds the trinity 13604/17559 _glitch.ini with
-            // CB_A + CB_B); only a CB_X is out of place there.
             if (input.build_type == BuildType::Glitch && flash_image.cb_section.cb_x) {
                 return to_build_error(BuildErrorCode::InvalidBootloader,
                                       {ErrorCode::Unsupported,
@@ -1070,13 +1000,9 @@ namespace gxbuild3 {
                 parsed_patchset = std::move(*parsed);
             }
 
-            // A devgl chain has no CB_B: the glitch2m patch file's first section is not applied, and
-            // its CD section patches the SD (xeBuild 1.21 devgl: SB, SC and SE as the release ships
-            // them).
             const bool devgl = input.build_type == BuildType::Devgl;
             const NoPatch no_patch = resolve_no_patch(input.options);
             if (parsed_patchset && parsed_patchset->kind == PatchSetKind::Glitch && no_patch.khv) {
-                // The slot keeps its glitch layout and holds an empty KHV list, with no add-ons either.
                 for (auto& section : parsed_patchset->sections) {
                     if (section.target == PatchSectionTarget::Khv) {
                         section.raw_data.clear();
@@ -1085,9 +1011,7 @@ namespace gxbuild3 {
             }
             if (parsed_patchset && parsed_patchset->kind == PatchSetKind::Glitch &&
                 !(no_patch.cb && no_patch.cd)) {
-                // A single-CB glitch1 patches its CB; with a CB_B (CB_A + CB_B, as the trinity
-                // glitch1 INIs list) the first section goes to the CB_B, as in glitch2 and xeBuild.
-                // (the patchset parser labels glitch1's first section Cb either way).
+                // edge case where split-cb glitch1 applies its cb patch section to cbb instead
                 const bool glitch1_cbb =
                     input.build_type == BuildType::Glitch && flash_image.cb_section.cb_B;
                 const auto first_target = input.build_type == BuildType::Glitch
@@ -1117,9 +1041,7 @@ namespace gxbuild3 {
                     [&stage_sizes](BootStageId id, std::string_view, const auto& stage) {
                         stage_sizes[static_cast<size_t>(id)] = stage.serialize().size();
                     });
-                // A chain that already runs past XeLL's slot (a hybrid glitch2m with an SB/SD/SE
-                // chain) is laid as xeBuild lays it: XeLL is skipped and the update slots follow
-                // the chain, so the usual limit does not apply to it.
+                // skip the normal boot chain size cap if the unpatched chain already runs past xell's offset
                 size_t unpatched_total = 0;
                 for (const size_t size : stage_sizes)
                     unpatched_total += align_16(size);
@@ -1150,8 +1072,6 @@ namespace gxbuild3 {
                 const bool is_big_or_emmc =
                     flash_image.flash_driver.driver_mode() == Driver::DriverMode::Big ||
                     flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc;
-                // A devgl chain runs past its first update slot, which it never fills, up to the KHV
-                // patch slot.
                 const size_t boot_chain_limit = devgl            ? flash_image.patch_slot_offset()
                                                 : is_big_or_emmc ? 0xC0000
                                                                  : 0x70000;
@@ -1232,17 +1152,12 @@ namespace gxbuild3 {
                         return to_build_error(BuildErrorCode::PatchFailure, patched.error());
                     }
                 }
-                // A development SD stays plaintext until it is sealed; the parser's test is for a
-                // retail CD.
                 if (flash_image.devkit_chain()) {
                     flash_image.kernel_section.cd.decrypted = true;
                 }
             }
 
-            // The patched SD no longer matches its signature, so it is signed again with the SB
-            // private key, as Xbox-360-Crypto sd_signer.py signs one (xeBuild 1.21 devgl: "SD_17489.bin
-            // failed signature check, attempting to resign"). The signature leaves the nonce out, so
-            // the donor nonce set below does not disturb it.
+            // Re-signs the patched devgl sd with the sb private key.
             if (sd_signing_key) {
                 auto& sd = flash_image.kernel_section.cd;
                 auto sd_bytes = sd.serialize();
@@ -1269,8 +1184,6 @@ namespace gxbuild3 {
                 }
             }
 
-            // The JTAG second CB/CD are captured by the INI reader and placed in the window tail. They
-            // are sealed with the main chain, so they are parsed before its metadata and nonces.
             if (input.bootloaders.extra_cb) {
                 if (auto parsed = parse_stage_into<BootloaderCb>(
                         flash_image.payloads.extra_cb, *input.bootloaders.extra_cb, "JTAG extra CB");
@@ -1293,9 +1206,6 @@ namespace gxbuild3 {
                 }
             }
 
-            // Patching reparses its targets. Apply the resolved metadata only after that
-            // replacement step so the final CB/CF objects, rather than a discarded parse,
-            // are serialized and encrypted below.
             if (const auto metadata =
                     flash_image.apply_bootloader_metadata(input.metadata, input.build_type);
                 !metadata) {
@@ -1307,8 +1217,6 @@ namespace gxbuild3 {
             return {};
         }
 
-        // Attaches the patchset, XeLL, rebooter, virtual fuses, SMC payload, and raw patches,
-        // then validates the resolved payload layout.
         [[nodiscard]] StepResult populate_payloads(FlashImage& flash_image, const Input& input,
                                                    std::optional<ParsedPatchSet> parsed_patchset) {
             if (parsed_patchset) {
@@ -1387,13 +1295,9 @@ namespace gxbuild3 {
             return {};
         }
 
-        // Formats the FlashFileSystem, seals secured files, and merges mobile data overrides.
         [[nodiscard]] StepResult populate_storage(FlashImage& flash_image, const Input& input) {
             if (input.flashfs_sec) {
                 Log::Info("Populating Flash File System ({} files)", input.flashfs_sec->size());
-                // Every directory entry, and crl.bin, dae.bin and secdata.bin within, carry the build's
-                // time (SOURCE_DATE_EPOCH when set): the entries on the local clock, as xeBuild stamps
-                // them, and the three files in UTC.
                 const int64_t build_seconds = gxbuild3::utils::build_epoch();
                 if (auto fs = flash_image.format_filesystem(
                         gxbuild3::utils::flashfs_build_timestamp(build_seconds));
@@ -1401,8 +1305,6 @@ namespace gxbuild3 {
                     return to_build_error(BuildErrorCode::SerializationFailure, fs.error());
                 }
 
-                // xeBuild states 1 when no lockdown value is set anywhere, and 0 under the all-zero CPU
-                // key, as the CFs do.
                 const SecuredFileBuild secured_build{build_seconds,
                                                      is_zero_cpu_key(input.metadata.cpu_key)
                                                          ? uint8_t{0}
@@ -1441,7 +1343,6 @@ namespace gxbuild3 {
                         *flash_image.mobile_data->get_slot(block_type) = **override_slot;
                     }
                 }
-                // An eMMC anchor names four blobs, types 0x31-0x34; the rest have nowhere to go.
                 if (flash_image.flash_driver.driver_mode() == Driver::DriverMode::Emmc) {
                     for (uint8_t block_type = 0x35; block_type <= 0x39; ++block_type) {
                         auto* slot = flash_image.mobile_data->get_slot(block_type);
@@ -1465,7 +1366,6 @@ namespace gxbuild3 {
                                   {ErrorCode::InvalidArgument, validation.error().message});
         }
 
-        // A devgl image's SD is patched, so it is signed again with the SB private key.
         std::optional<gxbuild3::utils::XeRsaPrivateKey> sd_signing_key;
         if (input.build_type == BuildType::Devgl) {
             auto parsed_key = gxbuild3::utils::XeRsaPrivateKey::parse(*input.sb_private_key);
@@ -1516,14 +1416,11 @@ namespace gxbuild3 {
 
         return std::move(*output);
     } catch (const std::exception& exception) {
-        // Only std (allocation) failures reach here; every expected failure is a Result above.
         return to_build_error(BuildErrorCode::Internal, {ErrorCode::Internal, exception.what()});
     }
 
     namespace {
 
-        // Reads and parses a NAND image into `image`. Its FlashFS keeps a pointer to the image's
-        // driver; copying or moving a FlashImage rebinds that pointer to the new object's driver.
         [[nodiscard]] Result<void> parse_nand(FlashImage& image,
                                               std::span<const uint8_t> nand_image) {
             auto read =
@@ -1549,7 +1446,6 @@ namespace gxbuild3 {
                                 "Failed to decrypt the NAND image components with the CPU key");
         }
 
-        // Checks the CPU key, then parses and opens the image under it.
         [[nodiscard]] Result<void> open_nand(FlashImage& image, std::span<const uint8_t> nand_image,
                                              std::span<const uint8_t> cpu_key) {
             if (auto checked = check_cpu_key(cpu_key); !checked) {
@@ -1561,14 +1457,11 @@ namespace gxbuild3 {
             return decrypt_nand(image, cpu_key);
         }
 
-        // The text of a fixed-size, NUL-padded on-disk string field: its bytes up to the first
-        // NUL, or all of them when there is none.
         std::string fixed_string(std::span<const uint8_t> bytes) {
             const auto end = std::ranges::find(bytes, uint8_t{0});
             return std::string(bytes.begin(), end);
         }
 
-        // The NAND header fields the extract cores show.
         void project_header(const nand_header& header, AllNandInfo& info) {
             info.header_magic = header.magic.get();
             info.header_version = header.version.get();
@@ -1577,9 +1470,6 @@ namespace gxbuild3 {
             info.copyright = fixed_string(header.copyright);
         }
 
-        // One stage's line in the extracted bootloader chain: its header fields and whether it is
-        // decrypted, which `decrypted_override` replaces when set (extract_all_info shows SC as
-        // decrypted whatever its state). The caller decides presence and adds any per-box values.
         template <class Stage>
         BootloaderEntryInfo summarize_stage(std::string_view name, const Stage& stage,
                                             std::optional<bool> decrypted_override = {}) {
@@ -1895,8 +1785,7 @@ namespace gxbuild3 {
             out.metadata.smc = img.smc->data;
         }
 
-        // A keyvault left sealed (it does not open under the all-zero CPU key) is not the
-        // console's in the clear; the build then needs the console's kv.bin.
+        // skip the donor kv if it couldn't be decrypted with a zero cpu key
         if (img.keyvault.has_value() && !img.keyvault->encrypted) {
             out.metadata.keyvault = img.keyvault->serialize();
         }

@@ -10,6 +10,7 @@
 
 namespace gxbuild3 {
 
+    // captures the caller's source_location implicitly alongside the format string
     template <typename... Args> struct LogFormatWithLoc {
         spdlog::format_string_t<Args...> fmt;
         std::source_location loc;

@@ -41,7 +41,6 @@ namespace gxbuild3::nand {
 
         stage::pad_payload(data, *payload_size);
 
-        // CE keeps no derived key: the HMAC(cd_key, nonce) the crypt returns is dropped.
         if (auto key = stage::crypt_stage_record(header, data, HmacType::Default, cd_key, nullptr,
                                                  0x20, kStage);
             !key)

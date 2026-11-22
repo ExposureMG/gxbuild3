@@ -35,7 +35,6 @@ namespace gxbuild3::utils {
                         "CB of 0x{:X} bytes is too short to carry its console word at 0x{:X}",
                         cb.size(), kCbWordOffset);
         }
-        // The size check above keeps its own message; the read cannot fail after it.
         const auto word = wire::read<wire::be32>(cb, kCbWordOffset, "CB console word");
         if (!word) {
             return std::unexpected(word.error());
@@ -43,8 +42,8 @@ namespace gxbuild3::utils {
         return word->get();
     }
 
+    // fuse line 1 is six 0x0F bytes followed by a 2-byte console type code
     Result<std::array<uint8_t, kFuseLineSize>> encode_console_type_line(uint8_t console_type) {
-        // Six 0x0F bytes, then two naming the type: devkit, retail, testkit, retail slim.
         constexpr std::array<std::array<uint8_t, 2>, 4> kTypeSuffixes = {{
             {0x0F, 0x0F},
             {0x0F, 0xF0},
@@ -62,8 +61,8 @@ namespace gxbuild3::utils {
         return line;
     }
 
+    // turns each set allow bit into a 0xF nibble starting from the top nibble of the fuse line
     std::array<uint8_t, kFuseLineSize> encode_sequence_allow_line(uint16_t sequence_allow) {
-        // One 0xF nibble per allow bit, bit 0 in the line's top nibble.
         std::array<uint8_t, kFuseLineSize> line = {};
         for (size_t bit = 0; bit < 16; ++bit) {
             if ((sequence_allow & (1U << bit)) != 0) {

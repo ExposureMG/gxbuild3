@@ -40,7 +40,7 @@ namespace gxbuild3::utils {
             unsigned day;
         };
 
-        // The proleptic Gregorian date of a day counted from 1970-01-01.
+        // converts days since 1970-01-01 into a year/month/day date
         CivilDate civil_from_days(int64_t days) {
             days += 719468;
             const int64_t era = (days >= 0 ? days : days - 146096) / 146097;
@@ -56,7 +56,6 @@ namespace gxbuild3::utils {
             return {year, month, day};
         }
 
-        // The day a proleptic Gregorian date is, counted from 1970-01-01.
         int64_t days_from_civil(int64_t year, unsigned month, unsigned day) {
             year -= month <= 2;
             const int64_t era = (year >= 0 ? year : year - 399) / 400;
@@ -70,13 +69,9 @@ namespace gxbuild3::utils {
 
         constexpr int64_t kDay = 86400;
 
-        // 1980-01-01 00:00:00 and 2107-12-31 23:59:58, the range a FAT stamp states.
         constexpr int64_t kFatFirst = 315532800;
         constexpr int64_t kFatLast = 4354819198;
 
-        // The wall-clock time a moment has in the C library's local zone (TZ when it is set, the
-        // system's zone otherwise), as seconds from 1970-01-01 00:00 on that clock. A moment the
-        // library cannot convert keeps its UTC reading.
         int64_t local_clock_seconds(int64_t seconds) {
             const auto moment = static_cast<std::time_t>(seconds);
             std::tm local{};
@@ -120,7 +115,6 @@ namespace gxbuild3::utils {
             if (seconds) {
                 return *seconds;
             }
-            // Degrade and continue: a bad SOURCE_DATE_EPOCH only costs reproducibility.
             Log::Warn("{}; the clock is used", seconds.error().describe());
         }
         return std::chrono::duration_cast<std::chrono::seconds>(
@@ -128,9 +122,8 @@ namespace gxbuild3::utils {
             .count();
     }
 
+    // converts a unix timestamp to local time and packs it into a 32-bit fat date/time word
     uint32_t fat_timestamp(int64_t seconds) {
-        // No zone is two days from UTC, so a moment held to two days either side of FAT's range
-        // keeps its place against that range on every local clock.
         seconds = std::clamp(seconds, kFatFirst - 2 * kDay, kFatLast + 2 * kDay);
         seconds = std::clamp(local_clock_seconds(seconds), kFatFirst, kFatLast);
         const int64_t days = seconds / kDay;

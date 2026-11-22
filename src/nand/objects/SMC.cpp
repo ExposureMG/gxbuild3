@@ -10,7 +10,6 @@ namespace gxbuild3::nand {
     namespace {
 
         constexpr uint8_t kSmcKey[4] = {0x42, 0x75, 0x4E, 0x79};
-        // parse() reads the board and version at 0x100..0x107; no SMC is larger than 16 KiB.
         constexpr size_t kMinSize = 0x108;
         constexpr size_t kMaxSize = 0x4000;
 
@@ -98,6 +97,7 @@ namespace gxbuild3::nand {
         }
     }
 
+    // decrypts the smc using its rolling "BuNy" key
     std::vector<uint8_t> smc_decrypt(std::span<const uint8_t> data) {
         uint32_t key[4] = {kSmcKey[0], kSmcKey[1], kSmcKey[2], kSmcKey[3]};
         std::vector<uint8_t> decrypted;
@@ -130,12 +130,11 @@ namespace gxbuild3::nand {
         return encrypted;
     }
 
+    // checks if the last 4 bytes are zero before or after decrypting, falling back to the board id nibble at 0x100
     bool smc_is_encrypted(std::span<const uint8_t> data) {
         if (data.size() <= 0x100) {
             return false;
         }
-        // Every plaintext SMC image ends in four zero bytes (xeBuild's own test): zeros as
-        // given mean plaintext, zeros after one decryption mean it was encrypted.
         const auto zero_tail = [](std::span<const uint8_t> bytes) {
             return std::all_of(bytes.end() - 4, bytes.end(), [](uint8_t b) { return b == 0; });
         };
@@ -146,8 +145,6 @@ namespace gxbuild3::nand {
         if (zero_tail(decrypted)) {
             return true;
         }
-        // Neither form is padded, so this is not a stock-shaped image; fall back to
-        // checking which form carries a motherboard nibble at 0x100.
         const uint8_t raw_nibble = (data[0x100] >> 4) & 0xF;
         if (raw_nibble >= 1 && raw_nibble <= 7) {
             return false;
@@ -156,6 +153,7 @@ namespace gxbuild3::nand {
         return dec_nibble >= 1 && dec_nibble <= 7;
     }
 
+    // scans the 8051 code for magic byte sequences matching rgh3, cr4, smc+, cygnos, jtag, or glitch
     SmcType smc_get_type(std::span<const uint8_t> data) {
         if (data.size() < 6) {
             return SmcType::Unknown;

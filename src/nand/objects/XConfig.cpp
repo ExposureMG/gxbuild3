@@ -6,6 +6,7 @@
 
 namespace gxbuild3::nand {
 
+    // checkdum is the 16-bit bitwise not of the byte sum over 0x10..0x10C
     uint16_t SmcConfigBlock::compute_checksum(std::span<const uint8_t> bytes) noexcept {
         if (bytes.size() < kSumEnd) {
             return 0;

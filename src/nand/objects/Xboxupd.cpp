@@ -10,9 +10,6 @@
 namespace gxbuild3::nand {
     namespace {
 
-        // xboxupd.bin is a CF image followed by a CG image. Only the header words below are
-        // read, never a whole cf_header (0x30 bytes): the up-front Truncated check stays at
-        // 0x20, the smallest CF or CG this split accepts, which also covers the CF cg_size word.
         constexpr std::size_t kBootloaderHeaderSize = 0x20;
 
         constexpr std::size_t kMagicOffset = offsetof(generic_header, magic);
@@ -26,6 +23,7 @@ namespace gxbuild3::nand {
 
     } // namespace
 
+    // splits a combined xboxupd.bin into separate cf and cg blobs using the sizes in the cf header
     Result<XboxupdParts> split_xboxupd_raw(std::span<const uint8_t> xboxupd_bytes) {
         if (xboxupd_bytes.size() < kBootloaderHeaderSize) {
             return fail(ErrorCode::Truncated, "xboxupd buffer too small to split ({} bytes)",

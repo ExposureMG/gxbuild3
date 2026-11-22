@@ -35,8 +35,7 @@ namespace gxbuild3::stfs {
             }
         }
 
-        // Decodes a NUL-terminated UTF-16BE string held in `bytes` to UTF-8.
-        // Unpaired surrogates become U+FFFD; a trailing odd byte is ignored.
+        // converts a nul-terminated utf-16be buffer to utf-8 and swaps broken surrogates with U+FFFD
         std::u8string read_locale_string(std::span<const std::uint8_t> bytes) {
             constexpr char32_t kReplacement = 0xFFFD;
             const std::size_t units = bytes.size() / 2;
@@ -67,13 +66,11 @@ namespace gxbuild3::stfs {
             return out;
         }
 
-        // Thumbnail sizes are signed on disk; negative sizes mean no image.
         std::size_t thumbnail_size(std::int32_t size) {
             constexpr std::int32_t kMaxThumbnailSize = 0x4000;
             return size <= 0 ? 0 : static_cast<std::size_t>(std::min(size, kMaxThumbnailSize));
         }
 
-        // Copies an on-disk byte field into the model's std::byte array of the same size.
         template <std::size_t N>
         [[nodiscard]] std::array<std::byte, N> to_array(const std::uint8_t (&field)[N]) {
             return std::bit_cast<std::array<std::byte, N>>(field);
@@ -162,8 +159,6 @@ namespace gxbuild3::stfs {
 
         Metadata meta;
         meta.header_size = md.header_size;
-        // Every header holds at least the v1 metadata parsed here (real packages use 0x971A or
-        // 0xAD0E); a header approaching 1 MiB is not a real STFS header.
         constexpr std::uint32_t kMaxHeaderSize = 0xFFFF0;
         if (meta.header_size < kMinMetadataSize || meta.header_size > kMaxHeaderSize) {
             return fail(ErrorCode::Malformed, "STFS header size 0x{:X} is out of range",

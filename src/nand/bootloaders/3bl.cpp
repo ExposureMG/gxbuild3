@@ -37,7 +37,6 @@ namespace gxbuild3::nand {
             return std::unexpected(std::move(payload_size.error()));
         stage::pad_payload(data, *payload_size);
 
-        // Same layout as CB/CD/CE: nonce at 0x10, cipher from 0x20 over signature and body.
         auto key = stage::crypt_stage_record(header, data, HmacType::Default, secret, nullptr, 0x20,
                                              kStage);
         if (!key)

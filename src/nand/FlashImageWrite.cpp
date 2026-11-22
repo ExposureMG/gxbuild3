@@ -25,15 +25,9 @@ namespace gxbuild3::nand {
 
     namespace {
 
-        // xeBuild lays a built image in 16 KiB blocks on erased flash: the block holding the
-        // end of the boot chain is programmed zero past it, and every byte nothing lays stays
-        // erased.
         constexpr size_t kLayBlockSize = 0x4000;
 
-        // A built image starts from erased flash, so whatever this writer does not lay (an
-        // unused update slot, free filesystem blocks, the remap pool, a donor's old data)
-        // stays erased: 0xFF data and, on NAND, an erased spare. A bad block keeps its marker.
-        // A parsed dump written back keeps its bytes.
+        // wipes all good blocks to 0xFF unless we're preserving an existing dump's layout
         void prepare_driver_blocks(Driver& driver, bool preserve_layout) {
             if (preserve_layout) {
                 return;
@@ -45,10 +39,6 @@ namespace gxbuild3::nand {
             }
         }
 
-        // Lays one of the console's 0x1000-byte blocks (settings, statistics, manufacturing) at
-        // the head of its erase block, as xeBuild does: the erase block is erased, the bytes
-        // go in and their pages carry a type-0 spare naming the block. A block of all 0xFF
-        // stays erased, as on a console that keeps none. A bad block keeps its spare.
         [[nodiscard]] Result<void> lay_settings_block(Driver& driver, size_t offset,
                                                       std::span<const uint8_t> bytes,
                                                       std::string_view what) {
@@ -72,11 +62,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // What the write_to_driver stages share: the driver they lay into, the layout they lay
-        // by and the highest offset the boot chain and the update slots have reached so far;
-        // then, for the data area, the usable block limit, the payload blocks kept out of it,
-        // the image's filesystem, the allocation block size and cursor and the spare layout
-        // the stages record.
         struct WriteContext {
             Driver& driver;
             const LayoutPlan& plan;
@@ -88,8 +73,6 @@ namespace gxbuild3::nand {
             size_t current_blk;
             NandLayout layout;
 
-            // The first run of `requested_blocks` blocks from `start_block` below the data
-            // limit that holds no bad block, no payload block and no block the filesystem uses.
             [[nodiscard]] std::optional<size_t> find_data_free_run(size_t start_block,
                                                                    size_t requested_blocks) const {
                 if (requested_blocks == 0 || requested_blocks > data_block_limit ||
@@ -118,8 +101,6 @@ namespace gxbuild3::nand {
             }
         };
 
-        // The 0x80-byte NAND header a built or written-back image carries. Pure: every field
-        // follows `header`, the layout and the SMC placement.
         std::array<uint8_t, sizeof(nand_header)> encode_nand_header(const nand_header& header,
                                                                     const LayoutPlan& plan,
                                                                     uint32_t smc_len,
@@ -128,23 +109,15 @@ namespace gxbuild3::nand {
             raw.magic = header.magic ? header.magic.get() : uint16_t{0xFF4F};
             raw.version = header.version ? header.version.get() : uint16_t{0x0760};
             raw.entrypoint = header.entrypoint ? header.entrypoint.get() : kEntryOffset;
-            // The legacy bootloader-chain scanner used by tools such as J-Runner
-            // advances from the NAND header using this size.  It must therefore
-            // terminate at the first system-update slot, not retain a donor image's
-            // earlier boot-chain boundary.
+            // sets the heaser size and cf_offset to the first update slot and fs_addr to the slot stride
             raw.size = plan.update_base;
             raw.kv_size =
                 header.kv_size ? header.kv_size.get() : static_cast<uint32_t>(Keyvault::kSize);
             raw.cf_offset = plan.update_base;
-            // Two update slots on every image, as xeBuild states them. On a glitch image the
-            // second is the KHV patch slot, which the kernel passes over for want of a CF.
             raw.patch_slots = uint16_t{2};
             raw.kv_version = header.kv_version ? header.kv_version.get() : uint16_t{0x0712};
             raw.kv_addr = header.kv_addr ? header.kv_addr.get() : kKeyvaultOffset;
-            raw.fs_addr = plan.slot_stride; // Runtime dwSysUpdateSlotSize (header + 0x70).
-            // Zero on every image, a donor's value or not: xeBuild never states the settings
-            // block here (xerunner build.py `header`), and the three console dumps measured
-            // carry zero. The block is found by its place in the layout instead.
+            raw.fs_addr = plan.slot_stride;
             raw.smc_config_offset = uint32_t{0};
             raw.smc_boot_size = smc_len;
             raw.smc_boot_offset = smc_offset;
@@ -155,8 +128,6 @@ namespace gxbuild3::nand {
             return encoded;
         }
 
-        // Lays the NAND header, the zero fill up to the SMC on a built image, the SMC and the
-        // keyvault, in that order.
         [[nodiscard]] Result<void> lay_header_and_secure_head(WriteContext& ctx,
                                                               const FlashImage& image) {
             const size_t smc_len = image.smc ? image.smc->data.size() : 0x3000;
@@ -170,7 +141,6 @@ namespace gxbuild3::nand {
             if (auto laid = write_or_fail(ctx.driver, 0, encoded, "NAND header"); !laid) {
                 return laid;
             }
-            // On a built image the header block is programmed zero from the header to the SMC.
             if (!image.preserve_layout) {
                 if (auto laid = write_or_fail(ctx.driver, encoded.size(),
                                               std::vector<uint8_t>(smc_offset - encoded.size(), 0),
@@ -197,7 +167,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Lays one boot stage at `cursor` and moves the cursor past it, 16-byte aligned.
         template <class Stage>
         [[nodiscard]] Result<void> lay_stage(Driver& driver, size_t& cursor, const Stage& stage,
                                              std::string_view name) {
@@ -209,9 +178,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Lays the boot chain from kEntryOffset (CB/A and CD when they hold data, the rule
-        // laid_boot_chain_end follows) and, on a built image, the zero fill to the end of the
-        // 16 KiB block holding its end. Updates ctx.highest_used_offset.
         [[nodiscard]] Result<void> lay_boot_chain(WriteContext& ctx, const FlashImage& image) {
             auto& driver = ctx.driver;
             size_t cursor = kEntryOffset;
@@ -239,9 +205,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Lays one update slot at `base_offset`: the CF, then the CG behind it, its prefix in
-        // the slot and the rest in its spill clusters. Updates the context's highest offset when
-        // the slot holds a CF.
         [[nodiscard]] Result<void> lay_update_slot(WriteContext& ctx, uint32_t base_offset,
                                                    const SystemUpdate& slot) {
             auto& driver = ctx.driver;
@@ -298,8 +261,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // A CG longer than its slot continues in spill blocks, so each slot ends within its
-        // own stride.
         [[nodiscard]] Result<void> lay_update_slots(WriteContext& ctx, const FlashImage& image) {
             if (auto laid = lay_update_slot(ctx, ctx.plan.update_base, image.system_update_0);
                 !laid) {
@@ -313,8 +274,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Lays the console's settings block, then its statistics and manufacturing blocks one
-        // and two erase blocks below it, each only when the image carries it.
         [[nodiscard]] Result<void> lay_console_blocks(WriteContext& ctx, const FlashImage& image) {
             auto& driver = ctx.driver;
             const auto smc_cfg_offset = smc_config_offset(driver);
@@ -360,8 +319,6 @@ namespace gxbuild3::nand {
             return lay_aux_block(image.manufacturing, 2, "manufacturing block");
         }
 
-        // Every older blob copy goes: a donor's mobile blocks are erased before the blobs are
-        // laid again, so no stale copy can outrank or trail the new ones.
         void purge_stale_mobile_blocks(Driver& driver) {
             if (driver.driver_mode() == Driver::DriverMode::Emmc) {
                 return;
@@ -382,8 +339,6 @@ namespace gxbuild3::nand {
             }
         }
 
-        // On NAND an image with a filesystem clears the spare of every cluster stamped as an
-        // older FlashFS root, keeping its bad mark.
         void clear_stale_fs_roots(Driver& driver, bool has_filesystem) {
             if (!has_filesystem || driver.driver_mode() == Driver::DriverMode::Emmc) {
                 return;
@@ -402,10 +357,7 @@ namespace gxbuild3::nand {
             }
         }
 
-        // One version of each blob, as xeBuild lays them, in type order. Small block gives
-        // each its own block; big block packs them 0x800 apart in one erase block, where
-        // the free count is kept in those slots; eMMC gives each its own blocks and
-        // names them in the anchors, which hold types 0x31-0x34 only.
+        // writes mobile data blobs, packing them at 0x800-byte intervals on big block or giving each its own block otherwise
         [[nodiscard]] Result<void> lay_mobile_data(WriteContext& ctx, const MobileData& mobile) {
             auto& driver = ctx.driver;
             const size_t fs_blk_size = ctx.fs_blk_size;
@@ -452,8 +404,6 @@ namespace gxbuild3::nand {
                     for (size_t b = 0; b < blocks_needed; ++b) {
                         driver.erase_block(*free_start + b);
                     }
-                    // The table states a blob's blocks free (xeBuild 1.21); they are only
-                    // kept from the files and the root here.
                     if (ctx.fs) {
                         if (auto withheld = ctx.fs->withhold_blocks(*free_start, blocks_needed,
                                                                     BlockMapStatus::Free);
@@ -463,8 +413,7 @@ namespace gxbuild3::nand {
                                 std::format("reserving mobile data type 0x{:02X} in FlashFS", bt));
                         }
                     }
-                    // On big block the blobs start on an erase block, and the table never
-                    // names the clusters stepped over between the last file and them.
+                    // marks any gap clusters before the big-block mobile data erase block as unnamed in the blockmap
                     if (ctx.fs && big && !open_block) {
                         const size_t ratio = driver.block_size_clean() / 0x4000;
                         const size_t blob_cluster = *free_start * ratio;
@@ -504,8 +453,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Places the FlashFS root in the first free block from the cursor, saves the filesystem
-        // and records its root, version, size stamp and data blocks in the layout.
         [[nodiscard]] Result<void> place_and_save_filesystem(WriteContext& ctx,
                                                              FlashFileSystem& fs) {
             auto& driver = ctx.driver;
@@ -533,20 +480,16 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Records the JTAG programmed range and spare override, then hands the layout to the
-        // driver on NAND or writes it as the two anchor blocks on eMMC.
         [[nodiscard]] Result<void> record_spare_layout_or_anchors(WriteContext& ctx,
                                                                   const FlashImage& image) {
             auto& driver = ctx.driver;
             const auto& plan = ctx.plan;
             const auto& payloads = image.payloads;
             auto& layout = ctx.layout;
-            // The JTAG patch buffer is programmed whole, its erased tail included.
             if (plan.jtag && payloads.patchset && payloads.patchset->kind == PatchSetKind::Jtag) {
                 layout.programmed_ranges.emplace_back(plan.jtag_patch_offset(), kJtagPatchSize);
             }
-            // xeBuild's JTAG image has 0x03 0x50 in spare bytes 10 and 11 of the page holding the
-            // SMC payload, in every shape and with the same payload; nothing else stamps them.
+            // adds the hardcoded jtag spare override on the smc payload page, or writes the two anchor blocks on emmc
             if (plan.jtag && payloads.payload) {
                 layout.spare_overrides.push_back({0x200, 10, {0x03, 0x50}});
             }
@@ -559,8 +502,6 @@ namespace gxbuild3::nand {
                     cc.blobs[slot] = {mob.start_block, static_cast<uint16_t>(mob.data_size)};
                 }
 
-                // The copies are numbered 1 and 2, each given CoronaConfig::kSpan with zeros
-                // after the structure; the rest of its block stays erased.
                 for (size_t copy = 0; copy < CoronaConfig::kOffsets.size(); ++copy) {
                     cc.number = static_cast<uint32_t>(copy + 1);
                     auto cc_bytes = cc.serialize();
@@ -578,8 +519,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Purges stale mobile blocks and old FlashFS roots, then lays MobileData, the deferred
-        // FlashFileSystem, and the NAND spare layout or eMMC CoronaConfig anchors.
         [[nodiscard]] Result<void> lay_storage_area(WriteContext& ctx, const FlashImage& image) {
             auto& driver = ctx.driver;
             const size_t block_size = driver.block_size_clean();
@@ -590,8 +529,6 @@ namespace gxbuild3::nand {
             ctx.current_blk = std::max<size_t>(ctx.plan.fs_base / ctx.fs_blk_size, min_blk);
 
             if (ctx.fs) {
-                // A donor FlashImage may have been moved since parsing its filesystem.
-                // Rebind before checking allocation geometry, not just before saving.
                 ctx.fs->set_driver(&driver);
             }
 
@@ -613,8 +550,6 @@ namespace gxbuild3::nand {
             return record_spare_layout_or_anchors(ctx, image);
         }
 
-        // xeBuild programs the bytes after each JTAG window item zero, up to the next item or the
-        // end of the 16 KiB block that holds the item's end.
         [[nodiscard]] Result<void> zero_fill(Driver& driver, size_t from, size_t to) {
             if (from >= to) {
                 return {};
@@ -627,9 +562,6 @@ namespace gxbuild3::nand {
                              (end + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize);
         }
 
-        // Lays the patch set: the JTAG patch buffer in the window or the KHV payload in the
-        // patch slot, after its missing-KHV and capacity checks, then the JTAG buffer's zero and
-        // erased tail or the glitch slot's zero fill. Overlap checks already ran in payload_layout().
         [[nodiscard]] Result<void> lay_patch_payload(WriteContext& ctx, const Payloads& payloads) {
             auto& driver = ctx.driver;
             const auto& plan = ctx.plan;
@@ -659,13 +591,12 @@ namespace gxbuild3::nand {
                 !laid) {
                 return laid;
             }
+            // pads the end of the patch payload with zeros up to the 16kb boundary and leaves the rest of the slot 0xFF
             if (payloads.patchset->kind == PatchSetKind::Jtag) {
                 const size_t patch_end = patch_offset + patch_bytes.size();
                 const size_t block_end =
                     (patch_end + kLayBlockSize - 1) / kLayBlockSize * kLayBlockSize;
                 const size_t region_end = patch_offset + patch_capacity;
-                // The patch buffer is programmed whole: zero to the end of its block, then
-                // erased bytes, written as pages, up to its fixed length.
                 if (auto filled = zero_fill(driver, patch_end, block_end); !filled) {
                     return filled;
                 }
@@ -678,8 +609,6 @@ namespace gxbuild3::nand {
                     }
                 }
             } else {
-                // xeBuild programs the rest of the patch slot's first 0x4000 bytes zero after the
-                // KHV terminator; the slot past them stays erased.
                 const size_t khv_end = patch_offset + patch_bytes.size();
                 const size_t zero_end = size_t(plan.patch_slot_offset()) + kLayBlockSize;
                 if (khv_end < zero_end) {
@@ -691,14 +620,9 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Lays the payloads after the filesystem, in this order: the erased glitch patch slot
-        // (which drops a donor's CF/CG header and stale bytes from the owned overlay), the SMC
-        // payload, the rebooter with its JTAG zero fill, the virtual fuses, XeLL and the patch
-        // set. Later writes land over the erased overlay and the zero fills.
         [[nodiscard]] Result<void> lay_payloads(WriteContext& ctx, const Payloads& payloads) {
             auto& driver = ctx.driver;
             const auto& plan = ctx.plan;
-            // Direct parsed images retain a recovered patchset, so it is rewritten below.
             if (plan.glitch && payloads.patchset) {
                 const std::vector<uint8_t> erased_overlay(plan.slot_stride, 0xFF);
                 if (auto laid = write_or_fail(driver, plan.patch_slot_offset(), erased_overlay,
@@ -751,9 +675,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // The JTAG second CB/CD live in the window tail, directly past the fixed-size XeLL; the
-        // bytes after the chain are zero to the end of its 16 KiB block. Each stage is
-        // serialized once, for its write and for the chain end.
         [[nodiscard]] Result<void> lay_jtag_extra_chain(WriteContext& ctx,
                                                         const Payloads& payloads) {
             auto& driver = ctx.driver;
@@ -794,8 +715,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Writes each [rawpatch] as it is at its clean offset, in order, after a check that it
-        // stays inside the `clean_size`-byte image.
         [[nodiscard]] Result<void> apply_raw_patches(Driver& driver,
                                                      const std::vector<InputRawPatch>& raw_patches,
                                                      size_t clean_size) {
@@ -814,8 +733,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Removes any donor CF/CG header and stale bytes from the owned overlay, then lays the
-        // payloads, the JTAG second chain and, last, the raw patches.
         [[nodiscard]] Result<void> lay_payloads_and_patches(WriteContext& ctx,
                                                             const FlashImage& image) {
             if (auto laid = lay_payloads(ctx, image.payloads); !laid) {
@@ -882,7 +799,6 @@ namespace gxbuild3::nand {
         if (auto laid = write_to_driver(); !laid) {
             return std::unexpected(std::move(laid.error()));
         }
-        // The mutable serialize() stamps the spare layout write_to_driver recorded.
         return flash_driver.serialize();
     }
 

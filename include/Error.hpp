@@ -1,17 +1,5 @@
 #pragma once
 
-// Shared error vocabulary for gxbuild3.
-//
-// Policy:
-//  - Every fallible library function returns Result<T> and is marked [[nodiscard]].
-//  - std::optional means real absence (a lookup that found nothing), never failure.
-//  - A function that returns an Error does not log it. The boundary that consumes the
-//    Error (public entry points, the CLI resolver, main) logs or prints it once.
-//  - As an Error travels up, callers add context with with_context() or add_context().
-//    The domain (STFS, CF, KV, ...) lives in the context chain, not in the code.
-//
-// This header is std-only on purpose so any internal header can include it.
-
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -72,7 +60,6 @@ namespace gxbuild3 {
     struct [[nodiscard]] Error {
         ErrorCode code = ErrorCode::Internal;
         std::string message;
-        // Stored innermost first: each add_context() appends an outer layer.
         std::vector<std::string> context;
 
         Error() = default;
@@ -89,7 +76,6 @@ namespace gxbuild3 {
             return std::move(*this);
         }
 
-        // Renders "outer: inner: message". An empty message falls back to the code name.
         [[nodiscard]] std::string describe() const {
             std::string text;
             for (auto it = context.rbegin(); it != context.rend(); ++it) {
@@ -107,7 +93,6 @@ namespace gxbuild3 {
 
     template <class T = void> using Result = std::expected<T, Error>;
 
-    // Builds a failed Result: `return fail(ErrorCode::Truncated, "need {} bytes", n);`
     template <class... Args>
     [[nodiscard]] std::unexpected<Error> fail(ErrorCode code, std::format_string<Args...> format,
                                               Args&&... args) {
@@ -115,7 +100,6 @@ namespace gxbuild3 {
                                       std::format(format, std::forward<Args>(args)...));
     }
 
-    // Adds a context layer on the error path; a successful Result passes through unchanged.
     template <class T> [[nodiscard]] Result<T> with_context(Result<T>&& result, std::string layer) {
         if (!result) {
             result.error().add_context(std::move(layer));
@@ -123,7 +107,6 @@ namespace gxbuild3 {
         return std::move(result);
     }
 
-    // Converts the error_code of a non-throwing <filesystem> overload into an Error.
     [[nodiscard]] inline std::unexpected<Error> from_error_code(const std::error_code& error,
                                                                 const std::filesystem::path& path) {
         const auto code = error == std::errc::no_such_file_or_directory ? ErrorCode::NotFound

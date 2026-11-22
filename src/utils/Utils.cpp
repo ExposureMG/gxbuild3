@@ -19,9 +19,6 @@ namespace gxbuild3::utils {
 
     namespace {
 
-        // Builds the Error for a stream that failed to open, from the errno the open left
-        // behind. std::fstream does not promise to set errno, so a zero errno falls back to a
-        // generic message.
         std::unexpected<Error> open_failure(const fs::path& path, int saved_errno,
                                             std::string_view action) {
             if (saved_errno != 0) {
@@ -86,7 +83,6 @@ namespace gxbuild3::utils {
                    static_cast<std::streamsize>(data.size()));
         file.flush();
         file.close();
-        // failbit and badbit are sticky, so this covers the write, the flush and the close.
         if (file.fail()) {
             return fail(ErrorCode::IoError, "{}: could not write {} bytes", path.string(),
                         data.size());

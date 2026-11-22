@@ -28,8 +28,6 @@ namespace gxbuild3::nand {
                 initial_size = 17301504;
                 break;
             case ImageSize::Emmcblock:
-                // 0xC00 blocks of 0x4000: the front 48 MB of the eMMC. The anchors, the
-                // SMC config and data_block_limit() are all counted from this length.
                 initial_size = 0xC00 * 0x4000;
                 break;
             case ImageSize::Bigordevkit:
@@ -39,6 +37,7 @@ namespace gxbuild3::nand {
 
         m_nand_image.assign(initial_size, 0);
 
+        // stamps initial block ids and 0xFF good-block markers into the spare area of every block
         if (m_page_size == 528) {
             std::vector<uint8_t> spare(16, 0);
             spare[m_driver_mode == DriverMode::Big ? 0 : 5] = 0xFF;
@@ -85,6 +84,7 @@ namespace gxbuild3::nand {
         return detect_image_size(image.size());
     }
 
+    // checks block 1's spare bytes to figure out if this is small block, new small block, or big block
     Driver::DriverMode Driver::detect_driver_mode(std::span<const uint8_t> image) {
         if (image.size() < 0x4410 || image.size() % 528 != 0) {
             return DriverMode::Emmc;
@@ -92,25 +92,16 @@ namespace gxbuild3::nand {
 
         const uint8_t* p20_spare = image.data() + 0x4400;
 
-        // check XSB / spare type 0
-        // block_id: low byte at spare[0], high nibble at spare[1]
-        // bad block marker at spare[5]
         uint16_t xsb_block = static_cast<uint16_t>(p20_spare[0] | ((p20_spare[1] & 0x0F) << 8));
         if (xsb_block == 1 && p20_spare[5] == 0xFF) {
             return DriverMode::Small;
         }
 
-        // check PSB / spare type 1
-        // block_id: low byte at spare[1], high nibble at spare[2]
-        // bad block marker at spare[5]
         uint16_t psb_block = static_cast<uint16_t>(p20_spare[1] | ((p20_spare[2] & 0x0F) << 8));
         if (psb_block == 1 && p20_spare[5] == 0xFF) {
             return DriverMode::NewSmall;
         }
 
-        // check bb / spare type 2
-        // block_id: low byte at spare[1], high nibble at spare[2]
-        // bad block marker at spare[0]
         if (image.size() >= 0x21210) {
             const uint8_t* p100_spare = image.data() + 0x21200;
             uint16_t bb_block =
@@ -120,7 +111,6 @@ namespace gxbuild3::nand {
             }
         }
 
-        // fallback check bb / spare type 2 if bigger then 16mb
         if (image.size() > 17301504) {
             return DriverMode::Big;
         }
@@ -164,6 +154,7 @@ namespace gxbuild3::nand {
         return pages_per_block() * m_page_size;
     }
 
+    // stops filesystem allocations before the reserved settings, anchor, and remap blocks at the top of the image
     size_t Driver::data_block_limit() const {
         const size_t total_blocks = block_count();
         size_t smc_reserve_block = 0;
@@ -176,8 +167,6 @@ namespace gxbuild3::nand {
                 break;
             case DriverMode::Small:
             case DriverMode::NewSmall:
-                // The last 1/32 of a 64 MB devkit image, 0xF80 of 0x1000 blocks, as of a
-                // 16 MB one.
                 smc_reserve_block = total_blocks > 0x400 ? total_blocks - total_blocks / 32 : 0x3E0;
                 break;
         }
@@ -359,6 +348,7 @@ namespace gxbuild3::nand {
             return meta;
         }
 
+        // unpacks the spare area bytes, which have slightly different byte layouts across xsb, psb, and big block
         if (m_driver_mode == DriverMode::Big) {
             meta.is_bad = is_bad_block(first_page / pages_per_block());
             meta.logical_block_id = static_cast<uint16_t>(((spare[2] & 0x0F) << 8) | spare[1]);
@@ -368,8 +358,6 @@ namespace gxbuild3::nand {
             meta.block_type = spare[0xC] & 0x3F;
             meta.page_count = spare[0x9];
         } else if (m_driver_mode == DriverMode::NewSmall) {
-            // PSB/NewSmall/spare type 1
-            // sequence byte 0 at spare[0]
             meta.is_bad = is_bad_block(first_page / pages_per_block());
             meta.logical_block_id = static_cast<uint16_t>(((spare[2] & 0x0F) << 8) | spare[1]);
             meta.sequence = static_cast<uint32_t>(spare[0] | (spare[3] << 8) | (spare[4] << 16) |
@@ -378,8 +366,6 @@ namespace gxbuild3::nand {
             meta.block_type = spare[0xC] & 0x3F;
             meta.page_count = spare[0x9];
         } else {
-            // XSB/SmallBlock/spare type 0
-            // sequence byte 0 at spare[2]
             meta.is_bad = is_bad_block(first_page / pages_per_block());
             meta.logical_block_id = static_cast<uint16_t>(((spare[1] & 0x0F) << 8) | spare[0]);
             meta.sequence = static_cast<uint32_t>(spare[2] | (spare[3] << 8) | (spare[4] << 16) |
@@ -392,10 +378,7 @@ namespace gxbuild3::nand {
         return meta;
     }
 
-    // The chip's mark is read where xeBuild reads it: on a block's first page and on the page
-    // halfway through it, 0 and 16 of a small block's 32 pages and 0 and 128 of a big block's
-    // 256. Other pages carry other fields at that byte; a big block's filesystem pages hold
-    // zero there.
+    // checks the bad-block marker on both the first and middle page of the erase block
     bool Driver::is_bad_block(size_t block_idx) const {
         if (m_driver_mode == DriverMode::Emmc) {
             return false;
@@ -467,7 +450,6 @@ namespace gxbuild3::nand {
         }
 
         for (size_t p = 0; p < page_count; ++p) {
-            // The bad-block mark lives on a block's first page and the page halfway through.
             const size_t page_in_block = (first_page + p) % pages_per_block();
             const bool mark_page = page_in_block == 0 || page_in_block == pages_per_block() / 2;
             auto current_spare = read_page_spare(first_page + p);
@@ -492,10 +474,6 @@ namespace gxbuild3::nand {
                 spare_data[9] = meta.page_count;
                 spare_data[0xC] = meta.block_type & 0x3F;
             } else if (m_driver_mode == DriverMode::NewSmall) {
-                // PSB/NewSmall/spare type 1
-                // block_id: low byte at spare[1], high nibble at spare[2]
-                // sequence byte 0 at spare[0]
-                // bad block marker at spare[5]
                 if (meta.is_bad && mark_page) {
                     spare_data[5] = 0x00;
                 } else if (!meta.is_bad && mark_page) {
@@ -511,10 +489,6 @@ namespace gxbuild3::nand {
                 spare_data[9] = meta.page_count;
                 spare_data[0xC] = meta.block_type & 0x3F;
             } else {
-                // XSB/Small layout (spare type 0):
-                //   block_id: low byte at spare[0], high nibble at spare[1]
-                //   sequence byte 0 at spare[2]
-                //   bad block marker at spare[5]
                 if (meta.is_bad && mark_page) {
                     spare_data[5] = 0x00;
                 } else if (!meta.is_bad && mark_page) {
@@ -533,8 +507,6 @@ namespace gxbuild3::nand {
 
             spare_data[0x7] = static_cast<uint8_t>(meta.fs_size & 0xFF);
             spare_data[0x8] = static_cast<uint8_t>((meta.fs_size >> 8) & 0xFF);
-            // The FsUnused nibble beside the block ID's high bits and FsUnused bytes 0xA-0xB
-            // are zero on every programmed page.
             spare_data[0xA] = 0;
             spare_data[0xB] = 0;
 
@@ -590,9 +562,7 @@ namespace gxbuild3::nand {
         size_t offintopage = offset % 512;
         size_t pageinimage = offset / 512;
 
-        // Fast path: the whole range sits inside one page's clean 512 bytes,
-        // so it maps to a single contiguous raw run with no spare bytes
-        // inside it — safe to return a span straight into m_nand_image.
+        // returns a direct span if the read stays within one 512-byte page, otherwise de-interleaves spare bytes into scratch.
         if (offintopage + length <= 512) {
             size_t raw_pos = pageinimage * m_page_size + offintopage;
             if (raw_pos + length > m_nand_image.size()) {
@@ -601,10 +571,6 @@ namespace gxbuild3::nand {
             return {m_nand_image.data() + raw_pos, length};
         }
 
-        // Slow path: the range crosses one or more 16-byte spare gaps, so it
-        // has no contiguous representation in m_nand_image. De-interleave it
-        // into the scratch buffer (same logic as read_clean) and return a
-        // span into that. Valid until the next call that repopulates it.
         m_offset_scratch = read_clean(offset, length);
         if (m_offset_scratch.size() != length) {
             return {};
@@ -646,6 +612,7 @@ namespace gxbuild3::nand {
     }
 
     namespace {
+        // cursed bit-by-bit ecc calculation for the 528-byte nand page spare
         void calculate_edc(uint8_t* page_raw) {
             uint8_t* spare = page_raw + 0x200;
 
@@ -699,7 +666,6 @@ namespace gxbuild3::nand {
                     meta.block_type =
                         big_block ? FlashFsMetadata::kRootTypeBig : FlashFsMetadata::kRootTypeSmall;
                     meta.sequence = m_layout.fs_version;
-                    // A small-block root states no size, as real dumps and xeBuild leave it.
                     meta.fs_size =
                         big_block ? m_layout.big_fs_size.value_or(FlashFsMetadata::kBigFsSize) : 0;
                     meta.page_count = big_block ? FlashFsMetadata::kBigPageCount : 0;
@@ -720,9 +686,7 @@ namespace gxbuild3::nand {
                         is_mobile = true;
                     }
 
-                    // Below 0x50, pages outside the FlashFS files get a type-0 stamp,
-                    // except pages holding erased (all-0xFF) data: those stay unprogrammed,
-                    // with an erased spare.
+                    // pages in the first 0x50 blocks that aren't all 0xFF get a type-0 system spare stamp
                     const bool stamp_low_block =
                         !is_mobile && blk < 0x50 &&
                         std::find(m_layout.fs_data_blocks.begin(), m_layout.fs_data_blocks.end(),

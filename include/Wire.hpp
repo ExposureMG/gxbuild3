@@ -1,30 +1,5 @@
 #pragma once
 
-// Binary wire format primitives: "the struct is the wire layout".
-//
-// Every fixed-size on-disk record is a plain struct (no #pragma pack) whose members are only
-// uint8_t/char arrays, the endian field types below (be16/be32/be64, le16/le32/le64, be24/le24)
-// or other wire structs. Each of those has alignof 1, so sizeof and offsetof are the on-disk size
-// and offsets, and the struct holds its fields in on-disk byte order. Fields read as host integers
-// (implicit conversion or .get()) and assign from host integers (operator= or .set()).
-//
-// Bytes enter and leave a record only through read, read_head, write, patch, append, encode,
-// bytes_of or Cursor::take. A record is a lossless codec: nothing here validates or normalises
-// a value, so ciphertext headers survive a read followed by a write unchanged.
-//
-// Every bounds check has the form `offset > size || size - offset < n`, so it cannot wrap. A short
-// read fails with ErrorCode::Truncated and a short write with ErrorCode::OutOfRange; the message
-// names the record (`what`) and the offset. The caller adds its own context with with_context()
-// and never logs the error (include/Error.hpp policy).
-//
-// Assignment from a wider type narrows silently (-Wconversion is off): cast explicitly, as in
-// `h.size = static_cast<uint32_t>(n);`. `auto x = h.size` yields a be32, not a host integer; use a
-// typed local or .get(), and use .get() before passing a field to a deduced template such as
-// std::max. A manual bswap16/32/64 on a field is a compile error (deleted overloads at
-// the end of this header), as is std::byteswap, compound assignment and `be32 v = 5u`.
-//
-// This header is std-only (plus Error.hpp) on purpose so any internal header can include it.
-
 #include "Error.hpp"
 
 #include <array>
@@ -47,7 +22,6 @@ namespace gxbuild3::wire {
 
     namespace detail {
 
-        // Decodes N bytes stored in byte order E. Independent of the host byte order.
         template <std::unsigned_integral T, std::endian E, std::size_t N>
         [[nodiscard]] constexpr T load(const std::array<std::uint8_t, N>& bytes) noexcept {
             T value = 0;
@@ -58,7 +32,6 @@ namespace gxbuild3::wire {
             return value;
         }
 
-        // Encodes the low N bytes of value in byte order E.
         template <std::unsigned_integral T, std::endian E, std::size_t N>
         constexpr void store(std::array<std::uint8_t, N>& bytes, T value) noexcept {
             for (std::size_t i = 0; i < N; ++i) {
@@ -68,7 +41,6 @@ namespace gxbuild3::wire {
             }
         }
 
-        // True when n bytes fit at offset inside size bytes; written so it cannot wrap.
         [[nodiscard]] constexpr bool fits(std::size_t size, std::size_t offset,
                                           std::size_t n) noexcept {
             return offset <= size && size - offset >= n;
@@ -79,7 +51,6 @@ namespace gxbuild3::wire {
             return offset > size ? 0 : size - offset;
         }
 
-        // `at` is the absolute offset reported to the user; `left` the bytes available there.
         [[nodiscard]] inline std::unexpected<Error>
         short_read(std::string_view what, std::size_t need, std::size_t at, std::size_t left) {
             return fail(ErrorCode::Truncated,
@@ -96,15 +67,13 @@ namespace gxbuild3::wire {
 
     } // namespace detail
 
-    // An unsigned integer of type T stored in byte order E, with alignment 1.
+    // unaligned integer wrapper that stores its bytes in big or little endian on disk
     template <std::unsigned_integral T, std::endian E> class endian_int {
       public:
         using value_type = T;
         static constexpr std::endian byte_order = E;
 
-        // Trivial: `X x{};` zero-fills, `X x;` is uninitialised like any scalar.
         endian_int() noexcept = default;
-        // Explicit so `c ? h.f : 0xFF4F` stays unambiguous and `be32 v = 5u;` does not compile.
         constexpr explicit endian_int(T value) noexcept { set(value); }
 
         constexpr endian_int& operator=(T value) noexcept {
@@ -116,10 +85,8 @@ namespace gxbuild3::wire {
 
         constexpr void set(T value) noexcept { detail::store<T, E>(m_bytes, value); }
 
-        // Implicit so ==, <, &, switch and arithmetic read the host value.
         constexpr operator T() const noexcept { return get(); }
 
-        // The stored bytes, in on-disk order.
         [[nodiscard]] constexpr const std::array<std::uint8_t, sizeof(T)>& raw() const noexcept {
             return m_bytes;
         }
@@ -135,8 +102,7 @@ namespace gxbuild3::wire {
     using le32 = endian_int<std::uint32_t, std::endian::little>;
     using le64 = endian_int<std::uint64_t, std::endian::little>;
 
-    // A 24-bit unsigned integer stored in byte order E (STFS block numbers and table fields).
-    // Same surface as endian_int with a uint32_t host value; set() keeps the low 24 bits.
+    // 24-bit integer stored in 3 bytes for stfs block numbers
     template <std::endian E> class uint24 {
       public:
         using value_type = std::uint32_t;
@@ -176,8 +142,7 @@ namespace gxbuild3::wire {
     static_assert(alignof(be16) == 1 && alignof(be32) == 1 && alignof(be64) == 1 &&
                   alignof(be24) == 1);
 
-    // fmt (spdlog) finds these by ADL; std::format uses the std::formatter specialisations at the
-    // end of this header.
+    // hook for spdlog/fmt to format wire integers without explicit casts
     template <class T, std::endian E> constexpr T format_as(endian_int<T, E> value) noexcept {
         return value.get();
     }
@@ -186,7 +151,6 @@ namespace gxbuild3::wire {
         return value.get();
     }
 
-    // A type whose object representation is its on-disk image.
     template <class T>
     concept WireLayout = std::is_trivially_copyable_v<T> && std::is_standard_layout_v<T> &&
                          alignof(T) == 1 && std::has_unique_object_representations_v<T>;
@@ -194,9 +158,6 @@ namespace gxbuild3::wire {
     static_assert(WireLayout<be16> && WireLayout<be32> && WireLayout<be64> && WireLayout<le16> &&
                   WireLayout<le32> && WireLayout<le64> && WireLayout<be24> && WireLayout<le24>);
 
-    // ---- Records -------------------------------------------------------------------------------
-
-    // Reads a T at offset. Fails with Truncated when it does not fit.
     template <WireLayout T>
     [[nodiscard]] Result<T> read(std::span<const std::uint8_t> bytes, std::size_t offset,
                                  std::string_view what) {
@@ -209,8 +170,6 @@ namespace gxbuild3::wire {
         return std::bit_cast<T>(image);
     }
 
-    // A record read from the front of a span, plus the bytes after it. `rest` borrows the
-    // caller's storage.
     template <WireLayout T> struct Head {
         T value;
         std::span<const std::uint8_t> rest;
@@ -226,7 +185,6 @@ namespace gxbuild3::wire {
         return Head<T>{*value, bytes.subspan(sizeof(T))};
     }
 
-    // Writes value at offset. Fails with OutOfRange when it does not fit; out is then untouched.
     template <WireLayout T>
     [[nodiscard]] Result<void> write(std::span<std::uint8_t> out, std::size_t offset,
                                      const T& value, std::string_view what) {
@@ -238,12 +196,9 @@ namespace gxbuild3::wire {
         return {};
     }
 
-    // Read-modify-write of the T at offset: edit(T&) changes the decoded record and the result is
-    // written back. Fails with Truncated (edit is not called) when the record does not fit.
     template <WireLayout T, std::invocable<T&> Edit>
     [[nodiscard]] Result<void> patch(std::span<std::uint8_t> bytes, std::size_t offset,
                                      std::string_view what, Edit&& edit) {
-        // The bounds check sits beside the write-back so the compiler sees the store guarded.
         if (!detail::fits(bytes.size(), offset, sizeof(T))) {
             return detail::short_read(what, sizeof(T), offset,
                                       detail::available(bytes.size(), offset));
@@ -257,7 +212,6 @@ namespace gxbuild3::wire {
         return {};
     }
 
-    // The on-disk image of value.
     template <WireLayout T>
     [[nodiscard]] constexpr std::array<std::uint8_t, sizeof(T)> encode(const T& value) noexcept {
         return std::bit_cast<std::array<std::uint8_t, sizeof(T)>>(value);
@@ -270,32 +224,23 @@ namespace gxbuild3::wire {
         std::memcpy(out.data() + at, image.data(), sizeof(T));
     }
 
-    // A view of value's bytes; valid as long as value is.
     template <WireLayout T>
     [[nodiscard]] std::span<const std::uint8_t, sizeof(T)> bytes_of(const T& value) noexcept {
         return std::span<const std::uint8_t, sizeof(T)>(
             reinterpret_cast<const std::uint8_t*>(&value), sizeof(T));
     }
 
-    // Views std::byte storage (STFS buffers) as the uint8_t spans the functions above take.
     [[nodiscard]] inline std::span<const std::uint8_t>
     as_u8(std::span<const std::byte> bytes) noexcept {
         return {reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()};
     }
 
-    // ---- Streams -------------------------------------------------------------------------------
-
-    // A forward reader over variable-length data. Every take is checked and returns a Result;
-    // there is no sticky state: a failed take leaves the position unchanged and later takes are
-    // checked on their own. Error messages give the absolute offset, base + position. Spans the
-    // cursor hands out borrow the caller's storage.
     class Cursor {
       public:
         constexpr explicit Cursor(std::span<const std::uint8_t> bytes,
                                   std::size_t base = 0) noexcept
             : m_bytes(bytes), m_base(base) {}
 
-        // Absolute offset of the next byte: base + position.
         [[nodiscard]] constexpr std::size_t offset() const noexcept { return m_base + m_position; }
         [[nodiscard]] constexpr std::size_t remaining() const noexcept {
             return m_bytes.size() - m_position;
@@ -329,8 +274,6 @@ namespace gxbuild3::wire {
             return {};
         }
 
-        // A cursor over the next n bytes, based at their absolute offset; this cursor advances
-        // past them.
         [[nodiscard]] Result<Cursor> sub(std::size_t n, std::string_view what) {
             const std::size_t start = offset();
             auto bytes = take_bytes(n, what);
@@ -340,7 +283,6 @@ namespace gxbuild3::wire {
             return Cursor(*bytes, start);
         }
 
-        // The bytes taken so far: [0, position).
         [[nodiscard]] std::span<const std::uint8_t> consumed() const noexcept {
             return m_bytes.first(m_position);
         }
@@ -375,10 +317,7 @@ namespace std {
 
 namespace gxbuild3 {
 
-    // A manual swap on a wire field is a compile error, not a silent double swap: the legacy
-    // bswap16/32/64 helpers are gone, and these deleted overloads keep the names from coming back
-    // for a wire field (they would win as an exact match over a uint*_t helper reached through a
-    // user-defined conversion).
+    // blocks calling manual byte-swap helpers on wire fields.
     template <class T, std::endian E> void bswap16(wire::endian_int<T, E>) = delete;
     template <class T, std::endian E> void bswap32(wire::endian_int<T, E>) = delete;
     template <class T, std::endian E> void bswap64(wire::endian_int<T, E>) = delete;

@@ -100,7 +100,6 @@ namespace gxbuild3::stfs {
 
     Result<void> StfsContainer::extract_all(const std::filesystem::path& target_dir,
                                             Verify verify) const {
-        // Validate every destination before writing anything.
         const auto destinations = detail::plan_destinations(entries_, target_dir);
         if (!destinations) {
             return std::unexpected(destinations.error());

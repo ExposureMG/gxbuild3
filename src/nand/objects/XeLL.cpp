@@ -29,6 +29,7 @@ namespace gxbuild3::nand {
                    day <= 31;
         }
 
+        // scrapes the binary for a YYYY-MM-DD date string and pulls the version and author from the text around it
         void extract_metadata(std::span<const uint8_t> bytes, XeLLMetadata& meta) {
             std::string_view raw(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 
@@ -106,7 +107,7 @@ namespace gxbuild3::nand {
                         "XeLL is 0x{:X} bytes, expected 0x{:X}", bytes.size(), kSize);
         }
 
-        // NAND XeLL starts with PPC exception-vector branches, not an ELF container.
+        // checks that the image starts with either ppc exception vector branches or an elf header
         constexpr uint8_t raw_entry[] = {0x48, 0, 0, 0x20, 0x48, 0, 0, 0xEC,
                                          0x48, 0, 0, 0,    0x48, 0, 0, 0};
         if (!std::equal(std::begin(raw_entry), std::end(raw_entry), bytes.begin()) &&

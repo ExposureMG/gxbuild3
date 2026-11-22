@@ -25,7 +25,6 @@ namespace gxbuild3::stfs {
         wire::Cursor cursor(wire::as_u8(data));
 
         for (std::size_t i = 0; i < entry_count; ++i) {
-            // Cannot fail: the size check above makes every entry fit.
             const auto taken = cursor.take<stfs_file_table_entry>("STFS file table entry");
             if (!taken) {
                 return std::unexpected(taken.error());
@@ -35,9 +34,7 @@ namespace gxbuild3::stfs {
             const std::uint8_t flags = e.flags;
             const std::uint8_t name_length = flags & 0x3F;
 
-            // The listing ends with an all-zero entry. An entry with no name length cannot name
-            // a file either, so it ends the listing as well: skipping it instead would shift the
-            // table positions that later entries' parent indexes refer to.
+            // stops parsing the file table as soon as it hits an entry with a zero name length
             if (name_length == 0) {
                 break;
             }
@@ -46,7 +43,6 @@ namespace gxbuild3::stfs {
                             "file table entry {} has a name longer than its 40-byte field", i);
             }
 
-            // Names are not NUL-terminated, but tolerate NUL padding inside the stated length.
             std::string_view name(e.name, name_length);
             name = name.substr(0, name.find('\0'));
             if (name.empty()) {

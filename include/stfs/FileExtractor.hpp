@@ -11,7 +11,6 @@
 
 namespace gxbuild3::stfs {
 
-    // Logical blocks reached from `starting_block` through the level-0 hash chain.
     [[nodiscard]] Result<std::vector<std::uint32_t>>
     follow_block_chain(std::span<const std::byte> package, std::uint32_t starting_block,
                        std::uint32_t header_size);

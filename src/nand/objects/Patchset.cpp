@@ -110,8 +110,7 @@ namespace gxbuild3::nand {
                                                   : PatchSectionTarget::Cbb;
         }
 
-        // The KHV payload ends with the section delimiter when the file was written whole; drop
-        // it so an add-on can be appended before serialize_khv_payload puts it back.
+        // strips the trailing 0xFFFFFFFF delimiter from the raw khv bytes
         void trim_khv_tail(std::vector<uint8_t>& raw) {
             if (raw.size() < sizeof(uint32_t)) {
                 return;
@@ -151,8 +150,6 @@ namespace gxbuild3::nand {
             return sections;
         }
 
-        // The delimiter-count gate scans every aligned word, so it can disagree with the entry
-        // cursor on a 0xFFFFFFFF data word; both are kept as they are.
         [[nodiscard]] Result<std::vector<ParsedPatchSection>>
         parse_glitch_patch_set(std::span<const uint8_t> data, BuildType buildType) {
             const auto glitchSections = split_raw_sections(data);
@@ -204,8 +201,6 @@ namespace gxbuild3::nand {
 
         ParsedPatchSet parsed;
         parsed.kind = *patchSetKind;
-        // A devgl image reads the glitch2m patch file and lays its patch slot the same way:
-        // fuses first, the KHV payload at 0x60.
         parsed.manufacturing = buildType == BuildType::Glitch2m || buildType == BuildType::Devgl;
 
         auto sections = *patchSetKind == PatchSetKind::Jtag

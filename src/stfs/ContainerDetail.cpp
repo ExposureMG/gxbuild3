@@ -9,12 +9,10 @@
 
 namespace gxbuild3::stfs::detail {
 
+    // extracts the file table by faking a FileEntry for it, and bails if bit 0 of block_separation isn't set
     Result<std::vector<std::byte>> read_file_table(std::span<const std::byte> package,
                                                    std::uint32_t header_size,
                                                    const StfsVolumeDescriptor& descriptor) {
-        // Bit 0 set marks the read-only layout (one hash table per level), which is what system
-        // update and other Microsoft-signed packages use. The writable layout keeps two tables
-        // per level and places blocks differently; it is not implemented.
         if ((descriptor.block_separation & 0x01) == 0) {
             return fail(ErrorCode::Unsupported,
                         "STFS packages with block_separation bit 0 clear are not supported");
@@ -25,7 +23,7 @@ namespace gxbuild3::stfs::detail {
 
         FileEntry table_entry{};
         table_entry.name = "$filetable";
-        table_entry.flags = 0; // follow the hash chain
+        table_entry.flags = 0;
         table_entry.blocks_allocated =
             static_cast<std::uint32_t>(descriptor.file_table_block_count);
         table_entry.blocks_allocated_copy = table_entry.blocks_allocated;
@@ -55,6 +53,7 @@ namespace gxbuild3::stfs::detail {
         return {};
     }
 
+    // reconstructs full file paths from parent directory indices, requiring parents to appear before their children
     Result<std::vector<std::filesystem::path>>
     build_entry_paths(const std::vector<FileEntry>& entries) {
         constexpr std::uint16_t kRootIndicator = 0xFFFF;

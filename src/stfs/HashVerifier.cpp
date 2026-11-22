@@ -18,7 +18,6 @@ namespace gxbuild3::stfs {
 
         using Digest = std::array<std::byte, 0x14>;
 
-        // Checks that the 4 KiB block at `offset` is inside the package and hashes to `expected`.
         [[nodiscard]] Result<void> check_block_hash(std::span<const std::byte> package,
                                                     std::uint64_t offset, const Digest& expected,
                                                     std::string_view what) {
@@ -38,7 +37,6 @@ namespace gxbuild3::stfs {
             return {};
         }
 
-        // The hash stored for `block_number` in its level-N hash table.
         [[nodiscard]] Result<Digest> read_level_hash(std::span<const std::byte> package,
                                                      std::uint32_t block_number, int level,
                                                      std::uint32_t header_size) {
@@ -63,6 +61,7 @@ namespace gxbuild3::stfs {
 
     } // namespace
 
+    // walks from the top hash table down to level 0 and verifies the sha1 hash at every step
     Result<void> verify_data_block(std::span<const std::byte> package, std::uint32_t block,
                                    std::uint32_t header_size,
                                    const std::array<std::byte, 0x14>& top_hash,
@@ -71,7 +70,6 @@ namespace gxbuild3::stfs {
             return fail(ErrorCode::InvalidArgument, "total_blocks required for hash verification");
         }
 
-        // The top hash covers the highest hash table level the package needs.
         Digest expected = top_hash;
         const int top_level = total_blocks > kDataBlocksPerHashLevel[1]   ? 2
                               : total_blocks > kDataBlocksPerHashLevel[0] ? 1

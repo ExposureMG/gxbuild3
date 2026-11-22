@@ -14,15 +14,11 @@ namespace gxbuild3::nand {
       public:
         sc_header header;
         std::vector<uint8_t> data;
-        // Runtime key handed to SD: HMAC(secret, nonce). header.key retains the on-disk nonce.
         std::optional<std::array<uint8_t, 16>> derived_key;
         bool decrypted = false;
 
-        // Fails when the bytes or the declared size cannot hold sc_header.
         [[nodiscard]] static Result<BootloaderSc> parse(std::span<const uint8_t> bytes);
 
-        // The secret is sixteen zero bytes on every console (kZeroSecret). Each is a no-op when
-        // the stage is already in the requested state, and fails before touching the payload.
         [[nodiscard]] Result<void> decrypt(const uint8_t secret[16]);
         [[nodiscard]] Result<void> encrypt(const uint8_t secret[16]);
 

@@ -96,7 +96,6 @@ namespace gxbuild3::nand {
         uint8_t b38CardeaCertificate[0x2108];
     };
 
-    // The keyvault records as the console stores them, big-endian (see include/Wire.hpp).
     static_assert(wire::WireLayout<CONSOLE_PUBLIC_KEY> && sizeof(CONSOLE_PUBLIC_KEY) == 0x84);
     static_assert(wire::WireLayout<XE_CONSOLE_CERTIFICATE> &&
                   sizeof(XE_CONSOLE_CERTIFICATE) == 0x1A8);
@@ -121,8 +120,6 @@ namespace gxbuild3::nand {
         std::string message;
     };
 
-    // Sixteen zero bytes: the key an image bound to no console is built under. It is accepted
-    // wherever a CPU key is, though it has no ECC.
     bool is_zero_cpu_key(std::span<const uint8_t> cpu_key);
 
     CpuKeyResult validate_cpu_key(std::span<const uint8_t> cpu_key);
@@ -130,15 +127,10 @@ namespace gxbuild3::nand {
 
     bool cpukey_valid(std::span<const uint8_t> cpu_key);
 
-    // A keyvault-style secured file, either way: RC4 over everything past the 16-byte nonce under
-    // HMAC-SHA(CPU key, nonce). InvalidArgument for a CPU key that is not 16 bytes or a file
-    // shorter than its nonce.
     [[nodiscard]] Result<> crypt_secfile(std::span<const uint8_t> cpu_key, std::span<uint8_t> data);
 
     struct Keyvault {
         static constexpr size_t kSize = 0x4000;
-        // The console's OSIG (its optical drive's identity string): 28 bytes inside the Xeika
-        // certificate.
         static constexpr size_t kOsigOffset =
             offsetof(XE_KEYVAULT_DATA, b37XeikaCertificate) + 0x122;
         static constexpr size_t kOsigLength = 28;
@@ -146,28 +138,19 @@ namespace gxbuild3::nand {
 
         XE_KEYVAULT_DATA data{};
         bool encrypted{true};
-        // Kept as raw_data untouched on serialize()/encrypt() unless reserialize is set (or
-        // raw_data does not hold kSize bytes).
         bool reserialize{false};
         std::vector<uint8_t> raw_data;
 
-        // Truncated or Malformed for anything but kSize bytes.
         [[nodiscard]] static Result<Keyvault> parse(std::span<const uint8_t> bytes);
         [[nodiscard]] static Result<Keyvault> parse(const std::vector<uint8_t>& bytes);
 
-        // No-ops when already in the requested state. On failure the keyvault is unchanged.
         [[nodiscard]] Result<> decrypt(std::span<const uint8_t> cpu_key);
         [[nodiscard]] Result<> encrypt(std::span<const uint8_t> cpu_key);
         [[nodiscard]] std::vector<uint8_t> serialize() const;
     };
 
-    // What ExtractAllInfo reports of a keyvault: its serial, DVD key, console ID (raw and as the
-    // dashboard shows it), OSIG, manufacturing date, region, type and whether it needs an
-    // fcrt.bin. Read from the keyvault as it stands, sealed or not; never fails.
     [[nodiscard]] KeyvaultSummaryInfo summarize_keyvault(const Keyvault& kv);
 
-    // InvalidArgument for an unusable CPU key or data shorter than the nonce; keyvault_decrypt
-    // fails with AuthFailed when the nonce is not the HMAC of the opened body.
     [[nodiscard]] Result<std::vector<uint8_t>> keyvault_decrypt(std::span<const uint8_t> cpu_key,
                                                                 std::span<const uint8_t> data,
                                                                 uint16_t kv_version = 0x0712);
@@ -175,24 +158,11 @@ namespace gxbuild3::nand {
                                                                 std::span<const uint8_t> data,
                                                                 uint16_t kv_version = 0x0712);
 
-    // A kv.bin supplied beside a build, in the clear: 0x4000 bytes with its nonce. A copy sealed
-    // under the CPU key (its nonce is HMAC(CPU key, body + 07 12)) is opened; any other copy is
-    // taken as already in the clear, its first 0x10 bytes a stale nonce, as xeBuild 1.21 takes it.
-    // A copy of 0x3FF0 bytes lacks the nonce and gets sixteen zero bytes in front. Malformed for
-    // any other length, InvalidArgument for an unusable CPU key.
     struct LooseKeyvault {
-        // How the copy was taken, by xeBuild's own tests (its 0x41D0E0).
         enum class Form {
-            // Sealed under the CPU key, and opened.
             Sealed,
-            // In the clear: a zero nonce or the nonce its plaintext derives. xeBuild says nothing.
             Clear,
-            // In the clear by its reserved bytes (0x38-0x8F zero), under a nonce the CPU key does
-            // not derive: another key's, or none. xeBuild warns and takes it as it stands.
             StaleNonce,
-            // Neither: it looks sealed and opens under no key it is tried under, most likely sealed
-            // for another console. xeBuild reports an error and still takes it as the keyvault in
-            // the clear; so does this.
             Unopened,
         };
         std::vector<uint8_t> plain;

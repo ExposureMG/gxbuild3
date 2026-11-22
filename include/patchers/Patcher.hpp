@@ -12,7 +12,6 @@ namespace gxbuild3::patchers {
     [[nodiscard]] Result<> apply_patch_entry(uint8_t* data, uint32_t dataSize,
                                              const nand::XePatchEntry& entry);
 
-    // Applies every entry in order. On failure the entries before the failing one stay applied.
     [[nodiscard]] Result<> apply_patch_section(uint8_t* data, uint32_t dataSize,
                                                const nand::XePatchSection& section);
 } // namespace gxbuild3::patchers

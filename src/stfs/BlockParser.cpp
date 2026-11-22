@@ -17,13 +17,13 @@ namespace gxbuild3::stfs {
         if (block > kMaxBlockNumber) {
             return fail(ErrorCode::OutOfRange, "block number 0x{:X} is out of range", block);
         }
-        // Block 0 starts at the header size rounded up to the next 4 KiB boundary.
         constexpr std::uint64_t block_size = kBlockSize;
         const std::uint64_t first_block =
             (static_cast<std::uint64_t>(header_size) + block_size - 1) & ~(block_size - 1);
         return first_block + static_cast<std::uint64_t>(block) * block_size;
     }
 
+    // calculates the physical block number of the level 0, 1, or 2 hash table covering a logical data block
     Result<std::uint32_t> compute_level_n_hash_block_number(std::uint32_t block, int level) {
         constexpr std::uint32_t per_level0 = kDataBlocksPerHashLevel[0];
         constexpr std::uint32_t per_level1 = kDataBlocksPerHashLevel[1];
@@ -54,6 +54,7 @@ namespace gxbuild3::stfs {
         return static_cast<std::uint32_t>(num) + static_cast<std::uint32_t>(kBlocksPerHashTable);
     }
 
+    // converts a logical data block index into its physical block number by adding the interleaved hash table blocks
     std::uint32_t compute_data_block_number(std::uint32_t block) {
         constexpr std::uint32_t per_level0 = kDataBlocksPerHashLevel[0];
         constexpr std::uint32_t per_level1 = kDataBlocksPerHashLevel[1];
@@ -84,7 +85,6 @@ namespace gxbuild3::stfs {
         if (!table_offset) {
             return std::unexpected(table_offset.error());
         }
-        // compute_level_n_hash_block_number has rejected any level other than 0, 1 or 2.
         std::uint32_t record = block;
         if (level > 0) {
             record /= kDataBlocksPerHashLevel[static_cast<std::size_t>(level - 1)];

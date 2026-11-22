@@ -10,8 +10,6 @@
 
 namespace gxbuild3::nand {
 
-    // ---- Split NAND settings, statistics and manufacturing blocks (wire layout) ---------------
-
     struct nand_temperature_constant {
         wire::be16 gain;
         wire::be16 offset;
@@ -34,7 +32,6 @@ namespace gxbuild3::nand {
         uint8_t structure_version;
         uint8_t config_source;
         uint8_t clock_select;
-        // Speed in percent with bit 7 (0x80) enabling override; 0x7F leaves control to the SMC.
         uint8_t cpu_fan;
         uint8_t gpu_fan;
         uint8_t pad1;
@@ -133,9 +130,6 @@ namespace gxbuild3::nand {
     static_assert(wire::WireLayout<nand_manufacturing_data> &&
                   sizeof(nand_manufacturing_data) == 0x1000);
 
-    // The 0x400-byte settings block on NAND: static settings at +0x000, secured settings at +0x200.
-    // serialize() emits raw_data untouched unless reserialize is set, in which case both records
-    // are encoded back and the LE16 checksum over [kSumStart, kSumEnd) is recomputed.
     struct SmcConfigBlock {
         static constexpr size_t kSize = 0x400;
         static constexpr size_t kStaticOffset = 0x000;
@@ -151,15 +145,11 @@ namespace gxbuild3::nand {
         [[nodiscard]] static uint16_t compute_checksum(std::span<const uint8_t> bytes) noexcept;
         [[nodiscard]] static bool checksum_valid(std::span<const uint8_t> bytes) noexcept;
 
-        // Refuses any buffer whose size is not kSize (Truncated / Malformed) or whose checksum fails
-        // (Malformed).
         [[nodiscard]] static Result<SmcConfigBlock> parse(std::span<const uint8_t> bytes);
         [[nodiscard]] static Result<SmcConfigBlock> parse(const std::vector<uint8_t>& bytes);
         [[nodiscard]] std::vector<uint8_t> serialize() const;
     };
 
-    // The 0x1000-byte statistics block on NAND (Statistics.settings): nand_xconfig_statistic at
-    // +0x000, rest erased (0xFF). serialize() emits raw_data untouched unless reserialize is set.
     struct StatisticsBlock {
         static constexpr size_t kSize = 0x1000;
 
@@ -167,15 +157,12 @@ namespace gxbuild3::nand {
         bool reserialize{false};
         std::vector<uint8_t> raw_data;
 
-        // Refuses any buffer whose size is not kSize (Truncated / Malformed).
         [[nodiscard]] static Result<StatisticsBlock> parse(std::span<const uint8_t> bytes);
         [[nodiscard]] static Result<StatisticsBlock> parse(const std::vector<uint8_t>& bytes);
         [[nodiscard]] bool erased() const noexcept;
         [[nodiscard]] std::vector<uint8_t> serialize() const;
     };
 
-    // The 0x1000-byte manufacturing block on NAND (Manufacturing.data). serialize() emits raw_data
-    // untouched unless reserialize is set.
     struct ManufacturingBlock {
         static constexpr size_t kSize = 0x1000;
 
@@ -183,7 +170,6 @@ namespace gxbuild3::nand {
         bool reserialize{false};
         std::vector<uint8_t> raw_data;
 
-        // Refuses any buffer whose size is not kSize (Truncated / Malformed).
         [[nodiscard]] static Result<ManufacturingBlock> parse(std::span<const uint8_t> bytes);
         [[nodiscard]] static Result<ManufacturingBlock> parse(const std::vector<uint8_t>& bytes);
         [[nodiscard]] bool erased() const noexcept;

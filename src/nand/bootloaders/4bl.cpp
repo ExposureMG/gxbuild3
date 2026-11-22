@@ -32,7 +32,6 @@ namespace gxbuild3::nand {
 
     Result<void> BootloaderCd::crypt_stage(const uint8_t parent_key[16],
                                            const uint8_t cpu_key[16]) {
-        // With a CPU key the CD key is bound to the console: HMAC(cpu_key, HMAC(parent, nonce)).
         const auto hmac_type = cpu_key ? HmacType::Hmac1920 : HmacType::Default;
         auto key =
             stage::crypt_stage_record(header, data, hmac_type, parent_key, cpu_key, 0x20, kStage);
@@ -76,10 +75,8 @@ namespace gxbuild3::nand {
         return {};
     }
 
+    // checks if the 6bl salt in the encrypted header region reads as "XBOX_ROM_6"
     bool BootloaderCd::is_decrypted() const {
-        // A sealed CD is told from a plaintext one by its 6BL salt, which only a plaintext CD
-        // shows as the ROM constant. The first nonce byte and the CE hash are ciphertext in a
-        // sealed CD, so testing them mistook about 1 in 256 sealed CDs for plaintext.
         return decrypted || std::ranges::equal(header.salt_6bl, kRomSalt6bl);
     }
 

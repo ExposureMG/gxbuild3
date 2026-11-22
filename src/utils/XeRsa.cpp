@@ -14,12 +14,11 @@ namespace gxbuild3::utils {
         constexpr size_t kDigitCount = 0x20;
         constexpr size_t kModulusSize = kDigitCount * 8;
         constexpr size_t kPrimeSize = kModulusSize / 2;
-        // XeCrypt signature salts are ten bytes long.
         constexpr size_t kSaltSize = 10;
-        // An SD's signature sits at 0x20 and its hash resumes at 0x120.
         constexpr size_t kSdSignatureOffset = 0x20;
         constexpr size_t kSdHashResume = kSdSignatureOffset + kXeRsa2048SignatureSize;
 
+        // hashes the first 0x10 bytes and everything from 0x120 on, skipping the nonce and signature block
         std::array<uint8_t, 20> sd_hash(std::span<const uint8_t> sd) {
             std::vector<uint8_t> covered(sd.begin(), sd.begin() + 0x10);
             covered.insert(covered.end(), sd.begin() + kSdHashResume, sd.end());
@@ -47,7 +46,6 @@ namespace gxbuild3::utils {
             return fail(ErrorCode::Malformed, "RSA private key is 0x{:X} bytes, expected 0x{:X}",
                         bytes.size(), kXeRsa2048PrivateKeySize);
         }
-        // The size check above guarantees both header words fit.
         const auto digit_word = wire::read<wire::be32>(bytes, 0, "RSA private key digit count");
         if (!digit_word) {
             return std::unexpected(digit_word.error());
@@ -82,8 +80,6 @@ namespace gxbuild3::utils {
         key.dq_ = take(kPrimeSize);
         key.u_ = take(kPrimeSize);
 
-        // The parts must make one key: n = pq, each exponent inverts e for its prime, and u
-        // inverts q mod p.
         const BigUint one{1};
         const BigUint e{exponent};
         if (key.n_.bit_length() <= kModulusSize * 8 - 8 || key.p_ <= one || key.q_ <= one ||
@@ -91,8 +87,7 @@ namespace gxbuild3::utils {
             (e * key.dq_) % (key.q_ - one) != one || (key.u_ * key.q_) % key.p_ != one) {
             return fail(ErrorCode::Malformed, "RSA private key parts do not make one key");
         }
-        // XeCrypt multiplies the formatted signature by 2^(2048 (e - 1)) before the private
-        // operation, which its Montgomery verification divides out again.
+        // precomputes the 2^(2048 * (e - 1)) mod n scaling factor that xecrypt's montgomery verifier divides out
         key.r_ = BigUint::pow_mod(BigUint{2}, BigUint{uint64_t{exponent - 1} << 11}, key.n_);
         return key;
     }
@@ -114,7 +109,7 @@ namespace gxbuild3::utils {
                         "formatted signature does not fit below the RSA modulus");
         }
         const auto scaled = (message * r_) % n_;
-        // The private operation through the primes, as XeCryptBnQwNeModExpRoot does it.
+        // runs the rsa private key operation using the crt components
         const auto m1 = BigUint::pow_mod(scaled, dp_, p_);
         const auto m2 = BigUint::pow_mod(scaled, dq_, q_);
         const auto h = (u_ * ((m1 + p_ - m2 % p_) % p_)) % p_;
@@ -174,7 +169,6 @@ namespace gxbuild3::utils {
                         kSdHashResume);
         }
         sd.resize((sd.size() + 0x0F) & ~size_t{0x0F}, 0);
-        // The length check above guarantees the size word fits.
         if (auto stored =
                 wire::write<wire::be32>(std::span<uint8_t>(sd), 0x0C,
                                         wire::be32(static_cast<uint32_t>(sd.size())), "SD size");

@@ -23,6 +23,7 @@ namespace gxbuild3::nand {
         return {payload, payload_size};
     }
 
+    // patches the placeholder X's with the kernel version and swaps the hold address on 9199
     std::vector<uint8_t> freeboot_rebooter_for(std::string_view version) {
         const auto core = freeboot_rebooter();
         std::vector<uint8_t> out(core.begin(), core.end());
@@ -51,6 +52,7 @@ namespace gxbuild3::nand {
         return out;
     }
 
+    // patches the rebooter size in 32-bit words into the li r4 instruction at +0x52
     std::vector<uint8_t> freeboot_payload_for(size_t core_length) {
         const auto bytes = freeboot_payload();
         std::vector<uint8_t> out(bytes.begin(), bytes.end());

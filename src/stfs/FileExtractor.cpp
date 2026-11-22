@@ -20,7 +20,6 @@ namespace gxbuild3::stfs {
             std::uint8_t status;
         };
 
-        // The level-0 hash entry of `data_block`, which holds its status and the next block.
         [[nodiscard]] Result<HashEntry> read_hash_entry(std::span<const std::byte> package,
                                                         std::uint32_t data_block,
                                                         std::uint32_t header_size) {
@@ -93,8 +92,7 @@ namespace gxbuild3::stfs {
 
     namespace {
 
-        // Logical blocks holding a non-empty file. Files flagged as consecutive occupy
-        // starting_block onwards and need not have a usable hash chain; others follow the chain.
+        // consecutive files just use a flat block range, otherwise we have to follow the level-0 hash chain
         [[nodiscard]] Result<std::vector<std::uint32_t>>
         file_blocks(std::span<const std::byte> package, const FileEntry& entry,
                     std::uint32_t header_size) {

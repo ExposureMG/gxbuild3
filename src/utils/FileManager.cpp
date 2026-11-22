@@ -30,10 +30,7 @@ namespace gxbuild3::utils {
             return key;
         }
 
-        // Basename with the caller's original casing preserved. normalize_file_key
-        // lowercases for case-insensitive lookup keys, but the FlashFS stores entry
-        // names case-sensitively and the dashboard looks up resources (e.g. fonts) by
-        // their exact mixed-case name, so the on-disk name must keep the INI casing.
+        // strips any directory path while keeping the original filename casing from the ini
         std::string display_basename(std::string_view key) {
             std::string result{key};
             std::replace(result.begin(), result.end(), '\\', '/');
@@ -42,15 +39,7 @@ namespace gxbuild3::utils {
             return result;
         }
 
-        // Xbox dashboard patch payloads live in the flash filesystem with a numeric
-        // update-slot suffix. Firmware packs ship them unsuffixed ("aac.xexp",
-        // "xenonclatin.xttp") but the dash only loads "<name>.xexpN" and ignores an
-        // unsuffixed copy. The suffix is the number of update slots the build type has:
-        // '2' on a JTAG image, which carries two update pairs, and '1' on every other
-        // (xeBuild 1.21 JTAG writes aac.xexp2; RGBuild and build360 write '1'). It is
-        // appended when the name does not already end in a digit and either ends in "xexp"
-        // or "xttp", or ends in 'p' and the INI states a checksum for it: xeBuild 1.21 writes
-        // 17489's "rrbkgnd.bmp" as "rrbkgnd.bmp1". ".xtt" fonts are not suffixed.
+        // tacks a '2' on jtag or '1' on other builds onto .xexp, .xttp, and checksummed *p filenames
         std::string flashfs_patch_suffix(std::string name, BuildType build_type,
                                          bool has_checksum) {
             const std::string_view view{name};
@@ -62,7 +51,6 @@ namespace gxbuild3::utils {
             return name;
         }
 
-        // A checksum an INI entry states: anything but nothing or zero.
         bool states_checksum(std::string_view value) {
             return std::any_of(value.begin(), value.end(), [](char c) {
                 return std::isxdigit(static_cast<unsigned char>(c)) != 0 && c != '0';
@@ -75,8 +63,6 @@ namespace gxbuild3::utils {
             return value;
         }
 
-        // The version a CF/CG request names after its stage prefix: 4532 for "cf_4532.bin"
-        // or "cg4532.bin". Empty when the name states none ("cf.bin", "6bl.bin").
         std::optional<uint32_t> requested_bootloader_version(std::string_view stem) {
             if (!stem.starts_with("cf") && !stem.starts_with("cg"))
                 return std::nullopt;
@@ -95,10 +81,7 @@ namespace gxbuild3::utils {
             return version;
         }
 
-        // The CF or CG an update package's xboxupd.bin supplies for a request, or null when
-        // the request names another stage, or a version other than the one the package
-        // carries: "cf_4532.bin" is never answered with the CF of a 17559 package. A request
-        // naming no version takes the package's.
+        // pulls cf or cg out of xboxupd.bin, making sure the version word at +0x02 matches if the filename asked for a specific build
         const std::vector<uint8_t>* xboxupd_part_for(const nand::XboxupdParts& parts,
                                                      std::string_view key, std::string_view stem) {
             const std::vector<uint8_t>* part = nullptr;
@@ -106,7 +89,6 @@ namespace gxbuild3::utils {
                 part = &parts.cf_raw;
             else if (key.starts_with("cg") || stem == "7bl")
                 part = &parts.cg_raw;
-            // The stage version is the big-endian word at +2 of its clear header.
             if (!part || part->size() < 4)
                 return nullptr;
             if (const auto requested = requested_bootloader_version(stem)) {
@@ -149,12 +131,7 @@ namespace gxbuild3::utils {
                                 [](const auto& component) { return component == ".."; });
         }
 
-        // The loose file `relative` names under `root`: the exact path when it exists,
-        // otherwise the entry matching each missing component without regard to case. A
-        // release INI may name "sc_17489.bin" for the file "SC_17489.bin", which a
-        // case-sensitive filesystem does not find. Of several such entries the first in
-        // name order is taken. Without a match, or for a match outside the root, the exact
-        // path is returned. A directory listing that fails part-way is an IoError.
+        // falls back to a case-insensitive directory scan when an exact path match doesn't exist
         [[nodiscard]] Result<std::filesystem::path>
         loose_candidate(const std::filesystem::path& root, const std::filesystem::path& relative) {
             const auto exact = root / relative;
@@ -206,7 +183,7 @@ namespace gxbuild3::utils {
         }
 
         struct CachedPackage {
-            std::filesystem::path path; // Empty for in-memory packages
+            std::filesystem::path path;
             std::vector<uint8_t> raw_data;
             std::unique_ptr<stfs::StfsContainer> container;
             std::unordered_map<std::string, std::vector<uint8_t>> extracted_files;
@@ -215,7 +192,6 @@ namespace gxbuild3::utils {
             std::optional<Error> xboxupd_error;
         };
 
-        // A package that failed to open is cached with its Error until the file changes.
         struct DiskCacheEntry {
             std::filesystem::file_time_type mtime;
             uintmax_t file_size = 0;
@@ -230,8 +206,6 @@ namespace gxbuild3::utils {
                                                   std::optional<std::filesystem::path>>>
             g_dir_stfs_cache;
 
-        // The bytes of a package entry, extracted once and cached; null when the package has no
-        // entry by that name.
         [[nodiscard]] Result<const std::vector<uint8_t>*> get_package_file(CachedPackage& pkg,
                                                                            const std::string& key) {
             auto it = pkg.extracted_files.find(key);
@@ -249,8 +223,6 @@ namespace gxbuild3::utils {
             return &it->second;
         }
 
-        // The CF and CG split from the package's xboxupd.bin. The first attempt is cached,
-        // including its Error.
         [[nodiscard]] Result<const nand::XboxupdParts*> get_xboxupd_parts(CachedPackage& pkg) {
             if (!pkg.xboxupd_attempted) {
                 pkg.xboxupd_attempted = true;
@@ -272,8 +244,6 @@ namespace gxbuild3::utils {
             return &*pkg.xboxupd_parts;
         }
 
-        // The system-update package in `dir`, if any. A directory listing that fails part-way
-        // is an IoError.
         [[nodiscard]] Result<std::optional<std::filesystem::path>>
         find_stfs_file(const std::filesystem::path& dir) {
             std::error_code ec;
@@ -293,7 +263,6 @@ namespace gxbuild3::utils {
                 const auto candidate = it->path();
                 if (it->is_regular_file(ec) && !candidate.has_extension() &&
                     normalize_file_key(candidate.filename().string()).starts_with("su")) {
-                    // Preserve one package per directory, with a deterministic tie-break.
                     if (!result || candidate < *result)
                         result = candidate;
                 }
@@ -366,6 +335,7 @@ namespace gxbuild3::utils {
             return pkg;
         }
 
+        // hashes the package name, size, and first 4kb with fnv-1a
         std::string compute_memory_package_key(const InMemoryStfsPackage& mem_pkg) {
             std::string key = mem_pkg.name + "_" + std::to_string(mem_pkg.data.size()) + "_";
             const size_t sample_size = std::min(mem_pkg.data.size(), size_t{4096});
@@ -408,7 +378,6 @@ namespace gxbuild3::utils {
             return pkg;
         }
 
-        // Lower ranks win: root index first, then loose / STFS / derived parts.
         using SourceRank = std::pair<size_t, unsigned>;
 
         struct LocatedFile {
@@ -418,9 +387,6 @@ namespace gxbuild3::utils {
 
         using LocateResult = std::expected<std::optional<LocatedFile>, FileLookupError>;
 
-        // How a lookup treats a source it cannot inspect or read. Strict fails with the first
-        // such source. Lenient skips it with a warning and goes on, as xeBuild does. Either
-        // way, an asset name or path that escapes its source root fails the lookup.
         enum class LookupPolicy {
             Strict,
             Lenient
@@ -441,8 +407,6 @@ namespace gxbuild3::utils {
                                    std::move(where.root_path), where.root_index, where.source};
         }
 
-        // Under the lenient policy, reports a source that is skipped and returns true. A failed
-        // CF/CG derivation from xboxupd.bin is only a debug message: most packages hold none.
         [[nodiscard]] bool tolerated(LookupPolicy policy, const FileLookupError& error) {
             if (policy == LookupPolicy::Strict)
                 return false;
@@ -456,8 +420,6 @@ namespace gxbuild3::utils {
             return true;
         }
 
-        // The entry `key` of one package (Stfs) or, for a bootloader request, the CF/CG its
-        // xboxupd.bin supplies (Xboxupd). A failure carries `where` with its source set.
         [[nodiscard]] std::expected<std::optional<std::pair<std::vector<uint8_t>, AssetSource>>,
                                     FileLookupError>
         search_package(CachedPackage& pkg, const std::string& key, const std::string& stem,
@@ -487,9 +449,7 @@ namespace gxbuild3::utils {
             return std::nullopt;
         }
 
-        // The one asset lookup: in-memory packages first, then each root's loose file, its
-        // STFS entry and its derived CF/CG. `security_names` are the names nosusecurity keeps
-        // out of STFS.
+        // searches in-memory stfs packages first, then loose files, disk stfs packages, and xboxupd.bin splits in each root
         [[nodiscard]] LocateResult locate(std::string_view name,
                                           const std::vector<std::filesystem::path>& roots,
                                           const ScanOptions& options,
@@ -521,7 +481,6 @@ namespace gxbuild3::utils {
                                    {rank_root, order}};
             };
 
-            // 1. In-memory STFS packages (highest priority)
             if (!options.nosu && !excluded) {
                 for (size_t mem_idx = 0; mem_idx < options.in_memory_stfs.size(); ++mem_idx) {
                     const Provenance where{{}, {}, mem_idx, AssetSource::Stfs};
@@ -546,7 +505,6 @@ namespace gxbuild3::utils {
                 }
             }
 
-            // 2. Disk roots
             const size_t memory_count = options.in_memory_stfs.size();
             for (size_t root_index = 0; root_index < roots.size(); ++root_index) {
                 const auto& root = roots[root_index];
@@ -589,8 +547,6 @@ namespace gxbuild3::utils {
                         {}, candidate));
                 }
 
-                // A loose candidate that cannot be used is skipped (lenient) in favour of the
-                // root's STFS package.
                 status_error.clear();
                 const auto candidate_status = std::filesystem::status(candidate, status_error);
                 if (status_error &&
@@ -723,10 +679,6 @@ namespace gxbuild3::utils {
                         target_section, ini_path.string());
         }
 
-        // Validate all names before loading anything, including optional payloads.
-        // An unsafe name must never become a basename-only STFS lookup.
-        // A payload may name a file outside its release ("..\\data\\x.bin"); a bootloader may
-        // not.
         for (const auto* section :
              {bl_sec, doc.get("security"), doc.get("flashfs"), doc.get("rawpatch")}) {
             if (!section)
@@ -745,22 +697,19 @@ namespace gxbuild3::utils {
             for (const auto& entry : *security)
                 security_names.push_back(normalize_file_key(entry.key));
         }
-        // A file from outside the release is only ever a loose one.
         ScanOptions loose_options = options;
         loose_options.nosu = true;
         const auto search = [&](std::string_view name, const ScanOptions& scan,
                                 AssetKind kind = AssetKind::Regular) {
             return locate(name, search_paths, scan, security_names, kind, LookupPolicy::Lenient);
         };
-        // A lenient lookup fails only for an asset that escapes its source root.
         const auto escaped = [](std::string_view entry, FileLookupError&& failure) {
             Error error = std::move(failure);
             return std::unexpected(
                 std::move(error).add_context(std::format("INI asset '{}'", entry)));
         };
         IniFilesResult result{};
-        // [...bl] lines map positionally, as in xeBuild's blRetail/blJtag/blDevk/blDevgl
-        // tables; a "none" line still takes its slot.
+        // maps bootloader entries by their line position in the section, with "none" still consuming a slot
         enum class Slot { CbA, CbB, Sc, Cd, Ce, Cf0, Cg0, ExtraCb, ExtraCd, Cf1, Cg1 };
         static constexpr std::array<Slot, 6> kRetailSlots{Slot::CbA, Slot::CbB, Slot::Cd,
                                                           Slot::Ce,  Slot::Cf0, Slot::Cg0};
@@ -815,11 +764,7 @@ namespace gxbuild3::utils {
             }
         }
 
-        // Preserve INI order for unique payloads, replacing only when a better
-        // source is found for an alias of an already selected basename.
         std::unordered_map<std::string, std::pair<size_t, SourceRank>> payloads;
-        // An entry from outside the release is found under its path in the roots, then by its
-        // basename, and only as a loose file.
         const auto find_listed = [&](std::string_view entry) -> LocateResult {
             if (!ini_asset_is_outside(entry))
                 return search(entry, options);
@@ -858,8 +803,6 @@ namespace gxbuild3::utils {
             }
             return {};
         };
-        // The FlashFS lists the [flashfs] files and then the [security] files, each in the order
-        // the INI names them (xeBuild 1.21).
         if (const auto* flashfs = doc.get("flashfs")) {
             for (const auto& entry : *flashfs) {
                 if (auto added = process_payload_entry(entry, false); !added)
@@ -873,8 +816,6 @@ namespace gxbuild3::utils {
                     return std::unexpected(std::move(added).error());
             }
         }
-        // [rawpatch] lists "file,offset": the file goes into the image as it is at that clean
-        // offset. A file no root supplies fails the build, as in xeBuild.
         if (const auto* rawpatch = doc.get("rawpatch")) {
             for (const auto& entry : *rawpatch) {
                 const auto key = normalize_file_key(entry.key);

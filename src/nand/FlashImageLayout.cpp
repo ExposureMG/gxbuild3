@@ -19,7 +19,6 @@ namespace gxbuild3::nand {
 
     namespace {
 
-        // A devkit chain holds its SB and SD where a retail chain holds its CB and CD.
         uint16_t devkit_magic(uint16_t magic) {
             switch (magic) {
                 case NANDBootloaderMagic::CB:
@@ -39,10 +38,6 @@ namespace gxbuild3::nand {
                    bootloader.header.header.size >= minimum_size;
         }
 
-        // Where the serialized boot chain ends, counted from kEntryOffset, with CB/A and CD
-        // present when their parsed header says so (see laid_boot_chain_end for the other
-        // rule). Fails OutOfRange with overflow_message when an aligned size or the running
-        // end overflows size_t.
         Result<size_t> checked_boot_chain_end(const FlashImage& image,
                                               std::string_view overflow_message) {
             size_t end = kEntryOffset;
@@ -85,8 +80,6 @@ namespace gxbuild3::nand {
             return end;
         }
 
-        // A FlashFS keeps a pointer to the driver it reads and writes; after a copy or a move it
-        // must name the new object's driver, not the one it was copied or moved from.
         void rebind_filesystem(ImageState& state) {
             if (state.filesystem) {
                 state.filesystem->set_driver(&state.flash_driver);
@@ -130,6 +123,7 @@ namespace gxbuild3::nand {
         return cb_section.cb_or_A.header.header.magic == NANDBootloaderMagic::SB;
     }
 
+    // zeroes the donor boot chain and fills the old cf/cg update slots with 0xFF
     Result<void> FlashImage::clear_bootloader_chain() {
         if (flash_driver.block_count() == 0) {
             return fail(ErrorCode::InvalidArgument, "the NAND image has no blocks");
@@ -248,7 +242,6 @@ namespace gxbuild3::nand {
             if (!cf_size) {
                 return end;
             }
-            // The CF's own range overflow is reported as the CF span, as is the CG's below.
             size_t aligned_size = 0;
             if (!add_payload_range(ranges, cf_name, base, *cf_size) ||
                 !checked_align_16(*cf_size, aligned_size) ||
@@ -257,8 +250,6 @@ namespace gxbuild3::nand {
                             "System-update CF span exceeds the addressable payload layout");
             }
             if (cg_size) {
-                // Only the prefix resides in the slot; encrypt_all allocates any tail through
-                // the CF continuation table for every build type.
                 const size_t in_slot = std::min<size_t>(
                     *cg_size, end < base + slot_stride ? base + slot_stride - end : 0);
                 if (!add_payload_range(ranges, cg_name, end, in_slot) ||
@@ -298,18 +289,7 @@ namespace gxbuild3::nand {
             return bootloader->serialize().size();
         }
 
-        // Every payload writer's range in the order check_overlaps pairs them, or the first
-        // failure in this precedence, which is the layout's historical one:
-        //  1. the fixed payloads' range overflow, XeLL first, then the SMC payload, the
-        //     rebooter, the virtual fuses and the JTAG extra CB and CD (at most one of these can
-        //     overflow: each would need a length near SIZE_MAX, and two cannot coexist);
-        //  2. the serialized boot chain's text, then its range overflow;
-        //  3. slot 0's CF/CG span (that text replaces a CF or CG range overflow), the slot 1
-        //     base, a CF0/CG0 past its stride beside a CF1, then slot 1's CF/CG span;
-        //  4. the JTAG patch payload's range overflow, or the glitch KHV region size and then
-        //     its range overflow.
-        // Every overflow here needs a size_t wrap, so on 64-bit only the boot chain, slot and KHV
-        // checks are reachable from an image; FlashImageLayout.hpp exposes the overflow steps.
+        // gathers the byte ranges of every active bootloader and patload in the image
         Result<std::vector<PayloadRange>> collect_payload_ranges(const FlashImage& image,
                                                                  const LayoutPlan& plan) {
             std::vector<PayloadRange> ranges;
@@ -318,8 +298,6 @@ namespace gxbuild3::nand {
             };
             const auto& payloads = image.payloads;
 
-            // Keep XeLL first so a collision explains that its historically fixed placement is
-            // the conflicting writer, rather than implying that the fixed JTAG payload moved.
             if (payloads.xell) {
                 if (auto added = add("XeLL", plan.xell_offset, payloads.xell->data.size());
                     !added) {
@@ -481,9 +459,6 @@ namespace gxbuild3::nand {
         fs.set_driver(&flash_driver);
         fs.set_larger_filesystem(type == BuildType::Devkit);
         fs.set_timestamp(timestamp);
-        // A big-block filesystem's spare states the system area: all of the first 2 MB on
-        // every image but a retail one, whose system area ends with its update slots
-        // (xeBuild 1.21: 6 blocks of 0x20000 on a jasperbb retail image).
         fs.set_big_system_blocks(type == BuildType::Retail
                                      ? static_cast<uint8_t>(update_slots_end() / 0x20000)
                                      : uint8_t{0x10});
@@ -495,13 +470,7 @@ namespace gxbuild3::nand {
                         "No usable blocks remain for the Flash File System");
         }
 
-        // A new FlashFS starts at root sequence 1. The image writer clears every older root
-        // block's metadata, so no donor root can outrank it.
         constexpr uint32_t version = 1;
-        // The files start on the first block past the update slots and every payload laid
-        // after them, as xeBuild 1.21 lays them: block 0x24 (0x90000) on a 16 MB retail image,
-        // 0x34 on a glitch one, past the second chain on a JTAG one, and the filesystem's base
-        // on big block, where that is higher.
         const size_t block_size = flash_driver.block_size_clean();
         const auto payload_ranges = active_payload_block_ranges();
         size_t first_block = (update_slots_end() + block_size - 1) / block_size;
@@ -513,20 +482,13 @@ namespace gxbuild3::nand {
                         "No usable blocks remain for the Flash File System");
         }
         const auto reserved_boundary = static_cast<uint32_t>(first_block);
-        // Defer root placement so serialize allocates it once, last, from the same free
-        // pool as the files and mobile data. Reserving a root here double-counts it and
-        // starves a full image of the final block the root needs.
         if (auto formatted = fs.format(total_blocks, FlashFileSystem::kDeferRoot, version,
                                        reserved_boundary);
             !formatted) {
             return std::unexpected(
                 std::move(formatted.error()).add_context("Failed to format the Flash File System"));
         }
-        // Past the last usable block, xeBuild's table reserves the settings blocks of a 16 MB
-        // part (four) and never names its remap pool after them; a big-block part's settings
-        // sit outside the filesystem's numbering, so it names nothing from there on. An eMMC
-        // part or a 64 MB small-block devkit part, which keep no pool, reserve every block to
-        // the end.
+        // reserves the settings blocks at the end of the data area and leaves the remap pool unnamed in the blockmap
         if (data_limit < total_blocks) {
             const auto mode = flash_driver.driver_mode();
             const bool pool =

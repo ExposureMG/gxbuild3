@@ -44,9 +44,7 @@ namespace gxbuild3::nand {
             return out;
         }
 
-        // The XEX key the retail update package's copies are sealed under, which xeBuild derives
-        // from the 1BL key: sixteen fixed bytes under RC4 keyed with HMAC-SHA("thisisjustajunky",
-        // 1BL key).
+        // derives the retail xex key by rc4ing 16 fixed bytes with hmac("thisisjustajunky", key_1bl)
         Key retail_xex_key() {
             static constexpr std::array<uint8_t, 16> kFixed{0x95, 0x27, 0x72, 0xBF, 0x47, 0xC0,
                                                             0xF6, 0x98, 0x5C, 0x7D, 0xF2, 0x50,
@@ -61,8 +59,6 @@ namespace gxbuild3::nand {
             return key;
         }
 
-        // The keys a crl.bin or dae.bin record is opened under, in order: the console's, the
-        // retail XEX key, and the development kit XEX key, which is all zero.
         std::array<Key, 3> master_keys(std::span<const uint8_t> cpu_key) {
             Key cpu{};
             std::copy_n(cpu_key.begin(), cpu.size(), cpu.begin());
@@ -89,9 +85,7 @@ namespace gxbuild3::nand {
             return out;
         }
 
-        // Whether a signed record's body, in the clear, is what the record's header hashes: the
-        // SHA-1 of everything from the record's 0x150 on. `body` starts at `body_offset` of the
-        // record.
+        // checks if the sha1 at +0x0C matches the decrypted record body starting from offset 0x150
         bool vouched(std::span<const uint8_t> record, std::span<const uint8_t> body,
                      size_t body_offset) {
             if (record.size() < kRecordHashOffset + 20 ||
@@ -111,7 +105,6 @@ namespace gxbuild3::nand {
 
         struct OpenedCrl {
             std::vector<uint8_t> body;
-            // Which of master_keys opened it; nothing for a crl.bin in the clear.
             std::optional<size_t> master;
             Key file_key{};
         };
@@ -145,8 +138,6 @@ namespace gxbuild3::nand {
             std::optional<size_t> master;
         };
 
-        // The records of a dae.bin, each opened, walked by the length each states. AuthFailed
-        // when any record opens under no key, Malformed when the records do not cover the file.
         Result<std::vector<DaeRecord>> open_dae(std::span<const uint8_t> blob,
                                                 std::span<const uint8_t> cpu_key) {
             const auto masters = master_keys(cpu_key);
@@ -202,8 +193,6 @@ namespace gxbuild3::nand {
             std::copy(stamp.begin(), stamp.end(), destination.begin());
         }
 
-        // A keyvault-style file sealed: the nonce, then the plaintext under RC4 keyed with
-        // HMAC-SHA(CPU key, nonce).
         std::vector<uint8_t> seal_under_nonce(const Key& nonce, std::vector<uint8_t> plain,
                                               std::span<const uint8_t> cpu_key) {
             const auto key = hmac_sha(cpu_key, nonce);
@@ -228,6 +217,7 @@ namespace gxbuild3::nand {
                             : hmac_sha(cpu_key, plain);
         }
 
+        // decrypts a loose extended.bin or secdata.bin, or regenerates its nonce if it came in as raw plaintext
         Result<std::vector<uint8_t>> open_loose(std::span<const uint8_t> blob,
                                                 std::span<const uint8_t> cpu_key, bool extended) {
             if (!valid_cpu_key(cpu_key)) {
@@ -260,7 +250,6 @@ namespace gxbuild3::nand {
             return opened;
         }
 
-        // Whether fcrt.bin's hash at 0x12C is the SHA-1 of `body`, its sealed part in the clear.
         bool fcrt_hash_holds(std::span<const uint8_t> blob, std::span<const uint8_t> body) {
             uint8_t digest[20]{};
             ExCryptSha(body.data(), static_cast<uint32_t>(body.size()), nullptr, 0, nullptr, 0,
@@ -268,8 +257,6 @@ namespace gxbuild3::nand {
             return std::equal(digest, digest + sizeof(digest), blob.begin() + kFcrtHashOffset);
         }
 
-        // fcrt.bin's sealed part under the CPU key and the vector at 0x100, either way; a part
-        // that is not whole blocks comes back as it stands.
         std::vector<uint8_t> crypt_fcrt_body(std::span<const uint8_t> blob,
                                              std::span<const uint8_t> cpu_key, size_t body_offset,
                                              bool encrypt) {
@@ -282,8 +269,8 @@ namespace gxbuild3::nand {
 
     } // namespace
 
+    // adds 2 seconds, rounds down to an even second, and converts to a big-endian windows filetime.
     std::array<uint8_t, 8> secured_file_stamp(int64_t build_seconds) {
-        // Seconds from 1601-01-01 to 1970-01-01, and FILETIME's 100 ns ticks per second.
         constexpr uint64_t kWindowsEpochOffset = 11644473600ULL;
         constexpr uint64_t kTicksPerSecond = 10000000ULL;
         const auto seconds =
@@ -366,6 +353,7 @@ namespace gxbuild3::nand {
         return out;
     }
 
+    // updates the timestamp, head, ldv, and hmac on every daep record in dae.bin and re-encrypts them with the cpu key
     Result<std::vector<uint8_t>> reseal_dae(std::span<const uint8_t> content,
                                             std::span<const uint8_t> cpu_key,
                                             const DaeSealing& sealing,
@@ -506,7 +494,7 @@ namespace gxbuild3::nand {
             out.sealing = FcrtSealing::Sealed;
             return out;
         }
-        // xeBuild opens it in place; where the hash then fails, what it writes is the opened part.
+        // fcrt handling is fucked, if the hash still fails after decrypting we write out the garbage decrypted body anyway
         const auto opened = crypt_fcrt_body(content, cpu_key, body_offset, false);
         if (!fcrt_hash_holds(content, opened)) {
             std::copy(opened.begin(), opened.end(), out.data.begin() + body_offset);
@@ -515,6 +503,7 @@ namespace gxbuild3::nand {
         return out;
     }
 
+    // checks the odd features flags at +0x1C in the kv to see if the drive needs fcrt.bin
     FcrtRequirement fcrt_requirement(std::span<const uint8_t> clear_keyvault) {
         const auto odd_features = wire::read<wire::be16>(
             clear_keyvault, offsetof(XE_KEYVAULT_DATA, w4OddFeatures), "keyvault odd features");

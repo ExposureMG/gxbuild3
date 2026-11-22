@@ -102,8 +102,7 @@ namespace gxbuild3 {
             return std::nullopt;
         }
 
-        // The stage list after `nopatch=<stage>` joins the stages already named. The stored text is
-        // the stages in canonical order, joined with '+'.
+        // merges cb, cd, and khv into a canonical '+' separated string
         std::optional<std::string> add_nopatch_stage(const std::optional<std::string>& current,
                                                      std::string_view value) {
             const std::string stage = normalize_key(value);
@@ -165,8 +164,8 @@ namespace gxbuild3 {
                key == "nosmcpatch";
     }
 
+    // Maps button names to their power-on reason byte.
     std::optional<uint8_t> OptionsManager::power_on_reason(std::string_view name) {
-        // `wiredx` is xeBuild's own spelling of `wiredxb3`.
         static constexpr std::array<std::pair<std::string_view, uint8_t>, 13> kReasons{{
             {"power", 0x11},
             {"eject", 0x12},
@@ -388,8 +387,6 @@ namespace gxbuild3 {
         }
 
         if (key == "nopatch") {
-            // A blank value clears the list; a stage joins it, so `nopatch=cb,nopatch=cd` skips
-            // both.
             if (val.empty()) {
                 m_args.nopatch.reset();
                 return true;
@@ -415,7 +412,6 @@ namespace gxbuild3 {
             return true;
         }
         if (key == "xellbutton" || key == "xellbutton2" || key == "dualboot") {
-            // A blank button names none, as in xeBuild's options.ini.
             auto& button = key == "xellbutton"    ? m_args.xellbutton
                            : key == "xellbutton2" ? m_args.xellbutton2
                                                   : m_args.dualboot;
@@ -567,15 +563,10 @@ namespace gxbuild3 {
                         all_ok = false;
                     }
                 } else if (is_bool_option(token)) {
-                    // Bare flag with no "=value" - implicit "true", valid only
-                    // for boolean-typed options.
                     if (!set(token, "true")) {
                         all_ok = false;
                     }
                 } else {
-                    // A string-valued option given with no value is a missing
-                    // argument, not an implicit "true" - don't silently store
-                    // the literal string "true" into it.
                     all_ok = false;
                 }
             }

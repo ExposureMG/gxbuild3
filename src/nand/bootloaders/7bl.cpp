@@ -37,7 +37,6 @@ namespace gxbuild3::nand {
             return std::unexpected(std::move(payload_size.error()));
         stage::pad_payload(data, *payload_size);
 
-        // CG keeps no derived key: the HMAC(cg_hmac, nonce) the crypt returns is dropped.
         if (auto key = stage::crypt_stage_record(header, data, HmacType::Default, cg_hmac, nullptr,
                                                  0x20, kStage);
             !key)
@@ -64,6 +63,7 @@ namespace gxbuild3::nand {
         return {};
     }
 
+    // assumes cg is decrypted if source_size is non-zero and page-aligned
     bool BootloaderCg::is_decrypted() const {
         return decrypted || (header.source_size != 0 && (header.source_size & 0xFFF) == 0x000);
     }

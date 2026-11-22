@@ -38,9 +38,6 @@ namespace gxbuild3::nand {
         SG = 0x5347
     };
 
-    // Bootloader stage records are wire structs (include/Wire.hpp): they hold their numeric fields
-    // in on-disk big-endian order, so sizeof and offsetof are the on-disk layout and a stage header
-    // is serialized by copying its bytes.
     struct generic_header {
         wire::be16 magic;
         wire::be16 version;
@@ -89,9 +86,6 @@ namespace gxbuild3::nand {
     };
     static_assert(wire::WireLayout<sc_header>);
 
-    // The salt a CD stores at 0x240 for the 6BL key derivation. It lies in the encrypted part of
-    // the stage, so it reads as this constant only in a plaintext CD (the 42 tracked plaintext
-    // CD/SD images all carry it; ciphertext matches it with probability 2^-80).
     inline constexpr std::array<char, 10> kRomSalt6bl{'X', 'B', 'O', 'X', '_',
                                                       'R', 'O', 'M', '_', '6'};
 
@@ -133,22 +127,17 @@ namespace gxbuild3::nand {
         wire::be16 target_qfe;
         wire::be32 reserved;
         wire::be32 cg_size;
-        uint8_t fixpoint_nonce[0x10]; // CF+0x20: self-referential HMAC fixpoint, not the CG key
+        uint8_t fixpoint_nonce[0x10];
     };
     static_assert(wire::WireLayout<cf_header>);
 
-    // The CG/7BL RC4 key is HMAC-SHA1 of the 7BL nonce stored in the decrypted CF payload
-    // at absolute offset 0x330 (cf_header is 0x30 bytes, so this is payload offset 0x300),
-    // never the header fixpoint above. RGBuild/build360/nandtool/J-Runner agree on 0x330.
+    // offset inside decrypted cf where the actual cg nonce lives
     inline constexpr size_t kCfCgNonceOffset = 0x330;
 
-    // A CG too long for its update slot spills its tail into logical 16 KiB FlashFS clusters.
-    // The decrypted CF payload opens (CF + 0x30) with the table naming them in order: a count
-    // and up to kMaxCgClusters cluster numbers, the rest zero. The record is a lossless codec;
-    // the cap and the needed-count checks stay with the callers.
     inline constexpr size_t kMaxCgClusters = 223;
     inline constexpr size_t kCgClusterSize = 0x4000;
 
+    // table at the start of cf's payload listing 16kb flashfs clusters for cg data that didn't fit in the update slot
     struct cf_continuation_table {
         wire::be16 count;
         wire::be16 clusters[kMaxCgClusters];
@@ -168,9 +157,6 @@ namespace gxbuild3::nand {
     };
     static_assert(wire::WireLayout<cg_header>);
 
-    // A stage's declared size rounded up to the 16-byte crypt granularity. It fails when the
-    // declared size cannot hold `min_size` bytes (the stage's own header), which keeps the
-    // payload arithmetic of every parse, decrypt and encrypt from underflowing.
     [[nodiscard]] inline Result<size_t> aligned_stage_size(uint32_t declared_size, size_t min_size,
                                                            std::string_view stage) {
         const uint64_t aligned = (uint64_t{declared_size} + 0xF) & ~uint64_t{0xF};

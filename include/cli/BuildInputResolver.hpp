@@ -45,21 +45,14 @@ namespace gxbuild3::cli {
     };
 
     struct ResolvedFoundations {
-        // Values read only from <working_directory>/options.ini, before CLI overlays.
         OptionsArgs file_options;
         OptionsArgs options;
-        // Values explicitly supplied by ordered -c entries. Optional members retain
-        // presence independently from options.ini, including explicit false values.
         OptionsArgs cli_overrides;
         std::vector<uint8_t> cpu_key;
         std::optional<Input> donor;
         ImageType image_type{ImageType::SmallBlock};
     };
 
-    // Decodes the text of an options.ini, without touching the filesystem: one key=value per
-    // line (LF or CRLF), lines starting with ';' or '#' and blank lines skipped, the value cut at
-    // an inline ';', legacy xeBuild keys ignored. A section header, a line without '=' or an
-    // option OptionsManager refuses fails InvalidOption with its line number and `source` as path.
     [[nodiscard]] std::expected<OptionsArgs, ResolutionError>
     parse_options_text(std::string_view text, const std::filesystem::path& source);
 

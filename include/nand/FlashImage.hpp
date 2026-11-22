@@ -47,7 +47,7 @@ namespace gxbuild3::nand {
     struct SystemUpdate {
         std::optional<BootloaderCf> cf;
         std::optional<BootloaderCg> cg;
-        std::vector<uint16_t> cg_spill_blocks{}; // Logical 16 KiB clusters from CF + 0x32.
+        std::vector<uint16_t> cg_spill_blocks{};
     };
 
     struct Payloads {
@@ -61,41 +61,30 @@ namespace gxbuild3::nand {
         std::optional<BootloaderCe> extra_se;
     };
 
-    // Everything a FlashImage holds, kept apart from its operations so FlashImage can copy and
-    // move it as one piece and then rebind what points into it.
     struct ImageState {
         nand_header header;
-        bool preserve_layout = false; // Direct read/write retains header-defined update anchors.
+        bool preserve_layout = false;
         std::optional<BuildType>
-            build_type; // Runtime layout; inferred conservatively when reading.
+            build_type;
         std::optional<Smc> smc;
         std::optional<Keyvault> keyvault;
         CbSection cb_section;
         KernelSection kernel_section;
         SystemUpdate system_update_0;
         SystemUpdate system_update_1;
-        // The console's 0x400-byte settings block (fan curves, MAC, regions), parsed into its
-        // static and secured records on read when its checksum holds. Kept as raw_data on write
-        // unless reserialize is set.
         std::optional<SmcConfigBlock> smc_config;
-        // The statistics and manufacturing blocks, one and two erase blocks below the settings
-        // block: 0x1000 bytes each, parsed on read and kept as raw_data on write unless
-        // reserialize is set. All 0xFF where the console keeps none, which the writer leaves
-        // erased.
         std::optional<StatisticsBlock> statistics;
         std::optional<ManufacturingBlock> manufacturing;
         std::optional<CoronaConfig> corona_config;
         std::optional<MobileData> mobile_data;
         std::optional<FlashFileSystem> filesystem;
         Payloads payloads;
-        // Written as they are at their clean offsets after everything else is laid.
         std::vector<InputRawPatch> raw_patches;
 
         Driver flash_driver;
     };
 
-    // A copy or a move rebinds the filesystem to the new object's own driver, so the filesystem
-    // never writes into (or reads from) the image it was copied or moved from.
+    // rebinds the filesystem's raw driver pointer whenever a FlashImage gets copied or moved
     struct FlashImage : ImageState {
         FlashImage() = default;
         FlashImage(const FlashImage& other);
@@ -105,17 +94,11 @@ namespace gxbuild3::nand {
         operator=(FlashImage&& other) noexcept(std::is_nothrow_move_assignable_v<ImageState>);
         ~FlashImage() = default;
 
-        // Empty input is absent, not a failure.
         static std::optional<FlashImage> read(std::vector<uint8_t> raw_image);
         static FlashImage create(Driver::ImageSize size, Driver::DriverMode mode,
                                  std::optional<BuildType> type = std::nullopt);
-        // Reads the header, the boot chain, the update slots and the console's blocks out of the
-        // driver. A malformed bootloader record or CG continuation fails the parse; the object is
-        // left partly filled.
         [[nodiscard]] Result<void> parse();
 
-        // Calls `fn(BootStageId id, std::string_view name, Stage& stage)` for each present stage
-        // in laid boot-chain order: CB_A (or SB), CB_X, CB_B, SC, CD (or SD), CE (or SE).
         template <class Self, class Fn>
         static void for_each_present_stage(Self& image, Fn&& fn) {
             if (!image.cb_section.cb_or_A.data.empty()) {
@@ -138,25 +121,12 @@ namespace gxbuild3::nand {
             }
         }
 
-        // A devkit chain: SB, SC, SD and SE, held in the CB, SC, CD and CE positions. SB is keyed
-        // from the 1BL key like a single CB, SC from sixteen zero bytes, SD from SC and SE from SD.
         [[nodiscard]] bool devkit_chain() const;
 
-        // Opens every sealed stage, the SMC and, under a usable CPU key, the keyvault. Stages
-        // opened before a failure stay open.
         [[nodiscard]] Result<void> decrypt_all(std::span<const uint8_t> cpu_key);
-        // Seals every stage for `seal_type`, binding the SMC and laying CG tails in the
-        // filesystem. Hacked chains may deliberately leave stages plaintext for their patched
-        // parent. The seal policy and the update-slot reservation read `seal_type`; the layout
-        // helpers still read the member build_type, which may be unset or differ. After a failure
-        // the object is unspecified: stages sealed before the failing one stay sealed and nothing
-        // is rolled back, so the image must not be written.
         [[nodiscard]] Result<void> encrypt_all(std::span<const uint8_t> cpu_key,
                                                BuildType seal_type = BuildType::Retail);
 
-        // Remove serialized bootloader records inherited from a donor before replacing the chain:
-        // the chain is zeroed and the CF/CG records in the update slots are erased (0xFF). This
-        // deliberately leaves the donor's non-bootloader payloads intact.
         [[nodiscard]] Result<void> clear_bootloader_chain();
         [[nodiscard]] std::optional<DonorNonces> collect_nonces() const;
         [[nodiscard]] Result<void>
@@ -166,31 +136,18 @@ namespace gxbuild3::nand {
 
         [[nodiscard]] std::vector<BlockRange> active_payload_block_ranges() const;
 
-        // The clean offset just past the second update slot, where the image writer would lay
-        // them now.
         [[nodiscard]] uint32_t update_slots_end() const;
-        // The clean offset of the second update slot, which a glitch or devgl image fills with its
-        // KHV patches.
         [[nodiscard]] uint32_t patch_slot_offset() const;
 
-        // Fails, describing the collision, when the resolved layout is unsafe: a required record
-        // with no payload, a slot overrun or two payload writers that overlap.
         [[nodiscard]] Result<void> payload_layout() const;
 
-        // Formats and attaches a fresh FlashFileSystem with xeBuild block reservations
-        // (system area boundary, payload block ranges, bad blocks, and geometry tail / remap pool).
         [[nodiscard]] Result<FlashFileSystem*> format_filesystem(uint32_t timestamp = 0);
 
-        // Lays the image into the driver. Unless preserve_layout is set (a parsed dump written
-        // back), every good block is erased first, so what the writer does not lay stays erased.
         [[nodiscard]] Result<void> write_to_driver();
-        // Lays the image and returns the driver's raw bytes.
         [[nodiscard]] Result<std::vector<uint8_t>> write();
     };
 
-    // Whether update slot `slot` carries the console: its slot number at 0x21B, pairing, LDV and
-    // the CPU-key binding at 0x220. A JTAG image's first pair is the one its exploit boots: its CF
-    // keeps the per-box block it was supplied with (xeBuild 1.21 JTAG: CF 4532, 0x21B..0x22F zero).
+    // jtag leaves update slot 0 unbound with zeroed per-box data
     [[nodiscard]] constexpr bool update_slot_binds_console(BuildType build_type, size_t slot) {
         return !(build_type == BuildType::Jtag && slot == 0);
     }

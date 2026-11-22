@@ -26,14 +26,8 @@ namespace gxbuild3::nand {
             return std::all_of(nonce.begin(), nonce.end(), [](uint8_t byte) { return byte == 0; });
         }
 
-        // ---- Decryption (decrypt_all) ---------------------------------------------------------
-
-        // Opens CB_A, CB_X, CB_B and SC in that order. CB_X's plaintext CB_B takes its key slot
-        // as the handoff key before the CB_B check, so that CB_B is never opened again.
         [[nodiscard]] Result<void> open_cb_chain(CbSection& cb_section,
                                                  std::span<const uint8_t> cpu_key) {
-            // Use the parser's full plaintext check, not is_decrypted()'s legacy
-            // single-byte hint: encrypted CBs can contain that byte by chance.
             if (!cb_section.cb_or_A.data.empty() && !cb_section.cb_or_A.decrypted) {
                 if (auto opened = cb_section.cb_or_A.decrypt(key_1bl); !opened) {
                     return with_context(std::move(opened), "decrypting CB_A");
@@ -58,8 +52,7 @@ namespace gxbuild3::nand {
                 }
             }
 
-            // CB_X loads the real CB_B as plaintext. Its key slot is already the
-            // handoff key (as written by RGH2to3), not a nonce to derive again.
+            // with cbx present, cbb is already plaintext and its first 16 bytes are the handoff key for cd
             if (cb_section.cb_x && cb_section.cb_B && cb_section.cb_B->data.size() >= 16) {
                 cb_section.cb_B->decrypted = true;
                 cb_section.cb_B->populate_metadata();
@@ -82,8 +75,6 @@ namespace gxbuild3::nand {
                 }
             }
 
-            // SC is keyed from sixteen zero bytes, not from its parent. One with a zero nonce
-            // is taken as plaintext.
             if (cb_section.sc.has_value() && !cb_section.sc->data.empty() &&
                 !cb_section.sc->is_decrypted() && !is_zero_nonce(cb_section.sc->header.key)) {
                 if (auto opened = cb_section.sc->decrypt(BootloaderSc::kZeroSecret); !opened) {
@@ -93,8 +84,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Opens CD from its parent's derived key (SC on a devkit chain, else CB_B, else CB_A),
-        // then CE from CD.
         [[nodiscard]] Result<void> open_kernel(KernelSection& kernel_section,
                                                const CbSection& cb_section, bool devkit,
                                                std::span<const uint8_t> cpu_key) {
@@ -134,8 +123,6 @@ namespace gxbuild3::nand {
                 if (!kernel_section.cd.decrypted) {
                     return fail(ErrorCode::Malformed, "Cannot decrypt CE: CD is not decrypted");
                 }
-                // When CD arrived plaintext, its key slot is already the handoff
-                // key. For encrypted CD, use the key derived during decryption.
                 if (auto opened = kernel_section.ce->decrypt(
                         kernel_section.cd.derived_key ? kernel_section.cd.derived_key->data()
                                                       : kernel_section.cd.header.key);
@@ -146,8 +133,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Opens CF0 and CF1, then CG0 and CG1 from their CF's 7BL nonce. Both CFs open before
-        // either CG, so the first error and the stages left open after it stay as they were.
         [[nodiscard]] Result<void> open_update_slots(SystemUpdate& slot_0, SystemUpdate& slot_1) {
             const std::array<SystemUpdate*, 2> slots{&slot_0, &slot_1};
             for (size_t index = 0; index < slots.size(); ++index) {
@@ -183,7 +168,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Opens the SMC and, under a usable CPU key, the keyvault.
         [[nodiscard]] Result<void> open_smc_kv(std::optional<Smc>& smc,
                                                std::optional<Keyvault>& keyvault,
                                                std::span<const uint8_t> cpu_key) {
@@ -191,9 +175,7 @@ namespace gxbuild3::nand {
                 smc->decrypt();
             }
 
-            // A console's keyvault does not open under the all-zero CPU key (only an image built
-            // under that key carries one that does), so under it a keyvault that does not open
-            // stays sealed and the build takes the console's from a kv.bin instead.
+            // with a zero cpu key, leave the kv encrypted unless it was actually sealed with all zeros
             if (keyvault.has_value() && keyvault->encrypted && !cpu_key.empty()) {
                 if (is_zero_cpu_key(cpu_key)) {
                     if (auto opened = open_loose_keyvault(cpu_key, keyvault->raw_data);
@@ -237,9 +219,6 @@ namespace gxbuild3::nand {
 
     namespace {
 
-        // ---- Encryption & Sealing (encrypt_all) -----------------------------------------------
-
-        // How many CG tails (sysupdate.xexpN) open the directory.
         size_t leading_cg_tails(const FlashFileSystem& filesystem) {
             const auto& entries = filesystem.entries();
             const auto first_other =
@@ -251,8 +230,6 @@ namespace gxbuild3::nand {
             return static_cast<size_t>(first_other - entries.begin());
         }
 
-        // What encrypt_all seals and binds for the type being sealed. The flags read the sealed
-        // type, never the member build type.
         struct SealPolicy {
             bool plaintext_cb_b;
             bool devkit;
@@ -262,9 +239,7 @@ namespace gxbuild3::nand {
             bool bind_extra_cb;
         };
 
-        // Decides the seal policy, refusing in this order: a Glitch3 chain without CB_X and a
-        // plaintext CB_B, a devkit chain without an SC, a plaintext CD a single CB keys from an
-        // absent CPU key, then an SMC binding without a CPU key and an aligned SMC.
+        // figures out which cb stages need smc binding and whether cbb stays plaintext for glitch3
         [[nodiscard]] Result<SealPolicy> seal_policy(const FlashImage& image,
                                                      std::span<const uint8_t> cpu_key,
                                                      BuildType seal_type) {
@@ -292,17 +267,10 @@ namespace gxbuild3::nand {
                             "Cannot encrypt CD: single-CB chain requires a CPU key");
             }
 
-            // CB_B binds the final encrypted SMC on every split chain, whatever the image
-            // type (xerunner build.py `chain`); a retail single CB binds it as well.
-            // Glitch3 emits CB_B plaintext, so it binds nothing here.
             const bool bind_cb_b = cb_section.cb_B.has_value() && !plaintext_cb_b;
-            // A devkit SB carries the console's block bound to the SMC, as a retail single CB
-            // does (xeBuild 1.21 devkit); a devgl SB is zero-paired and binds nothing.
             const bool bind_single_cb =
                 (seal_type == BuildType::Retail && cd_requires_cpu_key) ||
                 (devkit && seal_type != BuildType::Devgl && cb_section.cb_or_A.decrypted);
-            // A JTAG image's second CB carries the console's block itself, bound to the SMC
-            // under its own 1BL-derived key (xerunner build.py `_wears_console`).
             const bool bind_extra_cb = payloads.extra_cb.has_value() &&
                                        !payloads.extra_cb->data.empty() &&
                                        payloads.extra_cb->decrypted;
@@ -323,9 +291,6 @@ namespace gxbuild3::nand {
             };
         }
 
-        // Seals CB_A (bound to the SMC when the policy says so), then a Glitch3 CB_X, then
-        // gives a plaintext CB_B its handoff key, then seals a split chain's CB_B under CB_A's
-        // regime. The SMC is already sealed whenever a CB binds it.
         [[nodiscard]] Result<void> seal_cb_chain(CbSection& cb_section, const SealPolicy& policy,
                                                  std::span<const uint8_t> cpu_key,
                                                  const std::optional<Smc>& smc) {
@@ -356,18 +321,15 @@ namespace gxbuild3::nand {
                 }
             }
 
+            // stashes the cd handoff key in the first 16 bytes of the plaintext glitch3 cbb
             if (policy.plaintext_cb_b) {
                 if (cb_section.cb_B->data.size() < 16) {
                     return fail(ErrorCode::Malformed, "Plaintext CB_B has no handoff key");
                 }
                 if (cb_section.cb_B->derived_key) {
-                    // An encrypted replacement CB_B may have been decrypted for metadata.
-                    // Preserve its derived handoff key when emitting it in plaintext.
                     std::copy(cb_section.cb_B->derived_key->begin(),
                               cb_section.cb_B->derived_key->end(), cb_section.cb_B->data.begin());
                 } else {
-                    // Plaintext CB_B already carries its runtime key, as in RGH2to3.
-                    // CD is encrypted with this key, not the CB_X key or a new HMAC.
                     cb_section.cb_B->derived_key.emplace();
                     std::copy_n(cb_section.cb_B->data.begin(), 16,
                                 cb_section.cb_B->derived_key->begin());
@@ -380,8 +342,6 @@ namespace gxbuild3::nand {
                     return fail(ErrorCode::Malformed,
                                 "Cannot encrypt CB_B: CB_A derived key is missing");
                 }
-                // Computes the digest, or zeros it for a manufacturing chain or a zero
-                // CPU key, then seals under CB_A's regime.
                 if (auto sealed = cb_section.cb_B->encrypt_retail(
                         cb_section.cb_or_A.derived_key->data(), cpu_key, smc->data,
                         &cb_section.cb_or_A.header);
@@ -392,8 +352,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // A devkit SC is sealed under the zero secret; its key seals SD. A sealed SC is
-        // opened first, so its key is known.
         [[nodiscard]] Result<void> seal_devkit_sc(BootloaderSc& sc) {
             if (!sc.decrypted) {
                 if (auto opened = sc.decrypt(BootloaderSc::kZeroSecret); !opened) {
@@ -406,14 +364,10 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Seals CD under its parent's key (the devkit SC, CB_B or CB_A, with the CPU key when a
-        // single CB requires it), then CE under CD's.
         [[nodiscard]] Result<void> seal_kernel(KernelSection& kernel_section,
                                                const CbSection& cb_section,
                                                const SealPolicy& policy,
                                                std::span<const uint8_t> cpu_key) {
-            // xeBuild's CB_B patches keep CD decryption enabled. Plaintext CD is
-            // specific to separate XeLL ECC payloads, not these dashboard builds.
             if (!kernel_section.cd.data.empty() && kernel_section.cd.is_decrypted()) {
                 Result<void> sealed{};
                 if (policy.devkit) {
@@ -451,9 +405,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // The JTAG second chain: its CB sealed under HMAC(1BL key, nonce) with the
-        // console's block bound to the SMC, and its CD under HMAC(CB key, nonce) with no
-        // CPU-key pass, which only a retail single-CB chain takes.
         [[nodiscard]] Result<void> seal_jtag_extra(Payloads& payloads, const SealPolicy& policy,
                                                    std::span<const uint8_t> cpu_key,
                                                    const std::optional<Smc>& smc) {
@@ -490,11 +441,7 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Seals a slot's plaintext CG under its CF's key and fits the CG into the slot behind
-        // its CF. A CG that fits clears the CF's continuation table and any stale tail file; a
-        // longer one lays its tail in the filesystem (payload blocks and both update slots
-        // reserved first, the slots where `seal_plan` puts them) and names the tail's clusters
-        // in the CF's continuation table.
+        // encrypts cg and spills anything that doesn't fit in the update slot into a sysupdate.xexpN file in flashfs.
         [[nodiscard]] Result<void> prepare_cg_tail(FlashImage& image, SystemUpdate& slot,
                                                    std::string_view filename,
                                                    const LayoutPlan& seal_plan) {
@@ -555,7 +502,6 @@ namespace gxbuild3::nand {
                                         "reserving payload blocks for a CG tail");
                 }
             }
-            // plan_for_seal, not plan_layout: the slots are reserved by the type being sealed.
             const size_t base = seal_plan.update_base;
             if (const auto range =
                     image.flash_driver.block_range_for_byte_interval(base, 2 * stride)) {
@@ -571,9 +517,6 @@ namespace gxbuild3::nand {
                     return with_context(std::move(deleted), "deleting a stale CG tail");
                 }
             }
-            // A built image lists each CG tail first, in slot order, and lays it on the
-            // filesystem's first free blocks, directly past the slots (xeBuild 1.21).
-            // A parsed image keeps its other files where they are.
             auto added = image.preserve_layout
                              ? filesystem->add_file(filename, std::span(cg).subspan(prefix))
                              : filesystem->insert_file(leading_cg_tails(*filesystem), filename,
@@ -617,8 +560,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Writes a plaintext CF's per-box data back and, when its slot binds the console under
-        // the sealed type, re-MACs it over what it now states.
         [[nodiscard]] Result<void> bind_cf(BootloaderCf& cf, size_t slot_index,
                                            std::span<const uint8_t> cpu_key, BuildType seal_type) {
             if (cf.perbox.has_value()) {
@@ -630,7 +571,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Binds and seals update slot `slot_index`'s CF when it is plaintext.
         [[nodiscard]] Result<void> bind_and_seal_cf(SystemUpdate& slot, size_t slot_index,
                                                     std::span<const uint8_t> cpu_key,
                                                     BuildType seal_type) {
@@ -646,7 +586,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Seals the SMC, if no CB binding sealed it already, and the keyvault under a CPU key.
         [[nodiscard]] Result<void> seal_smc_kv(std::optional<Smc>& smc,
                                                std::optional<Keyvault>& keyvault,
                                                std::span<const uint8_t> cpu_key) {
@@ -671,7 +610,6 @@ namespace gxbuild3::nand {
             return std::unexpected(policy.error());
         }
         if (policy->bind_cb_b || policy->bind_single_cb || policy->bind_extra_cb) {
-            // Authentication covers the exact SMC ciphertext written to NAND.
             if (!smc->encrypted)
                 smc->encrypt();
         }
@@ -715,8 +653,6 @@ namespace gxbuild3::nand {
 
     namespace {
 
-        // ---- Per-Box Metadata & Stage Nonces --------------------------------------------------
-
         [[nodiscard]] Result<void> apply_cb_metadata(BootloaderCb& bootloader,
                                                      const InputMetadata& metadata,
                                                      std::string_view name) {
@@ -738,8 +674,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // A zero-paired CB states no pairing, no LDV and no digest: its whole per-box block is
-        // zero, and the CB then keys CD without the CPU key.
         [[nodiscard]] Result<void> zero_pair_cb(BootloaderCb& bootloader, std::string_view name) {
             if (!bootloader.perbox.has_value()) {
                 if (auto parsed = bootloader.parse_perbox(); !parsed) {
@@ -757,9 +691,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // A CF bound to the console states its update slot at 0x21B. A paired CF takes the
-        // console's pairing; an unpaired one states zero there. Either states the build's CF LDV
-        // when it has one.
         [[nodiscard]] Result<void> apply_cf_metadata(BootloaderCf& bootloader,
                                                      const InputMetadata& metadata,
                                                      std::optional<uint8_t> cf_ldv, bool paired,
@@ -782,7 +713,6 @@ namespace gxbuild3::nand {
             return {};
         }
 
-        // Opens a replacement stage so its metadata can be applied.
         [[nodiscard]] Result<void> open_for_metadata(Result<void> decrypted,
                                                      std::string_view name) {
             if (!decrypted) {
@@ -818,21 +748,11 @@ namespace gxbuild3::nand {
 
     } // namespace
 
-    // A glitch (RGH1) image boots a single zero-paired CB, so its CD is keyed without the
-    // CPU key, and its CFs state no pairing (xeBuild 1.21 glitch Jasper and Falcon). A JTAG
-    // image's main chain is zero-paired the same way; its second chain's CB carries the
-    // console's pairing and CB LDV instead, and its second CF is paired. A devgl image's SB
-    // is zero-paired too (xeBuild 1.21 devgl). Every other chain carries the console's pairing
-    // and CB LDV. A JTAG image's first update pair carries nothing of the console and keeps its
-    // CF's per-box block as supplied. Under the all-zero CPU key a chain with a CB_B is
-    // zero-paired: its CB_B per-box block is zero and its CFs state no pairing (xeBuild 1.21
-    // "zeropairing CB_B"); every CF then states LDV 0.
+    // writes or zeroes per-box ldv and pairing data on cb and cf stages depending on the build type
     Result<void> FlashImage::apply_bootloader_metadata(const InputMetadata& metadata,
                                                        BuildType target_type) {
         const bool zero_key = is_zero_cpu_key(metadata.cpu_key);
         const bool zero_paired_cb_b = zero_key && cb_section.cb_B.has_value();
-        // A glitch1 chain with a CB_B (CB_A + CB_B, as the trinity INIs list) is paired like a
-        // glitch2 one; only the single-CB glitch1 chain is zero-paired.
         const bool single_cb_glitch =
             target_type == BuildType::Glitch && !cb_section.cb_B.has_value();
         const bool paired = !single_cb_glitch && !zero_paired_cb_b;
@@ -907,8 +827,6 @@ namespace gxbuild3::nand {
         return {};
     }
 
-    // Stage nonces sit in clear, so they are read without decrypting. A donor whose chain does
-    // not reach CE gives none, and every new stage then takes a random nonce.
     std::optional<DonorNonces> FlashImage::collect_nonces() const {
         const auto& cb_a = cb_section.cb_or_A;
         const auto& cd = kernel_section.cd;
@@ -919,7 +837,6 @@ namespace gxbuild3::nand {
 
         DonorNonces nonces{};
         nonces.stages[0] = nonce_from(cb_a.data);
-        // A CB_B behind a CB_X carries its plaintext handoff key at +0x10, not a nonce.
         if (!cb_section.cb_x && cb_section.cb_B && cb_section.cb_B->data.size() >= 0x10) {
             nonces.stages[1] = nonce_from(cb_section.cb_B->data);
         } else if (cb_section.sc) {
@@ -939,13 +856,7 @@ namespace gxbuild3::nand {
         return nonces;
     }
 
-    // Sets the nonce of every stage run_build seals, before any key is derived from it. Each
-    // boot-chain key derives from its parent's, so a chain with any stage supplied already
-    // sealed keeps all its nonces. A CB_X chain keeps its CB_X and the handoff key its
-    // plaintext CB_B holds at +0x10. A devkit SC takes the CB_B nonce; any other SC is
-    // written as supplied. A JTAG image's second chain takes the first CB's and the CD's
-    // nonces again (xeBuild 1.21, xerunner build.py `_nonces`). An Error when an update
-    // package's CG does not open under its CF's key.
+    // sets donor or random nonces on all plaintext stages and decrypts any sealed cg first
     Result<void> FlashImage::apply_nonces(const std::optional<DonorNonces>& donor) {
         const auto stage = [&donor](size_t index) {
             return donor ? donor->stages[index] : std::optional<BootloaderNonce>{};
@@ -964,7 +875,6 @@ namespace gxbuild3::nand {
         auto& sc = cb_section.sc;
         auto& cd = kernel_section.cd;
         auto& ce = kernel_section.ce;
-        // An SC counts as sealed as decrypt_all reads it: not plaintext, with a non-zero nonce.
         const bool sc_sealed = sc && !sc->is_decrypted() && !is_zero_nonce(sc->header.key);
         const bool chain_plaintext =
             cb_a.decrypted && cb_a.data.size() >= 0x10 && (!cb_x || cb_x->decrypted) &&
@@ -978,7 +888,6 @@ namespace gxbuild3::nand {
             if (!cb_x && cb_b) {
                 set_cb(*cb_b, donor_or_random(stage(1)));
             } else if (devkit_chain() && sc) {
-                // A devkit SC sits in the CB_B position (xeBuild 1.21 devkit).
                 const auto sc_nonce = donor_or_random(stage(1));
                 std::copy(sc_nonce.begin(), sc_nonce.end(), std::begin(sc->header.key));
             }
@@ -1016,8 +925,6 @@ namespace gxbuild3::nand {
                 const auto nonce = donor_or_random(cf_nonce);
                 std::copy(nonce.begin(), nonce.end(), std::begin(cf->header.fixpoint_nonce));
             }
-            // An update package's CG arrives sealed under its CF's 7BL nonce; it is opened
-            // here so it can be sealed again under the chosen nonce.
             auto& cg = slot->cg;
             if (cg && !cg->decrypted && !cg->data.empty() && cf && cf->is_decrypted()) {
                 if (const auto key = cf->cg_key()) {

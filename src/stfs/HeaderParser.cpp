@@ -30,7 +30,6 @@ namespace gxbuild3::stfs {
             return fail(ErrorCode::Malformed, "invalid STFS magic bytes");
         }
 
-        // Copies an on-disk byte or char field into the model's array of the same size.
         template <class To, class From, std::size_t N>
         [[nodiscard]] std::array<To, N> to_array(const From (&field)[N]) {
             return std::bit_cast<std::array<To, N>>(field);

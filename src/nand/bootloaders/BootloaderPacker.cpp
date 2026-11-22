@@ -96,7 +96,6 @@ namespace gxbuild3::nand {
 
         bool plaintext = false;
 
-        // Renames a CB/SB block in place; the magic lives in its first two bytes.
         const auto rename = [](BootloaderBlock& bl, uint16_t magic) -> Result<void> {
             if (bl.data.size() < 2) {
                 return fail(ErrorCode::Truncated,
@@ -111,7 +110,6 @@ namespace gxbuild3::nand {
         };
 
         for (auto& bl : bls) {
-            // Every stage here, SC included, keeps its nonce at 0x10 and seals from 0x20.
             const size_t crypt_start = 0x20;
 
             if (plaintext) {
@@ -130,6 +128,7 @@ namespace gxbuild3::nand {
 
             switch (bl.magic) {
                 case 0x4342:
+                    // cbx (build 15432) leaves the following cbb in plaintext and grabs its key directly from +0x10
                     if (bl.build == 15432) {
                         plaintext = true;
                         hmac_type = HmacType::Default;
@@ -146,6 +145,7 @@ namespace gxbuild3::nand {
                             hmac_type = HmacType::Split;
                         }
                     } else {
+                        // swaps cb and sb magic bytes around when packing a hybrid devkit chain.
                         if (bl_count[0x4342] > 1) {
                             if (bl_count[0x5343] > 0 && bl_count[0x5344] > 0) {
                                 if (auto renamed = rename(bl, 0x5342); !renamed) {

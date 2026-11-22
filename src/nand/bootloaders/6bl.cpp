@@ -18,11 +18,10 @@ namespace gxbuild3::nand {
 
         constexpr std::string_view kStage = "CF/6BL";
 
-        // The per-box block sits after the payload's CG continuation (spill) table.
         constexpr size_t kCfPerboxOffset = kCfTableSize;
         constexpr size_t kCfPerboxEnd = kCfPerboxOffset + sizeof(cf_perbox);
 
-        // CF is the one stage whose RC4 starts after its 0x30-byte header, not at +0x20.
+        // cf encryption starts at 0x30 instead of 0x20 like the other stages
         constexpr size_t kCfCryptStart = 0x30;
 
     } // namespace
@@ -36,7 +35,6 @@ namespace gxbuild3::nand {
         cf.header = parsed->header;
         cf.data = std::move(parsed->data);
         cf.decrypted = cf.is_decrypted();
-        // A plaintext CF too short for the per-box block still parses, without `perbox`.
         if (cf.decrypted) {
             if (auto parsed_perbox = cf.parse_perbox(); !parsed_perbox)
                 Log::Debug("CF per-box data not parsed: {}", parsed_perbox.error().describe());
@@ -50,19 +48,15 @@ namespace gxbuild3::nand {
         if (decrypted)
             return {};
 
-        // CF does not pad on decrypt; the serialized stage must hold the per-box block.
         if (sizeof(cf_header) + data.size() < 0x230)
             return fail(ErrorCode::Truncated, "CF/6BL payload too short");
 
-        // CF keeps no derived key: the HMAC(onebl_key, nonce) the crypt returns is dropped.
         if (auto key = stage::crypt_stage_record(header, data, HmacType::Default, onebl_key,
                                                  nullptr, kCfCryptStart, kStage);
             !key)
             return std::unexpected(std::move(key.error()));
 
         decrypted = true;
-        // The 0x230-byte check above covers the per-box block, so this cannot fail; `perbox`
-        // would otherwise keep its previous value.
         if (auto parsed = parse_perbox(); !parsed)
             Log::Debug("CF per-box data not parsed: {}", parsed.error().describe());
         return {};
@@ -74,15 +68,12 @@ namespace gxbuild3::nand {
         auto payload_size = stage::stage_payload_size(header, kStage);
         if (!payload_size)
             return std::unexpected(std::move(payload_size.error()));
-        // A CF without parsed per-box data has nothing to write back; one whose payload no
-        // longer holds it is an error.
         if (perbox.has_value()) {
             if (auto stored = serialize_perbox(); !stored)
                 return with_context(std::move(stored), std::string(kStage));
         }
         stage::pad_payload(data, *payload_size);
 
-        // CF keeps its stored nonce: unlike SC/CD/CE/CG, a zero nonce is not randomised.
         if (auto key = stage::crypt_stage_record(header, data, HmacType::Default, onebl_key,
                                                  nullptr, kCfCryptStart, kStage);
             !key)
@@ -92,10 +83,10 @@ namespace gxbuild3::nand {
         return {};
     }
 
+    // temporarily swaps the derived rc4 key into +0x20 before computing the per-box hmac over the first 0x220 bytes
     Result<void> BootloaderCf::calc_mac(const uint8_t onebl_key[16], const uint8_t cpu_key[16]) {
         if (!onebl_key || !cpu_key)
             return fail(ErrorCode::InvalidArgument, "CF MAC needs the 1BL key and the CPU key");
-        // Implies the 0x220 serialized bytes the MAC covers.
         if (data.size() < kCfPerboxEnd)
             return fail(ErrorCode::Truncated,
                         "CF payload (0x{:X} bytes) is too short for its per-box MAC", data.size());
@@ -119,9 +110,8 @@ namespace gxbuild3::nand {
         return {};
     }
 
+    // checks for 32 zero bytes at file offset 0x1F0
     bool BootloaderCf::is_decrypted() const {
-        // Same test as xeBuild's cfDecrypt: 32 zero bytes at file offset 0x1F0 (data 0x1C0).
-        // Ciphertext never has that run; the patch-slot count at 0x30 is not a safe marker.
         if (decrypted)
             return true;
         constexpr size_t kZeroOff = 0x1F0 - sizeof(cf_header);

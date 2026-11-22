@@ -9,29 +9,20 @@
 
 namespace gxbuild3::stfs {
 
-    // STFS geometry. Blocks are 4 KiB; block numbers are 24 bits wide.
     inline constexpr std::size_t kBlockSize = 0x1000;
     inline constexpr std::uint32_t kMaxBlockNumber = 0xFFFFFF;
 
-    // The next-block field of the last hash entry in a chain.
     inline constexpr std::uint32_t kChainTerminator = kMaxBlockNumber;
 
-    // A hash table block holds 0xAA entries of 0x18 bytes (SHA-1, status, next block).
     inline constexpr std::size_t kHashEntrySize = 0x18;
 
-    // Data blocks covered by one hash table at level 0, 1 and 2.
     inline constexpr std::array<std::uint32_t, 3> kDataBlocksPerHashLevel = {0xAA, 0x70E4,
                                                                              0x4AF768};
 
-    // CON signatures end at 0x22C (0x1AC + 0x80); LIVE/PIRS signatures end at 0x22C as well
-    // (0x004 + 0x100 + 0x128). Every header variant needs this many bytes.
     inline constexpr std::size_t kHeaderRegionSize = 0x22C;
 
-    // Offset of the signature block that follows the 4-byte magic.
     inline constexpr std::size_t kSignatureOffset = 0x004;
 
-    // The CON (console-signed) signature block at kSignatureOffset: the console certificate
-    // followed by the package signature. Offsets below are relative to kSignatureOffset.
     struct con_signature_disk {
         wire::be16 public_key_certificate_size;
         std::uint8_t console_id[5];
@@ -54,7 +45,6 @@ namespace gxbuild3::stfs {
     static_assert(offsetof(con_signature_disk, certificate_signature) == 0xA8);
     static_assert(offsetof(con_signature_disk, signature) == 0x1A8);
 
-    // The LIVE/PIRS (Microsoft-signed) signature block at kSignatureOffset.
     struct live_signature_disk {
         std::uint8_t package_signature[0x100];
         std::uint8_t padding[0x128];
@@ -66,10 +56,8 @@ namespace gxbuild3::stfs {
     static_assert(kSignatureOffset + sizeof(con_signature_disk) == kHeaderRegionSize);
     static_assert(kSignatureOffset + sizeof(live_signature_disk) == kHeaderRegionSize);
 
-    // Bytes of the v1 metadata parsed by parse_metadata; every header holds at least this much.
     inline constexpr std::uint32_t kMinMetadataSize = 0x971A;
 
-    // One 0x10-byte license table entry. An all-zero id marks an unused slot.
     struct stfs_license_entry {
         wire::be64 id;
         wire::be32 bits;
@@ -80,8 +68,6 @@ namespace gxbuild3::stfs {
     static_assert(offsetof(stfs_license_entry, bits) == 0x08);
     static_assert(offsetof(stfs_license_entry, flags) == 0x0C);
 
-    // The STFS volume descriptor (descriptor type 0). The file table block count and number are
-    // little-endian; the block counts are big-endian.
     struct stfs_volume_descriptor_disk {
         std::uint8_t size;
         std::uint8_t reserved;
@@ -101,8 +87,6 @@ namespace gxbuild3::stfs {
     static_assert(offsetof(stfs_volume_descriptor_disk, total_allocated_block_count) == 0x1C);
     static_assert(offsetof(stfs_volume_descriptor_disk, total_unallocated_block_count) == 0x20);
 
-    // The SVOD volume descriptor (descriptor type 1). The 24-bit block fields are read
-    // big-endian; that byte order has not been checked against a real SVOD package.
     struct svod_volume_descriptor_disk {
         std::uint8_t size;
         std::uint8_t block_cache_element_count;
@@ -122,12 +106,9 @@ namespace gxbuild3::stfs {
     static_assert(offsetof(svod_volume_descriptor_disk, data_block_offset) == 0x1C);
     static_assert(offsetof(svod_volume_descriptor_disk, reserved) == 0x1F);
 
-    // The metadata that follows the signature block, from kMetadataOffset up to the thumbnails.
-    // The volume descriptor stays raw bytes: its layout depends on descriptor_type, which follows
-    // it. The four strings are NUL-terminated UTF-16BE. series_id .. episode_number are only
-    // meaningful when metadata_version is 2.
     inline constexpr std::size_t kMetadataOffset = kHeaderRegionSize;
 
+    // keeps volume_descriptor as raw bytes until descriptor_type is read after it
     struct stfs_metadata_disk {
         stfs_license_entry license[0x10];
         std::uint8_t header_sha1[0x14];
@@ -168,7 +149,6 @@ namespace gxbuild3::stfs {
     static_assert(wire::WireLayout<stfs_metadata_disk>);
     static_assert(sizeof(stfs_metadata_disk) == 0x14EE);
 
-    // Absolute offsets in the package header.
     static_assert(kMetadataOffset + offsetof(stfs_metadata_disk, license) == 0x022C);
     static_assert(kMetadataOffset + offsetof(stfs_metadata_disk, header_sha1) == 0x032C);
     static_assert(kMetadataOffset + offsetof(stfs_metadata_disk, header_size) == 0x0340);
@@ -212,7 +192,6 @@ namespace gxbuild3::stfs {
     static_assert(sizeof(svod_volume_descriptor_disk) ==
                   sizeof(stfs_metadata_disk::volume_descriptor));
 
-    // The two thumbnails follow the metadata, each in a slot of kThumbnailSlotSize bytes.
     inline constexpr std::size_t kThumbnailOffset = kMetadataOffset + sizeof(stfs_metadata_disk);
     inline constexpr std::size_t kThumbnailSlotSize = 0x4000;
     inline constexpr std::size_t kTitleThumbnailOffset = kThumbnailOffset + kThumbnailSlotSize;
@@ -220,9 +199,6 @@ namespace gxbuild3::stfs {
     static_assert(kTitleThumbnailOffset == 0x571A);
     static_assert(kTitleThumbnailOffset + kThumbnailSlotSize == kMinMetadataSize);
 
-    // One 0x40-byte file table entry as the container stores it. Block counts and the starting
-    // block are 24-bit little-endian; the rest is big-endian. The name is not NUL-terminated and
-    // its length is the low six bits of flags.
     struct stfs_file_table_entry {
         char name[0x28];
         std::uint8_t flags;
@@ -245,8 +221,6 @@ namespace gxbuild3::stfs {
     static_assert(offsetof(stfs_file_table_entry, update_timestamp) == 0x38);
     static_assert(offsetof(stfs_file_table_entry, access_timestamp) == 0x3C);
 
-    // One 0x18-byte hash table entry: the SHA-1 of the block it covers, the block's status and,
-    // at level 0, the next block of the file's chain (24-bit big-endian; kChainTerminator ends it).
     struct stfs_hash_entry {
         std::uint8_t sha1[0x14];
         std::uint8_t status;
@@ -257,9 +231,6 @@ namespace gxbuild3::stfs {
     static_assert(offsetof(stfs_hash_entry, status) == 0x14);
     static_assert(offsetof(stfs_hash_entry, next_block) == 0x15);
 
-    // Byte offset of the level-`level` hash entry for logical block `block`: the entry's index in
-    // the hash table block that covers it, scaled by kHashEntrySize, added to that table block's
-    // offset. Fails like compute_level_n_hash_block_number and block_to_offset.
     [[nodiscard]] Result<std::uint64_t> hash_entry_offset(std::uint32_t block, int level,
                                                           std::uint32_t header_size);
 
