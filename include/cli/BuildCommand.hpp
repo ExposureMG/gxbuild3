@@ -1,21 +1,20 @@
 #pragma once
 
-#include "BuildRunner.hpp"
-#include "Error.hpp"
+#include "core/BuildRunner.hpp"
 #include "cli/BuildArgs.hpp"
 #include "cli/BuildInputResolver.hpp"
+#include "gxbuild/Error.hpp"
 
-#include <expected>
 #include <filesystem>
 #include <functional>
 #include <string>
 #include <vector>
 
-namespace gxbuild3::cli {
+namespace gxbuild::cli {
 
     struct BuildCommandServices {
-        std::function<std::expected<BuildRequest, ResolutionError>(const BuildArgs&)> resolve;
-        std::function<BuildResult(const Input&)> build;
+        std::function<Result<BuildRequest>(const BuildArgs&)> resolve;
+        std::function<Result<std::vector<uint8_t>>(const Input&)> build;
         std::function<Result<void>(const std::filesystem::path&, const std::vector<uint8_t>&)>
             write;
     };
@@ -28,4 +27,4 @@ namespace gxbuild3::cli {
     CommandResult run_build_command(const BuildArgs& args, const BuildCommandServices& services);
     BuildCommandServices default_build_command_services(const std::filesystem::path& cwd);
 
-} // namespace gxbuild3::cli
+} // namespace gxbuild::cli

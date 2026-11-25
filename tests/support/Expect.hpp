@@ -1,6 +1,6 @@
 #pragma once
 
-// Result-aware gtest assertions for gxbuild3 tests.
+// Result-aware gtest assertions for gxbuild tests.
 //
 //   EXPECT_OK(expr) / ASSERT_OK(expr)            the result holds a value (or void success)
 //   ASSERT_OK_AND_ASSIGN(lhs, expr)              ASSERT_OK, then `lhs = std::move(*result)`;
@@ -11,15 +11,13 @@
 //   EXPECT_BYTES_EQ(a, b) / ASSERT_BYTES_EQ      byte equality reporting sizes and the first
 //                                                differing offset, never the contents
 //
-// A result is anything with has_value() and error(): Result<T>, the public BuildResult,
-// cli::ParseError and cli::ResolutionError results and utils::FileLookupResult. The description
-// of an error is describe() when it has one (gxbuild3::Error and FileLookupError), else its
-// message member; EXPECT_OK and ASSERT_OK also print a ResolutionError's path and item.
+// A result is anything with has_value() and error(): Result<T>. The description
+// of an error is describe() when it has one (gxbuild::Error), else its message member.
 //
 // Table rows: declare GX_PRINT_ROW_AS_NAME(Row) next to the row struct and instantiate with
 // test::RowName{}, so a row prints and lists as its name and never as raw bytes.
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 
 #include <concepts>
 #include <cstddef>
@@ -34,14 +32,14 @@
 #include <utility>
 #include <vector>
 
-namespace gxbuild3 {
+namespace gxbuild {
     // Found by ADL: gtest prints an ErrorCode as its name and an Error as
     // "[<code>] <describe()>" instead of raw bytes.
     void PrintTo(ErrorCode code, std::ostream* os);
     void PrintTo(const Error& error, std::ostream* os);
-} // namespace gxbuild3
+} // namespace gxbuild
 
-namespace gxbuild3::test {
+namespace gxbuild::test {
 
     using Bytes = std::vector<uint8_t>;
 
@@ -73,8 +71,8 @@ namespace gxbuild3::test {
         }
     }
 
-    // " (path '<path>', item '<item>')" for an error that names where it came from (a
-    // cli::ResolutionError), else nothing.
+    // " (path '<path>', item '<item>')" when an error carries explicit path/item fields, else
+    // nothing.
     template <class E> [[nodiscard]] std::string provenance_text(const E& error) {
         if constexpr (requires {
                           error.path.string();
@@ -162,24 +160,24 @@ namespace gxbuild3::test {
         }
     };
 
-} // namespace gxbuild3::test
+} // namespace gxbuild::test
 
 #define GX_TEST_CONCAT_INNER_(a, b) a##b
 #define GX_TEST_CONCAT_(a, b) GX_TEST_CONCAT_INNER_(a, b)
 
-#define EXPECT_OK(expr) EXPECT_TRUE(::gxbuild3::test::detail::is_ok(#expr, (expr)))
-#define ASSERT_OK(expr) ASSERT_TRUE(::gxbuild3::test::detail::is_ok(#expr, (expr)))
+#define EXPECT_OK(expr) EXPECT_TRUE(::gxbuild::test::detail::is_ok(#expr, (expr)))
+#define ASSERT_OK(expr) ASSERT_TRUE(::gxbuild::test::detail::is_ok(#expr, (expr)))
 
 #define GX_ASSERT_OK_AND_ASSIGN_(holder, lhs, expr)                                                \
     auto holder = (expr);                                                                          \
-    ASSERT_TRUE(::gxbuild3::test::detail::is_ok(#expr, holder));                                   \
+    ASSERT_TRUE(::gxbuild::test::detail::is_ok(#expr, holder));                                   \
     lhs = std::move(*holder)
 #define ASSERT_OK_AND_ASSIGN(lhs, expr)                                                            \
     GX_ASSERT_OK_AND_ASSIGN_(GX_TEST_CONCAT_(gx_result_, __LINE__), lhs, expr)
 
 #define GX_FAILS_WITH_(expr, code, match, text)                                                    \
-    ::gxbuild3::test::detail::fails_with(#expr, (expr), (code),                                    \
-                                         ::gxbuild3::test::detail::MessageMatch::match, (text))
+    ::gxbuild::test::detail::fails_with(#expr, (expr), (code),                                    \
+                                         ::gxbuild::test::detail::MessageMatch::match, (text))
 #define EXPECT_ERROR(expr, code) EXPECT_TRUE(GX_FAILS_WITH_(expr, code, Any, ""))
 #define ASSERT_ERROR(expr, code) ASSERT_TRUE(GX_FAILS_WITH_(expr, code, Any, ""))
 #define EXPECT_ERROR_MSG(expr, code, exact) EXPECT_TRUE(GX_FAILS_WITH_(expr, code, Exact, exact))
@@ -190,9 +188,9 @@ namespace gxbuild3::test {
     ASSERT_TRUE(GX_FAILS_WITH_(expr, code, Contains, substring))
 
 #define EXPECT_BYTES_EQ(expected, actual)                                                          \
-    EXPECT_PRED_FORMAT2(::gxbuild3::test::detail::bytes_equal_format, expected, actual)
+    EXPECT_PRED_FORMAT2(::gxbuild::test::detail::bytes_equal_format, expected, actual)
 #define ASSERT_BYTES_EQ(expected, actual)                                                          \
-    ASSERT_PRED_FORMAT2(::gxbuild3::test::detail::bytes_equal_format, expected, actual)
+    ASSERT_PRED_FORMAT2(::gxbuild::test::detail::bytes_equal_format, expected, actual)
 
 // Prints a table row as its name only: without it gtest prints a row struct as raw bytes in
 // failure output and as "N-byte object" in --gtest_list_tests, which leaks key material.

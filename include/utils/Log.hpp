@@ -8,7 +8,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace gxbuild3 {
+namespace gxbuild {
 
     // captures the caller's source_location implicitly alongside the format string
     template <typename... Args> struct LogFormatWithLoc {
@@ -109,4 +109,4 @@ namespace gxbuild3 {
         static std::shared_ptr<spdlog::logger> s_Logger;
     };
 
-} // namespace gxbuild3
+} // namespace gxbuild

@@ -1,16 +1,18 @@
 #include "nand/objects/SecuredFiles.hpp"
 
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 #include "excrypt.h"
 #include "nand/bootloaders/Common.hpp"
 #include "nand/objects/Keyvault.hpp"
+#include "utils/Log.hpp"
+#include "utils/Utils.hpp"
 
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <string_view>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     namespace {
 
@@ -317,15 +319,15 @@ namespace gxbuild3::nand {
 
     CrlSealing random_crl_sealing() {
         CrlSealing sealing{};
-        ExCryptRandom(sealing.iv.data(), sealing.iv.size());
-        ExCryptRandom(sealing.file_key.data(), sealing.file_key.size());
+        utils::fill_random(sealing.iv);
+        utils::fill_random(sealing.file_key);
         return sealing;
     }
 
     DaeSealing random_dae_sealing() {
         DaeSealing sealing{};
-        ExCryptRandom(sealing.head.data(), sealing.head.size());
-        ExCryptRandom(sealing.field.data(), sealing.field.size());
+        utils::fill_random(sealing.head);
+        utils::fill_random(sealing.field);
         return sealing;
     }
 
@@ -453,7 +455,7 @@ namespace gxbuild3::nand {
 
     std::array<uint8_t, 8> random_secdata_head() {
         std::array<uint8_t, 8> head{};
-        ExCryptRandom(head.data(), head.size());
+        utils::fill_random(head);
         return head;
     }
 
@@ -530,4 +532,185 @@ namespace gxbuild3::nand {
         return head;
     }
 
-} // namespace gxbuild3::nand
+    bool is_cpu_keyed_secfile(std::string_view name) {
+        const auto lower = utils::to_lower(name);
+        return lower == "secdata.bin" || lower == "extended.bin";
+    }
+
+    bool is_console_secured_file(std::string_view name) {
+        const auto lower = utils::to_lower(name);
+        return lower == "crl.bin" || lower == "dae.bin" || lower == "secdata.bin";
+    }
+
+    const std::vector<uint8_t>* console_secured_file(const InputMetadata& metadata,
+                                                     std::string_view lower_name) {
+        for (const auto& [name, data] : metadata.console_secured_files) {
+            if (utils::to_lower(name) == lower_name) {
+                return &data;
+            }
+        }
+        return nullptr;
+    }
+
+    // Re-encrypts console-bound flashfs files with the target cpu key, or generates clean ones if they're missing or broken.
+    Result<std::vector<uint8_t>> sealed_flashfs_file(std::string_view name,
+                                                     const std::vector<uint8_t>& data,
+                                                     const Input& input,
+                                                     const SecuredFileBuild& build) {
+        const auto& cpu_key = input.metadata.cpu_key;
+        const auto lower = utils::to_lower(name);
+        if (cpu_key.size() < 16) {
+            return data;
+        }
+        const auto* own = console_secured_file(input.metadata, lower);
+        if (lower == "crl.bin") {
+            std::optional<CrlSealing> sealing;
+            if (own) {
+                if (auto own_sealing = crl_sealing(*own, cpu_key)) {
+                    sealing = *own_sealing;
+                } else {
+                    Log::Warn(
+                        "The console's crl.bin does not open under its CPU key; its sealing is "
+                        "not used");
+                    Log::Debug("crl.bin sealing: {}", own_sealing.error().describe());
+                }
+            }
+            if (!sealing) {
+                if (auto supplied_sealing = crl_sealing(data, cpu_key)) {
+                    sealing = *supplied_sealing;
+                }
+            }
+            if (!sealing) {
+                Log::Info("crl.bin is sealed under a drawn vector and file key");
+                sealing = random_crl_sealing();
+            }
+            auto sealed = reseal_crl(data, cpu_key, *sealing, build);
+            if (sealed) {
+                return std::move(*sealed);
+            }
+            Log::Warn("crl.bin opens under no key it is tried under; it is written as supplied");
+            Log::Debug("crl.bin not resealed: {}", sealed.error().describe());
+            return data;
+        }
+        if (lower == "dae.bin") {
+            std::optional<DaeSealing> sealing;
+            if (own) {
+                if (auto own_sealing = dae_sealing(*own, cpu_key)) {
+                    sealing = *own_sealing;
+                } else {
+                    Log::Warn(
+                        "The console's dae.bin does not open under its CPU key; its sealing is "
+                        "not used");
+                    Log::Debug("dae.bin sealing: {}", own_sealing.error().describe());
+                }
+            }
+            if (!sealing) {
+                if (auto supplied_sealing = dae_sealing(data, cpu_key)) {
+                    sealing = *supplied_sealing;
+                }
+            }
+            if (!sealing) {
+                Log::Info("dae.bin is sealed under a drawn head and field");
+                sealing = random_dae_sealing();
+            }
+            auto sealed = reseal_dae(data, cpu_key, *sealing, build);
+            if (sealed) {
+                return std::move(*sealed);
+            }
+            Log::Warn("dae.bin opens under no key it is tried under; it is written as supplied");
+            Log::Debug("dae.bin not resealed: {}", sealed.error().describe());
+            return data;
+        }
+        // grabs the 8-byte header from kv +0x10 if we have one
+        if (lower == "extended.bin") {
+            const auto& keyvault = input.metadata.keyvault;
+            const bool keyvault_head = keyvault && keyvault->size() >= 0x18;
+            if (data.size() == kExtendedSize && extended_opened(data, cpu_key)) {
+                const auto head_source = keyvault_head ? std::span<const uint8_t>(*keyvault)
+                                                       : std::span<const uint8_t>(data);
+                return reseal_extended(data, cpu_key, head_source.subspan(0x10).first<8>());
+            }
+            if (data.empty()) {
+                Log::Info("extended.bin was not supplied; a clean one is made up");
+            } else if (data.size() != kExtendedSize) {
+                Log::Warn("extended.bin is 0x{:X} bytes, not 0x{:X}; a clean one is made up",
+                          data.size(), kExtendedSize);
+            } else {
+                Log::Warn("extended.bin opens under no key; a clean one is made up");
+            }
+            std::array<uint8_t, 8> head{};
+            if (keyvault_head) {
+                std::copy_n(keyvault->begin() + 0x10, head.size(), head.begin());
+            }
+            return clean_extended(cpu_key, head);
+        }
+        if (lower == "secdata.bin") {
+            std::optional<std::array<uint8_t, 8>> own_head;
+            if (own && secdata_opened(*own, cpu_key)) {
+                if (auto head = secdata_head(*own)) {
+                    own_head = *head;
+                }
+            }
+            if (data.size() == kSecdataSize && secdata_opened(data, cpu_key)) {
+                return reseal_secdata(data, cpu_key, own_head, build);
+            }
+            // if a supplied secdata fails to decrypt, just re-encrypt it as-is under its existing nonce
+            const bool unopened_own = own && data == *own;
+            if (data.size() == kSecdataSize && !unopened_own) {
+                Log::Warn("secdata.bin did not open under the CPU key; it is sealed again under "
+                          "the nonce it carries");
+                std::vector<uint8_t> file_data = data;
+                if (auto crypted = crypt_secfile(cpu_key, file_data); !crypted) {
+                    return std::unexpected(std::move(crypted.error()));
+                }
+                return file_data;
+            }
+            if (data.empty()) {
+                Log::Info("secdata.bin was not supplied; a clean one is made up");
+            } else if (data.size() != kSecdataSize) {
+                Log::Warn("secdata.bin is 0x{:X} bytes, not 0x{:X}; a clean one is made up",
+                          data.size(), kSecdataSize);
+            } else {
+                Log::Warn("The console's secdata.bin does not open under its CPU key; a clean one "
+                          "is made up");
+            }
+            auto head = own_head;
+            if (!head) {
+                Log::Info("secdata.bin is made up under a drawn head");
+                head = random_secdata_head();
+            }
+            return clean_secdata(cpu_key, *head, build);
+        }
+        if (lower == "fcrt.bin") {
+            auto sealed = seal_fcrt(data, cpu_key);
+            switch (sealed.sealing) {
+                case FcrtSealing::Sealed:
+                    Log::Debug("fcrt.bin was in the clear; it is sealed under the CPU key");
+                    break;
+                case FcrtSealing::Carried:
+                    Log::Debug("fcrt.bin is sealed under the CPU key already; it is carried");
+                    break;
+                case FcrtSealing::InvalidSize:
+                    Log::Warn("fcrt.bin is 0x{:X} bytes, not 0x4000; it is written as supplied",
+                              data.size());
+                    break;
+                case FcrtSealing::InvalidOffset:
+                    Log::Warn("fcrt.bin's header puts its sealed part past its end; it is written "
+                              "as supplied");
+                    break;
+                case FcrtSealing::Damaged:
+                    if (own && data == *own) {
+                        Log::Warn("The console's fcrt.bin does not open under the CPU key; it is "
+                                  "carried as it stands");
+                        return data;
+                    }
+                    Log::Warn("fcrt.bin is neither in the clear nor opens under the CPU key; it is "
+                              "written as its failed opening, as xeBuild writes it");
+                    break;
+            }
+            return std::move(sealed.data);
+        }
+        return data;
+    }
+
+} // namespace gxbuild::nand

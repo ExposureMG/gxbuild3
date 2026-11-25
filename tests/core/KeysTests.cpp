@@ -15,7 +15,7 @@
 #include <optional>
 #include <string_view>
 
-namespace gxbuild3::core {
+namespace gxbuild::core {
     namespace {
 
         // 32 hex characters as a key; nullopt for anything else.
@@ -96,4 +96,4 @@ namespace gxbuild3::core {
         }
 
     } // namespace
-} // namespace gxbuild3::core
+} // namespace gxbuild::core

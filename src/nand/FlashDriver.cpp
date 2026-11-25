@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     Driver::Driver(ImageSize size, DriverMode mode) : m_driver_mode(mode), m_image_size(size) {
         switch (m_driver_mode) {
@@ -551,33 +551,6 @@ namespace gxbuild3::nand {
         return result;
     }
 
-    std::span<const uint8_t> Driver::read_offset(size_t offset, size_t length) const {
-        if (m_driver_mode == DriverMode::Emmc || m_page_size == 512) {
-            if (offset + length > m_nand_image.size()) {
-                return {};
-            }
-            return {m_nand_image.data() + offset, length};
-        }
-
-        size_t offintopage = offset % 512;
-        size_t pageinimage = offset / 512;
-
-        // returns a direct span if the read stays within one 512-byte page, otherwise de-interleaves spare bytes into scratch.
-        if (offintopage + length <= 512) {
-            size_t raw_pos = pageinimage * m_page_size + offintopage;
-            if (raw_pos + length > m_nand_image.size()) {
-                return {};
-            }
-            return {m_nand_image.data() + raw_pos, length};
-        }
-
-        m_offset_scratch = read_clean(offset, length);
-        if (m_offset_scratch.size() != length) {
-            return {};
-        }
-        return {m_offset_scratch.data(), m_offset_scratch.size()};
-    }
-
     bool Driver::write_offset(size_t offset, std::span<const uint8_t> data) {
         if (data.empty()) {
             return true;
@@ -649,7 +622,7 @@ namespace gxbuild3::nand {
         }
     } // namespace
 
-    std::vector<uint8_t>& Driver::serialize() {
+    std::vector<uint8_t>& Driver::finalize() {
         if (m_driver_mode != DriverMode::Emmc && m_page_size == 528) {
             const size_t total_blks = block_count();
             for (size_t blk = 0; blk < total_blks; ++blk) {
@@ -734,8 +707,8 @@ namespace gxbuild3::nand {
         return m_nand_image;
     }
 
-    const std::vector<uint8_t>& Driver::serialize() const {
+    const std::vector<uint8_t>& Driver::raw_bytes() const noexcept {
         return m_nand_image;
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

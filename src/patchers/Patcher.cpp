@@ -1,6 +1,6 @@
 #include "patchers/Patcher.hpp"
 
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 #include "utils/Log.hpp"
 
 #include <cstdint>
@@ -8,7 +8,7 @@
 #include <format>
 #include <utility>
 
-namespace gxbuild3::patchers {
+namespace gxbuild::patchers {
 
     Result<> apply_patch(uint8_t* data, uint32_t dataSize, uint32_t address, uint32_t length,
                          const uint32_t* patchWords) {
@@ -70,4 +70,4 @@ namespace gxbuild3::patchers {
         return {};
     }
 
-} // namespace gxbuild3::patchers
+} // namespace gxbuild::patchers

@@ -1,6 +1,7 @@
 #include "cli/CommandLine.hpp"
 
-#include "Args.hpp"
+#include "core/Args.hpp"
+#include "utils/Utils.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -10,23 +11,8 @@
 #include <utility>
 #include <vector>
 
-namespace gxbuild3::cli {
+namespace gxbuild::cli {
     namespace {
-
-        ParseError error(ParseErrorCode code, std::string_view argument, std::string_view message,
-                         size_t index) {
-            return {code, std::string(argument), std::string(message), index};
-        }
-
-        std::string lowercase(std::string_view raw) {
-            std::string result;
-            result.reserve(raw.size());
-            for (const char character : raw) {
-                result.push_back(
-                    static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
-            }
-            return result;
-        }
 
         std::vector<std::string> split_list(std::string_view raw) {
             std::vector<std::string> values;
@@ -80,13 +66,11 @@ namespace gxbuild3::cli {
             return options.set(key, value.substr(equals + 1));
         }
 
-        std::expected<std::string_view, ParseError>
-        take_value(std::span<const std::string_view> argv, size_t& index) {
+        Result<std::string_view> take_value(std::span<const std::string_view> argv, size_t& index) {
             const auto option = argv[index];
             if (index + 1 >= argv.size() || argv[index + 1].empty() ||
                 argv[index + 1].front() == '-') {
-                return std::unexpected(
-                    error(ParseErrorCode::MissingValue, option, "missing option value", index));
+                return fail(ErrorCode::InvalidArgument, "missing option value for '{}'", option);
             }
             ++index;
             return argv[index];
@@ -94,8 +78,7 @@ namespace gxbuild3::cli {
 
     } // namespace
 
-    std::expected<ParsedCommand, ParseError>
-    parse_command_line(std::span<const std::string_view> argv) {
+    Result<ParsedCommand> parse_command_line(std::span<const std::string_view> argv) {
         BuildArgs args;
         args.output_path = std::filesystem::current_path() / "updflash.bin";
 
@@ -123,8 +106,7 @@ namespace gxbuild3::cli {
             }
             if (token == "-v" || token == "--verbose") {
                 if (std::exchange(saw_verbose, true)) {
-                    return std::unexpected(
-                        error(ParseErrorCode::DuplicateArgument, token, "duplicate option", index));
+                    return fail(ErrorCode::InvalidArgument, "duplicate option '{}'", token);
                 }
                 args.verbose = true;
                 continue;
@@ -134,9 +116,7 @@ namespace gxbuild3::cli {
                 token != "-i" && token != "--input" && token != "-o" && token != "--output" &&
                 token != "-p" && token != "--cpukey" && token != "-e" && token != "--ext" &&
                 token != "-c" && token != "--config" && token != "-a" && token != "--addon") {
-                return std::unexpected(error(ParseErrorCode::UnknownArgument, token,
-                                             "unknown argument '" + std::string(token) + "'",
-                                             index));
+                return fail(ErrorCode::InvalidArgument, "unknown argument '{}'", token);
             }
 
             const auto value = take_value(argv, index);
@@ -145,42 +125,37 @@ namespace gxbuild3::cli {
             }
             if (token == "-b" || token == "--buildini") {
                 if (std::exchange(saw_build_ini, true)) {
-                    return std::unexpected(error(ParseErrorCode::DuplicateArgument, token,
-                                                 "duplicate option", index - 1));
+                    return fail(ErrorCode::InvalidArgument, "duplicate option '{}'", token);
                 }
                 args.build_ini = *value;
             } else if (token == "-s" || token == "--section") {
                 if (std::exchange(saw_section, true)) {
-                    return std::unexpected(error(ParseErrorCode::DuplicateArgument, token,
-                                                 "duplicate option", index - 1));
+                    return fail(ErrorCode::InvalidArgument, "duplicate option '{}'", token);
                 }
                 args.section = *value;
-                if (const auto console_it = kConsoleTypeMap.find(lowercase(*value));
+                if (const auto console_it = kConsoleTypeMap.find(utils::to_lower(*value));
                     console_it != kConsoleTypeMap.end()) {
                     args.console = console_it->second;
                 }
             } else if (token == "-t" || token == "--buildtype") {
                 if (std::exchange(saw_build_type, true)) {
-                    return std::unexpected(error(ParseErrorCode::DuplicateArgument, token,
-                                                 "duplicate option", index - 1));
+                    return fail(ErrorCode::InvalidArgument, "duplicate option '{}'", token);
                 }
                 const auto colon = value->find(':');
                 if (colon != value->npos && value->find(':', colon + 1) != value->npos) {
-                    return std::unexpected(error(ParseErrorCode::InvalidBlockType, *value,
-                                                 "invalid block type", index));
+                    return fail(ErrorCode::InvalidArgument, "invalid block type '{}'", *value);
                 }
-                std::string type = lowercase(value->substr(0, colon));
+                std::string type = utils::to_lower(value->substr(0, colon));
                 if (type == "glitch1" || type == "gg") {
                     type = "glitch";
                 }
                 const auto type_it = kBuildTypeMap.find(type);
                 if (type_it == kBuildTypeMap.end()) {
-                    return std::unexpected(error(ParseErrorCode::InvalidBuildType, *value,
-                                                 "invalid build type", index));
+                    return fail(ErrorCode::InvalidArgument, "invalid build type '{}'", *value);
                 }
                 args.build_type = type_it->second;
                 if (colon != value->npos) {
-                    const std::string block = lowercase(value->substr(colon + 1));
+                    const std::string block = utils::to_lower(value->substr(colon + 1));
                     if (block == "xsb") {
                         args.image_type = ImageType::SmallBlock;
                     } else if (block == "psb") {
@@ -190,81 +165,68 @@ namespace gxbuild3::cli {
                     } else if (block == "emmc") {
                         args.image_type = ImageType::Emmc;
                     } else {
-                        return std::unexpected(error(ParseErrorCode::InvalidBlockType, *value,
-                                                     "invalid block type", index));
+                        return fail(ErrorCode::InvalidArgument, "invalid block type '{}'", *value);
                     }
                 }
             } else if (token == "-d" || token == "--dir") {
                 const auto values = split_list(*value);
                 if (values.empty()) {
-                    return std::unexpected(
-                        error(ParseErrorCode::InvalidList, *value, "invalid list", index));
+                    return fail(ErrorCode::InvalidArgument, "invalid list '{}'", *value);
                 }
                 for (const auto& directory : values) {
                     args.source_dirs.emplace_back(directory);
                 }
             } else if (token == "-i" || token == "--input") {
                 if (std::exchange(saw_input, true)) {
-                    return std::unexpected(error(ParseErrorCode::DuplicateArgument, token,
-                                                 "duplicate option", index - 1));
+                    return fail(ErrorCode::InvalidArgument, "duplicate option '{}'", token);
                 }
                 args.input_path = std::filesystem::path(*value);
             } else if (token == "-o" || token == "--output") {
                 if (std::exchange(saw_output, true)) {
-                    return std::unexpected(error(ParseErrorCode::DuplicateArgument, token,
-                                                 "duplicate option", index - 1));
+                    return fail(ErrorCode::InvalidArgument, "duplicate option '{}'", token);
                 }
                 args.output_path = std::filesystem::path(*value);
             } else if (token == "-p" || token == "--cpukey") {
                 if (std::exchange(saw_cpu_key, true)) {
-                    return std::unexpected(error(ParseErrorCode::DuplicateArgument, token,
-                                                 "duplicate option", index - 1));
+                    return fail(ErrorCode::InvalidArgument, "duplicate option '{}'", token);
                 }
                 args.cpu_key = std::string(*value);
             } else if (token == "-e" || token == "--ext") {
                 if (std::exchange(saw_extension, true)) {
-                    return std::unexpected(error(ParseErrorCode::DuplicateArgument, token,
-                                                 "duplicate option", index - 1));
+                    return fail(ErrorCode::InvalidArgument, "duplicate option '{}'", token);
                 }
                 if (!is_extension(*value)) {
-                    return std::unexpected(error(ParseErrorCode::InvalidExtension, *value,
-                                                 "invalid patch extension", index));
+                    return fail(ErrorCode::InvalidArgument, "invalid patch extension '{}'", *value);
                 }
                 args.patch_extension = std::string(*value);
             } else if (token == "-c" || token == "--config") {
                 const auto values = split_list(*value);
                 if (values.empty() || !std::ranges::all_of(values, is_valid_config)) {
-                    return std::unexpected(
-                        error(ParseErrorCode::InvalidList, *value, "invalid config list", index));
+                    return fail(ErrorCode::InvalidArgument, "invalid config list '{}'", *value);
                 }
                 args.config.insert(args.config.end(), values.begin(), values.end());
             } else if (token == "-a" || token == "--addon") {
                 const auto values = split_list(*value);
                 if (values.empty() || !std::ranges::all_of(values, is_addon_name)) {
-                    return std::unexpected(
-                        error(ParseErrorCode::InvalidAddon, *value, "invalid add-on", index));
+                    return fail(ErrorCode::InvalidArgument, "invalid add-on '{}'", *value);
                 }
                 args.addons.insert(args.addons.end(), values.begin(), values.end());
             }
         }
 
         if (!saw_build_ini) {
-            return std::unexpected(error(ParseErrorCode::MissingRequiredArgument, "--buildini",
-                                         "missing required build INI", 0));
+            return fail(ErrorCode::InvalidArgument, "missing required build INI (--buildini)");
         }
         if (!saw_section) {
-            return std::unexpected(error(ParseErrorCode::MissingRequiredArgument, "--section",
-                                         "missing required section", 0));
+            return fail(ErrorCode::InvalidArgument, "missing required section (--section)");
         }
         if (!saw_build_type) {
-            return std::unexpected(error(ParseErrorCode::MissingRequiredArgument, "--buildtype",
-                                         "missing required build type", 0));
+            return fail(ErrorCode::InvalidArgument, "missing required build type (--buildtype)");
         }
         if (args.source_dirs.empty()) {
-            return std::unexpected(error(ParseErrorCode::MissingRequiredArgument, "--dir",
-                                         "missing required source directory", 0));
+            return fail(ErrorCode::InvalidArgument, "missing required source directory (--dir)");
         }
         return ParsedCommand{std::move(args)};
     }
 
-} // namespace gxbuild3::cli
+} // namespace gxbuild::cli

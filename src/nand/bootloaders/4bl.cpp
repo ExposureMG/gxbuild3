@@ -8,7 +8,7 @@
 #include <string_view>
 #include <utility>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     namespace {
 
@@ -84,4 +84,4 @@ namespace gxbuild3::nand {
         return stage::serialize_stage(header, data);
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

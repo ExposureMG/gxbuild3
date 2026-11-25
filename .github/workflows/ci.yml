@@ -16,7 +16,6 @@ jobs:
           - { name: Clang, cc: clang, cxx: clang++ }
           - { name: GCC, cc: gcc, cxx: g++ }
     steps:
-      # gtest: every test binary is a GoogleTest executable (find_package(GTest 1.17)).
       - name: Install toolchain
         run: pacman -Syu --noconfirm --needed clang gcc cmake ninja git gtest
 
@@ -41,21 +40,8 @@ jobs:
       - name: Build
         run: cmake --build build -j"$(nproc)"
 
-      # gxbuild3_flashimage_tests (exit 77) and private.KeyvaultCrypto (GTEST_SKIP) skip
-      # themselves when their private fixtures are absent, as they are in CI.
       - name: Test
-        run: >
-          ctest --test-dir build --output-on-failure -j"$(nproc)"
+        run: ctest --test-dir build --output-on-failure -j"$(nproc)"
 
-      # ctest runs every case or bundle in a process of its own, so state that leaks from one case
-      # into the next (environment, TZ, cwd, logger, STFS cache) only shows when a whole binary
-      # runs in one process: run each GoogleTest binary once more, in shuffled order.
       - name: In-process shuffle
-        working-directory: build/tests
-        run: |
-          export TMPDIR="$GITHUB_WORKSPACE/build/tmp"
-          while IFS='|' read -r name prefix binary rest; do
-            [ -n "$name" ] || continue
-            echo "== $name"
-            "$binary" --gtest_shuffle --gtest_brief=1 || exit 1
-          done < gtest-binaries.txt
+        run: ./build/tests/gxbuild_crypto_tests --gtest_shuffle --gtest_brief=1

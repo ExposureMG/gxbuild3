@@ -1,9 +1,10 @@
 #pragma once
 
-#include "Error.hpp"
-#include "Wire.hpp"
+#include "gxbuild/Error.hpp"
+#include "core/Wire.hpp"
 #include "nand/bootloaders/BootloaderPacker.hpp"
 #include "nand/bootloaders/Common.hpp"
+#include "utils/Utils.hpp"
 
 #include <algorithm>
 #include <array>
@@ -16,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-namespace gxbuild3::nand::stage {
+namespace gxbuild::nand::stage {
 
     template <class H>
     concept StageHeader = wire::WireLayout<H> && requires(const H& h) {
@@ -98,8 +99,8 @@ namespace gxbuild3::nand::stage {
 
     inline void randomize_zero_nonce(std::span<uint8_t, 16> nonce) {
         if (std::all_of(nonce.begin(), nonce.end(), [](uint8_t b) { return b == 0; })) {
-            ExCryptRandom(nonce.data(), nonce.size());
+            utils::fill_random(nonce);
         }
     }
 
-} // namespace gxbuild3::nand::stage
+} // namespace gxbuild::nand::stage

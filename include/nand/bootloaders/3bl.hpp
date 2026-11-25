@@ -1,5 +1,5 @@
 #pragma once
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 #include "nand/bootloaders/Common.hpp"
 
 #include <array>
@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     class BootloaderSc {
       public:
@@ -28,4 +28,4 @@ namespace gxbuild3::nand {
         std::vector<uint8_t> serialize() const;
     };
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

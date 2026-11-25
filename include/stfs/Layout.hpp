@@ -1,13 +1,13 @@
 #pragma once
 
-#include "Error.hpp"
-#include "Wire.hpp"
+#include "gxbuild/Error.hpp"
+#include "core/Wire.hpp"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 
-namespace gxbuild3::stfs {
+namespace gxbuild::stfs {
 
     inline constexpr std::size_t kBlockSize = 0x1000;
     inline constexpr std::uint32_t kMaxBlockNumber = 0xFFFFFF;
@@ -234,4 +234,4 @@ namespace gxbuild3::stfs {
     [[nodiscard]] Result<std::uint64_t> hash_entry_offset(std::uint32_t block, int level,
                                                           std::uint32_t header_size);
 
-} // namespace gxbuild3::stfs
+} // namespace gxbuild::stfs

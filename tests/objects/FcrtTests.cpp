@@ -17,7 +17,7 @@
 #include <ostream>
 #include <span>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
     // Found by ADL: a failed comparison names the enumerator instead of printing raw bytes.
     // Internal linkage: these printers belong to this file only.
     [[maybe_unused]] static void PrintTo(FcrtSealing sealing, std::ostream* os) {
@@ -55,9 +55,9 @@ namespace gxbuild3::nand {
         }
         *os << "FcrtRequirement(" << static_cast<int>(requirement) << ")";
     }
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand
 
-namespace gxbuild3::objects {
+namespace gxbuild::objects {
     namespace {
 
         using nand::fcrt_requirement;
@@ -241,4 +241,4 @@ namespace gxbuild3::objects {
         }
 
     } // namespace
-} // namespace gxbuild3::objects
+} // namespace gxbuild::objects

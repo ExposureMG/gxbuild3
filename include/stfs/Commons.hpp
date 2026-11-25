@@ -7,7 +7,7 @@
 #include <variant>
 #include <vector>
 
-namespace gxbuild3::stfs {
+namespace gxbuild::stfs {
 
     enum class Magic {
         CON,
@@ -171,4 +171,4 @@ namespace gxbuild3::stfs {
         std::uint8_t name_length() const { return flags & 0x3F; }
     };
 
-} // namespace gxbuild3::stfs
+} // namespace gxbuild::stfs

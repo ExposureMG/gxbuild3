@@ -1,7 +1,9 @@
 #include "cli/BuildInputResolver.hpp"
 
-#include "BuildRunner.hpp"
-#include "InputValidator.hpp"
+#include "core/BuildRunner.hpp"
+#include "core/InputValidator.hpp"
+#include "cli/OptionsResolver.hpp"
+#include "excrypt.h"
 #include "ini/IniParser.hpp"
 #include "nand/objects/Freeboot.hpp"
 #include "nand/objects/Keyvault.hpp"
@@ -13,133 +15,31 @@
 #include "utils/FusesetGenerator.hpp"
 #include "utils/Log.hpp"
 #include "utils/Utils.hpp"
-#include "utils/XeRsa.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <charconv>
-#include <fstream>
-#include <limits>
-#include <sstream>
 #include <string_view>
 #include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
-namespace gxbuild3::cli {
+namespace gxbuild::cli {
     namespace {
-
-        ResolutionError error(ResolutionErrorCode code, std::string message,
-                              std::filesystem::path path = {}, std::string item = {}) {
-            return {code, std::move(message), std::move(path), std::move(item)};
-        }
-
-        std::string_view trim_view(std::string_view value) {
-            while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
-                value.remove_prefix(1);
-            }
-            while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
-                value.remove_suffix(1);
-            }
-            return value;
-        }
-
-        std::string normalize_key(std::string_view value) {
-            value = trim_view(value);
-            while (!value.empty() && value.front() == '-') {
-                value.remove_prefix(1);
-            }
-            std::string result;
-            result.reserve(value.size());
-            for (const char character : value) {
-                result.push_back(
-                    static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
-            }
-            return result;
-        }
-
-        // old config keys from legacy ini files that we just ignore
-        bool is_legacy_non_option(std::string_view key) {
-            static const std::unordered_set<std::string_view> legacy_keys{"type", "rev", "1blkey",
-                                                                          "cpukey", "addon"};
-            return legacy_keys.contains(key);
-        }
 
         std::filesystem::path anchored(const std::filesystem::path& working_directory,
                                        const std::filesystem::path& path) {
             return path.is_absolute() ? path : working_directory / path;
         }
 
-        std::expected<OptionsArgs, ResolutionError>
-        load_options(const std::filesystem::path& options_path) {
-            std::error_code status_error;
-            const bool exists = std::filesystem::exists(options_path, status_error);
-            if (status_error) {
-                return std::unexpected(error(
-                    ResolutionErrorCode::OptionsReadFailed,
-                    "Could not inspect options.ini: " + status_error.message(), options_path));
-            }
-            if (!exists) {
-                return OptionsArgs{};
-            }
-            const bool regular = std::filesystem::is_regular_file(options_path, status_error);
-            if (status_error) {
-                return std::unexpected(error(
-                    ResolutionErrorCode::OptionsReadFailed,
-                    "Could not inspect options.ini: " + status_error.message(), options_path));
-            }
-            if (!regular) {
-                return std::unexpected(error(ResolutionErrorCode::OptionsReadFailed,
-                                             "Could not read options.ini", options_path));
-            }
-
-            std::ifstream input(options_path, std::ios::binary);
-            if (!input) {
-                return std::unexpected(error(ResolutionErrorCode::OptionsReadFailed,
-                                             "Could not read options.ini", options_path));
-            }
-            std::ostringstream contents;
-            contents << input.rdbuf();
-            if (input.fail() && !input.eof()) {
-                return std::unexpected(error(ResolutionErrorCode::OptionsReadFailed,
-                                             "Could not read options.ini", options_path));
-            }
-
-            return parse_options_text(contents.str(), options_path);
-        }
-
-        std::expected<std::pair<OptionsArgs, OptionsArgs>, ResolutionError>
-        apply_cli_options(OptionsArgs options, const std::vector<std::string>& raw_options) {
-            OptionsManager effective(std::move(options));
-            OptionsManager overrides;
-            for (const auto& raw : raw_options) {
-                if (trim_view(raw).empty()) {
-                    return std::unexpected(error(ResolutionErrorCode::InvalidOption,
-                                                 "Command-line configuration cannot be empty", {},
-                                                 raw));
-                }
-                OptionsManager next_effective(effective.data());
-                OptionsManager next_overrides(overrides.data());
-                if (!next_effective.parse(raw) || !next_overrides.parse(raw)) {
-                    return std::unexpected(error(ResolutionErrorCode::InvalidOption,
-                                                 "Invalid command-line configuration '" + raw + "'",
-                                                 {}, raw));
-                }
-                effective = std::move(next_effective);
-                overrides = std::move(next_overrides);
-            }
-            return std::pair{effective.data(), overrides.data()};
-        }
-
-        std::expected<std::vector<uint8_t>, ResolutionError>
-        parse_cpu_key(std::string_view raw, const std::filesystem::path& path) {
-            raw = trim_view(raw);
+        Result<std::vector<uint8_t>> parse_cpu_key(std::string_view raw,
+                                                   const std::filesystem::path& path) {
+            raw = utils::trim_view(raw);
             const auto parsed = nand::validate_cpu_key_hex(raw);
             if (parsed.status == nand::CpuKeyStatus::Invalid) {
-                return std::unexpected(error(ResolutionErrorCode::InvalidCpuKey, parsed.message,
-                                             path, std::string(raw)));
+                return fail_with(ErrorCode::InvalidArgument, parsed.message, path, raw);
             }
             return parsed.key;
         }
@@ -155,133 +55,18 @@ namespace gxbuild3::cli {
         }
 
         std::string lowercase_basename(std::string_view name) {
-            std::string result = std::filesystem::path(name).filename().string();
-            std::transform(result.begin(), result.end(), result.begin(), [](unsigned char value) {
-                return static_cast<char>(std::tolower(value));
-            });
-            return result;
+            return utils::to_lower(std::filesystem::path(name).filename().string());
         }
 
-        std::expected<std::optional<gxbuild3::utils::ResolvedFile>, ResolutionError>
+        Result<std::optional<gxbuild::utils::ResolvedFile>>
         find_asset(std::string_view name, const std::vector<std::filesystem::path>& roots,
-                   gxbuild3::utils::ScanOptions options = {},
-                   gxbuild3::utils::AssetKind kind = gxbuild3::utils::AssetKind::Regular) {
+                   gxbuild::utils::ScanOptions options = {},
+                   gxbuild::utils::AssetKind kind = gxbuild::utils::AssetKind::Regular) {
             auto found = utils::find_file_data_detailed(name, roots, options, kind);
             if (!found) {
-                return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
-                                             found.error().describe(), found.error().source_path,
-                                             std::string(name)));
+                return with_context(std::move(found), std::string(name));
             }
             return std::move(*found);
-        }
-
-        std::expected<uint8_t, ResolutionError>
-        parse_ldv(std::string_view raw, std::string_view item,
-                  const std::filesystem::path& source_path) {
-            raw = trim_view(raw);
-            int base = 10;
-            if (raw.starts_with("0x") || raw.starts_with("0X")) {
-                base = 16;
-                raw.remove_prefix(2);
-            }
-            unsigned int value = 0;
-            const auto parsed = std::from_chars(raw.data(), raw.data() + raw.size(), value, base);
-            if (raw.empty() || parsed.ec != std::errc{} || parsed.ptr != raw.data() + raw.size() ||
-                value > std::numeric_limits<uint8_t>::max()) {
-                return std::unexpected(
-                    error(ResolutionErrorCode::InvalidInput,
-                          std::string(item) + " must be a complete numeric byte value", source_path,
-                          std::string(item)));
-            }
-            return static_cast<uint8_t>(value);
-        }
-
-        std::expected<std::array<uint8_t, 3>, ResolutionError>
-        parse_pairing_data(std::string_view raw, const std::filesystem::path& source_path) {
-            raw = trim_view(raw);
-            if (raw.starts_with("0x") || raw.starts_with("0X")) {
-                raw.remove_prefix(2);
-            }
-            if (raw.size() != 6) {
-                return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                             "pairing_data must contain exactly three bytes",
-                                             source_path, "pairing_data"));
-            }
-
-            auto nibble = [](char value) -> std::optional<uint8_t> {
-                if (value >= '0' && value <= '9') {
-                    return static_cast<uint8_t>(value - '0');
-                }
-                value = static_cast<char>(std::tolower(static_cast<unsigned char>(value)));
-                if (value >= 'a' && value <= 'f') {
-                    return static_cast<uint8_t>(value - 'a' + 10);
-                }
-                return std::nullopt;
-            };
-
-            std::array<uint8_t, 3> result{};
-            for (size_t index = 0; index < result.size(); ++index) {
-                const auto high = nibble(raw[index * 2]);
-                const auto low = nibble(raw[index * 2 + 1]);
-                if (!high || !low) {
-                    return std::unexpected(
-                        error(ResolutionErrorCode::InvalidInput,
-                              "pairing_data must contain exactly three hexadecimal bytes",
-                              source_path, "pairing_data"));
-                }
-                result[index] = static_cast<uint8_t>((*high << 4) | *low);
-            }
-            return result;
-        }
-
-        std::expected<void, ResolutionError>
-        apply_winning_metadata(InputMetadata& metadata, const OptionsArgs& file_options,
-                               const OptionsArgs& cli_overrides, bool has_donor,
-                               const std::filesystem::path& options_path) {
-            if (cli_overrides.cbldv) {
-                auto value = parse_ldv(*cli_overrides.cbldv, "cbldv", {});
-                if (!value) {
-                    return std::unexpected(value.error());
-                }
-                metadata.cb_ldv = *value;
-            } else if (!has_donor && file_options.cbldv) {
-                auto value = parse_ldv(*file_options.cbldv, "cbldv", options_path);
-                if (!value) {
-                    return std::unexpected(value.error());
-                }
-                metadata.cb_ldv = *value;
-            }
-
-            if (cli_overrides.cfldv) {
-                auto value = parse_ldv(*cli_overrides.cfldv, "cfldv", {});
-                if (!value) {
-                    return std::unexpected(value.error());
-                }
-                metadata.cf_ldv = *value;
-            } else if ((!has_donor || !metadata.cf_ldv) && file_options.cfldv) {
-                auto value = parse_ldv(*file_options.cfldv, "cfldv", options_path);
-                if (!value) {
-                    return std::unexpected(value.error());
-                }
-                metadata.cf_ldv = *value;
-            }
-
-            if (cli_overrides.pairing_data) {
-                auto value = parse_pairing_data(*cli_overrides.pairing_data, {});
-                if (!value) {
-                    return std::unexpected(value.error());
-                }
-                metadata.pairing_data = *value;
-                metadata.cf_pairing_data.reset();
-            } else if (!has_donor && file_options.pairing_data) {
-                auto value = parse_pairing_data(*file_options.pairing_data, options_path);
-                if (!value) {
-                    return std::unexpected(value.error());
-                }
-                metadata.pairing_data = *value;
-                metadata.cf_pairing_data.reset();
-            }
-            return {};
         }
 
         std::string patch_name(std::string_view key, const std::optional<std::string>& extension) {
@@ -320,29 +105,27 @@ namespace gxbuild3::cli {
                    });
         }
 
-        std::expected<void, ResolutionError> validate_patch_components(const BuildArgs& args) {
+        Result<void> validate_patch_components(const BuildArgs& args) {
             if (!is_filename_component(args.section, true)) {
-                return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                             "Section must be a filename-safe component", {},
-                                             args.section));
+                return fail_with(ErrorCode::InvalidArgument,
+                                 "Section must be a filename-safe component", {}, args.section);
             }
             if (args.patch_extension && !is_patch_extension(*args.patch_extension)) {
-                return std::unexpected(
-                    error(ResolutionErrorCode::InvalidInput,
-                          "Patch extension must be a filename-safe component without a leading "
-                          "underscore",
-                          {}, *args.patch_extension));
+                return fail_with(
+                    ErrorCode::InvalidArgument,
+                    "Patch extension must be a filename-safe component without a leading underscore",
+                    {}, *args.patch_extension);
             }
             for (const auto& addon : args.addons) {
                 if (addon.empty() || !std::all_of(addon.begin(), addon.end(), [](char character) {
                         return is_ascii_alphanumeric(character) || character == '_' ||
                                character == '-';
                     })) {
-                    return std::unexpected(error(
-                        ResolutionErrorCode::InvalidInput,
+                    return fail_with(
+                        ErrorCode::InvalidArgument,
                         "Add-on must be a bare ASCII logical name using letters, digits, '_' or "
                         "'-'",
-                        {}, addon));
+                        {}, addon);
                 }
             }
             return {};
@@ -415,9 +198,9 @@ namespace gxbuild3::cli {
             return candidates;
         }
 
-        std::expected<std::optional<gxbuild3::utils::ResolvedFile>, ResolutionError>
+        Result<std::optional<gxbuild::utils::ResolvedFile>>
         find_smc(const BuildArgs& args, const std::vector<std::filesystem::path>& roots,
-                 gxbuild3::utils::ScanOptions options, bool nosmcpatch) {
+                 gxbuild::utils::ScanOptions options, bool nosmcpatch) {
             for (const auto& candidate : smc_candidates(args)) {
                 auto found = find_asset(candidate.name, roots, options);
                 if (!found) {
@@ -428,18 +211,18 @@ namespace gxbuild3::cli {
                 }
                 // auto-patches a retail fallback smc for glitch1/glitch2 unless nosmcpatch is set.
                 if (candidate.retail_fallback && !nosmcpatch && !(**found).data.empty()) {
-                    const bool was_encrypted = gxbuild3::nand::smc_is_encrypted((**found).data);
-                    auto plain = was_encrypted ? gxbuild3::nand::smc_decrypt((**found).data)
+                    const bool was_encrypted = gxbuild::nand::smc_is_encrypted((**found).data);
+                    auto plain = was_encrypted ? gxbuild::nand::smc_decrypt((**found).data)
                                                : (**found).data;
-                    if (gxbuild3::nand::smc_get_type(plain) == gxbuild3::nand::SmcType::Retail) {
-                        const auto hits = gxbuild3::patchers::apply_signature_patch(
+                    if (gxbuild::nand::smc_get_type(plain) == gxbuild::nand::SmcType::Retail) {
+                        const auto hits = gxbuild::patchers::apply_signature_patch(
                             plain.data(), static_cast<uint32_t>(plain.size()),
-                            gxbuild3::patchers::Glitch.addr, gxbuild3::patchers::Glitch.value);
+                            gxbuild::patchers::Glitch.addr, gxbuild::patchers::Glitch.value);
                         if (!hits) {
-                            return std::unexpected(error(
-                                ResolutionErrorCode::InvalidInput,
-                                "Failed to apply the SMC reboot patch: " + hits.error().describe(),
-                                (**found).source_path, candidate.name));
+                            return fail_with(hits.error().code,
+                                             "Failed to apply the SMC reboot patch: " +
+                                                 hits.error().describe(),
+                                             (**found).source_path, candidate.name);
                         }
                         if (*hits == 0) {
                             Log::Warn("SMC reboot patch site not found - "
@@ -448,12 +231,12 @@ namespace gxbuild3::cli {
                             Log::Info("Applied glitch reboot patch to retail SMC");
                         }
                         (**found).data =
-                            was_encrypted ? gxbuild3::nand::smc_encrypt(plain) : std::move(plain);
+                            was_encrypted ? gxbuild::nand::smc_encrypt(plain) : std::move(plain);
                     }
                 }
                 return std::move(*found);
             }
-            return std::optional<gxbuild3::utils::ResolvedFile>{};
+            return std::optional<gxbuild::utils::ResolvedFile>{};
         }
 
         struct DirectFile {
@@ -461,19 +244,17 @@ namespace gxbuild3::cli {
             std::vector<uint8_t> data;
         };
 
-        std::expected<std::optional<DirectFile>, ResolutionError>
-        find_bin_file(std::string_view filename, const std::vector<std::filesystem::path>& roots,
-                      ResolutionErrorCode failure_code) {
+        Result<std::optional<DirectFile>>
+        find_bin_file(std::string_view filename, const std::vector<std::filesystem::path>& roots) {
             for (const auto& root : roots) {
                 const auto bin_directory = (root / "bin").lexically_normal();
                 const auto candidate = (bin_directory / filename).lexically_normal();
                 if (candidate.parent_path() != bin_directory ||
                     candidate.filename() != std::filesystem::path(filename)) {
-                    return std::unexpected(error(
-                        ResolutionErrorCode::InvalidInput,
-                        "Resolved patch or add-on must be an immediate child of the source bin "
-                        "directory",
-                        candidate, std::string(filename)));
+                    return fail_with(ErrorCode::InvalidArgument,
+                                     "Resolved patch or add-on must be an immediate child of the "
+                                     "source bin directory",
+                                     candidate, filename);
                 }
                 std::error_code status_error;
                 const auto status = std::filesystem::status(candidate, status_error);
@@ -481,21 +262,21 @@ namespace gxbuild3::cli {
                     continue;
                 }
                 if (status_error) {
-                    return std::unexpected(error(failure_code,
-                                                 "Could not inspect '" + candidate.string() +
-                                                     "': " + status_error.message(),
-                                                 candidate, std::string(filename)));
+                    return fail_with(ErrorCode::IoError,
+                                     "Could not inspect '" + candidate.string() +
+                                         "': " + status_error.message(),
+                                     candidate, filename);
                 }
                 if (!std::filesystem::is_regular_file(status)) {
-                    return std::unexpected(error(failure_code,
-                                                 "Resolved asset is not a readable regular file",
-                                                 candidate, std::string(filename)));
+                    return fail_with(ErrorCode::IoError,
+                                     "Resolved asset is not a readable regular file", candidate,
+                                     filename);
                 }
                 auto data = utils::read_file(candidate);
                 if (!data) {
-                    return std::unexpected(error(
-                        failure_code, "Could not read resolved asset: " + data.error().describe(),
-                        candidate, std::string(filename)));
+                    return fail_with(data.error().code,
+                                     "Could not read resolved asset: " + data.error().describe(),
+                                     candidate, filename);
                 }
                 return std::optional<DirectFile>{DirectFile{candidate, std::move(*data)}};
             }
@@ -503,7 +284,7 @@ namespace gxbuild3::cli {
         }
 
         // hunts for sb_priv.bin or sb_prv.bin in the source roots and keys/ folders by size and crc32
-        std::expected<std::vector<uint8_t>, ResolutionError>
+        Result<std::vector<uint8_t>>
         find_sb_private_key(const std::vector<std::filesystem::path>& roots) {
             static constexpr std::array<std::string_view, 2> kNames{"sb_priv.bin", "sb_prv.bin"};
             bool passed_over = false;
@@ -520,10 +301,10 @@ namespace gxbuild3::cli {
                         entries.push_back(entry->path());
                     }
                     if (status_error) {
-                        return std::unexpected(error(ResolutionErrorCode::SigningKeyNotFound,
-                                                     "Could not list '" + directory.string() +
-                                                         "': " + status_error.message(),
-                                                     directory, "SB_priv.bin"));
+                        return fail_with(ErrorCode::IoError,
+                                         "Could not list '" + directory.string() +
+                                             "': " + status_error.message(),
+                                         directory, "SB_priv.bin");
                     }
                     std::sort(entries.begin(), entries.end());
                     for (const auto name : kNames) {
@@ -532,11 +313,10 @@ namespace gxbuild3::cli {
                                 !std::filesystem::is_regular_file(path, status_error)) {
                                 continue;
                             }
-                            auto data = utils::read_file(
-                                path, gxbuild3::utils::kXeRsa2048PrivateKeySize + 1);
-                            if (data && data->size() == gxbuild3::utils::kXeRsa2048PrivateKeySize &&
-                                gxbuild3::utils::crc32(*data) ==
-                                    gxbuild3::utils::kSbPrivateKeyCrc32) {
+                            auto data = utils::read_file(path, sizeof(EXCRYPT_RSAPRV_2048) + 1);
+                            if (data && data->size() == sizeof(EXCRYPT_RSAPRV_2048) &&
+                                gxbuild::utils::crc32(*data) ==
+                                    gxbuild::utils::kSbPrivateKeyCrc32) {
                                 Log::Info("Using the SB private key {}", path.string());
                                 return std::move(*data);
                             }
@@ -548,13 +328,13 @@ namespace gxbuild3::cli {
                     }
                 }
             }
-            return std::unexpected(error(
-                ResolutionErrorCode::SigningKeyNotFound,
+            return fail_with(
+                ErrorCode::NotFound,
                 std::string(passed_over ? "No candidate SB_priv.bin is the SB private key"
                                         : "No SB_priv.bin (or SB_prv.bin) was found") +
                     ": a devgl image's patched SD is signed again with the SB private key. Put "
                     "SB_priv.bin in a source root or a keys folder inside one",
-                {}, "SB_priv.bin"));
+                {}, "SB_priv.bin");
         }
 
         void overlay_flashfs(std::vector<std::pair<std::string, std::vector<uint8_t>>>& destination,
@@ -614,9 +394,9 @@ namespace gxbuild3::cli {
                     return lowercase_basename(utils::ini_asset_name(entry.key)) == "fcrt.bin";
                 });
             }
-            const auto requirement = keyvault ? gxbuild3::nand::fcrt_requirement(*keyvault)
-                                              : gxbuild3::nand::FcrtRequirement::NotRequired;
-            if (requirement == gxbuild3::nand::FcrtRequirement::NotRequired) {
+            const auto requirement = keyvault ? gxbuild::nand::fcrt_requirement(*keyvault)
+                                              : gxbuild::nand::FcrtRequirement::NotRequired;
+            if (requirement == gxbuild::nand::FcrtRequirement::NotRequired) {
                 if (listed) {
                     Log::Info("fcrt.bin was not found and the keyvault does not require it; it "
                               "is left out");
@@ -631,7 +411,7 @@ namespace gxbuild3::cli {
             Log::Error("fcrt.bin was not found; the keyvault flags it as required, and it is left "
                        "out");
             if (build_type != BuildType::Retail && build_type != BuildType::Devkit) {
-                if (requirement == gxbuild3::nand::FcrtRequirement::Required) {
+                if (requirement == gxbuild::nand::FcrtRequirement::Required) {
                     Log::Warn("On a hacked image a nofcrt patch (-a nofcrt) should let the drive "
                               "and the console work");
                 } else {
@@ -641,191 +421,9 @@ namespace gxbuild3::cli {
             }
         }
 
-    } // namespace
-
-    std::expected<OptionsArgs, ResolutionError>
-    parse_options_text(std::string_view text, const std::filesystem::path& source) {
-        OptionsManager options;
-        std::string_view remaining = text;
-        size_t line_number = 0;
-        while (!remaining.empty()) {
-            ++line_number;
-            const auto newline = remaining.find('\n');
-            std::string_view line = trim_view(remaining.substr(0, newline));
-            remaining = newline == std::string_view::npos ? std::string_view{}
-                                                          : remaining.substr(newline + 1);
-            if (line.empty() || line.front() == ';' || line.front() == '#') {
-                continue;
-            }
-            if (line.front() == '[') {
-                return std::unexpected(error(ResolutionErrorCode::InvalidOption,
-                                             "Sections are not valid in options.ini (line " +
-                                                 std::to_string(line_number) + ")",
-                                             source, std::string(line)));
-            }
-
-            const auto equals = line.find('=');
-            if (equals == std::string_view::npos) {
-                return std::unexpected(error(ResolutionErrorCode::InvalidOption,
-                                             "Expected key=value in options.ini (line " +
-                                                 std::to_string(line_number) + ")",
-                                             source, std::string(line)));
-            }
-            const std::string key = normalize_key(line.substr(0, equals));
-            std::string_view value = trim_view(line.substr(equals + 1));
-            if (const auto comment = value.find(';'); comment != std::string_view::npos) {
-                value = trim_view(value.substr(0, comment));
-            }
-            if (is_legacy_non_option(key)) {
-                continue;
-            }
-            if (key.empty() || !OptionsManager::is_known_option(key) || !options.set(key, value)) {
-                return std::unexpected(error(ResolutionErrorCode::InvalidOption,
-                                             "Invalid option '" + key + "' in options.ini (line " +
-                                                 std::to_string(line_number) + ")",
-                                             source, key));
-            }
-        }
-        return options.data();
-    }
-
-    BuildInputResolver::BuildInputResolver(std::filesystem::path working_directory)
-        : working_directory_(std::move(working_directory)) {}
-
-    std::expected<ResolvedFoundations, ResolutionError>
-    BuildInputResolver::resolve_foundations(const BuildArgs& args) const {
-        if (args.source_dirs.empty()) {
-            return std::unexpected(error(ResolutionErrorCode::InvalidSourceDirectory,
-                                         "At least one source root is required"));
-        }
-        std::vector<std::filesystem::path> roots;
-        roots.reserve(args.source_dirs.size());
-        for (const auto& root : args.source_dirs) {
-            if (root.empty()) {
-                return std::unexpected(error(ResolutionErrorCode::InvalidSourceDirectory,
-                                             "Source root path cannot be empty"));
-            }
-            auto resolved_root = anchored(working_directory_, root);
-            std::error_code directory_error;
-            if (!std::filesystem::is_directory(resolved_root, directory_error)) {
-                std::string message = "Source root is not a directory";
-                if (directory_error) {
-                    message += ": " + directory_error.message();
-                }
-                return std::unexpected(error(ResolutionErrorCode::InvalidSourceDirectory,
-                                             std::move(message), std::move(resolved_root)));
-            }
-            roots.push_back(std::move(resolved_root));
-        }
-
-        auto file_options = load_options(working_directory_ / "options.ini");
-        if (!file_options) {
-            return std::unexpected(file_options.error());
-        }
-        auto layered_options = apply_cli_options(*file_options, args.config);
-        if (!layered_options) {
-            return std::unexpected(layered_options.error());
-        }
-
-        std::expected<std::vector<uint8_t>, ResolutionError> cpu_key =
-            std::unexpected(error(ResolutionErrorCode::CpuKeyNotFound,
-                                  "No CPU key was supplied and cpukey.txt was not found"));
-        if (args.cpu_key) {
-            cpu_key = parse_cpu_key(*args.cpu_key, {});
-        } else {
-            auto discovered = utils::find_file_data_detailed("cpukey.txt", roots);
-            if (!discovered) {
-                return std::unexpected(error(ResolutionErrorCode::CpuKeyReadFailed,
-                                             discovered.error().describe(),
-                                             discovered.error().source_path, "cpukey.txt"));
-            }
-            if (*discovered) {
-                const std::string raw_key((*discovered)->data.begin(), (*discovered)->data.end());
-                cpu_key = parse_cpu_key(raw_key, (*discovered)->source_path);
-            }
-        }
-        if (!cpu_key) {
-            return std::unexpected(cpu_key.error());
-        }
-
-        std::optional<std::filesystem::path> nand_path;
-        std::optional<std::vector<uint8_t>> nand_data;
-        if (args.input_path) {
-            nand_path = anchored(working_directory_, *args.input_path);
-            auto read = utils::read_file(*nand_path);
-            if (!read) {
-                return std::unexpected(error(
-                    ResolutionErrorCode::InputReadFailed,
-                    "Could not read explicit donor NAND: " + read.error().describe(), *nand_path));
-            }
-            nand_data = std::move(*read);
-        } else {
-            auto discovered = utils::find_file_data_detailed("nanddump.bin", roots);
-            if (!discovered) {
-                return std::unexpected(error(ResolutionErrorCode::InputReadFailed,
-                                             discovered.error().describe(),
-                                             discovered.error().source_path, "nanddump.bin"));
-            }
-            if (*discovered) {
-                nand_path = (*discovered)->source_path;
-                nand_data = std::move((*discovered)->data);
-            }
-        }
-
-        std::optional<Input> donor;
-        ImageType image_type{};
-        if (nand_data) {
-            auto extracted = extract_all(*nand_data, *cpu_key);
-            if (!extracted) {
-                return std::unexpected(
-                    error(ResolutionErrorCode::InvalidDonor,
-                          "Could not extract donor NAND with the resolved CPU key: " +
-                              extracted.error().describe(),
-                          *nand_path));
-            }
-            donor = std::move(*extracted);
-
-            const ImageType detected_type = donor->image_type;
-            image_type = args.image_type.value_or(detected_type);
-            if (args.image_type && *args.image_type != detected_type) {
-                donor->metadata.nand_image.reset();
-                donor->image_type = *args.image_type;
-            }
-        } else {
-            if (!args.image_type) {
-                return std::unexpected(error(ResolutionErrorCode::BlockTypeRequired,
-                                             "A block type is required without a donor NAND"));
-            }
-            image_type = *args.image_type;
-        }
-
-        auto [options, cli_overrides] = std::move(*layered_options);
-        return ResolvedFoundations{.file_options = std::move(*file_options),
-                                   .options = std::move(options),
-                                   .cli_overrides = std::move(cli_overrides),
-                                   .cpu_key = std::move(*cpu_key),
-                                   .donor = std::move(donor),
-                                   .image_type = image_type};
-    }
-
-    std::expected<BuildRequest, ResolutionError>
-    BuildInputResolver::resolve(const BuildArgs& args) const {
-        try {
-            auto foundations = resolve_foundations(args);
-            if (!foundations) {
-                return std::unexpected(foundations.error());
-            }
-            const auto valid_components = validate_patch_components(args);
-            if (!valid_components) {
-                return std::unexpected(valid_components.error());
-            }
-            const auto roots = resolved_roots(working_directory_, args);
-
-            if (args.build_ini.empty()) {
-                return std::unexpected(
-                    error(ResolutionErrorCode::BuildIniReadFailed, "A build INI path is required"));
-            }
-            const auto ini_path = anchored(working_directory_, args.build_ini);
+        Result<ini::Document> validate_build_ini_inputs(const BuildArgs& args,
+                                                        const std::filesystem::path& ini_path,
+                                                        std::string_view target_section) {
             std::error_code ini_status_error;
             const auto ini_status = std::filesystem::status(ini_path, ini_status_error);
             if (ini_status.type() == std::filesystem::file_type::not_found || ini_status_error ||
@@ -835,57 +433,63 @@ namespace gxbuild3::cli {
                     ini_status.type() != std::filesystem::file_type::not_found) {
                     message += ": " + ini_status_error.message();
                 }
-                return std::unexpected(
-                    error(ResolutionErrorCode::BuildIniReadFailed, std::move(message), ini_path));
+                return fail_with(ini_status.type() == std::filesystem::file_type::not_found
+                                     ? ErrorCode::NotFound
+                                     : ErrorCode::IoError,
+                                 std::move(message), ini_path);
             }
 
-            const auto ini_document = ini::parse_file(ini_path);
+            auto ini_document = ini::parse_file(ini_path);
             if (!ini_document) {
-                return std::unexpected(error(
-                    ResolutionErrorCode::BuildIniReadFailed,
-                    "Could not read build INI: " + ini_document.error().describe(), ini_path));
+                return fail_with(ini_document.error().code,
+                                 "Could not read build INI: " + ini_document.error().describe(),
+                                 ini_path);
             }
             if (args.section.empty()) {
-                return std::unexpected(error(ResolutionErrorCode::SectionNotFound,
-                                             "A build INI section stem is required", ini_path));
+                return fail_with(ErrorCode::InvalidArgument,
+                                 "A build INI section stem is required", ini_path);
             }
-            const std::string target_section = args.section + "bl";
-            const auto* section = ini_document->get(target_section);
-            if (!section) {
-                return std::unexpected(
-                    error(ResolutionErrorCode::SectionNotFound,
-                          "Required build INI section [" + target_section + "] was not found",
-                          ini_path, target_section));
+            if (!ini_document->get(target_section)) {
+                return fail_with(ErrorCode::NotFound,
+                                 "Required build INI section [" + std::string(target_section) +
+                                     "] was not found",
+                                 ini_path, target_section);
             }
+            return ini_document;
+        }
 
-            const gxbuild3::utils::ScanOptions scan_options{
-                .nosusecurity = foundations->options.nosusecurity.value_or(false)};
+        Result<void> verify_ini_assets(const ini::Document& ini_document,
+                                       std::string_view target_section,
+                                       const std::filesystem::path& ini_path,
+                                       const std::vector<std::filesystem::path>& roots,
+                                       const gxbuild::utils::ScanOptions& scan_options,
+                                       const std::optional<Input>& donor) {
             std::unordered_set<std::string> donor_flashfs_names;
-            if (foundations->donor && foundations->donor->flashfs_sec) {
-                for (const auto& file : *foundations->donor->flashfs_sec) {
+            if (donor && donor->flashfs_sec) {
+                for (const auto& file : *donor->flashfs_sec) {
                     donor_flashfs_names.insert(lowercase_basename(file.first));
                 }
             }
+            const auto* section = ini_document.get(target_section);
             for (const auto& entry : *section) {
                 const auto key = lowercase_basename(entry.key);
                 if (key.empty() || key == "none") {
                     continue;
                 }
                 auto found = find_asset(entry.key, roots, scan_options,
-                                        gxbuild3::utils::AssetKind::Bootloader);
+                                        gxbuild::utils::AssetKind::Bootloader);
                 if (!found) {
                     return std::unexpected(found.error());
                 }
                 if (!*found) {
-                    return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
-                                                 "Required INI bootloader '" + entry.key +
-                                                     "' from '" + ini_path.string() +
-                                                     "' was not found",
-                                                 ini_path, entry.key));
+                    return fail_with(ErrorCode::NotFound,
+                                     "Required INI bootloader '" + entry.key + "' from '" +
+                                         ini_path.string() + "' was not found",
+                                     ini_path, entry.key);
                 }
             }
             for (const auto section_name : {"security", "flashfs"}) {
-                const auto* payload_section = ini_document->get(section_name);
+                const auto* payload_section = ini_document.get(section_name);
                 if (!payload_section) {
                     continue;
                 }
@@ -913,11 +517,7 @@ namespace gxbuild3::cli {
                     const bool is_security = std::string_view(section_name) == "security";
                     uint32_t listed_crc = 0;
                     {
-                        auto digits = std::string_view(entry.value);
-                        while (!digits.empty() && std::isspace(static_cast<unsigned char>(digits.front())))
-                            digits.remove_prefix(1);
-                        while (!digits.empty() && std::isspace(static_cast<unsigned char>(digits.back())))
-                            digits.remove_suffix(1);
+                        auto digits = utils::trim_view(entry.value);
                         if (digits.starts_with("0x") || digits.starts_with("0X"))
                             digits.remove_prefix(2);
                         if (!digits.empty())
@@ -928,82 +528,65 @@ namespace gxbuild3::cli {
                     const bool optional =
                         outside || is_security || key == "fcrt.bin" || made_up || listed_crc == 0;
                     if (!*found && !optional && !donor_flashfs_names.contains(key)) {
-                        return std::unexpected(error(
-                            ResolutionErrorCode::AssetNotFound,
-                            "Required INI payload '" + entry.key + "' from '" + ini_path.string() +
-                                "' was not found in the donor or source roots",
-                            ini_path, entry.key));
+                        return fail_with(ErrorCode::NotFound,
+                                         "Required INI payload '" + entry.key + "' from '" +
+                                             ini_path.string() +
+                                             "' was not found in the donor or source roots",
+                                         ini_path, entry.key);
                     }
                 }
             }
+            return {};
+        }
 
-            const auto ini_files = utils::read_ini_files(ini_path, target_section, roots,
-                                                         scan_options, args.build_type);
-            if (!ini_files) {
-                return std::unexpected(error(ResolutionErrorCode::AssetNotFound,
-                                             ini_files.error().describe(), ini_path,
-                                             target_section));
-            }
-
-            Input input = foundations->donor.value_or(Input{});
-            input.build_type = args.build_type;
-            input.image_type = foundations->image_type;
-            input.console = args.console;
-            input.options = foundations->options;
-            input.metadata.cpu_key = foundations->cpu_key;
-
-            const auto resolved_metadata = apply_winning_metadata(
-                input.metadata, foundations->file_options, foundations->cli_overrides,
-                foundations->donor.has_value(), working_directory_ / "options.ini");
-            if (!resolved_metadata) {
-                return std::unexpected(resolved_metadata.error());
-            }
-
+        Result<void> apply_loose_donor_assets(const BuildArgs& args,
+                                              const ResolvedFoundations& foundations,
+                                              const std::vector<std::filesystem::path>& roots,
+                                              const gxbuild::utils::ScanOptions& scan_options,
+                                              Input& input) {
             auto keyvault = find_asset("kv.bin", roots, scan_options);
             if (!keyvault) {
                 return std::unexpected(keyvault.error());
             }
             auto smc = find_smc(args, roots, scan_options,
-                                foundations->options.nosmcpatch.value_or(false));
+                                foundations.options.nosmcpatch.value_or(false));
             if (!smc) {
                 return std::unexpected(smc.error());
             }
 
-            if (!foundations->donor) {
+            if (!foundations.donor) {
                 if (!*keyvault) {
-                    return std::unexpected(error(ResolutionErrorCode::IncompleteLooseDonor,
-                                                 "Loose donor requires kv.bin", {}, "kv.bin"));
+                    return fail_with(ErrorCode::NotFound, "Loose donor requires kv.bin", {},
+                                     "kv.bin");
                 }
                 if (!*smc) {
-                    return std::unexpected(error(ResolutionErrorCode::IncompleteLooseDonor,
-                                                 "Loose donor requires smc.bin", {}, "smc.bin"));
+                    return fail_with(ErrorCode::NotFound, "Loose donor requires smc.bin", {},
+                                     "smc.bin");
                 }
-                if (!foundations->file_options.cbldv && !foundations->cli_overrides.cbldv) {
-                    return std::unexpected(error(ResolutionErrorCode::IncompleteLooseDonor,
-                                                 "Loose donor requires cbldv", {}, "cbldv"));
+                if (!foundations.file_options.cbldv && !foundations.cli_overrides.cbldv) {
+                    return fail_with(ErrorCode::InvalidArgument, "Loose donor requires cbldv", {},
+                                     "cbldv");
                 }
-                if (!foundations->file_options.cfldv && !foundations->cli_overrides.cfldv) {
-                    return std::unexpected(error(ResolutionErrorCode::IncompleteLooseDonor,
-                                                 "Loose donor requires cfldv", {}, "cfldv"));
+                if (!foundations.file_options.cfldv && !foundations.cli_overrides.cfldv) {
+                    return fail_with(ErrorCode::InvalidArgument, "Loose donor requires cfldv", {},
+                                     "cfldv");
                 }
-                if (!foundations->file_options.pairing_data &&
-                    !foundations->cli_overrides.pairing_data) {
-                    return std::unexpected(error(ResolutionErrorCode::IncompleteLooseDonor,
-                                                 "Loose donor requires pairing_data", {},
-                                                 "pairing_data"));
+                if (!foundations.file_options.pairing_data &&
+                    !foundations.cli_overrides.pairing_data) {
+                    return fail_with(ErrorCode::InvalidArgument,
+                                     "Loose donor requires pairing_data", {}, "pairing_data");
                 }
             }
 
             // decrypts kv.bin if it matches the cpu key, otherwise treats it as already decrypted
             if (*keyvault) {
                 auto opened =
-                    gxbuild3::nand::open_loose_keyvault(foundations->cpu_key, (**keyvault).data);
+                    gxbuild::nand::open_loose_keyvault(foundations.cpu_key, (**keyvault).data);
                 if (!opened) {
-                    return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                                 opened.error().describe(),
-                                                 (**keyvault).source_path, "kv.bin"));
+                    return fail_with(opened.error().code, opened.error().describe(),
+                                     (**keyvault).source_path, "kv.bin");
                 }
-                using Form = gxbuild3::nand::LooseKeyvault::Form;
+                using Form = gxbuild::nand::LooseKeyvault::Form;
                 if (opened->form == Form::StaleNonce) {
                     Log::Warn("kv.bin is in the clear, but its nonce is not one the CPU key "
                               "derives; it is taken as it stands. Make sure it is this console's");
@@ -1013,11 +596,11 @@ namespace gxbuild3::cli {
                                "image will not boot unless it is this console's keyvault");
                 }
                 input.metadata.keyvault = std::move(opened->plain);
-            } else if (foundations->donor && !input.metadata.keyvault) {
-                return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                             "The donor's keyvault does not open under the CPU "
-                                             "key; supply the console's kv.bin",
-                                             {}, "kv.bin"));
+            } else if (foundations.donor && !input.metadata.keyvault) {
+                return fail_with(ErrorCode::AuthFailed,
+                                 "The donor's keyvault does not open under the CPU "
+                                 "key; supply the console's kv.bin",
+                                 {}, "kv.bin");
             }
             if (*smc) {
                 input.metadata.smc = std::move((**smc).data);
@@ -1034,17 +617,18 @@ namespace gxbuild3::cli {
                     input.mobiles.slots[index] = std::move((**mobile).data);
                 }
             }
+            return {};
+        }
 
-            input.bootloaders = ini_files->bootloaders;
-            input.raw_patches = ini_files->raw_patches;
-            // zero out cf ldv when an extra se stage replaces cf1 on jtag
-            if (input.bootloaders.extra_se) {
-                input.metadata.cf_ldv = 0;
-            }
-
+        Result<void> merge_flashfs_entries(const ini::Document& ini_document,
+                                           const std::filesystem::path& ini_path,
+                                           const ResolvedFoundations& foundations,
+                                           const gxbuild::utils::ScanOptions& scan_options,
+                                           const gxbuild::utils::IniFilesResult& ini_files,
+                                           BuildType build_type, Input& input) {
             std::unordered_set<std::string> ini_flashfs_names;
             for (const auto section_name : {"security", "flashfs"}) {
-                if (const auto* payload_section = ini_document->get(section_name)) {
+                if (const auto* payload_section = ini_document.get(section_name)) {
                     for (const auto& entry : *payload_section) {
                         const auto key = lowercase_basename(entry.key);
                         if (!key.empty() && key != "none") {
@@ -1064,19 +648,19 @@ namespace gxbuild3::cli {
                     }
                 }
             }
-            for (auto file : ini_files->flashfs_sec) {
+            for (auto file : ini_files.flashfs_sec) {
                 const auto key = lowercase_basename(file.first);
                 if ((key == "secdata.bin" || key == "extended.bin") && file.second.size() >= 0x10) {
                     auto opened =
                         key == "extended.bin"
-                            ? gxbuild3::nand::open_loose_extended(file.second, foundations->cpu_key)
-                            : gxbuild3::nand::open_loose_secdata(file.second, foundations->cpu_key);
+                            ? gxbuild::nand::open_loose_extended(file.second, foundations.cpu_key)
+                            : gxbuild::nand::open_loose_secdata(file.second, foundations.cpu_key);
                     if (!opened) {
-                        return std::unexpected(
-                            error(ResolutionErrorCode::InvalidInput,
-                                  "Could not decrypt secure INI file at the Input boundary: " +
-                                      opened.error().describe(),
-                                  ini_path, file.first));
+                        return fail_with(
+                            opened.error().code,
+                            "Could not decrypt secure INI file at the Input boundary: " +
+                                opened.error().describe(),
+                            ini_path, file.first);
                     }
                     file.second = std::move(*opened);
                 }
@@ -1084,7 +668,7 @@ namespace gxbuild3::cli {
             }
             // inserts an empty placeholder for missing extended.bin or secdata.bin
             if (!scan_options.nosusecurity) {
-                if (const auto* security = ini_document->get("security")) {
+                if (const auto* security = ini_document.get("security")) {
                     for (const auto& entry : *security) {
                         const auto key = lowercase_basename(utils::ini_asset_name(entry.key));
                         if ((key == "extended.bin" || key == "secdata.bin") &&
@@ -1094,34 +678,35 @@ namespace gxbuild3::cli {
                     }
                 }
             }
-            order_flashfs(flashfs, *ini_document);
+            order_flashfs(flashfs, ini_document);
             if (!flashfs_positions.contains("fcrt.bin")) {
-                weigh_missing_fcrt(*ini_document, input.metadata.keyvault, args.build_type);
+                weigh_missing_fcrt(ini_document, input.metadata.keyvault, build_type);
             }
             input.flashfs_sec = std::move(flashfs);
+            return {};
+        }
 
+        Result<std::optional<InputPatches>>
+        resolve_patch_inputs(const BuildArgs& args, const std::vector<std::filesystem::path>& roots) {
             if ((args.build_type == BuildType::Retail || args.build_type == BuildType::Devkit) &&
                 !args.addons.empty()) {
-                return std::unexpected(error(
-                    ResolutionErrorCode::InvalidInput,
-                    "Add-ons require an automatic patchset and are not supported for retail or "
-                    "devkit builds",
-                    {}, args.addons.front()));
+                return fail_with(ErrorCode::InvalidArgument,
+                                 "Add-ons require an automatic patchset and are not supported for "
+                                 "retail or devkit builds",
+                                 {}, args.addons.front());
             }
 
             InputPatches patches{};
             bool has_patches = false;
             if (const auto automatic_name = automatic_patch_name(args)) {
-                auto automatic =
-                    find_bin_file(*automatic_name, roots, ResolutionErrorCode::PatchsetNotFound);
+                auto automatic = find_bin_file(*automatic_name, roots);
                 if (!automatic) {
                     return std::unexpected(automatic.error());
                 }
                 std::string selected_name = *automatic_name;
                 if (!*automatic && args.build_type == BuildType::Glitch3) {
                     selected_name = *automatic_patch_name(args, true);
-                    automatic =
-                        find_bin_file(selected_name, roots, ResolutionErrorCode::PatchsetNotFound);
+                    automatic = find_bin_file(selected_name, roots);
                     if (!automatic) {
                         return std::unexpected(automatic.error());
                     }
@@ -1132,8 +717,7 @@ namespace gxbuild3::cli {
                             ? "Required automatic patchset was not found (neither " +
                                   *automatic_name + " nor " + selected_name + ")"
                             : "Required automatic patchset was not found";
-                    return std::unexpected(
-                        error(ResolutionErrorCode::PatchsetNotFound, message, {}, selected_name));
+                    return fail_with(ErrorCode::NotFound, message, {}, selected_name);
                 }
                 Log::Info("Using patchset {}", (**automatic).path.string());
                 patches.automatic = InputPatchFile{selected_name, std::move((**automatic).data)};
@@ -1142,23 +726,29 @@ namespace gxbuild3::cli {
 
             for (const auto& addon : args.addons) {
                 const std::string filename = addon + ".bin";
-                auto found = find_bin_file(filename, roots, ResolutionErrorCode::AddonNotFound);
+                auto found = find_bin_file(filename, roots);
                 if (!found) {
                     return std::unexpected(found.error());
                 }
                 if (!*found) {
-                    return std::unexpected(error(ResolutionErrorCode::AddonNotFound,
-                                                 "Required add-on was not found", {}, filename));
+                    return fail_with(ErrorCode::NotFound, "Required add-on was not found", {},
+                                     filename);
                 }
                 patches.addons.push_back(InputPatchFile{filename, std::move((**found).data)});
                 has_patches = true;
             }
-            if (has_patches) {
-                input.patches = std::move(patches);
-            } else {
-                input.patches.reset();
+            if (!has_patches) {
+                return std::nullopt;
             }
+            return patches;
+        }
 
+        Result<void> resolve_payload_inputs(const BuildArgs& args,
+                                            const ResolvedFoundations& foundations,
+                                            const std::vector<std::filesystem::path>& roots,
+                                            const ini::Document& ini_document,
+                                            const gxbuild::utils::ScanOptions& scan_options,
+                                            Input& input) {
             const bool is_jtag = args.build_type == BuildType::Jtag;
             const bool is_glitch_family =
                 args.build_type == BuildType::Glitch || args.build_type == BuildType::Glitch2 ||
@@ -1167,13 +757,13 @@ namespace gxbuild3::cli {
             // skips xell on devgl and generates virtual fuses from a hardcoded 0x01000000 retail console word.
             if (args.build_type == BuildType::Devgl) {
                 constexpr uint32_t kRetailConsoleWord = 0x01000000;
-                auto fuses = gxbuild3::utils::generate_fuseset(
-                    kRetailConsoleWord, foundations->cpu_key, input.metadata.cf_ldv.value_or(0));
+                auto fuses = gxbuild::utils::generate_fuseset(
+                    kRetailConsoleWord, foundations.cpu_key, input.metadata.cf_ldv.value_or(0));
                 if (!fuses) {
-                    return std::unexpected(
-                        error(ResolutionErrorCode::InvalidInput,
-                              "Could not generate the virtual fuseset: " + fuses.error().describe(),
-                              {}, "fuses"));
+                    return fail_with(fuses.error().code,
+                                     "Could not generate the virtual fuseset: " +
+                                         fuses.error().describe(),
+                                     {}, "fuses");
                 }
                 InputPayloads payloads{};
                 payloads.fuses = std::move(*fuses);
@@ -1184,79 +774,281 @@ namespace gxbuild3::cli {
                     return std::unexpected(key.error());
                 }
                 input.sb_private_key = std::move(*key);
-            } else if (is_jtag || is_glitch_family) {
-                InputPayloads payloads{};
-                const std::string xell_name = is_jtag ? "xell-2f.bin" : "xell-gggggg.bin";
-                auto xell = find_asset(xell_name, roots, scan_options);
-                if (!xell) {
-                    return std::unexpected(xell.error());
-                }
-                if (!*xell) {
-                    return std::unexpected(
-                        error(ResolutionErrorCode::AssetNotFound,
-                              "JTAG and glitch builds require a XeLL payload (" + xell_name + ")",
-                              {}, xell_name));
-                }
-                payloads.xell = std::move((**xell).data);
+                return {};
+            }
+            if (!is_jtag && !is_glitch_family) {
+                return {};
+            }
 
-                if (is_jtag) {
-                    std::string firmware_version;
-                    if (const auto* version_section = ini_document->get("version");
-                        version_section && !version_section->empty()) {
-                        firmware_version = version_section->front().key;
-                    }
-                    payloads.rebooter = gxbuild3::nand::freeboot_rebooter_for(firmware_version);
-                    payloads.payload =
-                        gxbuild3::nand::freeboot_payload_for(payloads.rebooter->size());
-                }
+            InputPayloads payloads{};
+            const std::string xell_name = is_jtag ? "xell-2f.bin" : "xell-gggggg.bin";
+            auto xell = find_asset(xell_name, roots, scan_options);
+            if (!xell) {
+                return std::unexpected(xell.error());
+            }
+            if (!*xell) {
+                return fail_with(ErrorCode::NotFound,
+                                 "JTAG and glitch builds require a XeLL payload (" + xell_name +
+                                     ")",
+                                 {}, xell_name);
+            }
+            payloads.xell = std::move((**xell).data);
 
-                if (needs_fuses) {
-                    const auto& fuse_cb =
-                        is_jtag ? input.bootloaders.extra_cb : input.bootloaders.cb_b;
-                    if (!fuse_cb) {
-                        return std::unexpected(error(
-                            ResolutionErrorCode::InvalidInput,
-                            is_jtag ? "Virtual fuses are built from the second CB, and section '" +
-                                          args.section + "' names none"
-                                    : "Virtual fuses are built from the CB_B, and section '" +
-                                          args.section + "' names none",
-                            {}, "fuses"));
-                    }
-                    const auto cb_word = gxbuild3::utils::read_cb_word(*fuse_cb);
-                    if (!cb_word) {
-                        return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                                     "Could not read the console word of the CB "
-                                                     "the virtual fuses are built from: " +
-                                                         cb_word.error().describe(),
-                                                     {}, "fuses"));
-                    }
-                    // zero the cb fuse word when se replaces cf1 on jtag
-                    const uint32_t fuse_word =
-                        input.bootloaders.extra_se ? uint32_t{0x00000000} : *cb_word;
-                    auto fuses = gxbuild3::utils::generate_fuseset(
-                        fuse_word, foundations->cpu_key, input.metadata.cf_ldv.value_or(0));
-                    if (!fuses) {
-                        return std::unexpected(error(ResolutionErrorCode::InvalidInput,
-                                                     "Could not generate the virtual fuseset: " +
-                                                         fuses.error().describe(),
-                                                     {}, "fuses"));
-                    }
-                    payloads.fuses = std::move(*fuses);
+            if (is_jtag) {
+                std::string firmware_version;
+                if (const auto* version_section = ini_document.get("version");
+                    version_section && !version_section->empty()) {
+                    firmware_version = version_section->front().key;
                 }
-                input.payloads = std::move(payloads);
+                payloads.rebooter = gxbuild::nand::freeboot_rebooter_for(firmware_version);
+                payloads.payload = gxbuild::nand::freeboot_payload_for(payloads.rebooter->size());
+            }
+
+            if (needs_fuses) {
+                const auto& fuse_cb = is_jtag ? input.bootloaders.extra_cb : input.bootloaders.cb_b;
+                if (!fuse_cb) {
+                    return fail_with(
+                        ErrorCode::InvalidArgument,
+                        is_jtag ? "Virtual fuses are built from the second CB, and section '" +
+                                      args.section + "' names none"
+                                : "Virtual fuses are built from the CB_B, and section '" +
+                                      args.section + "' names none",
+                        {}, "fuses");
+                }
+                const auto cb_word = gxbuild::utils::read_cb_word(*fuse_cb);
+                if (!cb_word) {
+                    return fail_with(cb_word.error().code,
+                                     "Could not read the console word of the CB "
+                                     "the virtual fuses are built from: " +
+                                         cb_word.error().describe(),
+                                     {}, "fuses");
+                }
+                // zero the cb fuse word when se replaces cf1 on jtag
+                const uint32_t fuse_word =
+                    input.bootloaders.extra_se ? uint32_t{0x00000000} : *cb_word;
+                auto fuses = gxbuild::utils::generate_fuseset(
+                    fuse_word, foundations.cpu_key, input.metadata.cf_ldv.value_or(0));
+                if (!fuses) {
+                    return fail_with(fuses.error().code,
+                                     "Could not generate the virtual fuseset: " +
+                                         fuses.error().describe(),
+                                     {}, "fuses");
+                }
+                payloads.fuses = std::move(*fuses);
+            }
+            input.payloads = std::move(payloads);
+            return {};
+        }
+
+    } // namespace
+
+    BuildInputResolver::BuildInputResolver(std::filesystem::path working_directory)
+        : working_directory_(std::move(working_directory)) {}
+
+    Result<ResolvedFoundations>
+    BuildInputResolver::resolve_foundations(const BuildArgs& args) const {
+        if (args.source_dirs.empty()) {
+            return fail_with(ErrorCode::InvalidArgument, "At least one source root is required");
+        }
+        std::vector<std::filesystem::path> roots;
+        roots.reserve(args.source_dirs.size());
+        for (const auto& root : args.source_dirs) {
+            if (root.empty()) {
+                return fail_with(ErrorCode::InvalidArgument, "Source root path cannot be empty");
+            }
+            auto resolved_root = anchored(working_directory_, root);
+            std::error_code directory_error;
+            if (!std::filesystem::is_directory(resolved_root, directory_error)) {
+                std::string message = "Source root is not a directory";
+                if (directory_error) {
+                    message += ": " + directory_error.message();
+                }
+                return fail_with(ErrorCode::InvalidArgument, std::move(message),
+                                 std::move(resolved_root));
+            }
+            roots.push_back(std::move(resolved_root));
+        }
+
+        auto file_options = load_options(working_directory_ / "options.ini");
+        if (!file_options) {
+            return std::unexpected(file_options.error());
+        }
+        auto layered_options = apply_cli_options(*file_options, args.config);
+        if (!layered_options) {
+            return std::unexpected(layered_options.error());
+        }
+
+        utils::StfsCache stfs_cache;
+        const utils::ScanOptions foundation_scan{.stfs_cache = &stfs_cache};
+
+        Result<std::vector<uint8_t>> cpu_key = fail_with(
+            ErrorCode::NotFound, "No CPU key was supplied and cpukey.txt was not found");
+        if (args.cpu_key) {
+            cpu_key = parse_cpu_key(*args.cpu_key, {});
+        } else {
+            auto discovered = utils::find_file_data_detailed("cpukey.txt", roots, foundation_scan);
+            if (!discovered) {
+                return std::unexpected(std::move(discovered.error()).add_context("cpukey.txt"));
+            }
+            if (*discovered) {
+                const std::string raw_key((*discovered)->data.begin(), (*discovered)->data.end());
+                cpu_key = parse_cpu_key(raw_key, (*discovered)->source_path);
+            }
+        }
+        if (!cpu_key) {
+            return std::unexpected(cpu_key.error());
+        }
+
+        std::optional<std::filesystem::path> nand_path;
+        std::optional<std::vector<uint8_t>> nand_data;
+        if (args.input_path) {
+            nand_path = anchored(working_directory_, *args.input_path);
+            auto read = utils::read_file(*nand_path);
+            if (!read) {
+                return fail_with(read.error().code,
+                                 "Could not read explicit donor NAND '" + nand_path->string() +
+                                     "': " + read.error().describe());
+            }
+            nand_data = std::move(*read);
+        } else {
+            auto discovered =
+                utils::find_file_data_detailed("nanddump.bin", roots, foundation_scan);
+            if (!discovered) {
+                return std::unexpected(std::move(discovered.error()).add_context("nanddump.bin"));
+            }
+            if (*discovered) {
+                nand_path = (*discovered)->source_path;
+                nand_data = std::move((*discovered)->data);
+            }
+        }
+
+        std::optional<Input> donor;
+        ImageType image_type{};
+        if (nand_data) {
+            auto extracted = extract_all(*nand_data, *cpu_key);
+            if (!extracted) {
+                return fail_with(extracted.error().code,
+                                 "Could not extract donor NAND with the resolved CPU key: " +
+                                     extracted.error().describe(),
+                                 *nand_path);
+            }
+            donor = std::move(*extracted);
+
+            const ImageType detected_type = donor->image_type;
+            image_type = args.image_type.value_or(detected_type);
+            if (args.image_type && *args.image_type != detected_type) {
+                donor->metadata.nand_image.reset();
+                donor->image_type = *args.image_type;
+            }
+        } else {
+            if (!args.image_type) {
+                return fail_with(ErrorCode::InvalidArgument,
+                                 "A block type is required without a donor NAND");
+            }
+            image_type = *args.image_type;
+        }
+
+        auto [options, cli_overrides] = std::move(*layered_options);
+        return ResolvedFoundations{.file_options = std::move(*file_options),
+                                   .options = std::move(options),
+                                   .cli_overrides = std::move(cli_overrides),
+                                   .cpu_key = std::move(*cpu_key),
+                                   .donor = std::move(donor),
+                                   .image_type = image_type};
+    }
+
+    Result<BuildRequest> BuildInputResolver::resolve(const BuildArgs& args) const {
+        try {
+            auto foundations = resolve_foundations(args);
+            if (!foundations) {
+                return std::unexpected(foundations.error());
+            }
+            const auto valid_components = validate_patch_components(args);
+            if (!valid_components) {
+                return std::unexpected(valid_components.error());
+            }
+            const auto roots = resolved_roots(working_directory_, args);
+
+            if (args.build_ini.empty()) {
+                return fail_with(ErrorCode::InvalidArgument, "A build INI path is required");
+            }
+            const auto ini_path = anchored(working_directory_, args.build_ini);
+            const std::string target_section = args.section + "bl";
+            const auto ini_document = validate_build_ini_inputs(args, ini_path, target_section);
+            if (!ini_document) {
+                return std::unexpected(ini_document.error());
+            }
+
+            utils::StfsCache stfs_cache;
+            const gxbuild::utils::ScanOptions scan_options{
+                .nosusecurity = foundations->options.nosusecurity.value_or(false),
+                .stfs_cache = &stfs_cache};
+            if (const auto assets = verify_ini_assets(*ini_document, target_section, ini_path,
+                                                      roots, scan_options, foundations->donor);
+                !assets) {
+                return std::unexpected(assets.error());
+            }
+
+            const auto ini_files = utils::read_ini_files(ini_path, target_section, roots,
+                                                         scan_options, args.build_type);
+            if (!ini_files) {
+                return fail_with(ini_files.error().code, ini_files.error().describe(), ini_path,
+                                 target_section);
+            }
+
+            Input input = foundations->donor.value_or(Input{});
+            input.build_type = args.build_type;
+            input.image_type = foundations->image_type;
+            input.console = args.console;
+            input.options = foundations->options;
+            input.metadata.cpu_key = foundations->cpu_key;
+
+            if (const auto resolved_metadata = apply_winning_metadata(
+                    input.metadata, foundations->file_options, foundations->cli_overrides,
+                    foundations->donor.has_value(), working_directory_ / "options.ini");
+                !resolved_metadata) {
+                return std::unexpected(resolved_metadata.error());
+            }
+            if (const auto loose =
+                    apply_loose_donor_assets(args, *foundations, roots, scan_options, input);
+                !loose) {
+                return std::unexpected(loose.error());
+            }
+
+            input.bootloaders = ini_files->bootloaders;
+            input.raw_patches = ini_files->raw_patches;
+            // zero out cf ldv when an extra se stage replaces cf1 on jtag
+            if (input.bootloaders.extra_se) {
+                input.metadata.cf_ldv = 0;
+            }
+
+            if (const auto flashfs =
+                    merge_flashfs_entries(*ini_document, ini_path, *foundations, scan_options,
+                                          *ini_files, args.build_type, input);
+                !flashfs) {
+                return std::unexpected(flashfs.error());
+            }
+
+            auto patches = resolve_patch_inputs(args, roots);
+            if (!patches) {
+                return std::unexpected(patches.error());
+            }
+            input.patches = std::move(*patches);
+
+            if (const auto payloads = resolve_payload_inputs(args, *foundations, roots,
+                                                             *ini_document, scan_options, input);
+                !payloads) {
+                return std::unexpected(payloads.error());
             }
 
             if (const auto validation = validate_input(input); !validation) {
-                return std::unexpected(
-                    error(ResolutionErrorCode::InvalidInput, validation.error().message));
+                return std::unexpected(validation.error());
             }
             return BuildRequest{.input = std::move(input),
                                 .output_path = anchored(working_directory_, args.output_path)};
         } catch (const std::exception& exception) {
-            return std::unexpected(
-                error(ResolutionErrorCode::InvalidInput,
-                      "Input resolution failed: " + std::string(exception.what())));
+            return fail(ErrorCode::Internal, "Input resolution failed: {}", exception.what());
         }
     }
 
-} // namespace gxbuild3::cli
+} // namespace gxbuild::cli

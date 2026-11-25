@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <format>
 
-namespace gxbuild3 {
+namespace gxbuild {
 
     void PrintTo(ErrorCode code, std::ostream* os) {
         *os << to_string(code);
@@ -13,9 +13,9 @@ namespace gxbuild3 {
         *os << '[' << to_string(error.code) << "] " << error.describe();
     }
 
-} // namespace gxbuild3
+} // namespace gxbuild
 
-namespace gxbuild3::test::detail {
+namespace gxbuild::test::detail {
 
     ::testing::AssertionResult bytes_equal(const char* expected_expression,
                                            const char* actual_expression,
@@ -37,4 +37,4 @@ namespace gxbuild3::test::detail {
         return failure;
     }
 
-} // namespace gxbuild3::test::detail
+} // namespace gxbuild::test::detail

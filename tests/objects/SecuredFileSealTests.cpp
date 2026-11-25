@@ -18,7 +18,7 @@
 #include <span>
 #include <utility>
 
-namespace gxbuild3::objects {
+namespace gxbuild::objects {
     namespace {
 
         using nand::clean_extended;
@@ -367,4 +367,4 @@ namespace gxbuild3::objects {
         }
 
     } // namespace
-} // namespace gxbuild3::objects
+} // namespace gxbuild::objects

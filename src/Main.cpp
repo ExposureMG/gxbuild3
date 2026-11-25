@@ -12,7 +12,7 @@
 namespace {
 
     constexpr std::string_view kProgramName{"gxbuild"};
-    constexpr std::string_view kProgramVersion{"3.2.0"};
+    constexpr std::string_view kProgramVersion{GXBUILD_VERSION};
 
     void print_help() {
         std::cout << "Usage: " << kProgramName << " [build] [options]\n\n"
@@ -36,7 +36,7 @@ namespace {
 } // namespace
 
 int main(int argc, char* argv[]) try {
-    gxbuild3::Log::Init();
+    gxbuild::Log::Init();
 
     std::vector<std::string_view> arguments;
     arguments.reserve(static_cast<size_t>(argc));
@@ -44,27 +44,27 @@ int main(int argc, char* argv[]) try {
         arguments.emplace_back(argv[index]);
     }
 
-    const auto parsed = gxbuild3::cli::parse_command_line(arguments);
+    const auto parsed = gxbuild::cli::parse_command_line(arguments);
     if (!parsed) {
-        std::cerr << kProgramName << ": " << parsed.error().message << '\n';
+        std::cerr << kProgramName << ": " << parsed.error().describe() << '\n';
         return 2;
     }
-    if (std::holds_alternative<gxbuild3::cli::HelpCommand>(*parsed)) {
+    if (std::holds_alternative<gxbuild::cli::HelpCommand>(*parsed)) {
         print_help();
         return 0;
     }
-    if (std::holds_alternative<gxbuild3::cli::VersionCommand>(*parsed)) {
+    if (std::holds_alternative<gxbuild::cli::VersionCommand>(*parsed)) {
         std::cout << kProgramName << ' ' << kProgramVersion << '\n';
         return 0;
     }
 
-    const auto& args = std::get<gxbuild3::cli::BuildArgs>(*parsed);
+    const auto& args = std::get<gxbuild::cli::BuildArgs>(*parsed);
     if (args.verbose) {
-        gxbuild3::Log::SetVerbose(true);
-        gxbuild3::Log::Debug("Verbose logging enabled");
+        gxbuild::Log::SetVerbose(true);
+        gxbuild::Log::Debug("Verbose logging enabled");
     }
-    const auto result = gxbuild3::cli::run_build_command(
-        args, gxbuild3::cli::default_build_command_services(std::filesystem::current_path()));
+    const auto result = gxbuild::cli::run_build_command(
+        args, gxbuild::cli::default_build_command_services(std::filesystem::current_path()));
     if (result.exit_code != 0) {
         std::cerr << kProgramName << ": " << result.message << '\n';
     }

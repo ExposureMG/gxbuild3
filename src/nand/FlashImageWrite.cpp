@@ -19,7 +19,7 @@
 #include <utility>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     using namespace detail;
 
@@ -468,8 +468,8 @@ namespace gxbuild3::nand {
             ctx.layout.fs_root_block = static_cast<uint16_t>(*root_start);
             ctx.layout.fs_version = fs.version();
             ctx.layout.big_fs_size = fs.big_fs_size();
-            fs.set_driver(&driver);
-            if (auto saved = fs.save(); !saved) {
+            fs.configure(driver);
+            if (auto saved = fs.save(driver); !saved) {
                 return with_context(std::move(saved), "saving the Flash File System");
             }
             const size_t clusters_per_block = driver.block_size_clean() / 0x4000;
@@ -527,10 +527,6 @@ namespace gxbuild3::nand {
             const size_t min_blk =
                 (ctx.highest_used_offset + ctx.fs_blk_size - 1) / ctx.fs_blk_size;
             ctx.current_blk = std::max<size_t>(ctx.plan.fs_base / ctx.fs_blk_size, min_blk);
-
-            if (ctx.fs) {
-                ctx.fs->set_driver(&driver);
-            }
 
             purge_stale_mobile_blocks(driver);
             clear_stale_fs_roots(driver, ctx.fs != nullptr);
@@ -799,7 +795,7 @@ namespace gxbuild3::nand {
         if (auto laid = write_to_driver(); !laid) {
             return std::unexpected(std::move(laid.error()));
         }
-        return flash_driver.serialize();
+        return flash_driver.finalize();
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

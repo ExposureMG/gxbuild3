@@ -8,7 +8,7 @@
 #include <sstream>
 #include <string>
 
-namespace gxbuild3::patchers {
+namespace gxbuild::patchers {
 
     namespace {
 
@@ -105,4 +105,4 @@ namespace gxbuild3::patchers {
         return matchesCount;
     }
 
-} // namespace gxbuild3::patchers
+} // namespace gxbuild::patchers

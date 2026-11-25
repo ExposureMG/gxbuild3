@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     struct XeLLMetadata {
         std::string version;
@@ -26,4 +26,4 @@ namespace gxbuild3::nand {
         [[nodiscard]] static Result<XeLL> parse(const std::vector<uint8_t>& bytes);
     };
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

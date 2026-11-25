@@ -1,11 +1,11 @@
 #pragma once
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 
 #include <cstdint>
 #include <string_view>
 
-namespace gxbuild3::utils {
+namespace gxbuild::utils {
 
     [[nodiscard]] int64_t build_epoch();
 
@@ -15,4 +15,4 @@ namespace gxbuild3::utils {
 
     [[nodiscard]] uint32_t flashfs_build_timestamp(int64_t build_seconds);
 
-} // namespace gxbuild3::utils
+} // namespace gxbuild::utils

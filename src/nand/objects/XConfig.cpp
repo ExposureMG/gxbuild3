@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     // checkdum is the 16-bit bitwise not of the byte sum over 0x10..0x10C
     uint16_t SmcConfigBlock::compute_checksum(std::span<const uint8_t> bytes) noexcept {
@@ -161,4 +161,4 @@ namespace gxbuild3::nand {
         return std::vector<uint8_t>(encoded.begin(), encoded.end());
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

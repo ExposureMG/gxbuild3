@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     struct nand_header {
         wire::be16 magic;
@@ -82,4 +82,4 @@ namespace gxbuild3::nand {
         std::vector<SpareOverride> spare_overrides;
     };
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

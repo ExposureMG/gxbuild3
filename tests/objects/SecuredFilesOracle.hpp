@@ -16,7 +16,7 @@
 #include <span>
 #include <string_view>
 
-namespace gxbuild3::objects::secured_oracle {
+namespace gxbuild::objects::secured_oracle {
 
     using Bytes = test::Bytes;
     using Key = std::array<uint8_t, 16>;
@@ -83,4 +83,4 @@ namespace gxbuild3::objects::secured_oracle {
                                                   {0xD0, 0xD2, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7,
                                                    0xD8, 0xD9, 0xDA, 0xDB, 0xDC, 0xDD, 0xDE, 0xDF}};
 
-} // namespace gxbuild3::objects::secured_oracle
+} // namespace gxbuild::objects::secured_oracle

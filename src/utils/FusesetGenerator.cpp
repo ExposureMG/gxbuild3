@@ -1,12 +1,12 @@
 #include "utils/FusesetGenerator.hpp"
 
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 
 #include <algorithm>
 #include <array>
 #include <utility>
 
-namespace gxbuild3::utils {
+namespace gxbuild::utils {
     namespace {
 
         constexpr std::array<uint8_t, kFuseLineSize> kFuseLine00 = {
@@ -145,4 +145,4 @@ namespace gxbuild3::utils {
         return generate_fuseset(req);
     }
 
-} // namespace gxbuild3::utils
+} // namespace gxbuild::utils

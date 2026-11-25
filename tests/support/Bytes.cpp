@@ -4,7 +4,7 @@
 
 #include <array>
 
-namespace gxbuild3::test {
+namespace gxbuild::test {
 
     namespace {
         bool fits(size_t buffer_size, size_t offset, size_t width) {
@@ -95,4 +95,4 @@ namespace gxbuild3::test {
         return bytes;
     }
 
-} // namespace gxbuild3::test
+} // namespace gxbuild::test

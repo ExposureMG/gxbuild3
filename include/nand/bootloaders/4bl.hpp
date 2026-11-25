@@ -1,5 +1,5 @@
 #pragma once
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 #include "nand/bootloaders/Common.hpp"
 
 #include <array>
@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     class BootloaderCd {
       public:
@@ -32,4 +32,4 @@ namespace gxbuild3::nand {
                                                const uint8_t cpu_key[16]);
     };
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

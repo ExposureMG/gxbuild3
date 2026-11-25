@@ -1,8 +1,8 @@
 #pragma once
 
-#include "Args.hpp"
-#include "Error.hpp"
-#include "Wire.hpp"
+#include "core/Args.hpp"
+#include "gxbuild/Error.hpp"
+#include "core/Wire.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     struct CONSOLE_PUBLIC_KEY {
         wire::be32 PublicExponent;
@@ -171,4 +171,4 @@ namespace gxbuild3::nand {
     [[nodiscard]] Result<LooseKeyvault> open_loose_keyvault(std::span<const uint8_t> cpu_key,
                                                             std::span<const uint8_t> data);
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

@@ -1,13 +1,13 @@
 #include "nand/objects/Xboxupd.hpp"
 
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 #include "nand/bootloaders/Common.hpp"
 #include "utils/Log.hpp"
 #include "utils/Utils.hpp"
 
 #include <cstddef>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
     namespace {
 
         constexpr std::size_t kBootloaderHeaderSize = 0x20;
@@ -102,4 +102,4 @@ namespace gxbuild3::nand {
         return split_xboxupd_raw(wire::as_u8(xboxupd_bytes));
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

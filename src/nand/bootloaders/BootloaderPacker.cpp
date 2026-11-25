@@ -12,7 +12,7 @@
 #include <map>
 #include <utility>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     namespace {
 
@@ -190,4 +190,4 @@ namespace gxbuild3::nand {
         return {};
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

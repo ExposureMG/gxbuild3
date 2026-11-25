@@ -18,16 +18,14 @@
 #include <unordered_map>
 #include <utility>
 
-namespace gxbuild3::utils {
+namespace gxbuild::utils {
     namespace {
 
         std::string normalize_file_key(std::string key) {
             std::replace(key.begin(), key.end(), '\\', '/');
             if (auto pos = key.rfind('/'); pos != std::string::npos)
                 key.erase(0, pos + 1);
-            std::transform(key.begin(), key.end(), key.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            return key;
+            return to_lower(key);
         }
 
         // strips any directory path while keeping the original filename casing from the ini
@@ -55,12 +53,6 @@ namespace gxbuild3::utils {
             return std::any_of(value.begin(), value.end(), [](char c) {
                 return std::isxdigit(static_cast<unsigned char>(c)) != 0 && c != '0';
             });
-        }
-
-        std::string lowercase(std::string value) {
-            std::transform(value.begin(), value.end(), value.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            return value;
         }
 
         std::optional<uint32_t> requested_bootloader_version(std::string_view stem) {
@@ -145,14 +137,14 @@ namespace gxbuild3::utils {
                 if (!std::filesystem::exists(next, error)) {
                     if (error)
                         return exact;
-                    const auto wanted = lowercase(component.string());
+                    const auto wanted = to_lower(component.string());
                     std::optional<std::filesystem::path> match;
                     std::filesystem::directory_iterator it(current, error);
                     if (error)
                         return exact;
                     while (it != std::filesystem::directory_iterator{}) {
                         const auto name = it->path().filename();
-                        if (lowercase(name.string()) == wanted && (!match || name < *match))
+                        if (to_lower(name.string()) == wanted && (!match || name < *match))
                             match = name;
                         it.increment(error);
                         if (error)
@@ -199,12 +191,42 @@ namespace gxbuild3::utils {
             std::optional<Error> error;
         };
 
-        std::mutex g_stfs_cache_mutex;
-        std::unordered_map<std::string, DiskCacheEntry> g_disk_package_cache;
-        std::unordered_map<std::string, std::shared_ptr<CachedPackage>> g_memory_package_cache;
-        std::unordered_map<std::string, std::pair<std::filesystem::file_time_type,
-                                                  std::optional<std::filesystem::path>>>
-            g_dir_stfs_cache;
+    } // namespace
+
+    struct StfsCache::Impl {
+        std::mutex mutex;
+        std::unordered_map<std::string, DiskCacheEntry> disk_packages;
+        std::unordered_map<std::string, std::shared_ptr<CachedPackage>> memory_packages;
+        std::unordered_map<
+            std::string,
+            std::pair<std::filesystem::file_time_type, std::optional<std::filesystem::path>>>
+            dir_stfs;
+    };
+
+    struct StfsCacheAccess {
+        using Impl = StfsCache::Impl;
+
+        static Impl* get(StfsCache* cache) noexcept {
+            return cache ? cache->m_impl.get() : nullptr;
+        }
+    };
+
+    StfsCache::StfsCache() : m_impl(std::make_unique<Impl>()) {}
+    StfsCache::~StfsCache() = default;
+    StfsCache::StfsCache(StfsCache&&) noexcept = default;
+    StfsCache& StfsCache::operator=(StfsCache&&) noexcept = default;
+
+    void StfsCache::clear() {
+        if (!m_impl) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(m_impl->mutex);
+        m_impl->disk_packages.clear();
+        m_impl->memory_packages.clear();
+        m_impl->dir_stfs.clear();
+    }
+
+    namespace {
 
         [[nodiscard]] Result<const std::vector<uint8_t>*> get_package_file(CachedPackage& pkg,
                                                                            const std::string& key) {
@@ -245,13 +267,13 @@ namespace gxbuild3::utils {
         }
 
         [[nodiscard]] Result<std::optional<std::filesystem::path>>
-        find_stfs_file(const std::filesystem::path& dir) {
+        find_stfs_file(const std::filesystem::path& dir, StfsCacheAccess::Impl* cache) {
             std::error_code ec;
             auto mtime = std::filesystem::last_write_time(dir, ec);
-            if (!ec) {
-                std::lock_guard<std::mutex> lock(g_stfs_cache_mutex);
-                auto it = g_dir_stfs_cache.find(dir.string());
-                if (it != g_dir_stfs_cache.end() && it->second.first == mtime) {
+            if (!ec && cache) {
+                std::lock_guard<std::mutex> lock(cache->mutex);
+                auto it = cache->dir_stfs.find(dir.string());
+                if (it != cache->dir_stfs.end() && it->second.first == mtime) {
                     return it->second.second;
                 }
             }
@@ -272,15 +294,15 @@ namespace gxbuild3::utils {
                 if (ec)
                     return from_error_code(ec, dir);
             }
-            if (!ec) {
-                std::lock_guard<std::mutex> lock(g_stfs_cache_mutex);
-                g_dir_stfs_cache[dir.string()] = {mtime, result};
+            if (!ec && cache) {
+                std::lock_guard<std::mutex> lock(cache->mutex);
+                cache->dir_stfs[dir.string()] = {mtime, result};
             }
             return result;
         }
 
         [[nodiscard]] Result<std::shared_ptr<CachedPackage>>
-        get_or_load_disk_package(const std::filesystem::path& path) {
+        get_or_load_disk_package(const std::filesystem::path& path, StfsCacheAccess::Impl* cache) {
             std::error_code ec;
             const auto canonical_path = std::filesystem::weakly_canonical(path, ec);
             const std::string key = ec ? path.string() : canonical_path.string();
@@ -295,10 +317,10 @@ namespace gxbuild3::utils {
                 return from_error_code(ec, path);
             }
 
-            {
-                std::lock_guard<std::mutex> lock(g_stfs_cache_mutex);
-                auto it = g_disk_package_cache.find(key);
-                if (it != g_disk_package_cache.end() && it->second.mtime == mtime &&
+            if (cache) {
+                std::lock_guard<std::mutex> lock(cache->mutex);
+                auto it = cache->disk_packages.find(key);
+                if (it != cache->disk_packages.end() && it->second.mtime == mtime &&
                     it->second.file_size == size) {
                     if (it->second.error) {
                         return std::unexpected(*it->second.error);
@@ -318,18 +340,20 @@ namespace gxbuild3::utils {
             pkg->raw_data = std::move(*data);
             auto container = stfs::StfsContainer::open(std::as_bytes(std::span(pkg->raw_data)));
             if (!container) {
-                std::lock_guard<std::mutex> lock(g_stfs_cache_mutex);
-                g_disk_package_cache[key] = DiskCacheEntry{.mtime = mtime,
-                                                           .file_size = size,
-                                                           .package = nullptr,
-                                                           .error = container.error()};
+                if (cache) {
+                    std::lock_guard<std::mutex> lock(cache->mutex);
+                    cache->disk_packages[key] = DiskCacheEntry{.mtime = mtime,
+                                                             .file_size = size,
+                                                             .package = nullptr,
+                                                             .error = container.error()};
+                }
                 return std::unexpected(std::move(container).error());
             }
             pkg->container = std::make_unique<stfs::StfsContainer>(std::move(*container));
 
-            {
-                std::lock_guard<std::mutex> lock(g_stfs_cache_mutex);
-                g_disk_package_cache[key] = DiskCacheEntry{
+            if (cache) {
+                std::lock_guard<std::mutex> lock(cache->mutex);
+                cache->disk_packages[key] = DiskCacheEntry{
                     .mtime = mtime, .file_size = size, .package = pkg, .error = std::nullopt};
             }
             return pkg;
@@ -349,15 +373,16 @@ namespace gxbuild3::utils {
         }
 
         [[nodiscard]] Result<std::shared_ptr<CachedPackage>>
-        get_or_load_memory_package(const InMemoryStfsPackage& mem_pkg) {
+        get_or_load_memory_package(const InMemoryStfsPackage& mem_pkg,
+                                   StfsCacheAccess::Impl* cache) {
             if (mem_pkg.data.empty()) {
                 return fail(ErrorCode::InvalidArgument, "In-memory STFS package is empty");
             }
-            const std::string key = compute_memory_package_key(mem_pkg);
-            {
-                std::lock_guard<std::mutex> lock(g_stfs_cache_mutex);
-                auto it = g_memory_package_cache.find(key);
-                if (it != g_memory_package_cache.end()) {
+            const std::string key = cache ? compute_memory_package_key(mem_pkg) : std::string{};
+            if (cache) {
+                std::lock_guard<std::mutex> lock(cache->mutex);
+                auto it = cache->memory_packages.find(key);
+                if (it != cache->memory_packages.end()) {
                     return it->second;
                 }
             }
@@ -371,9 +396,9 @@ namespace gxbuild3::utils {
             }
             pkg->container = std::make_unique<stfs::StfsContainer>(std::move(*container));
 
-            {
-                std::lock_guard<std::mutex> lock(g_stfs_cache_mutex);
-                g_memory_package_cache[key] = pkg;
+            if (cache) {
+                std::lock_guard<std::mutex> lock(cache->mutex);
+                cache->memory_packages[key] = pkg;
             }
             return pkg;
         }
@@ -385,7 +410,14 @@ namespace gxbuild3::utils {
             SourceRank rank;
         };
 
-        using LocateResult = std::expected<std::optional<LocatedFile>, FileLookupError>;
+        struct LookupFailure : Error {
+            std::filesystem::path source_path;
+            std::filesystem::path root_path;
+            size_t root_index{0};
+            AssetSource source{AssetSource::Loose};
+        };
+
+        using LocateResult = std::expected<std::optional<LocatedFile>, LookupFailure>;
 
         enum class LookupPolicy {
             Strict,
@@ -399,15 +431,15 @@ namespace gxbuild3::utils {
             AssetSource source = AssetSource::Loose;
         };
 
-        [[nodiscard]] FileLookupError lookup_error(Error error, std::string layer,
-                                                   Provenance where) {
+        [[nodiscard]] LookupFailure lookup_error(Error error, std::string layer,
+                                                 Provenance where) {
             if (!layer.empty())
                 error.add_context(std::move(layer));
-            return FileLookupError{std::move(error), std::move(where.source_path),
-                                   std::move(where.root_path), where.root_index, where.source};
+            return LookupFailure{std::move(error), std::move(where.source_path),
+                                 std::move(where.root_path), where.root_index, where.source};
         }
 
-        [[nodiscard]] bool tolerated(LookupPolicy policy, const FileLookupError& error) {
+        [[nodiscard]] bool tolerated(LookupPolicy policy, const LookupFailure& error) {
             if (policy == LookupPolicy::Strict)
                 return false;
             const auto where = error.source_path.empty()
@@ -421,7 +453,7 @@ namespace gxbuild3::utils {
         }
 
         [[nodiscard]] std::expected<std::optional<std::pair<std::vector<uint8_t>, AssetSource>>,
-                                    FileLookupError>
+                                    LookupFailure>
         search_package(CachedPackage& pkg, const std::string& key, const std::string& stem,
                        bool wants_xboxupd_part, Provenance where) {
             if (pkg.container->contains_file_by_name(key)) {
@@ -482,9 +514,10 @@ namespace gxbuild3::utils {
             };
 
             if (!options.nosu && !excluded) {
+                auto* cache = StfsCacheAccess::get(options.stfs_cache);
                 for (size_t mem_idx = 0; mem_idx < options.in_memory_stfs.size(); ++mem_idx) {
                     const Provenance where{{}, {}, mem_idx, AssetSource::Stfs};
-                    auto pkg = get_or_load_memory_package(options.in_memory_stfs[mem_idx]);
+                    auto pkg = get_or_load_memory_package(options.in_memory_stfs[mem_idx], cache);
                     if (!pkg) {
                         auto failure =
                             lookup_error(std::move(pkg).error(),
@@ -577,7 +610,8 @@ namespace gxbuild3::utils {
                 if (options.nosu || excluded)
                     continue;
 
-                auto package_path = find_stfs_file(root);
+                auto* cache = StfsCacheAccess::get(options.stfs_cache);
+                auto package_path = find_stfs_file(root, cache);
                 if (!package_path) {
                     auto failure = failure_at(std::move(package_path).error(),
                                               "Could not inspect source root", root);
@@ -589,7 +623,7 @@ namespace gxbuild3::utils {
                     continue;
                 const auto package = std::move(**package_path);
 
-                auto pkg = get_or_load_disk_package(package);
+                auto pkg = get_or_load_disk_package(package, cache);
                 if (!pkg) {
                     auto failure =
                         failure_at(std::move(pkg).error(), "Could not inspect STFS package",
@@ -627,13 +661,21 @@ namespace gxbuild3::utils {
         return entry.starts_with("..\\") || entry.starts_with("../");
     }
 
-    FileLookupResult find_file_data_detailed(std::string_view filename,
-                                             const std::vector<std::filesystem::path>& search_paths,
-                                             ScanOptions options, AssetKind kind) {
+    Result<std::optional<ResolvedFile>>
+    find_file_data_detailed(std::string_view filename,
+                            const std::vector<std::filesystem::path>& search_paths,
+                            ScanOptions options, AssetKind kind) {
         auto found = locate(filename, search_paths, options, security_file_names(), kind,
                             LookupPolicy::Strict);
-        if (!found)
-            return std::unexpected(std::move(found).error());
+        if (!found) {
+            auto failure = std::move(found).error();
+            const std::filesystem::path source_path = std::move(failure.source_path);
+            Error error = std::move(failure);
+            if (!source_path.empty()) {
+                error.add_context(source_path.string());
+            }
+            return std::unexpected(std::move(error));
+        }
         if (!*found)
             return std::optional<ResolvedFile>{};
         return std::optional<ResolvedFile>{std::move((*found)->file)};
@@ -692,6 +734,10 @@ namespace gxbuild3::utils {
             }
         }
 
+        StfsCache local_cache;
+        if (!options.stfs_cache) {
+            options.stfs_cache = &local_cache;
+        }
         auto security_names = security_file_names();
         if (const auto* security = doc.get("security")) {
             for (const auto& entry : *security)
@@ -703,7 +749,7 @@ namespace gxbuild3::utils {
                                 AssetKind kind = AssetKind::Regular) {
             return locate(name, search_paths, scan, security_names, kind, LookupPolicy::Lenient);
         };
-        const auto escaped = [](std::string_view entry, FileLookupError&& failure) {
+        const auto escaped = [](std::string_view entry, LookupFailure&& failure) {
             Error error = std::move(failure);
             return std::unexpected(
                 std::move(error).add_context(std::format("INI asset '{}'", entry)));
@@ -849,11 +895,4 @@ namespace gxbuild3::utils {
         return result;
     }
 
-    void clear_stfs_cache() {
-        std::lock_guard<std::mutex> lock(g_stfs_cache_mutex);
-        g_disk_package_cache.clear();
-        g_memory_package_cache.clear();
-        g_dir_stfs_cache.clear();
-    }
-
-} // namespace gxbuild3::utils
+} // namespace gxbuild::utils

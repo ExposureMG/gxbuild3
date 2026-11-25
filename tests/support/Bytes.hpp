@@ -4,14 +4,13 @@
 // field access for hand-built records, and the two deterministic fill patterns.
 
 #include "Expect.hpp"
-#include "Sha256.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
 
-namespace gxbuild3::test {
+namespace gxbuild::test {
 
     // Lowercase, two digits per byte, no separators.
     [[nodiscard]] std::string hex(std::span<const uint8_t> bytes);
@@ -34,4 +33,4 @@ namespace gxbuild3::test {
     // image_pattern: byte i = (seed + i * 7 + (i >> 9)) & 0xFF (FlashImageGoldenTests).
     [[nodiscard]] Bytes image_pattern(size_t size, uint8_t seed);
 
-} // namespace gxbuild3::test
+} // namespace gxbuild::test

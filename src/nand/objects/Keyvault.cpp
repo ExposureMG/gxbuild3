@@ -9,11 +9,10 @@
 #include <bit>
 #include <cstdio>
 #include <cstring>
-#include <random>
 #include <span>
 #include <string>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     namespace {
 
@@ -85,28 +84,14 @@ namespace gxbuild3::nand {
             return result;
         }
 
-        std::vector<uint8_t> raw(16);
-        for (size_t i = 0; i < 16; ++i) {
-            auto from_hex = [](char c) -> int {
-                if (c >= '0' && c <= '9')
-                    return c - '0';
-                if (c >= 'a' && c <= 'f')
-                    return c - 'a' + 10;
-                if (c >= 'A' && c <= 'F')
-                    return c - 'A' + 10;
-                return -1;
-            };
-            int h = from_hex(hex[i * 2]);
-            int l = from_hex(hex[i * 2 + 1]);
-            if (h < 0 || l < 0) {
-                result.status = CpuKeyStatus::Invalid;
-                result.message = "Invalid CPU key: contains non-hexadecimal characters";
-                return result;
-            }
-            raw[i] = static_cast<uint8_t>((h << 4) | l);
+        const auto raw = utils::decode_hex_bytes<16>(hex);
+        if (!raw) {
+            result.status = CpuKeyStatus::Invalid;
+            result.message = "Invalid CPU key: contains non-hexadecimal characters";
+            return result;
         }
 
-        return validate_cpu_key(raw);
+        return validate_cpu_key(*raw);
     }
 
     bool cpukey_valid(std::span<const uint8_t> cpu_key) {
@@ -122,14 +107,6 @@ namespace gxbuild3::nand {
             return false;
         }
         return cpu_key_hamming_weight(key_copy) == 0x35;
-    }
-
-    void ExCryptRandom(uint8_t* dest, size_t size) {
-        std::random_device source;
-        for (size_t i = 0; i < size; i += sizeof(uint32_t)) {
-            const auto word = static_cast<uint32_t>(source());
-            std::memcpy(dest + i, &word, std::min(sizeof(word), size - i));
-        }
     }
 
     Result<std::vector<uint8_t>> keyvault_decrypt(std::span<const uint8_t> cpu_key,
@@ -429,4 +406,4 @@ namespace gxbuild3::nand {
         return summary;
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

@@ -1,6 +1,6 @@
 #include "stfs/HashVerifier.hpp"
 
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 #include "excrypt.h"
 #include "stfs/BlockParser.hpp"
 #include "stfs/Commons.hpp"
@@ -12,7 +12,7 @@
 #include <format>
 #include <string_view>
 
-namespace gxbuild3::stfs {
+namespace gxbuild::stfs {
 
     namespace {
 
@@ -103,4 +103,4 @@ namespace gxbuild3::stfs {
         return check_block_hash(package, *data_offset, expected, "data block");
     }
 
-} // namespace gxbuild3::stfs
+} // namespace gxbuild::stfs

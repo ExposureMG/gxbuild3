@@ -5,7 +5,7 @@
 // The expected CD bytes are made with GxCrypt's ExCryptHmacSha and ExCryptRc4 directly, never
 // through the bootloader code under test.
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 #include "excrypt.h"
 #include "nand/FlashImage.hpp"
 #include "nand/bootloaders/2bl.hpp"
@@ -18,7 +18,7 @@
 #include <cstdint>
 #include <gtest/gtest.h>
 
-namespace gxbuild3::bootloaders {
+namespace gxbuild::bootloaders {
     namespace {
 
         TEST(KeyChain, CdCpuKeyDerivationMatchesSingleCbChain) {
@@ -138,4 +138,4 @@ namespace gxbuild3::bootloaders {
         }
 
     } // namespace
-} // namespace gxbuild3::bootloaders
+} // namespace gxbuild::bootloaders

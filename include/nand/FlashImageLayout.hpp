@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Error.hpp"
-#include "Wire.hpp"
+#include "gxbuild/Error.hpp"
+#include "core/Wire.hpp"
 #include "nand/FlashDriver.hpp"
 #include "nand/FlashImage.hpp"
 #include "nand/objects/XeLL.hpp"
@@ -16,7 +16,7 @@
 #include <string_view>
 #include <vector>
 
-namespace gxbuild3::nand::detail {
+namespace gxbuild::nand::detail {
 
     struct PayloadRange {
         std::string_view name;
@@ -344,4 +344,4 @@ namespace gxbuild3::nand::detail {
         return (reserve_block - 1) * driver.block_size_clean();
     }
 
-} // namespace gxbuild3::nand::detail
+} // namespace gxbuild::nand::detail

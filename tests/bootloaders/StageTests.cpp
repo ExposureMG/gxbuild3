@@ -8,7 +8,7 @@
 // instead of forcing a direction, and a seal over an all-zero nonce draws a fresh one, which is
 // why the corpus renderer pins kPinnedNonce before every crypt.
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 #include "bootloaders/StageBytes.hpp"
 #include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
@@ -28,7 +28,7 @@
 #include <string_view>
 #include <utility>
 
-namespace gxbuild3::bootloaders {
+namespace gxbuild::bootloaders {
     namespace {
 
         namespace stage = nand::stage;
@@ -273,4 +273,4 @@ namespace gxbuild3::bootloaders {
         }
 
     } // namespace
-} // namespace gxbuild3::bootloaders
+} // namespace gxbuild::bootloaders

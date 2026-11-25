@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 #include "stfs/Commons.hpp"
 
 #include <array>
@@ -9,7 +9,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::stfs {
+namespace gxbuild::stfs {
 
     [[nodiscard]] Result<std::vector<std::uint32_t>>
     follow_block_chain(std::span<const std::byte> package, std::uint32_t starting_block,
@@ -27,4 +27,4 @@ namespace gxbuild3::stfs {
                          bool verify = false, const std::array<std::byte, 0x14>* top_hash = nullptr,
                          std::uint32_t total_blocks = 0);
 
-} // namespace gxbuild3::stfs
+} // namespace gxbuild::stfs

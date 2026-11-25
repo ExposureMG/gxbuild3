@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 #include "stfs/Commons.hpp"
 
 #include <cstdint>
@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::stfs::detail {
+namespace gxbuild::stfs::detail {
 
     [[nodiscard]] Result<std::vector<std::byte>>
     read_file_table(std::span<const std::byte> package, std::uint32_t header_size,
@@ -27,4 +27,4 @@ namespace gxbuild3::stfs::detail {
     plan_destinations(const std::vector<FileEntry>& entries,
                       const std::filesystem::path& target_dir);
 
-} // namespace gxbuild3::stfs::detail
+} // namespace gxbuild::stfs::detail

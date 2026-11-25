@@ -15,7 +15,7 @@
 #include <utility>
 #include <variant>
 
-namespace gxbuild3::stfs {
+namespace gxbuild::stfs {
     namespace {
 
         [[nodiscard]] bool starts_with_pirs(std::span<const std::byte> data) {
@@ -184,4 +184,4 @@ namespace gxbuild3::stfs {
         return fail(ErrorCode::NotFound, "STFS file not found: {}", name);
     }
 
-} // namespace gxbuild3::stfs
+} // namespace gxbuild::stfs

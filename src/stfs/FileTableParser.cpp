@@ -1,6 +1,6 @@
 #include "stfs/FileTableParser.hpp"
 
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 #include "stfs/Commons.hpp"
 #include "stfs/Layout.hpp"
 
@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-namespace gxbuild3::stfs {
+namespace gxbuild::stfs {
 
     Result<std::vector<FileEntry>> parse_file_listing(std::span<const std::byte> data) {
         std::vector<FileEntry> entries;
@@ -71,4 +71,4 @@ namespace gxbuild3::stfs {
         return entries;
     }
 
-} // namespace gxbuild3::stfs
+} // namespace gxbuild::stfs

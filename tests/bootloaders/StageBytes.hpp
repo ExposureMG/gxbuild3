@@ -11,7 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace gxbuild3::bootloaders {
+namespace gxbuild::bootloaders {
 
     enum class Fill : uint8_t {
         Zero,
@@ -31,4 +31,4 @@ namespace gxbuild3::bootloaders {
         return bytes;
     }
 
-} // namespace gxbuild3::bootloaders
+} // namespace gxbuild::bootloaders

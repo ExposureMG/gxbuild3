@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     struct BlockMetadata {
         uint16_t logical_block_id = 0;
@@ -103,12 +103,11 @@ namespace gxbuild3::nand {
         void mark_bad_block(size_t block_idx);
         void write_block_metadata(size_t block_idx, const BlockMetadata& meta);
 
-        std::span<const uint8_t> read_offset(size_t offset, size_t length = 1) const;
         std::vector<uint8_t> read_clean(size_t offset, size_t length) const;
         [[nodiscard]] bool write_offset(size_t offset, std::span<const uint8_t> data);
 
-        std::vector<uint8_t>& serialize();
-        const std::vector<uint8_t>& serialize() const;
+        std::vector<uint8_t>& finalize();
+        const std::vector<uint8_t>& raw_bytes() const noexcept;
 
       private:
         BlockMetadata interpret_page_metadata(size_t first_page) const;
@@ -119,7 +118,6 @@ namespace gxbuild3::nand {
         ImageSize m_image_size;
         size_t m_page_size;
         NandLayout m_layout;
-        mutable std::vector<uint8_t> m_offset_scratch;
     };
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

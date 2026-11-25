@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     std::span<const uint8_t> freeboot_rebooter();
     std::span<const uint8_t> freeboot_payload();
@@ -14,4 +14,4 @@ namespace gxbuild3::nand {
 
     std::vector<uint8_t> freeboot_payload_for(size_t core_length);
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

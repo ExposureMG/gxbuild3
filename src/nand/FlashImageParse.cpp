@@ -1,4 +1,4 @@
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 #include "nand/FlashDriver.hpp"
 #include "nand/FlashImage.hpp"
 #include "nand/FlashImageLayout.hpp"
@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     using namespace detail;
 
@@ -31,14 +31,14 @@ namespace gxbuild3::nand {
                 return fail(ErrorCode::InvalidArgument, "the NAND image has no blocks");
             }
 
-            const size_t image_size = driver.serialize().size();
+            const size_t image_size = driver.raw_bytes().size();
             if (image_size < sizeof(nand_header)) {
                 return fail(ErrorCode::Truncated,
                             "the NAND image ({} bytes) is smaller than the NAND header",
                             image_size);
             }
 
-            const auto header_span = driver.read_offset(0, sizeof(nand_header));
+            const auto header_span = driver.read_clean(0, sizeof(nand_header));
             if (header_span.size() < sizeof(nand_header)) {
                 return fail(ErrorCode::Truncated, "the NAND header could not be read");
             }
@@ -373,7 +373,7 @@ namespace gxbuild3::nand {
                 return;
             }
             const size_t block_size = driver.block_size_clean();
-            auto cfg_bytes = driver.read_offset(*cfg_offset, kSmcConfigLength);
+            auto cfg_bytes = driver.read_clean(*cfg_offset, kSmcConfigLength);
             if (auto parsed = SmcConfigBlock::parse(cfg_bytes)) {
                 image.smc_config = std::move(*parsed);
             }
@@ -391,9 +391,9 @@ namespace gxbuild3::nand {
 
         void read_emmc_anchors(FlashImage& image) {
             const Driver& readable = image.flash_driver;
-            const auto first = readable.read_offset(CoronaConfig::kOffsets[0], CoronaConfig::kSize);
+            const auto first = readable.read_clean(CoronaConfig::kOffsets[0], CoronaConfig::kSize);
             const auto second =
-                readable.read_offset(CoronaConfig::kOffsets[1], CoronaConfig::kSize);
+                readable.read_clean(CoronaConfig::kOffsets[1], CoronaConfig::kSize);
             image.corona_config = CoronaConfig::choose(
                 {std::span<const uint8_t>(first), std::span<const uint8_t>(second)});
             if (!image.corona_config) {
@@ -407,7 +407,7 @@ namespace gxbuild3::nand {
                     continue;
                 }
                 auto bytes =
-                    readable.read_offset(static_cast<size_t>(blob.block) * 0x4000, blob.length);
+                    readable.read_clean(static_cast<size_t>(blob.block) * 0x4000, blob.length);
                 auto* target =
                     mob.get_slot(static_cast<uint8_t>(CoronaConfig::kFirstBlobType + slot));
                 if (target && bytes.size() == blob.length) {
@@ -536,7 +536,7 @@ namespace gxbuild3::nand {
             if (offset > image_size || XeLL::kSize > image_size - offset) {
                 return std::nullopt;
             }
-            auto xell_span = driver.read_offset(offset, XeLL::kSize);
+            auto xell_span = driver.read_clean(offset, XeLL::kSize);
             if (xell_span.size() != XeLL::kSize) {
                 return std::nullopt;
             }
@@ -575,7 +575,7 @@ namespace gxbuild3::nand {
                 }
             }
 
-            const size_t image_size = driver.serialize().size();
+            const size_t image_size = driver.raw_bytes().size();
             const uint32_t window_base = kJtagWindowOffset;
             payloads.xell = image.devkit_chain() ? std::nullopt
                                                  : parse_xell_at(driver, image_size, kXellOffset);
@@ -635,7 +635,7 @@ namespace gxbuild3::nand {
 
         read_secure_head(flash_driver, header, smc, keyvault);
 
-        const auto& image_bytes = std::as_const(flash_driver).serialize();
+        const auto& image_bytes = flash_driver.raw_bytes();
         if (auto chain =
                 scan_boot_chain(flash_driver, image_bytes.size(), cb_section, kernel_section);
             !chain) {
@@ -665,4 +665,4 @@ namespace gxbuild3::nand {
         return {};
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

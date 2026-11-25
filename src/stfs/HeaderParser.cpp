@@ -1,6 +1,6 @@
 #include "stfs/HeaderParser.hpp"
 
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 #include "stfs/Commons.hpp"
 #include "stfs/Layout.hpp"
 
@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace gxbuild3::stfs {
+namespace gxbuild::stfs {
 
     namespace {
 
@@ -123,4 +123,4 @@ namespace gxbuild3::stfs {
         return parse_header(buffer);
     }
 
-} // namespace gxbuild3::stfs
+} // namespace gxbuild::stfs

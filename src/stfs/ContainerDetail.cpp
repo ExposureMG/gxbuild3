@@ -7,7 +7,7 @@
 #include <fstream>
 #include <utility>
 
-namespace gxbuild3::stfs::detail {
+namespace gxbuild::stfs::detail {
 
     // extracts the file table by faking a FileEntry for it, and bails if bit 0 of block_separation isn't set
     Result<std::vector<std::byte>> read_file_table(std::span<const std::byte> package,
@@ -122,4 +122,4 @@ namespace gxbuild3::stfs::detail {
         return destinations;
     }
 
-} // namespace gxbuild3::stfs::detail
+} // namespace gxbuild::stfs::detail

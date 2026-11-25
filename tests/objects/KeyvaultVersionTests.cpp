@@ -3,7 +3,7 @@
 // 1.21 sees it; and the keyvault HMAC covers the big-endian keyvault version, checked against
 // independent Python vectors.
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 #include "nand/objects/Keyvault.hpp"
 #include "support/Expect.hpp"
 #include "support/Keys.hpp"
@@ -17,7 +17,7 @@
 #include <ostream>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
     // Found by ADL: a failed comparison names the enumerator instead of printing raw bytes.
     // Internal linkage: these printers belong to this file only.
     [[maybe_unused]] static void PrintTo(CpuKeyStatus status, std::ostream* os) {
@@ -52,9 +52,9 @@ namespace gxbuild3::nand {
         }
         *os << "Form(" << static_cast<int>(form) << ")";
     }
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand
 
-namespace gxbuild3::objects {
+namespace gxbuild::objects {
     namespace {
 
         using nand::CpuKeyStatus;
@@ -306,4 +306,4 @@ namespace gxbuild3::objects {
         }
 
     } // namespace
-} // namespace gxbuild3::objects
+} // namespace gxbuild::objects

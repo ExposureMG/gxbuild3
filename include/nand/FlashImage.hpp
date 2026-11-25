@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Args.hpp"
-#include "Error.hpp"
+#include "core/Args.hpp"
+#include "gxbuild/Error.hpp"
 #include "nand/FlashDriver.hpp"
 #include "nand/bootloaders/2bl.hpp"
 #include "nand/bootloaders/3bl.hpp"
@@ -25,10 +25,9 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     enum class BootStageId : uint8_t { CbA, CbX, CbB, Sc, Cd, Ce };
 
@@ -61,7 +60,7 @@ namespace gxbuild3::nand {
         std::optional<BootloaderCe> extra_se;
     };
 
-    struct ImageState {
+    struct FlashImage {
         nand_header header;
         bool preserve_layout = false;
         std::optional<BuildType>
@@ -82,17 +81,6 @@ namespace gxbuild3::nand {
         std::vector<InputRawPatch> raw_patches;
 
         Driver flash_driver;
-    };
-
-    // rebinds the filesystem's raw driver pointer whenever a FlashImage gets copied or moved
-    struct FlashImage : ImageState {
-        FlashImage() = default;
-        FlashImage(const FlashImage& other);
-        FlashImage(FlashImage&& other) noexcept(std::is_nothrow_move_constructible_v<ImageState>);
-        FlashImage& operator=(const FlashImage& other);
-        FlashImage&
-        operator=(FlashImage&& other) noexcept(std::is_nothrow_move_assignable_v<ImageState>);
-        ~FlashImage() = default;
 
         static std::optional<FlashImage> read(std::vector<uint8_t> raw_image);
         static FlashImage create(Driver::ImageSize size, Driver::DriverMode mode,
@@ -152,11 +140,4 @@ namespace gxbuild3::nand {
         return !(build_type == BuildType::Jtag && slot == 0);
     }
 
-    using cb_section = CbSection;
-    using kernel_section = KernelSection;
-    using system_update = SystemUpdate;
-    using payloads = Payloads;
-    using mobile_data = MobileData;
-    using flash_image = FlashImage;
-
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

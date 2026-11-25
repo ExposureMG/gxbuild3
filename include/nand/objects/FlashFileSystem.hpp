@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Error.hpp"
-#include "Wire.hpp"
+#include "gxbuild/Error.hpp"
+#include "core/Wire.hpp"
 #include "nand/FlashDriver.hpp"
 
 #include <cstddef>
@@ -13,7 +13,7 @@
 #include <string_view>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     struct FlashFileSystemTestAccess;
 
@@ -83,10 +83,11 @@ namespace gxbuild3::nand {
     class FlashFileSystem {
       public:
         FlashFileSystem() = default;
+        explicit FlashFileSystem(const Driver& driver);
 
         static constexpr uint16_t kDeferRoot = 0xFFFF;
 
-        void set_driver(Driver* driver);
+        void configure(const Driver& driver) noexcept;
 
         void set_larger_filesystem(bool larger) noexcept { m_larger = larger; }
 
@@ -107,9 +108,9 @@ namespace gxbuild3::nand {
 
         [[nodiscard]] Result<void> format(size_t total_blocks, uint16_t root_block = 0x3E0,
                                           uint32_t version = 1, uint32_t reserved_boundary = 0x50);
-        [[nodiscard]] Result<void> load(Driver& driver, uint16_t root_block = 0x3E0,
+        [[nodiscard]] Result<void> load(const Driver& driver, uint16_t root_block = 0x3E0,
                                         size_t cluster_in_block = 0);
-        [[nodiscard]] Result<void> save();
+        [[nodiscard]] Result<void> save(Driver& driver);
         [[nodiscard]] Result<void> set_root_block(uint16_t root_block);
         [[nodiscard]] Result<void> reserve_blocks(size_t start_block, size_t block_count);
         // marks clusters as reserved internally so nothing allocates them, but writes a custom status value to disk
@@ -146,7 +147,8 @@ namespace gxbuild3::nand {
       private:
         friend struct FlashFileSystemTestAccess;
 
-        Driver* m_driver = nullptr;
+        Driver::DriverMode m_mode = Driver::DriverMode::Small;
+        size_t m_clusters_per_block = 1;
         uint32_t m_version = 1;
         uint16_t m_root_block = 0x3E0;
         bool m_root_placed = false;
@@ -164,7 +166,7 @@ namespace gxbuild3::nand {
         [[nodiscard]] size_t base_cluster() const;
         void place_root(uint16_t root_block);
         void release_root();
-        [[nodiscard]] Result<void> read_root(Driver& driver, uint16_t root_block,
+        [[nodiscard]] Result<void> read_root(const Driver& driver, uint16_t root_block,
                                              size_t cluster_in_block);
         [[nodiscard]] Result<void> read_files(const Driver& driver);
         [[nodiscard]] std::vector<uint8_t> read_chain(const Driver& driver,
@@ -176,14 +178,15 @@ namespace gxbuild3::nand {
         };
         using ClusterPages = std::map<size_t, size_t>;
 
-        [[nodiscard]] Result<size_t> write_root_cluster();
-        [[nodiscard]] BlockMetadata fs_metadata(BlockKind kind, uint32_t sequence,
-                                                uint16_t block_id) const;
-        [[nodiscard]] Result<void> write_file_chain(const FlashFileSystemEntry& entry,
+        [[nodiscard]] Result<size_t> write_root_cluster(Driver& driver);
+        [[nodiscard]] BlockMetadata fs_metadata(const Driver& driver, BlockKind kind,
+                                                uint32_t sequence, uint16_t block_id) const;
+        [[nodiscard]] Result<void> write_file_chain(Driver& driver,
+                                                    const FlashFileSystemEntry& entry,
                                                     const std::string& name,
                                                     std::span<const uint8_t> bytes,
                                                     ClusterPages& clusters);
-        void stamp_file_clusters(const ClusterPages& clusters);
+        void stamp_file_clusters(Driver& driver, const ClusterPages& clusters);
 
         [[nodiscard]] static std::optional<size_t> checked_block_count(size_t bytes_needed,
                                                                        size_t clean_block_size);
@@ -192,4 +195,4 @@ namespace gxbuild3::nand {
         [[nodiscard]] const FlashFileSystemEntry* find_entry(std::string_view filename) const;
     };
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

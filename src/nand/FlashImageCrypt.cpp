@@ -1,4 +1,4 @@
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 #include "nand/FlashImage.hpp"
 #include "nand/FlashImageLayout.hpp"
 #include "nand/bootloaders/Common.hpp"
@@ -6,6 +6,7 @@
 #include "nand/objects/SMC.hpp"
 #include "nand/objects/XeLL.hpp"
 #include "utils/Log.hpp"
+#include "utils/Utils.hpp"
 
 #include <algorithm>
 #include <array>
@@ -16,7 +17,7 @@
 #include <string_view>
 #include <utility>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     using namespace detail;
 
@@ -481,7 +482,6 @@ namespace gxbuild3::nand {
                 }
                 slot.cg_spill_blocks.clear();
                 if (filesystem) {
-                    filesystem->set_driver(&image.flash_driver);
                     if (filesystem->exists(filename)) {
                         if (auto deleted = filesystem->delete_file(filename); !deleted) {
                             return with_context(std::move(deleted), "deleting a stale CG tail");
@@ -493,7 +493,6 @@ namespace gxbuild3::nand {
             if (!filesystem) {
                 return fail(ErrorCode::Unsupported, "CG continuation requires a Flash File System");
             }
-            filesystem->set_driver(&image.flash_driver);
             for (auto range : image.active_payload_block_ranges()) {
                 if (auto reserved =
                         filesystem->reserve_blocks(range.start_block, range.block_count);
@@ -741,7 +740,7 @@ namespace gxbuild3::nand {
             }
             BootloaderNonce nonce{};
             do {
-                ExCryptRandom(nonce.data(), nonce.size());
+                utils::fill_random(nonce);
             } while (is_zero_nonce(nonce));
             return nonce;
         }
@@ -943,4 +942,4 @@ namespace gxbuild3::nand {
         return {};
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

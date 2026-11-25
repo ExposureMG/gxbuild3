@@ -13,7 +13,7 @@
 #include <array>
 #include <cstdint>
 
-namespace gxbuild3::test {
+namespace gxbuild::test {
 
     using CpuKey = std::array<uint8_t, 16>;
 
@@ -34,4 +34,4 @@ namespace gxbuild3::test {
     // ECC-encoded with XeCryptUidEccEncode.
     [[nodiscard]] CpuKey ecc_encoded_bit_range(unsigned first_bit, unsigned end_bit);
 
-} // namespace gxbuild3::test
+} // namespace gxbuild::test

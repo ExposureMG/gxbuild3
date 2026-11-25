@@ -1,13 +1,13 @@
 #pragma once
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     struct XboxupdParts {
         std::vector<uint8_t> cf_raw;
@@ -17,4 +17,4 @@ namespace gxbuild3::nand {
     [[nodiscard]] Result<XboxupdParts> split_xboxupd_raw(std::span<const uint8_t> xboxupd_bytes);
     [[nodiscard]] Result<XboxupdParts> split_xboxupd_raw(std::span<const std::byte> xboxupd_bytes);
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "Error.hpp"
+#include "core/Args.hpp"
+#include "gxbuild/Error.hpp"
 
 #include <array>
 #include <cstddef>
@@ -9,7 +10,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     struct CrlSealing {
         std::array<uint8_t, 16> iv{};
@@ -102,4 +103,13 @@ namespace gxbuild3::nand {
 
     [[nodiscard]] Result<std::array<uint8_t, 8>> secdata_head(std::span<const uint8_t> clear);
 
-} // namespace gxbuild3::nand
+    [[nodiscard]] bool is_cpu_keyed_secfile(std::string_view name);
+    [[nodiscard]] bool is_console_secured_file(std::string_view name);
+    [[nodiscard]] const std::vector<uint8_t>*
+    console_secured_file(const InputMetadata& metadata, std::string_view lower_name);
+    [[nodiscard]] Result<std::vector<uint8_t>> sealed_flashfs_file(std::string_view name,
+                                                                   const std::vector<uint8_t>& data,
+                                                                   const Input& input,
+                                                                   const SecuredFileBuild& build);
+
+} // namespace gxbuild::nand

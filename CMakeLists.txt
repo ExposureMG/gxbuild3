@@ -1,9 +1,10 @@
-cmake_minimum_required(VERSION 3.29)
-project(GxBuild3 LANGUAGES C CXX)
+cmake_minimum_required(VERSION 3.21)
+project(GxBuild3 VERSION 3.3.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(PROJECT_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -27,10 +28,12 @@ function(gxbuild3_enable_warnings target)
 endfunction()
 
 set(GXBUILD3_LIB_SOURCES
-    src/Args.cpp
-    src/BuildRunner.cpp
-    src/InputValidator.cpp
     src/Library.cpp
+    src/core/Args.cpp
+    src/core/BuildRunner.cpp
+    src/core/InputValidator.cpp
+    src/core/NandExtractor.cpp
+    src/core/OptionsPatcher.cpp
     src/ini/IniParser.cpp
     src/nand/FlashDriver.cpp
     src/nand/FlashImageCrypt.cpp
@@ -65,17 +68,15 @@ set(GXBUILD3_LIB_SOURCES
     src/stfs/MetadataParser.cpp
     src/stfs/ContainerDetail.cpp
     src/stfs/StfsContainer.cpp
-    src/utils/BigUint.cpp
     src/utils/BuildTime.cpp
     src/utils/FileManager.cpp
     src/utils/FusesetGenerator.cpp
     src/utils/Log.cpp
     src/utils/Utils.cpp
-    src/utils/XeRsa.cpp
 )
 
 # Headers live in include/ and sources in src/, with the same relative paths. Only the public
-# API (Library.hpp, GxBuildTypes.hpp) is installed; ExCrypt and spdlog stay private.
+# API (include/gxbuild/{Error,Types,Library}.hpp) is installed; ExCrypt and spdlog stay private.
 add_library(gxbuild3_lib STATIC ${GXBUILD3_LIB_SOURCES})
 target_include_directories(gxbuild3_lib
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -100,12 +101,14 @@ add_library(gxbuild3_cli STATIC
     src/cli/BuildCommand.cpp
     src/cli/BuildInputResolver.cpp
     src/cli/CommandLine.cpp
+    src/cli/OptionsResolver.cpp
 )
 target_link_libraries(gxbuild3_cli PUBLIC gxbuild3_internal)
 gxbuild3_enable_warnings(gxbuild3_cli)
 
 add_executable(gxbuild3 src/Main.cpp)
 set_target_properties(gxbuild3 PROPERTIES OUTPUT_NAME gxbuild)
+target_compile_definitions(gxbuild3 PRIVATE GXBUILD_VERSION="${PROJECT_VERSION}")
 target_link_libraries(gxbuild3 PRIVATE gxbuild3_cli)
 gxbuild3_enable_warnings(gxbuild3)
 
@@ -123,6 +126,4 @@ install(TARGETS gxbuild3 gxbuild3_lib
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
-install(FILES include/Library.hpp include/GxBuildTypes.hpp
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gxbuild3
-)
+install(DIRECTORY include/gxbuild DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

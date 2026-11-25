@@ -3,7 +3,7 @@
 #include "stfs/Commons.hpp"
 #include "stfs/Layout.hpp"
 
-namespace gxbuild3::stfs {
+namespace gxbuild::stfs {
 
     namespace {
 
@@ -93,4 +93,4 @@ namespace gxbuild3::stfs {
         return *table_offset + std::uint64_t{record} * kHashEntrySize;
     }
 
-} // namespace gxbuild3::stfs
+} // namespace gxbuild::stfs

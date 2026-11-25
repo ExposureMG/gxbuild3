@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Error.hpp"
-#include "Wire.hpp"
+#include "gxbuild/Error.hpp"
+#include "core/Wire.hpp"
 #include "excrypt.h"
 #include "exkeys.h"
 
@@ -15,9 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace gxbuild3::nand {
-
-    void ExCryptRandom(uint8_t* dest, size_t size);
+namespace gxbuild::nand {
 
     inline constexpr uint8_t key_1bl[0x10] = {0xDD, 0x88, 0xAD, 0x0C, 0x9E, 0xD6, 0x69, 0xE7,
                                               0xB5, 0x67, 0x94, 0xFB, 0x68, 0x56, 0x3E, 0xFA};
@@ -172,4 +170,4 @@ namespace gxbuild3::nand {
         return static_cast<size_t>(aligned);
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

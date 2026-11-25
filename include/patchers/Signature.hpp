@@ -1,12 +1,12 @@
 #pragma once
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
-namespace gxbuild3::patchers {
+namespace gxbuild::patchers {
     struct SigByte {
         bool isWildcard;
         uint8_t value;
@@ -18,4 +18,4 @@ namespace gxbuild3::patchers {
     [[nodiscard]] Result<uint32_t> apply_signature_patch(uint8_t* data, uint32_t dataSize,
                                                          const std::string& searchPatternStr,
                                                          const std::string& replacePatternStr);
-} // namespace gxbuild3::patchers
+} // namespace gxbuild::patchers

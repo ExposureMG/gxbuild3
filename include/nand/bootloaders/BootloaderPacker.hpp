@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     enum class HmacType {
         Default,
@@ -34,4 +34,4 @@ namespace gxbuild3::nand {
     [[nodiscard]] Result<void> crypt_bootloaders(std::vector<BootloaderBlock>& bls,
                                                  std::span<const uint8_t> cpu_key);
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

@@ -1,0 +1,271 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace gxbuild {
+
+    enum class BuildType {
+        Retail,
+        Jtag,
+        Glitch,
+        Glitch2,
+        Glitch2m,
+        Glitch3,
+        Devkit,
+        // devkit kernel chain with glitch2m patches and a re-signed sd
+        Devgl,
+    };
+
+    enum class ConsoleType {
+        Xenon,
+        Zephyr,
+        Falcon,
+        Jasper,
+        Trinity,
+        Corona,
+        Winchester,
+    };
+
+    enum class ImageType {
+        SmallBlock,
+        NewSmallBlock,
+        BigBlock,
+        Emmc,
+    };
+
+    using BootloaderNonce = std::array<uint8_t, 16>;
+
+    struct DonorNonces {
+        std::array<std::optional<BootloaderNonce>, 4> stages;
+        std::optional<BootloaderNonce> cf;
+        std::optional<BootloaderNonce> cg;
+    };
+
+    struct InputMetadata {
+        std::vector<uint8_t> cpu_key;
+        std::optional<std::vector<uint8_t>> nand_image;
+        // 0x4000-byte kv with its 16-byte nonce in front and a plaintext body.
+        std::optional<std::vector<uint8_t>> keyvault;
+        std::optional<std::vector<uint8_t>> smc;
+        uint8_t cb_ldv{0};
+        std::optional<uint8_t> cf_ldv;
+        std::array<uint8_t, 3> pairing_data{};
+        std::optional<std::array<uint8_t, 3>> cf_pairing_data;
+        uint8_t console_type{0};
+        uint8_t console_sequence{0};
+        uint16_t console_sequence_allow{0};
+        std::optional<DonorNonces> donor_nonces;
+        std::optional<std::vector<uint8_t>> smc_config;
+        std::optional<std::vector<uint8_t>> statistics;
+        std::optional<std::vector<uint8_t>> manufacturing;
+        std::vector<std::pair<std::string, std::vector<uint8_t>>> console_secured_files;
+    };
+
+    struct BootloaderEntryInfo {
+        std::string name;
+        uint16_t version{0};
+        uint32_t size{0};
+        uint16_t flags{0};
+        uint32_t entrypoint{0};
+        bool present{false};
+        bool decrypted{false};
+        std::optional<uint8_t> ldv;
+        std::optional<std::array<uint8_t, 3>> pairing_data;
+    };
+
+    struct BootloaderChainInfo {
+        std::optional<BootloaderEntryInfo> cb_a;
+        std::optional<BootloaderEntryInfo> cb_b;
+        std::optional<BootloaderEntryInfo> cb_x;
+        std::optional<BootloaderEntryInfo> sc;
+        std::optional<BootloaderEntryInfo> cd;
+        std::optional<BootloaderEntryInfo> ce;
+        std::optional<BootloaderEntryInfo> cf_0;
+        std::optional<BootloaderEntryInfo> cg_0;
+        std::optional<BootloaderEntryInfo> cf_1;
+        std::optional<BootloaderEntryInfo> cg_1;
+
+        uint8_t cb_ldv{0};
+        std::array<uint8_t, 3> cb_pairing_data{};
+        std::optional<uint8_t> cf0_ldv;
+        std::optional<std::array<uint8_t, 3>> cf0_pairing_data;
+        std::optional<uint8_t> cf1_ldv;
+        std::optional<std::array<uint8_t, 3>> cf1_pairing_data;
+    };
+
+    struct SmcSummaryInfo {
+        std::string version;
+        std::string motherboard_name;
+        std::string type_name;
+        uint32_t size{0};
+        bool present{false};
+        bool decrypted{false};
+    };
+
+    struct FlashFsFileInfo {
+        std::string filename;
+        uint16_t block_number{0};
+        uint32_t length{0};
+        uint32_t timestamp{0};
+    };
+
+    struct FlashFsSummaryInfo {
+        std::vector<FlashFsFileInfo> files;
+        bool present{false};
+    };
+
+    struct KeyvaultSummaryInfo {
+        std::string serial_number;
+        std::string dvd_key;
+        std::string console_id_raw;
+        std::string console_id_friendly;
+        std::string osig;
+        std::string mfr_date;
+        std::string region_name;
+        uint16_t region_raw{0};
+        uint8_t kv_type{0};
+        bool fcrt_required{false};
+        bool present{false};
+        bool decrypted{false};
+    };
+
+    struct AllNandInfo {
+        uint16_t header_magic{0};
+        uint16_t header_version{0};
+        uint16_t header_flags{0};
+        uint32_t header_size{0};
+        std::string copyright;
+        std::optional<ImageType> block_type;
+
+        BootloaderChainInfo bootloaders;
+        SmcSummaryInfo smc;
+        FlashFsSummaryInfo flashfs;
+        KeyvaultSummaryInfo keyvault;
+
+        std::vector<uint8_t> cpu_key;
+        std::optional<std::vector<uint8_t>> raw_keyvault;
+    };
+
+    struct InputBootloaders {
+        std::vector<uint8_t> cb_or_a;
+        std::optional<std::vector<uint8_t>> cb_x;
+        std::optional<std::vector<uint8_t>> cb_b;
+        std::optional<std::vector<uint8_t>> sc;
+        std::vector<uint8_t> cd;
+        std::optional<std::vector<uint8_t>> ce;
+        std::optional<std::vector<uint8_t>> cf0;
+        std::optional<std::vector<uint8_t>> cg0;
+        std::optional<std::vector<uint8_t>> cf1;
+        std::optional<std::vector<uint8_t>> cg1;
+        // second bootloader chain stashed in the jtag payload window
+        std::optional<std::vector<uint8_t>> extra_cb;
+        std::optional<std::vector<uint8_t>> extra_cd;
+        std::optional<std::vector<uint8_t>> extra_se;
+    };
+
+    struct InputPayloads {
+        std::optional<std::vector<uint8_t>> xell;
+        std::optional<std::vector<uint8_t>> rebooter;
+        std::optional<std::vector<uint8_t>> fuses;
+        std::optional<std::vector<uint8_t>> patches;
+        std::optional<std::vector<uint8_t>> payload;
+    };
+
+    struct OptionsArgs {
+        std::optional<std::string> cbldv;
+        std::optional<std::string> pairing_data;
+        std::optional<std::string> cfldv;
+
+        std::optional<std::string> xellbutton;
+        std::optional<std::string> xellbutton2;
+
+        std::optional<bool> cygnos;
+        std::optional<bool> demon;
+        std::optional<bool> olddvd;
+        std::optional<bool> nodvd;
+        std::optional<std::string> dualboot;
+
+        std::optional<bool> nomobile;
+        std::optional<bool> nofcrt;
+        std::optional<bool> noremap;
+        std::optional<bool> noecdremap;
+        std::optional<bool> nandmu;
+        std::optional<bool> nosecurity;
+        std::optional<bool> nosusecurity;
+        std::optional<bool> smcnocheck;
+        std::optional<bool> noblpatch;
+        std::optional<bool> nosmcpatch;
+        std::optional<std::string> nopatch;
+
+        std::optional<std::string> cputemp;
+        std::optional<std::string> gputemp;
+        std::optional<std::string> edramtemp;
+        std::optional<std::string> overcputemp;
+        std::optional<std::string> overgputemp;
+        std::optional<std::string> overedramtemp;
+        std::optional<std::string> cpufan;
+        std::optional<std::string> gpufan;
+
+        std::optional<std::string> dvdkey;
+        std::optional<std::string> avregion;
+        std::optional<std::string> gameregion;
+        std::optional<std::string> dvdregion;
+        std::optional<std::string> macid;
+    };
+
+    struct InputMobileData {
+        std::array<std::optional<std::vector<uint8_t>>, 9> slots{};
+
+        // mobile block types run from 0x31 to 0x39
+        std::optional<std::vector<uint8_t>>* slot(uint8_t block_type) noexcept {
+            if (block_type < 0x31 || block_type > 0x39) {
+                return nullptr;
+            }
+            return &slots[block_type - 0x31];
+        }
+
+        const std::optional<std::vector<uint8_t>>* slot(uint8_t block_type) const noexcept {
+            if (block_type < 0x31 || block_type > 0x39) {
+                return nullptr;
+            }
+            return &slots[block_type - 0x31];
+        }
+    };
+
+    struct InputPatchFile {
+        std::string name;
+        std::vector<uint8_t> data;
+    };
+
+    struct InputPatches {
+        std::optional<InputPatchFile> automatic;
+        std::vector<InputPatchFile> addons{};
+    };
+
+    struct InputRawPatch {
+        std::string name;
+        uint32_t offset{0};
+        std::vector<uint8_t> data;
+    };
+
+    struct Input {
+        BuildType build_type{BuildType::Retail};
+        ImageType image_type{ImageType::SmallBlock};
+        std::optional<ConsoleType> console;
+        OptionsArgs options{};
+        InputMetadata metadata{};
+        InputBootloaders bootloaders{};
+        InputMobileData mobiles{};
+        std::optional<InputPatches> patches;
+        std::optional<InputPayloads> payloads;
+        std::optional<std::vector<std::pair<std::string, std::vector<uint8_t>>>> flashfs_sec;
+        std::vector<InputRawPatch> raw_patches;
+        std::optional<std::vector<uint8_t>> sb_private_key;
+    };
+
+} // namespace gxbuild

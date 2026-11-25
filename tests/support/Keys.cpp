@@ -2,7 +2,7 @@
 
 #include "excrypt.h"
 
-namespace gxbuild3::test {
+namespace gxbuild::test {
 
     CpuKey ecc_encoded_bit_range(unsigned first_bit, unsigned end_bit) {
         CpuKey key{};
@@ -17,4 +17,4 @@ namespace gxbuild3::test {
         return ecc_encoded_bit_range(53u, 106u);
     }
 
-} // namespace gxbuild3::test
+} // namespace gxbuild::test

@@ -1,13 +1,13 @@
 #pragma once
 
-#include "Args.hpp"
+#include "core/Args.hpp"
 
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
 
-namespace gxbuild3::cli {
+namespace gxbuild::cli {
 
     struct BuildArgs {
         std::filesystem::path build_ini;
@@ -25,4 +25,4 @@ namespace gxbuild3::cli {
         bool verbose{false};
     };
 
-} // namespace gxbuild3::cli
+} // namespace gxbuild::cli

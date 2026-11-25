@@ -1,13 +1,13 @@
 #pragma once
-#include "Args.hpp"
-#include "Error.hpp"
+#include "core/Args.hpp"
+#include "gxbuild/Error.hpp"
 
 #include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     struct XePatchEntry {
         uint32_t address;
@@ -51,10 +51,10 @@ namespace gxbuild3::nand {
     };
 
     [[nodiscard]] Result<ParsedPatchSet> parse_patch_set(std::span<const uint8_t> data,
-                                                         GxBuild::BuildType buildType);
+                                                         gxbuild::BuildType buildType);
     [[nodiscard]] Result<ParsedPatchSet>
-    parse_and_merge_patch_set(const GxBuild::InputPatches& patches, GxBuild::BuildType buildType);
+    parse_and_merge_patch_set(const gxbuild::InputPatches& patches, gxbuild::BuildType buildType);
     std::vector<uint8_t> serialize_patch_set(const ParsedPatchSet& patchSet);
     std::vector<uint8_t> serialize_khv_payload(const ParsedPatchSection& section);
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

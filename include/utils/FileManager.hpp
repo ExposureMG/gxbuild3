@@ -1,17 +1,37 @@
 #pragma once
 
-#include "Args.hpp"
-#include "Error.hpp"
+#include "core/Args.hpp"
+#include "gxbuild/Error.hpp"
 
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace gxbuild3::utils {
+namespace gxbuild::utils {
+
+    struct StfsCacheAccess;
+
+    class StfsCache {
+      public:
+        StfsCache();
+        ~StfsCache();
+        StfsCache(const StfsCache&) = delete;
+        StfsCache& operator=(const StfsCache&) = delete;
+        StfsCache(StfsCache&&) noexcept;
+        StfsCache& operator=(StfsCache&&) noexcept;
+
+        void clear();
+
+      private:
+        friend struct StfsCacheAccess;
+        struct Impl;
+        std::unique_ptr<Impl> m_impl;
+    };
 
     struct InMemoryStfsPackage {
         std::string name;
@@ -22,6 +42,7 @@ namespace gxbuild3::utils {
         bool nosu = false;
         bool nosusecurity = false;
         std::vector<InMemoryStfsPackage> in_memory_stfs{};
+        StfsCache* stfs_cache = nullptr;
     };
 
     enum class AssetSource {
@@ -41,15 +62,6 @@ namespace gxbuild3::utils {
         size_t root_index{0};
         AssetSource source{AssetSource::Loose};
     };
-
-    struct FileLookupError : Error {
-        std::filesystem::path source_path;
-        std::filesystem::path root_path;
-        size_t root_index{0};
-        AssetSource source{AssetSource::Loose};
-    };
-
-    using FileLookupResult = std::expected<std::optional<ResolvedFile>, FileLookupError>;
 
     struct IniFilesResult {
         InputBootloaders bootloaders;
@@ -71,11 +83,9 @@ namespace gxbuild3::utils {
                    const std::filesystem::path& fw_dir = {}, ScanOptions options = {},
                    BuildType build_type = BuildType::Retail);
 
-    [[nodiscard]] FileLookupResult
+    [[nodiscard]] Result<std::optional<ResolvedFile>>
     find_file_data_detailed(std::string_view filename,
                             const std::vector<std::filesystem::path>& search_paths,
                             ScanOptions options = {}, AssetKind kind = AssetKind::Regular);
 
-    void clear_stfs_cache();
-
-} // namespace gxbuild3::utils
+} // namespace gxbuild::utils

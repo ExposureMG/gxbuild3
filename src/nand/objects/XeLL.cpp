@@ -7,7 +7,7 @@
 #include <cstring>
 #include <string_view>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     namespace {
 
@@ -128,4 +128,4 @@ namespace gxbuild3::nand {
         return parse(std::span<const uint8_t>(bytes.data(), bytes.size()));
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

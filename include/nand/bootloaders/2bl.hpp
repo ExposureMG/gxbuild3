@@ -1,5 +1,5 @@
 #pragma once
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 #include "nand/bootloaders/Common.hpp"
 
 #include <array>
@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     class BootloaderCb {
       public:
@@ -78,4 +78,4 @@ namespace gxbuild3::nand {
         void write_console_allow(std::span<uint8_t> payload) const;
     };
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

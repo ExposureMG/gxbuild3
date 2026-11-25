@@ -1,1 +1,0 @@
-folder for kernel/dashboard specific patches; map patchsets to INIs in patches.ini

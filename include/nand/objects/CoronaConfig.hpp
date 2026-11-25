@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Error.hpp"
-#include "Wire.hpp"
+#include "gxbuild/Error.hpp"
+#include "core/Wire.hpp"
 
 #include <array>
 #include <cstddef>
@@ -10,7 +10,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     struct corona_anchor_blob {
         wire::be16 block;
@@ -67,4 +67,4 @@ namespace gxbuild3::nand {
     static_assert(sizeof(corona_anchor) == CoronaConfig::kSize);
     static_assert(std::size(corona_anchor{}.blobs) == CoronaConfig::kBlobSlots);
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

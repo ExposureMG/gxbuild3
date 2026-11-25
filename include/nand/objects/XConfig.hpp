@@ -1,14 +1,14 @@
 #pragma once
 
-#include "Error.hpp"
-#include "Wire.hpp"
+#include "gxbuild/Error.hpp"
+#include "core/Wire.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     struct nand_temperature_constant {
         wire::be16 gain;
@@ -176,4 +176,4 @@ namespace gxbuild3::nand {
         [[nodiscard]] std::vector<uint8_t> serialize() const;
     };
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

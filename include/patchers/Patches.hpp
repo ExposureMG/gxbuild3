@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace gxbuild3::patchers {
+namespace gxbuild::patchers {
     typedef struct _smc_patch {
         std::string addr;
         std::string value;
@@ -19,4 +19,4 @@ namespace gxbuild3::patchers {
     inline const smc_patch_t EjectDisable{"A2 90 B3 22", "00 00 C3 22"};
 
     inline const smc_patch_t EjectDisable_KSB{"A2 93 B3 22", "00 00 C3 22"};
-} // namespace gxbuild3::patchers
+} // namespace gxbuild::patchers

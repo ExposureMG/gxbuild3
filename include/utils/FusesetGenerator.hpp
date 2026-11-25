@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 
 #include <array>
 #include <cstddef>
@@ -9,7 +9,7 @@
 #include <span>
 #include <vector>
 
-namespace gxbuild3::utils {
+namespace gxbuild::utils {
 
     constexpr size_t kFuseLineCount = 12;
     constexpr size_t kFuseLineSize = 8;
@@ -46,4 +46,4 @@ namespace gxbuild3::utils {
     [[nodiscard]] Result<std::vector<uint8_t>>
     generate_fuseset(uint32_t cb_word, std::span<const uint8_t> cpu_key, uint8_t cf_ldv);
 
-} // namespace gxbuild3::utils
+} // namespace gxbuild::utils

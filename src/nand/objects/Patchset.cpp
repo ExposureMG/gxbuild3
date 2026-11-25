@@ -1,6 +1,6 @@
 #include "nand/objects/Patchset.hpp"
 
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 #include "utils/Log.hpp"
 
 #include <algorithm>
@@ -8,7 +8,7 @@
 #include <format>
 #include <span>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     namespace {
 
@@ -270,4 +270,4 @@ namespace gxbuild3::nand {
         return out;
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

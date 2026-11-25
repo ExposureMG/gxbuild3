@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 
 #include <cstdint>
 #include <span>
@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     enum class SmcMotherboard {
         Unknown = 0,
@@ -59,4 +59,4 @@ namespace gxbuild3::nand {
     SmcType smc_get_type(std::span<const uint8_t> data);
     bool smc_has_jtag_mark(std::span<const uint8_t> data);
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

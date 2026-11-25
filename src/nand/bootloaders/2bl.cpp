@@ -14,7 +14,7 @@
 #include <span>
 #include <utility>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     namespace {
 
@@ -360,4 +360,4 @@ namespace gxbuild3::nand {
         return out;
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

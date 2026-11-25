@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     using namespace detail;
 
@@ -80,36 +80,7 @@ namespace gxbuild3::nand {
             return end;
         }
 
-        void rebind_filesystem(ImageState& state) {
-            if (state.filesystem) {
-                state.filesystem->set_driver(&state.flash_driver);
-            }
-        }
-
     } // namespace
-
-    FlashImage::FlashImage(const FlashImage& other) : ImageState(other) {
-        rebind_filesystem(*this);
-    }
-
-    FlashImage::FlashImage(FlashImage&& other) noexcept(
-        std::is_nothrow_move_constructible_v<ImageState>)
-        : ImageState(std::move(other)) {
-        rebind_filesystem(*this);
-    }
-
-    FlashImage& FlashImage::operator=(const FlashImage& other) {
-        ImageState::operator=(other);
-        rebind_filesystem(*this);
-        return *this;
-    }
-
-    FlashImage& FlashImage::operator=(FlashImage&& other) noexcept(
-        std::is_nothrow_move_assignable_v<ImageState>) {
-        ImageState::operator=(std::move(other));
-        rebind_filesystem(*this);
-        return *this;
-    }
 
     FlashImage FlashImage::create(Driver::ImageSize size, Driver::DriverMode mode,
                                   std::optional<BuildType> type) {
@@ -389,13 +360,22 @@ namespace gxbuild3::nand {
             if (payloads.patchset) {
                 if (payloads.patchset->kind == PatchSetKind::Jtag) {
                     const auto patch_bytes = serialize_patch_set(*payloads.patchset);
+                    if (patch_bytes.size() > detail::kJtagPatchSize) {
+                        return fail(ErrorCode::OutOfRange,
+                                    "JTAG patch payload exceeds the 0x4000-byte region");
+                    }
                     if (auto added = add("JTAG patch payload", plan.jtag_patch_offset(),
                                          patch_bytes.size());
                         !added) {
                         return std::unexpected(std::move(added.error()));
                     }
-                } else if (const auto* khv =
-                               find_patch_section(*payloads.patchset, PatchSectionTarget::Khv)) {
+                } else {
+                    const auto* khv =
+                        find_patch_section(*payloads.patchset, PatchSectionTarget::Khv);
+                    if (!khv) {
+                        return fail(ErrorCode::Malformed,
+                                    "Glitch patchset has no KHV payload section");
+                    }
                     if (serialize_khv_payload(*khv).size() > plan.khv_capacity())
                         return fail(ErrorCode::OutOfRange,
                                     "Glitch KHV payload exceeds its patch-slot region");
@@ -455,8 +435,7 @@ namespace gxbuild3::nand {
 
     Result<FlashFileSystem*> FlashImage::format_filesystem(uint32_t timestamp) {
         const BuildType type = build_type.value_or(BuildType::Retail);
-        FlashFileSystem fs{};
-        fs.set_driver(&flash_driver);
+        FlashFileSystem fs{flash_driver};
         fs.set_larger_filesystem(type == BuildType::Devkit);
         fs.set_timestamp(timestamp);
         fs.set_big_system_blocks(type == BuildType::Retail
@@ -535,8 +514,7 @@ namespace gxbuild3::nand {
             }
         }
         filesystem = std::move(fs);
-        filesystem->set_driver(&flash_driver);
         return &*filesystem;
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

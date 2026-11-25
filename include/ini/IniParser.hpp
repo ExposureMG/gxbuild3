@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace gxbuild3::ini {
+namespace gxbuild::ini {
 
     struct Entry {
         std::string key;
@@ -30,4 +30,4 @@ namespace gxbuild3::ini {
 
     [[nodiscard]] Result<Document> parse_file(const std::filesystem::path& path);
 
-} // namespace gxbuild3::ini
+} // namespace gxbuild::ini

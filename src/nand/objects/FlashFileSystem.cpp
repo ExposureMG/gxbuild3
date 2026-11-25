@@ -8,7 +8,7 @@
 #include <map>
 #include <unordered_set>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     namespace {
         std::string_view entry_name(const FlashFileSystemEntry& entry) {
@@ -129,16 +129,21 @@ namespace gxbuild3::nand {
         }
     } // namespace
 
-    void FlashFileSystem::set_driver(Driver* driver) {
-        m_driver = driver;
+    FlashFileSystem::FlashFileSystem(const Driver& driver) {
+        configure(driver);
+    }
+
+    void FlashFileSystem::configure(const Driver& driver) noexcept {
+        m_mode = driver.driver_mode();
+        m_clusters_per_block = std::max<size_t>(1, driver.block_size_clean() / kCleanBlockSize);
     }
 
     size_t FlashFileSystem::clusters_per_block() const {
-        return m_driver ? m_driver->block_size_clean() / kCleanBlockSize : 1;
+        return m_clusters_per_block;
     }
 
     size_t FlashFileSystem::base_cluster() const {
-        if (!m_driver || m_driver->driver_mode() != Driver::DriverMode::Big) {
+        if (m_mode != Driver::DriverMode::Big) {
             return 0;
         }
         return m_larger ? 0x2E0 : 0xAE0;
@@ -517,21 +522,7 @@ namespace gxbuild3::nand {
         if (it != m_file_data.end()) {
             return it->second;
         }
-
-        const auto* entry = find_entry(name);
-        if (!entry) {
-            return std::nullopt;
-        }
-
-        if (get_chain(entry->block_number).empty() || !m_driver) {
-            return std::nullopt;
-        }
-
-        auto data = read_chain(*m_driver, *entry);
-        if (data.size() != entry->length) {
-            return std::nullopt;
-        }
-        return data;
+        return std::nullopt;
     }
 
     std::vector<uint8_t> FlashFileSystem::read_chain(const Driver& driver,
@@ -607,22 +598,22 @@ namespace gxbuild3::nand {
         return std::vector<uint8_t>(image.begin(), image.end());
     }
 
-    Result<size_t> FlashFileSystem::write_root_cluster() {
+    Result<size_t> FlashFileSystem::write_root_cluster(Driver& driver) {
         auto root_data = serialize_root_block();
         if (!root_data) {
             return std::unexpected(std::move(root_data.error()).add_context("saving FlashFS"));
         }
         const size_t root_cluster = m_root_block * clusters_per_block() + m_root_cluster_offset;
-        if (!m_driver->write_offset(root_cluster * kCleanBlockSize, *root_data)) {
+        if (!driver.write_offset(root_cluster * kCleanBlockSize, *root_data)) {
             return fail(ErrorCode::OutOfRange, "FlashFS root cluster 0x{:X} is outside the NAND",
                         root_cluster);
         }
         return root_cluster;
     }
 
-    BlockMetadata FlashFileSystem::fs_metadata(BlockKind kind, uint32_t sequence,
-                                               uint16_t block_id) const {
-        const bool big_block = m_driver->driver_mode() == Driver::DriverMode::Big;
+    BlockMetadata FlashFileSystem::fs_metadata(const Driver& driver, BlockKind kind,
+                                               uint32_t sequence, uint16_t block_id) const {
+        const bool big_block = driver.driver_mode() == Driver::DriverMode::Big;
         BlockMetadata meta{};
         meta.logical_block_id = block_id;
         meta.sequence = sequence;
@@ -639,11 +630,12 @@ namespace gxbuild3::nand {
         return meta;
     }
 
-    Result<void> FlashFileSystem::write_file_chain(const FlashFileSystemEntry& entry,
+    Result<void> FlashFileSystem::write_file_chain(Driver& driver,
+                                                   const FlashFileSystemEntry& entry,
                                                    const std::string& name,
                                                    std::span<const uint8_t> bytes,
                                                    ClusterPages& clusters) {
-        const bool big_block = m_driver->driver_mode() == Driver::DriverMode::Big;
+        const bool big_block = driver.driver_mode() == Driver::DriverMode::Big;
         size_t bytes_written = 0;
         for (uint16_t blk : get_chain(entry.block_number)) {
             if (bytes_written >= bytes.size()) {
@@ -654,13 +646,13 @@ namespace gxbuild3::nand {
                 std::min<size_t>(bytes.size() - bytes_written, kCleanBlockSize);
             const auto chunk = bytes.subspan(bytes_written, chunk_len);
             const size_t cluster_offset = static_cast<size_t>(blk) * kCleanBlockSize;
-            if (!m_driver->write_offset(cluster_offset, chunk)) {
+            if (!driver.write_offset(cluster_offset, chunk)) {
                 return fail(ErrorCode::OutOfRange,
                             "FlashFS cluster 0x{:X} of '{}' is outside the NAND", blk, name);
             }
             if (chunk_len < kCleanBlockSize) {
                 const std::vector<uint8_t> padding(kCleanBlockSize - chunk_len, 0);
-                if (!m_driver->write_offset(cluster_offset + chunk_len, padding)) {
+                if (!driver.write_offset(cluster_offset + chunk_len, padding)) {
                     return fail(ErrorCode::OutOfRange,
                                 "FlashFS cluster 0x{:X} of '{}' is outside the NAND", blk, name);
                 }
@@ -683,23 +675,21 @@ namespace gxbuild3::nand {
         return {};
     }
 
-    void FlashFileSystem::stamp_file_clusters(const ClusterPages& clusters) {
+    void FlashFileSystem::stamp_file_clusters(Driver& driver, const ClusterPages& clusters) {
         const std::vector<uint8_t> erased_spare(16, 0xFF);
         for (const auto& [cluster, pages] : clusters) {
             const BlockMetadata file_meta = fs_metadata(
-                BlockKind::Data, 0, static_cast<uint16_t>(cluster / clusters_per_block()));
-            m_driver->write_page_metadata(cluster * kPagesPerCluster, pages, file_meta);
+                driver, BlockKind::Data, 0, static_cast<uint16_t>(cluster / clusters_per_block()));
+            driver.write_page_metadata(cluster * kPagesPerCluster, pages, file_meta);
             for (size_t page = pages; page < kPagesPerCluster; ++page) {
-                m_driver->write_page_spare(cluster * kPagesPerCluster + page, erased_spare);
+                driver.write_page_spare(cluster * kPagesPerCluster + page, erased_spare);
             }
         }
     }
 
-    Result<void> FlashFileSystem::save() {
-        if (!m_driver) {
-            return fail(ErrorCode::InvalidArgument, "FlashFS save needs an attached driver");
-        }
-        auto root_cluster = write_root_cluster();
+    Result<void> FlashFileSystem::save(Driver& driver) {
+        configure(driver);
+        auto root_cluster = write_root_cluster(driver);
         if (!root_cluster) {
             return std::unexpected(std::move(root_cluster.error()));
         }
@@ -713,19 +703,20 @@ namespace gxbuild3::nand {
             if (it == m_file_data.end()) {
                 continue;
             }
-            if (auto written = write_file_chain(entry, it->first, it->second, file_clusters);
+            if (auto written =
+                    write_file_chain(driver, entry, it->first, it->second, file_clusters);
                 !written) {
                 return written;
             }
         }
 
-        stamp_file_clusters(file_clusters);
-        m_driver->write_cluster_metadata(*root_cluster,
-                                         fs_metadata(BlockKind::Root, m_version, m_root_block));
+        stamp_file_clusters(driver, file_clusters);
+        driver.write_cluster_metadata(
+            *root_cluster, fs_metadata(driver, BlockKind::Root, m_version, m_root_block));
         return {};
     }
 
-    Result<void> FlashFileSystem::load(Driver& driver, uint16_t root_block,
+    Result<void> FlashFileSystem::load(const Driver& driver, uint16_t root_block,
                                        size_t cluster_in_block) {
         FlashFileSystem staged;
         staged.m_larger = m_larger;
@@ -738,9 +729,9 @@ namespace gxbuild3::nand {
         return {};
     }
 
-    Result<void> FlashFileSystem::read_root(Driver& driver, uint16_t root_block,
+    Result<void> FlashFileSystem::read_root(const Driver& driver, uint16_t root_block,
                                             size_t cluster_in_block) {
-        m_driver = &driver;
+        configure(driver);
         m_root_block = root_block;
         if (cluster_in_block >= clusters_per_block()) {
             return fail(ErrorCode::OutOfRange, "FlashFS root cluster {} is past its erase block",
@@ -830,4 +821,4 @@ namespace gxbuild3::nand {
         return nullptr;
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

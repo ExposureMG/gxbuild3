@@ -1,7 +1,7 @@
 #include "stfs/FileExtractor.hpp"
 
 #include "stfs/ContainerDetail.hpp"
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 #include "stfs/BlockParser.hpp"
 #include "stfs/Commons.hpp"
 #include "stfs/HashVerifier.hpp"
@@ -11,7 +11,7 @@
 #include <format>
 #include <utility>
 
-namespace gxbuild3::stfs {
+namespace gxbuild::stfs {
 
     namespace {
 
@@ -208,4 +208,4 @@ namespace gxbuild3::stfs {
         return detail::write_file(output_path, *data);
     }
 
-} // namespace gxbuild3::stfs
+} // namespace gxbuild::stfs

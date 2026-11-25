@@ -1,13 +1,13 @@
 #include "nand/objects/Freeboot.hpp"
 
-#include "Wire.hpp"
+#include "core/Wire.hpp"
 #include "freeboot.h"
 #include "payload.h"
 
 #include <algorithm>
 #include <array>
 
-namespace gxbuild3::nand {
+namespace gxbuild::nand {
 
     namespace {
 
@@ -62,4 +62,4 @@ namespace gxbuild3::nand {
         return out;
     }
 
-} // namespace gxbuild3::nand
+} // namespace gxbuild::nand

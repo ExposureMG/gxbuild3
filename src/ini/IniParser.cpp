@@ -1,42 +1,28 @@
 #include "ini/IniParser.hpp"
 
 #include "utils/Log.hpp"
+#include "utils/Utils.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <fstream>
 #include <sstream>
 #include <system_error>
 #include <unordered_map>
 
-namespace gxbuild3::ini {
+namespace gxbuild::ini {
 
     namespace {
-
-        std::string to_lower(std::string s) {
-            std::transform(s.begin(), s.end(), s.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            return s;
-        }
-
-        std::string_view trim(std::string_view sv) {
-            while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front())))
-                sv.remove_prefix(1);
-            while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.back())))
-                sv.remove_suffix(1);
-            return sv;
-        }
 
         std::string_view strip_inline_semicolon(std::string_view sv) {
             if (auto pos = sv.find(';'); pos != std::string_view::npos)
                 sv = sv.substr(0, pos);
-            return trim(sv);
+            return utils::trim_view(sv);
         }
 
     } // namespace
 
     const Section* Document::get(std::string_view name) const {
-        auto it = sections.find(to_lower(std::string(name)));
+        auto it = sections.find(utils::to_lower(name));
         return it != sections.end() ? &it->second : nullptr;
     }
 
@@ -57,13 +43,13 @@ namespace gxbuild3::ini {
             if (!raw_line.empty() && raw_line.back() == '\r')
                 raw_line.remove_suffix(1);
 
-            std::string_view line = trim(raw_line);
+            std::string_view line = utils::trim_view(raw_line);
 
             if (line.empty() || line.front() == ';' || line.front() == '#')
                 continue;
 
             if (line.front() == '[' && line.back() == ']') {
-                current_section = to_lower(std::string(line.substr(1, line.size() - 2)));
+                current_section = utils::to_lower(line.substr(1, line.size() - 2));
                 continue;
             }
 
@@ -78,32 +64,32 @@ namespace gxbuild3::ini {
             // handles both "file, crc, hash" and "key = value" ini lines
             if (comma_pos != std::string_view::npos &&
                 (equals_pos == std::string_view::npos || comma_pos < equals_pos)) {
-                entry.key = std::string(trim(strip_inline_semicolon(line.substr(0, comma_pos))));
+                entry.key = std::string(utils::trim_view(strip_inline_semicolon(line.substr(0, comma_pos))));
 
                 std::string_view rest = line.substr(comma_pos + 1);
                 auto second_comma = rest.find(',');
 
                 if (second_comma != std::string_view::npos) {
-                    entry.value =
-                        std::string(trim(strip_inline_semicolon(rest.substr(0, second_comma))));
-                    entry.hash =
-                        std::string(trim(strip_inline_semicolon(rest.substr(second_comma + 1))));
+                    entry.value = std::string(
+                        utils::trim_view(strip_inline_semicolon(rest.substr(0, second_comma))));
+                    entry.hash = std::string(
+                        utils::trim_view(strip_inline_semicolon(rest.substr(second_comma + 1))));
                 } else {
-                    entry.value = std::string(trim(strip_inline_semicolon(rest)));
+                    entry.value = std::string(utils::trim_view(strip_inline_semicolon(rest)));
                 }
             } else if (equals_pos != std::string_view::npos) {
-                entry.key = std::string(trim(line.substr(0, equals_pos)));
-                std::string_view val = trim(line.substr(equals_pos + 1));
+                entry.key = std::string(utils::trim_view(line.substr(0, equals_pos)));
+                std::string_view val = utils::trim_view(line.substr(equals_pos + 1));
                 entry.value = std::string(strip_inline_semicolon(val));
             } else {
-                entry.key = std::string(trim(strip_inline_semicolon(line)));
+                entry.key = std::string(utils::trim_view(strip_inline_semicolon(line)));
             }
 
             if (entry.key.empty())
                 continue;
 
             // counts how many times a prefix like "cb" or "cd" shows up in the section
-            std::string key_lower = to_lower(entry.key);
+            std::string key_lower = utils::to_lower(entry.key);
             std::string prefix;
             {
                 auto us = key_lower.find('_');
@@ -149,4 +135,4 @@ namespace gxbuild3::ini {
         return res;
     }
 
-} // namespace gxbuild3::ini
+} // namespace gxbuild::ini

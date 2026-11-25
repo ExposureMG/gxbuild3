@@ -11,7 +11,7 @@
 #include <optional>
 #include <string>
 
-namespace gxbuild3::utils {
+namespace gxbuild::utils {
 
     namespace {
 
@@ -143,4 +143,4 @@ namespace gxbuild3::utils {
         return fat_timestamp(build_seconds + 2);
     }
 
-} // namespace gxbuild3::utils
+} // namespace gxbuild::utils

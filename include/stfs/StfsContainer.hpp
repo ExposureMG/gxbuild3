@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Error.hpp"
+#include "gxbuild/Error.hpp"
 #include "stfs/Commons.hpp"
 
 #include <array>
@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace gxbuild3::stfs {
+namespace gxbuild::stfs {
 
     using ExtractedFiles = std::unordered_map<std::string, std::vector<std::byte>>;
 
@@ -55,4 +55,4 @@ namespace gxbuild3::stfs {
         std::vector<std::string> keys_;
     };
 
-} // namespace gxbuild3::stfs
+} // namespace gxbuild::stfs
