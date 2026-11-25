@@ -172,7 +172,6 @@ namespace gxbuild {
         std::optional<std::vector<uint8_t>> xell;
         std::optional<std::vector<uint8_t>> rebooter;
         std::optional<std::vector<uint8_t>> fuses;
-        std::optional<std::vector<uint8_t>> patches;
         std::optional<std::vector<uint8_t>> payload;
     };
 
@@ -191,7 +190,6 @@ namespace gxbuild {
         std::optional<std::string> dualboot;
 
         std::optional<bool> nomobile;
-        std::optional<bool> nofcrt;
         std::optional<bool> noremap;
         std::optional<bool> noecdremap;
         std::optional<bool> nandmu;

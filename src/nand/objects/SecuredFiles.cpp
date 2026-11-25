@@ -496,7 +496,7 @@ namespace gxbuild::nand {
             out.sealing = FcrtSealing::Sealed;
             return out;
         }
-        // fcrt handling is fucked, if the hash still fails after decrypting we write out the garbage decrypted body anyway
+        // matches xeBuild's in-place verifyFcrt quirk: if the hash still fails after decrypting, keep the decrypted bytes
         const auto opened = crypt_fcrt_body(content, cpu_key, body_offset, false);
         if (!fcrt_hash_holds(content, opened)) {
             std::copy(opened.begin(), opened.end(), out.data.begin() + body_offset);
@@ -539,7 +539,8 @@ namespace gxbuild::nand {
 
     bool is_console_secured_file(std::string_view name) {
         const auto lower = utils::to_lower(name);
-        return lower == "crl.bin" || lower == "dae.bin" || lower == "secdata.bin";
+        return lower == "crl.bin" || lower == "dae.bin" || lower == "secdata.bin" ||
+               lower == "fcrt.bin";
     }
 
     const std::vector<uint8_t>* console_secured_file(const InputMetadata& metadata,
@@ -562,7 +563,9 @@ namespace gxbuild::nand {
         if (cpu_key.size() < 16) {
             return data;
         }
-        const auto* own = console_secured_file(input.metadata, lower);
+        const auto* own = input.options.nosecurity.value_or(false)
+                              ? nullptr
+                              : console_secured_file(input.metadata, lower);
         if (lower == "crl.bin") {
             std::optional<CrlSealing> sealing;
             if (own) {

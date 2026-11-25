@@ -1,0 +1,23 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+
+set_and_check(_gxbuild3_libdir "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
+set_and_check(_gxbuild3_includedir "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+
+find_library(_gxbuild3_lib NAMES gxbuild3_lib PATHS "${_gxbuild3_libdir}" NO_DEFAULT_PATH REQUIRED)
+find_library(_gxbuild3_excrypt NAMES ExCrypt PATHS "${_gxbuild3_libdir}" NO_DEFAULT_PATH REQUIRED)
+find_library(_gxbuild3_spdlog NAMES spdlog spdlogd PATHS "${_gxbuild3_libdir}" NO_DEFAULT_PATH REQUIRED)
+
+if(NOT TARGET gxbuild3::gxbuild3_lib)
+    add_library(gxbuild3::gxbuild3_lib STATIC IMPORTED)
+    set_target_properties(gxbuild3::gxbuild3_lib PROPERTIES
+        IMPORTED_LOCATION "${_gxbuild3_lib}"
+        INTERFACE_INCLUDE_DIRECTORIES "${_gxbuild3_includedir}"
+        INTERFACE_COMPILE_FEATURES "cxx_std_23"
+        INTERFACE_LINK_LIBRARIES "${_gxbuild3_excrypt};${_gxbuild3_spdlog};Threads::Threads;$<$<PLATFORM_ID:Windows>:bcrypt>"
+    )
+endif()
+
+check_required_components(GxBuild3)

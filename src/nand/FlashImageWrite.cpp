@@ -109,7 +109,7 @@ namespace gxbuild::nand {
             raw.magic = header.magic ? header.magic.get() : uint16_t{0xFF4F};
             raw.version = header.version ? header.version.get() : uint16_t{0x0760};
             raw.entrypoint = header.entrypoint ? header.entrypoint.get() : kEntryOffset;
-            // sets the heaser size and cf_offset to the first update slot and fs_addr to the slot stride
+            // sets the header size and cf_offset to the first update slot and fs_addr to the slot stride
             raw.size = plan.update_base;
             raw.kv_size =
                 header.kv_size ? header.kv_size.get() : static_cast<uint32_t>(Keyvault::kSize);

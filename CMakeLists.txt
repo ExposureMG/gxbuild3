@@ -75,11 +75,16 @@ set(GXBUILD3_LIB_SOURCES
     src/utils/Utils.cpp
 )
 
+include(GNUInstallDirs)
+
 # Headers live in include/ and sources in src/, with the same relative paths. Only the public
 # API (include/gxbuild/{Error,Types,Library}.hpp) is installed; ExCrypt and spdlog stay private.
 add_library(gxbuild3_lib STATIC ${GXBUILD3_LIB_SOURCES})
+add_library(gxbuild3::gxbuild3_lib ALIAS gxbuild3_lib)
 target_include_directories(gxbuild3_lib
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/freeboot
 )
 target_link_libraries(gxbuild3_lib PRIVATE
@@ -120,10 +125,27 @@ if(GXBUILD3_BUILD_TESTS)
     endif()
 endif()
 
-include(GNUInstallDirs)
-install(TARGETS gxbuild3 gxbuild3_lib
+install(TARGETS gxbuild3 gxbuild3_lib ExCrypt spdlog
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(DIRECTORY include/gxbuild DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GxBuild3Config.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/GxBuild3Config.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GxBuild3
+    PATH_VARS CMAKE_INSTALL_LIBDIR CMAKE_INSTALL_INCLUDEDIR
+)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/GxBuild3ConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/GxBuild3Config.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/GxBuild3ConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GxBuild3
+)

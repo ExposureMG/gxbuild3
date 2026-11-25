@@ -260,7 +260,7 @@ namespace gxbuild::nand {
             return bootloader->serialize().size();
         }
 
-        // gathers the byte ranges of every active bootloader and patload in the image
+        // gathers the byte ranges of every active bootloader and payload in the image
         Result<std::vector<PayloadRange>> collect_payload_ranges(const FlashImage& image,
                                                                  const LayoutPlan& plan) {
             std::vector<PayloadRange> ranges;

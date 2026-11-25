@@ -12,7 +12,7 @@ See [LICENSE](LICENSE) for more information.
 
 Requirements:
 
-- CMake 3.29+
+- CMake 3.21+
 - C++23
 - Clang, MSVC, or GCC
 

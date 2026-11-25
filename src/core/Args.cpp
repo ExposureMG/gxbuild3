@@ -95,13 +95,12 @@ namespace gxbuild {
             StringOptionKind kind;
         };
 
-        constexpr std::array<BoolOptionDesc, 15> kBoolOptions{{
+        constexpr std::array<BoolOptionDesc, 14> kBoolOptions{{
             {"cygnos", &OptionsArgs::cygnos},
             {"demon", &OptionsArgs::demon},
             {"olddvd", &OptionsArgs::olddvd},
             {"nodvd", &OptionsArgs::nodvd},
             {"nomobile", &OptionsArgs::nomobile},
-            {"nofcrt", &OptionsArgs::nofcrt},
             {"noremap", &OptionsArgs::noremap},
             {"noecdremap", &OptionsArgs::noecdremap},
             {"nandmu", &OptionsArgs::nandmu},

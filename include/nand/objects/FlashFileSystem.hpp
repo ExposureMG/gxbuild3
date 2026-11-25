@@ -15,8 +15,6 @@
 
 namespace gxbuild::nand {
 
-    struct FlashFileSystemTestAccess;
-
     inline constexpr size_t kMaxFilenameLength = 0x16;
     inline constexpr size_t kEntriesPerPage = 16;
     inline constexpr size_t kRootDirectoryPages = 16;
@@ -145,8 +143,6 @@ namespace gxbuild::nand {
         void free_chain(uint16_t start_block);
 
       private:
-        friend struct FlashFileSystemTestAccess;
-
         Driver::DriverMode m_mode = Driver::DriverMode::Small;
         size_t m_clusters_per_block = 1;
         uint32_t m_version = 1;

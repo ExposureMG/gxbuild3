@@ -58,6 +58,12 @@ namespace gxbuild::cli {
             return utils::to_lower(std::filesystem::path(name).filename().string());
         }
 
+        bool is_security_filename(std::string_view lower_name) {
+            static constexpr std::array<std::string_view, 6> kSecurityNames{
+                "crl.bin", "dae.bin", "odd.bin", "extended.bin", "fcrt.bin", "secdata.bin"};
+            return std::ranges::find(kSecurityNames, lower_name) != kSecurityNames.end();
+        }
+
         Result<std::optional<gxbuild::utils::ResolvedFile>>
         find_asset(std::string_view name, const std::vector<std::filesystem::path>& roots,
                    gxbuild::utils::ScanOptions options = {},
@@ -463,11 +469,27 @@ namespace gxbuild::cli {
                                        const std::filesystem::path& ini_path,
                                        const std::vector<std::filesystem::path>& roots,
                                        const gxbuild::utils::ScanOptions& scan_options,
-                                       const std::optional<Input>& donor) {
+                                       const std::optional<Input>& donor, bool nosecurity) {
+            std::unordered_set<std::string> ini_security_names;
+            if (nosecurity) {
+                if (const auto* security = ini_document.get("security")) {
+                    for (const auto& entry : *security) {
+                        const auto key = lowercase_basename(utils::ini_asset_name(entry.key));
+                        if (!key.empty() && key != "none") {
+                            ini_security_names.insert(key);
+                        }
+                    }
+                }
+            }
             std::unordered_set<std::string> donor_flashfs_names;
             if (donor && donor->flashfs_sec) {
                 for (const auto& file : *donor->flashfs_sec) {
-                    donor_flashfs_names.insert(lowercase_basename(file.first));
+                    const auto key = lowercase_basename(file.first);
+                    if (nosecurity &&
+                        (is_security_filename(key) || ini_security_names.contains(key))) {
+                        continue;
+                    }
+                    donor_flashfs_names.insert(key);
                 }
             }
             const auto* section = ini_document.get(target_section);
@@ -637,12 +659,29 @@ namespace gxbuild::cli {
                     }
                 }
             }
+            std::unordered_set<std::string> ini_security_names;
+            if (const auto* security = ini_document.get("security")) {
+                for (const auto& entry : *security) {
+                    const auto key = lowercase_basename(utils::ini_asset_name(entry.key));
+                    if (!key.empty() && key != "none") {
+                        ini_security_names.insert(key);
+                    }
+                }
+            }
+            const bool nosecurity = input.options.nosecurity.value_or(false);
+            if (nosecurity) {
+                input.metadata.console_secured_files.clear();
+            }
             std::vector<std::pair<std::string, std::vector<uint8_t>>> flashfs;
             std::unordered_map<std::string, size_t> flashfs_positions;
             // carry over donor flashfs files only if they're in the ini and we didn't find a replacement
             if (input.flashfs_sec) {
                 for (auto& file : *input.flashfs_sec) {
                     const auto key = lowercase_basename(file.first);
+                    if (nosecurity &&
+                        (is_security_filename(key) || ini_security_names.contains(key))) {
+                        continue;
+                    }
                     if (ini_flashfs_names.contains(key)) {
                         overlay_flashfs(flashfs, std::move(file), flashfs_positions);
                     }
@@ -847,6 +886,13 @@ namespace gxbuild::cli {
 
     Result<ResolvedFoundations>
     BuildInputResolver::resolve_foundations(const BuildArgs& args) const {
+        utils::StfsCache stfs_cache;
+        return resolve_foundations(args, stfs_cache);
+    }
+
+    Result<ResolvedFoundations>
+    BuildInputResolver::resolve_foundations(const BuildArgs& args,
+                                            utils::StfsCache& stfs_cache) const {
         if (args.source_dirs.empty()) {
             return fail_with(ErrorCode::InvalidArgument, "At least one source root is required");
         }
@@ -878,7 +924,6 @@ namespace gxbuild::cli {
             return std::unexpected(layered_options.error());
         }
 
-        utils::StfsCache stfs_cache;
         const utils::ScanOptions foundation_scan{.stfs_cache = &stfs_cache};
 
         Result<std::vector<uint8_t>> cpu_key = fail_with(
@@ -959,7 +1004,8 @@ namespace gxbuild::cli {
 
     Result<BuildRequest> BuildInputResolver::resolve(const BuildArgs& args) const {
         try {
-            auto foundations = resolve_foundations(args);
+            utils::StfsCache stfs_cache;
+            auto foundations = resolve_foundations(args, stfs_cache);
             if (!foundations) {
                 return std::unexpected(foundations.error());
             }
@@ -979,12 +1025,12 @@ namespace gxbuild::cli {
                 return std::unexpected(ini_document.error());
             }
 
-            utils::StfsCache stfs_cache;
             const gxbuild::utils::ScanOptions scan_options{
                 .nosusecurity = foundations->options.nosusecurity.value_or(false),
                 .stfs_cache = &stfs_cache};
-            if (const auto assets = verify_ini_assets(*ini_document, target_section, ini_path,
-                                                      roots, scan_options, foundations->donor);
+            if (const auto assets = verify_ini_assets(
+                    *ini_document, target_section, ini_path, roots, scan_options,
+                    foundations->donor, foundations->options.nosecurity.value_or(false));
                 !assets) {
                 return std::unexpected(assets.error());
             }
@@ -1002,6 +1048,11 @@ namespace gxbuild::cli {
             input.console = args.console;
             input.options = foundations->options;
             input.metadata.cpu_key = foundations->cpu_key;
+            if (input.options.nomobile.value_or(false)) {
+                input.mobiles = InputMobileData{};
+                input.metadata.statistics.reset();
+                input.metadata.manufacturing.reset();
+            }
 
             if (const auto resolved_metadata = apply_winning_metadata(
                     input.metadata, foundations->file_options, foundations->cli_overrides,

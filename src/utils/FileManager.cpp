@@ -771,12 +771,20 @@ namespace gxbuild::utils {
             slots = kKitSlots;
         size_t position = 0;
         for (const auto& entry : *bl_sec) {
-            const size_t index = position++;
             const auto key = normalize_file_key(entry.key);
-            if (key.empty() || key == "none")
+            if (key.empty())
                 continue;
-            if (index >= slots.size())
+            if (key == "none") {
+                ++position;
                 continue;
+            }
+            const bool is_cbx = key.starts_with("cbx") || key.starts_with("cb_x");
+            size_t index = 0;
+            if (!is_cbx) {
+                if (position >= slots.size())
+                    continue;
+                index = position++;
+            }
             auto found = search(entry.key, options, AssetKind::Bootloader);
             if (!found)
                 return escaped(entry.key, std::move(found).error());
@@ -784,7 +792,7 @@ namespace gxbuild::utils {
                 return fail(ErrorCode::NotFound, "Required bootloader file '{}' not found",
                             entry.key);
             auto data = std::move((*found)->file.data);
-            if (key.starts_with("cbx") || key.starts_with("cb_x")) {
+            if (is_cbx) {
                 result.bootloaders.cb_x = std::move(data);
                 continue;
             }

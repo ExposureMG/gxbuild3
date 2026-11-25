@@ -9,6 +9,10 @@
 #include <optional>
 #include <vector>
 
+namespace gxbuild::utils {
+    class StfsCache;
+}
+
 namespace gxbuild::cli {
 
     struct BuildRequest {
@@ -36,6 +40,9 @@ namespace gxbuild::cli {
         resolve(const BuildArgs& args) const;
 
       private:
+        [[nodiscard]] Result<ResolvedFoundations>
+        resolve_foundations(const BuildArgs& args, utils::StfsCache& stfs_cache) const;
+
         std::filesystem::path working_directory_;
     };
 

@@ -315,6 +315,12 @@ namespace gxbuild {
                 flash_image = FlashImage::create(image_size, driver_mode, input.build_type);
             }
 
+            if (has_donor && input.options.nomobile.value_or(false)) {
+                flash_image.mobile_data.reset();
+                flash_image.statistics.reset();
+                flash_image.manufacturing.reset();
+            }
+
             flash_image.build_type = input.build_type;
 
             if (input.metadata.smc_config) {
@@ -604,6 +610,14 @@ namespace gxbuild {
     Result<std::vector<uint8_t>> run_build(const Input& input) try {
         if (const auto validation = validate_input(input); !validation) {
             return std::unexpected(validation.error());
+        }
+
+        for (const auto& [name, flag] : {std::pair{"noremap", input.options.noremap},
+                                         std::pair{"noecdremap", input.options.noecdremap},
+                                         std::pair{"nandmu", input.options.nandmu}}) {
+            if (flag.value_or(false)) {
+                Log::Warn("Option '{}' is not yet implemented and has no effect", name);
+            }
         }
 
         std::optional<EXCRYPT_RSAPRV_2048> sd_signing_key;
