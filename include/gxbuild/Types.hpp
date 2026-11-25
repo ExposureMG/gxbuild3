@@ -75,6 +75,7 @@ namespace gxbuild {
         bool present{false};
         bool decrypted{false};
         std::optional<uint8_t> ldv;
+        std::optional<uint8_t> console_sequence;
         std::optional<std::array<uint8_t, 3>> pairing_data;
     };
 
@@ -91,6 +92,7 @@ namespace gxbuild {
         std::optional<BootloaderEntryInfo> cg_1;
 
         uint8_t cb_ldv{0};
+        std::optional<uint8_t> cb_console_sequence;
         std::array<uint8_t, 3> cb_pairing_data{};
         std::optional<uint8_t> cf0_ldv;
         std::optional<std::array<uint8_t, 3>> cf0_pairing_data;

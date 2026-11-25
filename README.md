@@ -12,9 +12,10 @@ See [LICENSE](LICENSE) for more information.
 
 Requirements:
 
-- CMake 3.21+
+- CMake 3.29+
 - C++23
 - Clang, MSVC, or GCC
+- Qt 6.12+
 
 Linux, MacOS, Android (clang):
 

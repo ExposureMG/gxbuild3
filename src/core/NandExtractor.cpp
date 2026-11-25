@@ -1,6 +1,5 @@
 #include "core/NandExtractor.hpp"
 
-#include "core/Wire.hpp"
 #include "nand/FlashDriver.hpp"
 #include "nand/FlashImage.hpp"
 #include "nand/FlashImageLayout.hpp"
@@ -84,21 +83,6 @@ namespace gxbuild {
                             metadata.pairing.size());
             }
             return metadata;
-        }
-
-        constexpr std::size_t kCbConsoleSequenceInData =
-            offsetof(cb_header, console_seq_allow) +
-            offsetof(ConsoleTypeSeqAllow, console_sequence) - sizeof(generic_header);
-        static_assert(kCbConsoleSequenceInData == 0x3A1);
-
-        // uses the console sequence byte as the display ldv if it's 16 or under, otherwise falls back to per-box
-        uint8_t cb_b_display_ldv(const BootloaderCb& cb_b) {
-            const auto sequence =
-                wire::read<uint8_t>(cb_b.data, kCbConsoleSequenceInData, "CB_B console sequence");
-            if (sequence && *sequence <= 16) {
-                return *sequence;
-            }
-            return cb_b.perbox->lockdown_value;
         }
 
         void extract_settings_blocks(const FlashImage& img, InputMetadata& meta) {
@@ -329,16 +313,20 @@ namespace gxbuild {
                     id == BootStageId::Sc ? std::optional<bool>{true} : std::nullopt;
                 auto entry = summarize_stage(name, stage, decrypted_override);
                 if constexpr (std::is_same_v<std::decay_t<decltype(stage)>, BootloaderCb>) {
-                    if ((id == BootStageId::CbA || id == BootStageId::CbB) &&
-                        stage.perbox.has_value()) {
-                        const uint8_t ldv = id == BootStageId::CbB
-                                                ? cb_b_display_ldv(stage)
-                                                : stage.perbox->lockdown_value;
-                        const auto pd = std::to_array(stage.perbox->pairing_data);
-                        entry.ldv = ldv;
-                        entry.pairing_data = pd;
-                        info.bootloaders.cb_ldv = ldv;
-                        info.bootloaders.cb_pairing_data = pd;
+                    if (id == BootStageId::CbA || id == BootStageId::CbB) {
+                        if (stage.perbox.has_value()) {
+                            const uint8_t ldv = stage.perbox->lockdown_value;
+                            const auto pd = std::to_array(stage.perbox->pairing_data);
+                            entry.ldv = ldv;
+                            entry.pairing_data = pd;
+                            info.bootloaders.cb_ldv = ldv;
+                            info.bootloaders.cb_pairing_data = pd;
+                        }
+                        if (stage.is_decrypted() &&
+                            stage.data.size() >= sizeof(cb_header) - sizeof(generic_header)) {
+                            entry.console_sequence = stage.header.console_seq_allow.console_sequence;
+                            info.bootloaders.cb_console_sequence = entry.console_sequence;
+                        }
                     }
                 }
                 stage_entry_slot(info.bootloaders, id) = std::move(entry);
